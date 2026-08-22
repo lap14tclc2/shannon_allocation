@@ -1,14 +1,16 @@
 """Top-level optimizer: screened random baseline + NSGA-II + OOS robustness.
 
 Large-universe search is intentionally staged:
-  1. TRAIN-only symbol screening narrows ~90 names to a configurable shortlist.
-  2. A modest random baseline trains the surrogate and seeds NSGA-II.
-  3. The surrogate ranks thousands of *unevaluated* candidates cheaply; only the
-     most promising proposals receive real TRAIN backtests.
-  4. A diverse TRAIN shortlist receives expensive multi-window VALIDATION.
-  5. Only finalists receive timing/symbol neighbourhood and FINAL TEST work.
+  1. Reserve one GLOBAL FINAL HOLDOUT at the end of the dataset.
+  2. TRAIN-only symbol screening narrows ~90 names to a configurable shortlist.
+  3. A modest random baseline trains the surrogate and seeds NSGA-II.
+  4. The surrogate ranks thousands of unevaluated candidates cheaply; only the
+     strongest proposals receive real TRAIN backtests.
+  5. A diverse TRAIN shortlist receives expensive rolling VALIDATION.
+  6. Only finalists receive neighbourhood robustness + the untouched holdout.
 
-Validation/test data never participates in screening or surrogate training.
+The global holdout is never used by screening, surrogate fitting, NSGA-II, or
+validation ranking.
 """
 
 from __future__ import annotations
@@ -25,13 +27,7 @@ from statistics import median
 from ..config import BacktestParams
 from ..data import load_panel
 from ..candidate import Candidate, random_candidate, validate_candidate
-from .evaluate import (
-    EvaluationCache,
-    config_fingerprint,
-    evaluate_candidate,
-    objectives,
-    OBJECTIVE_NAMES,
-)
+from .evaluate import EvaluationCache, config_fingerprint, evaluate_candidate, objectives
 from .nsga2 import nsga2
 from .reports import (
     item_to_json,
@@ -47,7 +43,7 @@ from .robustness import concentration, symbol_neighbourhood, timing_neighbourhoo
 from .screening import screen_universe
 from .search import random_search
 from .surrogate import Surrogate
-from .walkforward import evaluate_robust, make_windows
+from .walkforward import evaluate_robust, make_train_val_windows, split_research_holdout
 
 
 @dataclass
@@ -64,16 +60,16 @@ class OptimizerConfig:
     n_finalists: int = 5
     train_days: int = 378
     val_days: int = 252
-    test_days: int = 252
+    test_days: int = 252                 # one global untouched holdout
     window_step: int = 120
     use_surrogate: bool = True
-    data_version: str = "v3-risk-fast"
+    data_version: str = "v4-risk-fast-global-holdout"
     cache_path: str = "F:/workspace/shannon_allocation/python/results/optimizer_cache.json"
     out_dir: str = "F:/workspace/shannon_allocation/python/results/optimizer"
 
-    mode: str = "joint"                      # joint | timing
+    mode: str = "joint"                 # joint | timing
     fixed_symbols: list[str] | None = None
-    portfolio_size: int | None = 7            # exact N for joint mode; None keeps legacy 5..10
+    portfolio_size: int | None = 7       # exact N for joint mode
     require_full_coverage: bool = True
 
     # Large-universe acceleration. Screening uses TRAIN only.
@@ -83,7 +79,7 @@ class OptimizerConfig:
     surrogate_proposals: int = 40
     early_stop_generations: int | None = 15
 
-    # Positive number: every OOS validation/test MDD must be no worse than -this%.
+    # Positive number: validation and final holdout MDD must be no worse than -this%.
     max_oos_drawdown_pct: float | None = 35.0
 
     def as_dict(self) -> dict:
@@ -112,10 +108,8 @@ def _baseline_valid(days, max_day: int, min_gap: int) -> bool:
 
 
 def _diverse_train_shortlist(candidates, train_eval, limit: int, preferred=None):
-    """Racing stage: retain a diverse set without running validation on everybody."""
-    unique = {}
-    for c in candidates:
-        unique[c.key()] = c
+    """Racing stage: keep objective diversity without validating everybody."""
+    unique = {c.key(): c for c in candidates}
     records = []
     for c in unique.values():
         m = train_eval(c)
@@ -125,8 +119,7 @@ def _diverse_train_shortlist(candidates, train_eval, limit: int, preferred=None)
         return [c for c, _ in records]
 
     selected = {}
-    preferred = preferred or []
-    for c in preferred:
+    for c in preferred or []:
         if c.key() in unique and len(selected) < limit:
             selected[c.key()] = c
 
@@ -153,8 +146,7 @@ def _diverse_train_shortlist(candidates, train_eval, limit: int, preferred=None)
             selected[c.key()] = c
 
     if len(selected) < limit:
-        ranked = sorted(records, key=lambda cm: cm[1].get("score", 0.0), reverse=True)
-        for c, _ in ranked:
+        for c, _ in sorted(records, key=lambda cm: cm[1].get("score", 0.0), reverse=True):
             selected[c.key()] = c
             if len(selected) >= limit:
                 break
@@ -180,9 +172,7 @@ def _surrogate_candidates(
     target = max(proposals, pool_size)
     while len(pool) < target and attempts < target * 20:
         attempts += 1
-        c = random_candidate(
-            rng, universe, min_gap, max_day, fixed_symbols, portfolio_size
-        )
+        c = random_candidate(rng, universe, min_gap, max_day, fixed_symbols, portfolio_size)
         if c.key() in seen:
             continue
         seen.add(c.key())
@@ -202,16 +192,27 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     if opt.portfolio_size is not None and not (5 <= opt.portfolio_size <= 10):
         raise ValueError("portfolio_size must be between 5 and 10")
 
-    max_day = opt.max_day if opt.max_day else _min_year_session_count(dates)
+    # Reserve the final holdout BEFORE creating any research windows.
+    research_dates, final_holdout = split_research_holdout(dates, opt.test_days)
+    windows = make_train_val_windows(
+        research_dates, opt.train_days, opt.val_days, opt.window_step
+    )
+    if not windows:
+        raise RuntimeError(
+            "Not enough pre-holdout data for one train/validation window. "
+            "Reduce train/val/test lengths only if the research design justifies it."
+        )
+
+    max_day = opt.max_day if opt.max_day else _min_year_session_count(research_dates)
     if max_day < 4 * opt.min_gap:
-        raise RuntimeError(f"max allocation day {max_day} < 4*min_gap {4*opt.min_gap}: no valid schedule exists")
+        raise RuntimeError(
+            f"max allocation day {max_day} < 4*min_gap {4*opt.min_gap}: no valid schedule exists"
+        )
     baseline_days = _quarterly_baseline(max_day)
     if not _baseline_valid(baseline_days, max_day, opt.min_gap):
-        raise RuntimeError(f"quarterly baseline {baseline_days} violates min_gap {opt.min_gap} under max_day {max_day}")
-
-    windows = make_windows(dates, opt.train_days, opt.val_days, opt.test_days, opt.window_step)
-    if not windows:
-        raise RuntimeError("Not enough data for even one train/val/test window.")
+        raise RuntimeError(
+            f"quarterly baseline {baseline_days} violates min_gap {opt.min_gap} under max_day {max_day}"
+        )
 
     fixed = None
     search_universe = list(universe_sorted)
@@ -224,7 +225,11 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         if missing:
             raise ValueError(f"fixed_symbols not in universe/data: {missing}")
         errs = validate_candidate(
-            Candidate(fixed, baseline_days), set(universe_sorted), max_day, opt.min_gap, len(fixed)
+            Candidate(fixed, baseline_days),
+            set(universe_sorted),
+            max_day,
+            opt.min_gap,
+            len(fixed),
         )
         if errs:
             raise ValueError("fixed symbol portfolio invalid: " + "; ".join(errs))
@@ -241,17 +246,20 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         )
         if opt.portfolio_size and len(search_universe) < opt.portfolio_size:
             raise RuntimeError(
-                f"TRAIN screening left only {len(search_universe)} symbols for portfolio_size={opt.portfolio_size}"
+                f"TRAIN screening left only {len(search_universe)} symbols "
+                f"for portfolio_size={opt.portfolio_size}"
             )
         print(
-            f"Joint mode: {len(universe_sorted)} raw symbols -> {len(search_universe)} TRAIN-screened; "
-            f"portfolio size={opt.portfolio_size or '5..10'}",
+            f"Joint mode: {len(universe_sorted)} raw symbols -> {len(search_universe)} "
+            f"TRAIN-screened; portfolio size={opt.portfolio_size or '5..10'}",
             flush=True,
         )
 
     print(
-        f"Data {dates[0].date()} -> {dates[-1].date()}; {len(windows)} rolling windows; "
-        f"max allocation day={max_day}; OOS MDD gate={opt.max_oos_drawdown_pct}",
+        f"Data {dates[0].date()} -> {dates[-1].date()}; research ends "
+        f"{research_dates[-1].date()}; {len(windows)} validation windows; "
+        f"FINAL HOLDOUT {final_holdout[0].date()} -> {final_holdout[1].date()}; "
+        f"MDD gate={opt.max_oos_drawdown_pct}%",
         flush=True,
     )
 
@@ -262,7 +270,14 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         start = str(win[0].date())
         end = str(win[1].date())
         return lambda c: evaluate_candidate(
-            c, prices, params, dates, (start, end), cache, cfg, max_allocation_day=max_day
+            c,
+            prices,
+            params,
+            dates,
+            (start, end),
+            cache,
+            cfg,
+            max_allocation_day=max_day,
         )
 
     train_eval = make_eval(windows[0]["train"])
@@ -274,8 +289,13 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     def robust_eval_fn(cc, w):
         ww = w["val"]
         return evaluate_candidate(
-            cc, prices, params, dates,
-            (str(ww[0].date()), str(ww[1].date())), cache, cfg,
+            cc,
+            prices,
+            params,
+            dates,
+            (str(ww[0].date()), str(ww[1].date())),
+            cache,
+            cfg,
             max_allocation_day=max_day,
         )
 
@@ -309,7 +329,10 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     init_keys = {x.key() for x in init_pop}
     while len(init_pop) < opt.population_size:
         c = random_candidate(
-            rng, search_universe, opt.min_gap, max_day,
+            rng,
+            search_universe,
+            opt.min_gap,
+            max_day,
             list(fixed) if fixed else None,
             None if fixed else opt.portfolio_size,
         )
@@ -317,7 +340,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             init_pop.append(c)
             init_keys.add(c.key())
 
-    pop, fit, _ = nsga2(
+    pop, _fit, _ = nsga2(
         init_pop,
         train_obj_eval,
         search_universe,
@@ -335,7 +358,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     )
 
     proposed = []
-    if opt.use_surrogate and len(baseline) >= 50:
+    if opt.use_surrogate and len(baseline) >= 50 and opt.surrogate_proposals > 0:
         try:
             print(
                 f"Surrogate: fitting {len(baseline)} real TRAIN runs, ranking up to "
@@ -360,8 +383,12 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
                 opt.surrogate_proposals,
                 exclude,
             )
-            # Force real TRAIN evaluations now; prediction is never a final result.
-            proposed = [c for c in proposed if train_eval(c) and not train_eval(c).get("error")]
+            real_proposed = []
+            for c in proposed:
+                m = train_eval(c)
+                if m and not m.get("error"):
+                    real_proposed.append(c)
+            proposed = real_proposed
         except Exception as exc:
             print(f"Surrogate disabled for this run: {exc}", flush=True)
             proposed = []
@@ -394,8 +421,8 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         all_items.append(item)
         if progress and (idx + 1) % 25 == 0:
             print(
-                f"  validation {idx+1}/{len(shortlist)} robust="
-                f"{(robust or {}).get('robust_return')}",
+                f"  validation {idx+1}/{len(shortlist)} "
+                f"robust={(robust or {}).get('robust_return')}",
                 flush=True,
             )
 
@@ -405,49 +432,56 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     )
     if not by_robust:
         raise RuntimeError(
-            "No candidate passed the OOS risk/coverage gate. Increase max_oos_drawdown_pct "
-            "or reduce target volatility only after inspecting the failed run configuration."
+            "No candidate passed the validation risk/coverage gate. "
+            "Inspect risk configuration before loosening the MDD ceiling."
         )
     finalists = by_robust[: opt.n_finalists]
-    test_windows = [{"test": w["test"]} for w in windows]
 
+    # One globally untouched final holdout, evaluated only after ranking finalists.
     def full_test_eval(cc):
-        res = [
-            evaluate_candidate(
-                cc, prices, params, dates,
-                (str(w[0].date()), str(w[1].date())), cache, cfg,
-                max_allocation_day=max_day,
-            )
-            for w in [tw["test"] for tw in test_windows]
-        ]
-        ok = [r for r in res if r and not r.get("error")]
-        coverage_valid = len(ok) == len(test_windows)
-        worst_mdd = min([r["max_drawdown_pct"] for r in ok], default=None)
-        drawdown_valid = (
-            worst_mdd is not None
+        r = evaluate_candidate(
+            cc,
+            prices,
+            params,
+            dates,
+            (str(final_holdout[0].date()), str(final_holdout[1].date())),
+            cache,
+            cfg,
+            max_allocation_day=max_day,
+        )
+        ok = bool(r and not r.get("error"))
+        worst_mdd = r.get("max_drawdown_pct") if ok else None
+        drawdown_valid = bool(
+            ok
             and (
                 opt.max_oos_drawdown_pct is None
                 or worst_mdd >= -abs(opt.max_oos_drawdown_pct)
             )
         )
         return {
-            "median_net_twr": median([r["net_twr_annualized_pct"] for r in ok]) if ok else None,
-            "median_sharpe": median([r["sharpe"] for r in ok]) if ok else None,
+            "median_net_twr": r.get("net_twr_annualized_pct") if ok else None,
+            "median_sharpe": r.get("sharpe") if ok else None,
             "worst_mdd": worst_mdd,
-            "worst_cdar95": min([r.get("cdar95_pct", 0.0) for r in ok], default=None),
-            "n_test_windows": len(ok),
-            "required_test_windows": len(test_windows),
-            "coverage_valid": coverage_valid,
+            "worst_cdar95": r.get("cdar95_pct") if ok else None,
+            "n_test_windows": 1 if ok else 0,
+            "required_test_windows": 1,
+            "coverage_valid": ok,
             "drawdown_valid": drawdown_valid,
-            "valid": coverage_valid and drawdown_valid,
-            "per_window": res,
+            "valid": ok and drawdown_valid,
+            "holdout_start": str(final_holdout[0].date()),
+            "holdout_end": str(final_holdout[1].date()),
+            "per_window": [r] if r else [],
         }
 
     for item in finalists:
         c = item["candidate"]
         item["timing_robust"] = timing_neighbourhood(
-            c, robust_of, radius=5, min_gap=opt.min_gap,
-            max_day=max_day, value_key="robust_return",
+            c,
+            robust_of,
+            radius=5,
+            min_gap=opt.min_gap,
+            max_day=max_day,
+            value_key="robust_return",
         )
         if fixed is None:
             item["symbol_robust"] = symbol_neighbourhood(
@@ -465,8 +499,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         item["test"] = full_test_eval(c)
         item["test_metrics"] = item["test"]
 
-    # Compute test blocks for train leaderboards too; final robust winner is chosen
-    # after these blocks are attached.
+    # Attach holdout blocks to train-focused leaderboard winners too.
     provisional = leaderboards(all_items)
     for item in provisional.values():
         if "test" not in item:
@@ -475,6 +508,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
 
     winners = leaderboards(all_items)
 
+    # Same-symbol quarterly baseline for each finalist.
     baseline_items = {}
     for item in finalists:
         c = item["candidate"]
@@ -500,6 +534,12 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         "universe_variant": params.universe,
         "data_start": str(dates[0].date()),
         "data_end": str(dates[-1].date()),
+        "research_end": str(research_dates[-1].date()),
+        "final_holdout": {
+            "start": str(final_holdout[0].date()),
+            "end": str(final_holdout[1].date()),
+            "trading_days": opt.test_days,
+        },
         "max_allocation_day": max_day,
         "baseline_allocation_days": list(baseline_days),
         "n_windows": len(windows),
@@ -515,30 +555,40 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             {
                 "train": (str(w["train"][0].date()), str(w["train"][1].date())),
                 "val": (str(w["val"][0].date()), str(w["val"][1].date())),
-                "test": (str(w["test"][0].date()), str(w["test"][1].date())),
             }
             for w in windows
         ],
         "erc_config": {
             k: getattr(params, k)
             for k in [
-                "annualization_factor", "minimum_observations", "lookback_days",
-                "normal_band", "soft_band", "allocation_frequency",
+                "annualization_factor",
+                "minimum_observations",
+                "lookback_days",
+                "normal_band",
+                "soft_band",
+                "allocation_frequency",
             ]
         },
         "risk_config": {
             k: getattr(params, k)
             for k in [
-                "risk_overlay_enabled", "target_volatility", "risk_fast_lookback",
-                "risk_slow_lookback", "min_equity_exposure",
-                "risk_missing_data_exposure", "max_position_weight",
+                "risk_overlay_enabled",
+                "target_volatility",
+                "risk_fast_lookback",
+                "risk_slow_lookback",
+                "min_equity_exposure",
+                "risk_missing_data_exposure",
+                "max_position_weight",
             ]
         },
         "cost_config": {
             k: getattr(params, k)
             for k in [
-                "fee_buy_bps", "fee_sell_bps", "tax_sell_bps",
-                "slippage_bps", "execution_lag",
+                "fee_buy_bps",
+                "fee_sell_bps",
+                "tax_sell_bps",
+                "slippage_bps",
+                "execution_lag",
             ]
         },
         "optimizer_config": opt.as_dict(),
@@ -559,27 +609,54 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     timing_rows = [
         {
             "symbols": " ".join(i["candidate"].symbols),
-            **{k: v for k, v in i.get("timing_robust", {}).items() if k != "neighbours"},
+            **{
+                k: v
+                for k, v in i.get("timing_robust", {}).items()
+                if k != "neighbours"
+            },
         }
         for i in finalists
     ]
     symbol_rows = [
         {
             "symbols": " ".join(i["candidate"].symbols),
-            **{k: v for k, v in i.get("symbol_robust", {}).items() if k != "results"},
+            **{
+                k: v
+                for k, v in i.get("symbol_robust", {}).items()
+                if k != "results"
+            },
         }
         for i in finalists
     ]
 
-    write_exports(out_dir, meta, all_items, winners, pareto, window_rows, timing_rows, symbol_rows)
-    write_baseline_comparison(out_dir, finalists, baseline_items, baseline_days, winners)
+    write_exports(
+        out_dir,
+        meta,
+        all_items,
+        winners,
+        pareto,
+        window_rows,
+        timing_rows,
+        symbol_rows,
+    )
+    write_baseline_comparison(
+        out_dir, finalists, baseline_items, baseline_days, winners
+    )
     for name, item in winners.items():
         final_report(item, out_dir, name)
     write_experiment_json(
-        out_dir, meta, winners, pareto, by_robust[:50], finalists,
-        baseline_items, baseline_days,
+        out_dir,
+        meta,
+        winners,
+        pareto,
+        by_robust[:50],
+        finalists,
+        baseline_items,
+        baseline_days,
     )
-    _write_recommendation(out_dir, meta, winners)
+    _write_recommendation(
+        out_dir, meta, winners, baseline_items, baseline_days
+    )
     cache.flush()
 
     print(f"\nOptimizer done in {time.time()-t0:.1f}s. Experiment {experiment_id}")
@@ -599,12 +676,30 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     }
 
 
-def _write_recommendation(out_dir: str, meta: dict, winners: dict) -> str | None:
+def _write_recommendation(
+    out_dir: str,
+    meta: dict,
+    winners: dict,
+    baseline_items: dict,
+    baseline_days,
+) -> str | None:
+    """Write recommendation.json with the same baseline used by the report."""
+    best = winners.get("best_robust") or next(iter(winners.values()), None)
+    baseline = {}
+    if best is not None:
+        b = baseline_items.get(best["candidate"].key()) or {}
+        baseline = {
+            "allocation_days": [int(d) for d in baseline_days],
+            "robust": b.get("robust"),
+            "test": b.get("test"),
+            "train": b.get("train"),
+        }
     payload = {
         "experiment_id": meta["experiment_id"],
         "generated_at": meta.get("generated_at"),
         "meta": meta,
         "winners": {name: item_to_json(item) for name, item in winners.items()},
+        "baseline": baseline,
     }
     rec = build_recommendation(payload)
     rec["generated_at"] = datetime.now().isoformat(timespec="seconds")
