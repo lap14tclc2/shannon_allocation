@@ -42,6 +42,7 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
         "target_volatility",
         "risk_fast_lookback",
         "risk_slow_lookback",
+        "risk_refresh_days",
         "min_equity_exposure",
         "risk_missing_data_exposure",
         "max_position_weight",
@@ -157,7 +158,7 @@ def evaluate_candidate(
 def objectives(metrics: dict) -> list[float]:
     """Objective vector for NSGA-II (all maximised).
 
-    Return and risk-adjusted performance are rewarded.  MDD and CDaR are kept as
+    Return and risk-adjusted performance are rewarded. MDD and CDaR are kept as
     negative percentages, therefore values closer to zero are naturally better.
     Turnover/cost/instability/underwater time are negated.
     """
