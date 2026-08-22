@@ -6,7 +6,8 @@ import AllocationTable from '../components/AllocationTable.jsx';
 import YearlyAllocationTable from '../components/YearlyAllocationTable.jsx';
 
 function allocationLabel(item) {
-  return `[${(item.allocation_days || []).join(', ')}]`;
+  const days = item?.allocation_days || [];
+  return `${days.length}x/year · [${days.join(', ')}]`;
 }
 
 function MetricRow({ label, value, digits = 2, pct = false, money = false }) {
@@ -117,7 +118,7 @@ function CandidatePanel({ item, title }) {
       <h3>{title}</h3>
       <div className="candidate-head">
         <span className="candidate-symbols">{item.symbols.join(' ')}</span>
-        <span className="muted">N={item.n_symbols} · allocation {allocationLabel(item)}</span>
+        <span className="muted">N={item.n_symbols} stocks · allocation {allocationLabel(item)}</span>
       </div>
 
       <div className="sub-card" style={{ marginBottom: 14 }}>
@@ -127,7 +128,7 @@ function CandidatePanel({ item, title }) {
           <b className={item.live_eligible ? 'pos' : 'neg'}>{item.live_eligible ? 'PASS' : 'FAIL'}</b>
         </div>
         <div className="muted" style={{ marginTop: 6 }}>
-          This gate does not change ERC, Shannon, volatility targeting, NSGA-II objectives, or robust-return ranking. It only blocks weak research candidates from being proposed for live deployment.
+          Growth-first search is separate from this gate. ERC, Shannon and volatility-target mechanics remain unchanged; the gate rejects weak research candidates before live recommendation.
         </div>
         {!item.live_eligible && eligibilityReasons.length > 0 && (
           <div className="muted" style={{ marginTop: 6 }}>Reasons: {eligibilityReasons.join(' · ')}</div>
@@ -136,10 +137,11 @@ function CandidatePanel({ item, title }) {
 
       <div className="expand-grid">
         <div className="sub-card">
-          <h4>TRAIN (optimization window)</h4>
+          <h4>TRAIN (growth search window)</h4>
           <MetricRow label="Net TWR annualized" value={m.net_twr_annualized_pct} pct />
           <MetricRow label="Net XIRR (window anchored)" value={m.net_xirr_pct} pct />
           <MetricRow label="Gross TWR annualized" value={m.gross_twr_annualized_pct} pct />
+          <MetricRow label="Growth search score" value={m.score} digits={3} />
           <MetricRow label="Sharpe" value={m.sharpe} digits={3} />
           <MetricRow label="Sortino" value={m.sortino} digits={3} />
           <MetricRow label="Calmar" value={m.calmar} digits={3} />
@@ -179,7 +181,7 @@ function CandidatePanel({ item, title }) {
       <div className="expand-grid" style={{ marginTop: 14 }}>
         <div className="sub-card">
           <h4>Recent pre-holdout validation</h4>
-          <div className="muted" style={{ marginBottom: 8 }}>Eligibility-only window ending immediately before the untouched final holdout. It is not added to the robust-return score.</div>
+          <div className="muted" style={{ marginBottom: 8 }}>Eligibility-only window ending immediately before the final assessment holdout. It is not added to the robust-return score.</div>
           <MetricRow label="Net TWR annualized" value={recent.net_twr_annualized_pct} pct />
           <MetricRow label="Net XIRR" value={recent.net_xirr_pct} pct />
           <MetricRow label="Sharpe" value={recent.sharpe} digits={3} />
@@ -187,7 +189,7 @@ function CandidatePanel({ item, title }) {
           <MetricRow label="CDaR95" value={recent.cdar95_pct} pct />
         </div>
         <div className="sub-card">
-          <h4>Final untouched holdout</h4>
+          <h4>Final assessment holdout</h4>
           <MetricRow label="Net TWR annualized" value={test.median_net_twr} pct />
           <MetricRow label="Net XIRR (window anchored)" value={testPeriod.net_xirr_pct} pct />
           <MetricRow label="Measurement start NAV" value={testPeriod.measurement_start_nav} money />
@@ -226,6 +228,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
             <th>Symbols</th>
             <th>N</th>
             <th>Live</th>
+            <th>Events/y</th>
             <th>Allocation days</th>
             <th>Net TWR ann</th>
             <th>Sharpe</th>
@@ -243,6 +246,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
                 <td className="symbols-cell">{it.symbols.join(' ')}</td>
                 <td>{it.n_symbols}</td>
                 <td className={it.live_eligible ? 'pos' : 'neg'}>{it.live_eligible ? 'PASS' : 'FAIL'}</td>
+                <td className="num">{it.allocation_days?.length || 0}</td>
                 <td>{it.allocation_days.join(', ')}</td>
                 <td className={Number(m.net_twr_annualized_pct) >= 0 ? 'pos' : 'neg'}>{formatPercent(m.net_twr_annualized_pct)}</td>
                 <td className="num">{m.sharpe?.toFixed(2)}</td>
@@ -349,7 +353,7 @@ export default function OptimizerDetailPage({ experiment }) {
         </h1>
         <p className="muted">
           seed {experiment.meta?.seed} · {experiment.meta?.universe?.length} symbols ·
-          {experiment.meta?.n_windows} rolling windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'} ·
+          {experiment.meta?.n_windows} rolling windows · {experiment.meta?.mode === 'timing' ? 'fixed symbols + frequency/timing search' : 'joint growth (symbols + frequency + timing)'} ·
           CPU workers {experiment.meta?.parallel_workers || 1} · initial {formatMoney(capitalConfig.initial_balance || 0)} · annual {formatMoney(capitalConfig.annual_deposit || 0)}
         </p>
         <p className="muted">
@@ -393,12 +397,12 @@ export default function OptimizerDetailPage({ experiment }) {
           <div className="card">
             <h3>Quarterly baseline comparison (same symbols)</h3>
             <p className="muted">
-              Standard four-times-per-year schedule <code>[{(experiment.baseline.allocation_days || []).join(', ')}]</code>{' '}
-              evaluated with the same portfolio, costs, risk overlay, rolling validation and untouched holdout.
+              Standard four-times-per-year benchmark <code>[{(experiment.baseline.allocation_days || []).join(', ')}]</code>{' '}
+              evaluated with the same portfolio, costs, risk overlay, rolling validation and final assessment holdout. The optimized candidate may use a different event count.
             </p>
             <div className="expand-grid">
               <div className="sub-card">
-                <h4>Optimized ({br.live_eligible ? 'Live-Eligible' : 'Research only'})</h4>
+                <h4>Optimized — {allocationLabel(br)} ({br.live_eligible ? 'Live-Eligible' : 'Research only'})</h4>
                 <MetricRow label="Robust return" value={br?.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={br?.robust?.median_net_twr} pct />
                 <MetricRow label="Recent validation TWR" value={br?.recent_validation?.net_twr_annualized_pct} pct />
@@ -406,7 +410,7 @@ export default function OptimizerDetailPage({ experiment }) {
                 <div className="diag-row"><span>Holdout valid</span><b>{br?.test?.valid ? 'PASS' : 'INVALID'}</b></div>
               </div>
               <div className="sub-card">
-                <h4>Baseline quarterly</h4>
+                <h4>Baseline quarterly · 4x/year</h4>
                 <MetricRow label="Robust return" value={experiment.baseline.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={experiment.baseline.robust?.median_net_twr} pct />
                 <MetricRow label="Holdout TWR" value={experiment.baseline.test?.median_net_twr} pct />
@@ -441,7 +445,7 @@ export default function OptimizerDetailPage({ experiment }) {
         items={experiment.pareto || []}
         selected={selected}
         onSelect={setSelected}
-        title="Pareto frontier (non-dominated research candidates)"
+        title="Pareto frontier (non-dominated growth research candidates)"
       />
       <CandidateTable
         items={(experiment.top_candidates || []).slice(0, 25)}
