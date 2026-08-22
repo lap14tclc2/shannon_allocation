@@ -1,0 +1,22 @@
+# Node
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Generated results & artifacts
+python/results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
