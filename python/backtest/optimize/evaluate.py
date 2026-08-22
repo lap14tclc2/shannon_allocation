@@ -18,7 +18,7 @@ from ..config import BacktestParams
 from ..simulation import simulate_combination
 from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
-OPTIMIZER_METRIC_SCHEMA = "growth-v6-variable-allocation"
+OPTIMIZER_METRIC_SCHEMA = "growth-v7-skip-partial-year"
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -172,8 +172,10 @@ def evaluate_candidate(
     try:
         _, mapping = resolve_allocation_dates(candidate, all_dates, max_allocation_day)
         metrics["n_clamped_allocations"] = sum(1 for m in mapping if m.get("clamped"))
+        metrics["n_skipped_allocations"] = sum(1 for m in mapping if m.get("skipped"))
     except Exception:
         metrics["n_clamped_allocations"] = 0
+        metrics["n_skipped_allocations"] = 0
 
     if cache:
         cache.put(candidate, key, cfg, metrics)
