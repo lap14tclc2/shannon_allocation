@@ -1,12 +1,73 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startOptimizerRun, getOptimizerStatus, deleteOptimizerExperiment } from '../lib/api.js';
+
+const SEARCH_PRESETS = {
+  fast: {
+    label: 'Fast',
+    note: 'Quick exploration for a large universe',
+    population: 40,
+    generations: 18,
+    random: 150,
+    preselectTop: 40,
+    robustPool: 100,
+    surrogatePool: 3000,
+    surrogateProposals: 25,
+    earlyStop: 10,
+  },
+  balanced: {
+    label: 'Balanced',
+    note: 'Recommended for ~90 symbols',
+    population: 60,
+    generations: 30,
+    random: 250,
+    preselectTop: 45,
+    robustPool: 180,
+    surrogatePool: 5000,
+    surrogateProposals: 40,
+    earlyStop: 15,
+  },
+  thorough: {
+    label: 'Thorough',
+    note: 'More coverage, more real backtests',
+    population: 90,
+    generations: 45,
+    random: 500,
+    preselectTop: 60,
+    robustPool: 300,
+    surrogatePool: 10000,
+    surrogateProposals: 80,
+    earlyStop: 20,
+  },
+};
+
+const UNIVERSES = [
+  { value: 'all', label: 'All data symbols', note: 'Use this for the full ~90-symbol search universe.' },
+  { value: 'vn100', label: 'VN100', note: 'Use the VN100 universe definition available in the dataset.' },
+  { value: 'vn50', label: 'VN50', note: 'Smaller search universe.' },
+  { value: 'vn30', label: 'VN30', note: 'Fastest predefined universe.' },
+];
+
+function NumberField({ label, value, onChange, min, max, step = 1, disabled = false, width = 120, hint }) {
+  return (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        style={{ width }}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {hint && <span style={{ textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>{hint}</span>}
+    </label>
+  );
+}
 
 export default function OptimizerListPage({ experiments }) {
   const [items, setItems] = useState(experiments || []);
-  const [seed, setSeed] = useState(42);
-  const [population, setPopulation] = useState(60);
-  const [generations, setGenerations] = useState(30);
-  const [random, setRandom] = useState(250);
   const [universe, setUniverse] = useState('all');
   const [mode, setMode] = useState('joint');
   const [fixedSymbols, setFixedSymbols] = useState('');
@@ -17,12 +78,19 @@ export default function OptimizerListPage({ experiments }) {
   const [maxOosDrawdownPct, setMaxOosDrawdownPct] = useState(35);
   const [maxPositionPct, setMaxPositionPct] = useState(30);
   const [minEquityPct, setMinEquityPct] = useState(25);
+  const [riskRefreshDays, setRiskRefreshDays] = useState(5);
 
+  const [preset, setPreset] = useState('balanced');
+  const [seed, setSeed] = useState(42);
+  const [population, setPopulation] = useState(60);
+  const [generations, setGenerations] = useState(30);
+  const [random, setRandom] = useState(250);
   const [preselectTop, setPreselectTop] = useState(45);
   const [robustPool, setRobustPool] = useState(180);
   const [surrogatePool, setSurrogatePool] = useState(5000);
   const [surrogateProposals, setSurrogateProposals] = useState(40);
   const [earlyStop, setEarlyStop] = useState(15);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [running, setRunning] = useState(false);
   const [activeRun, setActiveRun] = useState(null);
@@ -32,37 +100,67 @@ export default function OptimizerListPage({ experiments }) {
   const pollRef = useRef(null);
   const timerRef = useRef(null);
 
+  const fixedList = useMemo(
+    () => fixedSymbols.trim().split(/[\s,]+/).filter(Boolean).map((s) => s.toUpperCase()),
+    [fixedSymbols]
+  );
+  const effectiveSize = mode === 'timing' ? fixedList.length : Number(portfolioSize);
+  const minFeasiblePositionPct = effectiveSize > 0 ? 100 / effectiveSize : 100;
+  const selectedUniverse = UNIVERSES.find((u) => u.value === universe) || UNIVERSES[0];
+
   useEffect(() => () => {
     clearInterval(pollRef.current);
     clearInterval(timerRef.current);
   }, []);
 
-  async function runOptimizer(e, overrideUniverse) {
+  function applyPreset(key) {
+    const p = SEARCH_PRESETS[key];
+    if (!p) return;
+    setPreset(key);
+    setPopulation(p.population);
+    setGenerations(p.generations);
+    setRandom(p.random);
+    setPreselectTop(p.preselectTop);
+    setRobustPool(p.robustPool);
+    setSurrogatePool(p.surrogatePool);
+    setSurrogateProposals(p.surrogateProposals);
+    setEarlyStop(p.earlyStop);
+  }
+
+  function validate() {
+    if (mode === 'joint' && (!Number.isInteger(Number(portfolioSize)) || Number(portfolioSize) < 5 || Number(portfolioSize) > 10)) {
+      return 'Portfolio size must be an integer between 5 and 10.';
+    }
+    if (mode === 'timing' && (fixedList.length < 5 || fixedList.length > 10)) {
+      return 'Timing-only mode needs 5–10 fixed tickers.';
+    }
+    if (new Set(fixedList).size !== fixedList.length) return 'Fixed portfolio contains duplicate tickers.';
+    if (riskOverlay && (Number(targetVolPct) <= 0 || Number(targetVolPct) > 100)) return 'Target volatility must be between 0% and 100%.';
+    if (Number(maxOosDrawdownPct) <= 0 || Number(maxOosDrawdownPct) > 100) return 'Max OOS drawdown must be between 0% and 100%.';
+    if (riskOverlay && (Number(minEquityPct) < 0 || Number(minEquityPct) > 100)) return 'Minimum equity exposure must be between 0% and 100%.';
+    if (riskOverlay && (Number(maxPositionPct) <= 0 || Number(maxPositionPct) > 100)) return 'Maximum single-stock weight must be between 0% and 100%.';
+    if (riskOverlay && Number(maxPositionPct) + 1e-9 < minFeasiblePositionPct) {
+      return `With ${effectiveSize} symbols, max single-stock weight cannot be below ${minFeasiblePositionPct.toFixed(1)}%.`;
+    }
+    if (riskOverlay && (Number(riskRefreshDays) < 1 || Number(riskRefreshDays) > 63)) return 'Risk refresh must be between 1 and 63 trading days.';
+    if (Number(preselectTop) > 0 && mode === 'joint' && Number(preselectTop) < Number(portfolioSize)) return 'TRAIN preselect must be at least the portfolio size.';
+    if (Number(robustPool) < 5) return 'Validation shortlist must contain at least 5 candidates.';
+    return '';
+  }
+
+  async function runOptimizer(e) {
     if (e) e.preventDefault();
-    const activeUniverse = overrideUniverse || universe;
-    const effectiveMode = mode;
-    const symbols = fixedSymbols.trim().split(/[\s,]+/).filter(Boolean).map((s) => s.toUpperCase());
-
-    if (effectiveMode === 'timing' && symbols.length < 5) {
-      window.alert('Timing-only mode needs at least 5 fixed tickers.');
-      return;
-    }
-    if (effectiveMode === 'joint' && (Number(portfolioSize) < 5 || Number(portfolioSize) > 10)) {
-      window.alert('Portfolio size must be between 5 and 10 symbols.');
-      return;
-    }
-    if (riskOverlay && Number(targetVolPct) <= 0) {
-      window.alert('Target volatility must be greater than 0%.');
+    const error = validate();
+    if (error) {
+      window.alert(error);
       return;
     }
 
-    setUniverse(activeUniverse);
     setRunning(true);
     setElapsed(0);
-    const sizeDesc = effectiveMode === 'timing' ? `${symbols.length} fixed symbols` : `${portfolioSize} symbols`;
-    const modeDesc = effectiveMode === 'timing' ? `timing-only on ${symbols.join(' ')}` : `joint ${sizeDesc}`;
-    const riskDesc = riskOverlay ? `risk target ${targetVolPct}% / MDD gate ${maxOosDrawdownPct}%` : 'risk overlay OFF';
-    setMessage(`Starting ${activeUniverse.toUpperCase()} optimizer (${modeDesc}, ${riskDesc})…`);
+    const sizeDesc = mode === 'timing' ? `${fixedList.length} fixed symbols` : `exactly ${portfolioSize} symbols`;
+    const riskDesc = riskOverlay ? `risk target ${targetVolPct}% · OOS MDD gate ${maxOosDrawdownPct}%` : 'legacy 100% equity baseline';
+    setMessage(`${selectedUniverse.label} · ${sizeDesc} · ${riskDesc}`);
 
     try {
       const res = await startOptimizerRun({
@@ -70,16 +168,17 @@ export default function OptimizerListPage({ experiments }) {
         population: Number(population),
         generations: Number(generations),
         random: Number(random),
-        universe: activeUniverse,
-        mode: effectiveMode,
-        fixed_symbols: effectiveMode === 'timing' ? symbols : undefined,
-        portfolio_size: effectiveMode === 'joint' ? Number(portfolioSize) : undefined,
+        universe,
+        mode,
+        fixed_symbols: mode === 'timing' ? fixedList : undefined,
+        portfolio_size: mode === 'joint' ? Number(portfolioSize) : undefined,
 
         risk_overlay: Boolean(riskOverlay),
         target_volatility: Number(targetVolPct) / 100,
         max_oos_drawdown_pct: Number(maxOosDrawdownPct),
         max_position_weight: Number(maxPositionPct) / 100,
         min_equity_exposure: Number(minEquityPct) / 100,
+        risk_refresh_days: Number(riskRefreshDays),
 
         preselect_top: Number(preselectTop),
         robust_pool_size: Number(robustPool),
@@ -144,11 +243,10 @@ export default function OptimizerListPage({ experiments }) {
         <a href="/">All runs</a> <span>/</span> Optimizer
       </div>
       <header className="page-head">
-        <h1>Risk-Aware Portfolio + Allocation Optimizer</h1>
+        <h1>Portfolio Optimizer</h1>
         <p className="muted">
-          Choose the exact portfolio size, search a large universe efficiently, and rank only candidates
-          that survive walk-forward drawdown controls. ERC still determines relative allocation; the risk
-          overlay can reduce total equity exposure and keep the remainder in cash.
+          Everything is configured and launched from this page. Choose the universe and portfolio size,
+          set the risk policy, select a search preset, then run. No command line is required.
         </p>
       </header>
 
@@ -157,75 +255,151 @@ export default function OptimizerListPage({ experiments }) {
           <div className="run-loading-inner">
             <span className="spinner" aria-hidden="true" />
             <div>
-              <b>Running optimizer… {elapsed}s elapsed</b>
+              <b>Optimizer is running · {elapsed}s</b>
               <div className="muted">{message}</div>
-              <div className="muted">You can keep browsing; this page opens the result when finished.</div>
+              <div className="muted">Run ID: {activeRun || '-'}</div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="card">
-        <h3>Run a new optimizer experiment</h3>
-        <div className="universe-buttons">
-          <button className="btn-variant btn-vn30" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn30')}>▶ Run on VN30</button>
-          <button className="btn-variant btn-vn50" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn50')}>▶ Run on VN50</button>
-          <button className="btn-variant btn-vn100" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn100')}>▶ Run on VN100</button>
-          <button className="btn-variant btn-all" disabled={running} type="button" onClick={() => runOptimizer(null, 'all')}>All data symbols</button>
+      <form className="card" onSubmit={runOptimizer}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ marginBottom: 4 }}>1. Portfolio search</h3>
+            <div className="muted">Define what the optimizer is allowed to build.</div>
+          </div>
+          <span className="universe-pill pill-vn100">Recommended: All data + 7 symbols</span>
         </div>
 
         <div className="run-form" style={{ marginTop: 14 }}>
-          <label>Mode
-            <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="joint">Joint (symbols + timing)</option>
-              <option value="timing">Timing-only (fixed portfolio)</option>
+          <label>Universe
+            <select value={universe} onChange={(e) => setUniverse(e.target.value)} style={{ width: 180 }} disabled={running}>
+              {UNIVERSES.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+            </select>
+            <span style={{ textTransform: 'none', letterSpacing: 0, fontSize: 10, maxWidth: 220 }}>{selectedUniverse.note}</span>
+          </label>
+          <label>Optimization mode
+            <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ width: 210 }} disabled={running}>
+              <option value="joint">Build portfolio + optimize timing</option>
+              <option value="timing">Optimize timing for fixed portfolio</option>
             </select>
           </label>
-          {mode === 'joint' && (
+          {mode === 'joint' ? (
             <label>Portfolio size
-              <input type="number" min="5" max="10" value={portfolioSize} onChange={(e) => setPortfolioSize(e.target.value)} />
+              <select value={portfolioSize} onChange={(e) => setPortfolioSize(Number(e.target.value))} style={{ width: 150 }} disabled={running}>
+                {[5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n} symbols</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="fixed-symbols">Fixed portfolio (5–10 tickers)
+              <input
+                type="text"
+                value={fixedSymbols}
+                onChange={(e) => setFixedSymbols(e.target.value)}
+                placeholder="ACB FPT HPG MBB MWG VCB VNM"
+                disabled={running}
+                style={{ width: 360 }}
+              />
+              <span style={{ textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>{fixedList.length} ticker(s)</span>
             </label>
           )}
-          {mode === 'timing' && (
-            <label className="fixed-symbols">Fixed portfolio
-              <input type="text" value={fixedSymbols} onChange={(e) => setFixedSymbols(e.target.value)} placeholder="CTG GVR HDB LPB MWG STB VIB" />
-            </label>
-          )}
-          <label>Seed <input type="number" value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
-          <label>Population <input type="number" min="10" value={population} onChange={(e) => setPopulation(e.target.value)} /></label>
-          <label>Generations <input type="number" min="1" value={generations} onChange={(e) => setGenerations(e.target.value)} /></label>
-          <label>Random real backtests <input type="number" min="20" value={random} onChange={(e) => setRandom(e.target.value)} /></label>
         </div>
 
-        <h4 style={{ marginTop: 18 }}>Drawdown / exposure controls</h4>
+        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
+
+        <h3 style={{ marginBottom: 4 }}>2. Drawdown / exposure policy</h3>
+        <div className="muted" style={{ marginBottom: 12 }}>
+          ERC still decides relative stock weights. The risk overlay only scales total equity exposure and leaves the rest in cash.
+        </div>
         <div className="run-form">
-          <label>Risk overlay
-            <select value={riskOverlay ? 'on' : 'off'} onChange={(e) => setRiskOverlay(e.target.value === 'on')}>
-              <option value="on">ON — volatility target + cash</option>
-              <option value="off">OFF — 100% equity baseline</option>
+          <label>Risk policy
+            <select value={riskOverlay ? 'on' : 'off'} onChange={(e) => setRiskOverlay(e.target.value === 'on')} style={{ width: 220 }} disabled={running}>
+              <option value="on">Risk-aware · volatility target</option>
+              <option value="off">Baseline · 100% equity</option>
             </select>
           </label>
-          <label>Target volatility % <input type="number" min="5" max="50" step="1" value={targetVolPct} onChange={(e) => setTargetVolPct(e.target.value)} /></label>
-          <label>Max OOS drawdown % <input type="number" min="10" max="80" step="1" value={maxOosDrawdownPct} onChange={(e) => setMaxOosDrawdownPct(e.target.value)} /></label>
-          <label>Max single stock % <input type="number" min="10" max="100" step="1" value={maxPositionPct} onChange={(e) => setMaxPositionPct(e.target.value)} /></label>
-          <label>Min equity exposure % <input type="number" min="0" max="100" step="5" value={minEquityPct} onChange={(e) => setMinEquityPct(e.target.value)} /></label>
+          <NumberField label="Target volatility %" min={5} max={50} value={targetVolPct} onChange={setTargetVolPct} disabled={!riskOverlay || running} hint="Default 18%" />
+          <NumberField label="Max OOS drawdown %" min={10} max={80} value={maxOosDrawdownPct} onChange={setMaxOosDrawdownPct} disabled={running} hint="Candidate fails above this loss" />
+          <NumberField label="Max stock weight %" min={Math.ceil(minFeasiblePositionPct)} max={100} value={maxPositionPct} onChange={setMaxPositionPct} disabled={!riskOverlay || running} />
+          <NumberField label="Min equity exposure %" min={0} max={100} step={5} value={minEquityPct} onChange={setMinEquityPct} disabled={!riskOverlay || running} />
+          <NumberField label="Risk refresh (days)" min={1} max={63} value={riskRefreshDays} onChange={setRiskRefreshDays} disabled={!riskOverlay || running} hint="5 = weekly; drift checks stay daily" />
         </div>
 
-        <h4 style={{ marginTop: 18 }}>Fast search for large universes</h4>
-        <div className="run-form">
-          <label>TRAIN preselect top <input type="number" min="0" value={preselectTop} onChange={(e) => setPreselectTop(e.target.value)} /></label>
-          <label>Validation shortlist <input type="number" min="20" value={robustPool} onChange={(e) => setRobustPool(e.target.value)} /></label>
-          <label>Surrogate cheap pool <input type="number" min="0" value={surrogatePool} onChange={(e) => setSurrogatePool(e.target.value)} /></label>
-          <label>Surrogate real proposals <input type="number" min="0" value={surrogateProposals} onChange={(e) => setSurrogateProposals(e.target.value)} /></label>
-          <label>NSGA early-stop patience <input type="number" min="0" value={earlyStop} onChange={(e) => setEarlyStop(e.target.value)} /></label>
+        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
+
+        <h3 style={{ marginBottom: 4 }}>3. Search budget</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          For ~90 symbols, use Balanced first. The optimizer screens on TRAIN data before expensive walk-forward validation.
+        </div>
+        <div className="universe-buttons" style={{ marginBottom: 12 }}>
+          {Object.entries(SEARCH_PRESETS).map(([key, p]) => (
+            <button
+              key={key}
+              className="btn-variant"
+              type="button"
+              disabled={running}
+              onClick={() => applyPreset(key)}
+              style={{ borderColor: preset === key ? 'var(--accent)' : 'var(--border)', minWidth: 150, textAlign: 'left' }}
+            >
+              <div>{preset === key ? '✓ ' : ''}{p.label}</div>
+              <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>{p.note}</div>
+            </button>
+          ))}
         </div>
 
-        {!running && message && <div className="run-message">{message}</div>}
-        <div className="muted">
-          Large-universe speed path: TRAIN-only screening → random baseline → NSGA-II → surrogate ranking → diverse shortlist → full validation → finalists/test.
-          Validation/test data never participates in screening or surrogate training.
+        <button
+          type="button"
+          className="btn-variant btn-all"
+          disabled={running}
+          onClick={() => setShowAdvanced((v) => !v)}
+          style={{ marginBottom: 12 }}
+        >
+          {showAdvanced ? 'Hide advanced search settings' : 'Show advanced search settings'}
+        </button>
+
+        {showAdvanced && (
+          <div className="sub-card" style={{ marginBottom: 14 }}>
+            <div className="run-form">
+              <NumberField label="Seed" min={0} value={seed} onChange={setSeed} disabled={running} />
+              <NumberField label="Population" min={10} value={population} onChange={(v) => { setPopulation(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Generations" min={1} value={generations} onChange={(v) => { setGenerations(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Random real backtests" min={20} value={random} onChange={(v) => { setRandom(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="TRAIN preselect" min={0} value={preselectTop} onChange={(v) => { setPreselectTop(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Validation shortlist" min={5} value={robustPool} onChange={(v) => { setRobustPool(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Surrogate pool" min={0} value={surrogatePool} onChange={(v) => { setSurrogatePool(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Real surrogate proposals" min={0} value={surrogateProposals} onChange={(v) => { setSurrogateProposals(v); setPreset('custom'); }} disabled={running} />
+              <NumberField label="Early-stop patience" min={0} value={earlyStop} onChange={(v) => { setEarlyStop(v); setPreset('custom'); }} disabled={running} />
+            </div>
+          </div>
+        )}
+
+        <div className="sub-card" style={{ marginBottom: 14 }}>
+          <div className="diag-grid" style={{ marginBottom: 0 }}>
+            <div><span>Universe</span><b>{selectedUniverse.label}</b></div>
+            <div><span>Portfolio</span><b>{mode === 'joint' ? `${portfolioSize} symbols` : `${fixedList.length} fixed symbols`}</b></div>
+            <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD` : 'Baseline 100% equity'}</b></div>
+            <div><span>Search preset</span><b>{SEARCH_PRESETS[preset]?.label || 'Custom'}</b></div>
+            <div><span>Preselect</span><b>{preselectTop || 'OFF'}</b></div>
+            <div><span>Validation shortlist</span><b>{robustPool}</b></div>
+          </div>
         </div>
-      </div>
+
+        {!running && message && <div className="run-message" style={{ marginBottom: 10 }}>{message}</div>}
+
+        <button
+          className="btn-export"
+          type="submit"
+          disabled={running}
+          style={{ border: 0, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.55 : 1, fontSize: 14, padding: '11px 20px' }}
+        >
+          {running ? 'Optimizer running…' : '▶ Run optimizer'}
+        </button>
+
+        <div className="muted" style={{ marginTop: 10 }}>
+          Search path: TRAIN-only screening → real random baseline → NSGA-II → surrogate ranking → validation shortlist → robustness checks → untouched final holdout.
+        </div>
+      </form>
 
       <div className="card">
         <h3>Experiments ({items.length})</h3>
@@ -239,7 +413,13 @@ export default function OptimizerListPage({ experiments }) {
                   <a href={`/optimizer/${e.experiment_id}`}>{e.experiment_id}</a>
                   <span className="muted">{e.generated_at}</span>
                 </div>
-                <button className="btn-remove" disabled={removing === e.experiment_id} onClick={() => removeExperiment(e.experiment_id)} title={`Delete experiment ${e.experiment_id}`}>
+                <button
+                  className="btn-remove"
+                  type="button"
+                  disabled={removing === e.experiment_id}
+                  onClick={() => removeExperiment(e.experiment_id)}
+                  title={`Delete experiment ${e.experiment_id}`}
+                >
                   {removing === e.experiment_id ? '…' : '✕ Remove'}
                 </button>
               </li>
