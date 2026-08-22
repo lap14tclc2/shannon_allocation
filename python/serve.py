@@ -274,6 +274,38 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._send_json(500, {"error": f"Could not load symbols: {exc}"})
 
+    def _handle_combination_health(self, body: dict):
+        symbols = _normalise_symbols(body.get("symbols"))
+        if len(set(symbols)) != len(symbols):
+            return self._send_json(400, {"error": "Combination contains duplicate symbols."})
+        if not (MIN_FIXED_SYMBOLS <= len(symbols) <= MAX_FIXED_SYMBOLS):
+            return self._send_json(
+                400,
+                {"error": f"Select {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} symbols before analysis."},
+            )
+        try:
+            bt = _get_backtest()
+        except Exception as exc:
+            return self._send_json(500, {"error": f"Could not load market data: {exc}"})
+        unknown = [s for s in symbols if s not in set(bt["symbols"])]
+        if unknown:
+            return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
+        try:
+            from backtest.combination_health import analyze_combination_health
+
+            result = analyze_combination_health(
+                bt["prices"],
+                symbols,
+                params=bt["params"],
+                available_symbols=bt["symbols"],
+                holdout_days=252,
+                include_suggestions=bool(body.get("include_suggestions", True)),
+                suggestion_limit=min(10, max(0, int(body.get("suggestion_limit", 5)))),
+            )
+        except Exception as exc:
+            return self._send_json(500, {"error": f"Combination analysis failed: {exc}"})
+        return self._send_json(200, result)
+
     def _handle_runs(self, parts):
         if not parts:
             return self._send_json(200, {"runs": self._runs()})
@@ -489,6 +521,30 @@ class Handler(BaseHTTPRequestHandler):
         if unknown:
             return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
 
+        # Server-side safety gate: even if a stale/custom client bypasses the UI,
+        # an INVALID combination cannot start the expensive timing optimizer.
+        try:
+            from backtest.combination_health import analyze_combination_health
+
+            health = analyze_combination_health(
+                bt["prices"],
+                fixed_symbols,
+                params=bt["params"],
+                available_symbols=bt["symbols"],
+                holdout_days=252,
+                include_suggestions=False,
+            )
+        except Exception as exc:
+            return self._send_json(400, {"error": f"Combination health check failed: {exc}"})
+        if health.get("status") == "invalid":
+            return self._send_json(
+                400,
+                {
+                    "error": "Combination is INVALID and cannot be optimized.",
+                    "health": health,
+                },
+            )
+
         seed = int(body.get("seed", 42))
         population = max(10, int(body.get("population", 36)))
         generations = max(1, int(body.get("generations", 18)))
@@ -547,6 +603,8 @@ class Handler(BaseHTTPRequestHandler):
                 "risk_overlay": risk_overlay,
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
+                "combination_health_status": health.get("status"),
+                "combination_health_score": (health.get("score") or {}).get("overall"),
             }
 
         def work():
@@ -617,6 +675,8 @@ class Handler(BaseHTTPRequestHandler):
                 "portfolio_size": len(frozen_symbols),
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
+                "combination_health_status": health.get("status"),
+                "combination_health_score": (health.get("score") or {}).get("overall"),
             },
         )
 
@@ -718,6 +778,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw.decode("utf-8") or "{}")
         except Exception:
             body = {}
+        if path == "/api/combination/health":
+            return self._handle_combination_health(body)
         if path == "/api/optimizer/run":
             return self._handle_optimizer_run(body)
         return self._send_json(404, {"error": "Not found."})
