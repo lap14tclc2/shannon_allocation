@@ -1,6 +1,12 @@
 name: Risk-aware optimizer CI
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - 'frontend/**'
+      - '.github/workflows/risk-fast-ci.yml'
   pull_request:
     paths:
       - 'python/**'
