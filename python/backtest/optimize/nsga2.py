@@ -123,10 +123,15 @@ def nsga2(
     fixed_symbols: list[str] | None = None,
     portfolio_size: int | None = None,
     early_stop_generations: int | None = 15,
+    evaluate_many=None,
 ):
-    """Run NSGA-II; all objective values are maximised."""
+    """Run NSGA-II; all objective values are maximised.
+
+    ``evaluate_many`` may evaluate a generation concurrently. The algorithm,
+    RNG sequence, Pareto sorting and selection criteria are otherwise unchanged.
+    """
     pop = list(initial_population)
-    fitness = [evaluate(c) for c in pop]
+    fitness = evaluate_many(pop) if evaluate_many else [evaluate(c) for c in pop]
 
     front_sizes = []
     last_signature = None
@@ -167,7 +172,8 @@ def nsga2(
             offspring.append(pop[rng.randrange(len(pop))])
 
         combined = pop + offspring
-        combined_fit = fitness + [evaluate(c) for c in offspring]
+        offspring_fit = evaluate_many(offspring) if evaluate_many else [evaluate(c) for c in offspring]
+        combined_fit = fitness + offspring_fit
 
         fronts = fast_non_dominated_sort(combined_fit)
         selected: list[Candidate] = []
