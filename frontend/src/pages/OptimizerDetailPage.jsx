@@ -19,6 +19,85 @@ function MetricRow({ label, value, digits = 2, pct = false }) {
   );
 }
 
+function CapitalDeploymentPanel({ history, capitalConfig }) {
+  const contributions = history?.capital_events || [];
+  const deployments = history?.deployment_events || [];
+  const totalContributed = contributions.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const initial = Number(capitalConfig?.initial_balance || 0);
+  const annual = Number(capitalConfig?.annual_deposit || 0);
+
+  return (
+    <div className="sub-card" style={{ marginBottom: 16 }}>
+      <h4>Capital contributions & deployment</h4>
+      <p className="muted">
+        A contribution date means cash became available. A deployment date means an order actually executed and moved cash into or out of equities. They are intentionally tracked separately.
+      </p>
+      <div className="diag-grid" style={{ marginBottom: 14 }}>
+        <div><span>Initial capital</span><b>{formatMoney(initial)}</b></div>
+        <div><span>Annual contribution</span><b>{formatMoney(annual)}</b></div>
+        <div><span>Total contributed in history</span><b>{formatMoney(totalContributed)}</b></div>
+        <div><span>Final NAV</span><b>{formatMoney(history?.metrics?.final_nav || 0)}</b></div>
+      </div>
+
+      <h4>Money added</h4>
+      {contributions.length === 0 ? <div className="muted">No contribution events recorded.</div> : (
+        <table className="ranking" style={{ marginBottom: 16 }}>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Cash immediately after</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contributions.map((e, i) => (
+              <tr key={`${e.date}-${e.type}-${i}`}>
+                <td>{e.date}</td>
+                <td>{e.type === 'INITIAL_CAPITAL' ? 'Initial capital' : 'Annual contribution'}</td>
+                <td>{formatMoney(e.amount)}</td>
+                <td>{formatMoney(e.cash_after)}</td>
+                <td className="muted">{e.note || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <h4>Money actually deployed / released</h4>
+      {deployments.length === 0 ? <div className="muted">No executed deployment events recorded.</div> : (
+        <table className="ranking">
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Execution</th>
+              <th>Event</th>
+              <th>BUY cash deployed</th>
+              <th>SELL cash released</th>
+              <th>Net deployed</th>
+              <th>Cash after</th>
+            </tr>
+          </thead>
+          <tbody>
+            {deployments.map((e, i) => (
+              <tr key={`${e.execution_date}-${e.kind}-${i}`}>
+                <td>{e.signal_date}</td>
+                <td>{e.execution_date}</td>
+                <td>{e.kind}</td>
+                <td>{formatMoney(e.buy_cash_deployed)}</td>
+                <td>{formatMoney(e.sell_cash_released)}</td>
+                <td className={Number(e.net_cash_deployed) >= 0 ? 'pos' : 'neg'}>{formatMoney(e.net_cash_deployed)}</td>
+                <td>{formatMoney(e.cash_after)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function CandidatePanel({ item, title }) {
   const m = item.metrics || {};
   const r = item.robust || {};
@@ -60,11 +139,11 @@ function CandidatePanel({ item, title }) {
           <MetricRow label="Test median net TWR" value={test.median_net_twr} pct />
           <div className="diag-row">
             <span>Timing neighbourhood</span>
-            <b>{tr.mean != null ? `${tr.mean}%` : '-'} {tr.isolated_spike ? '(⚠ spike)' : ''}</b>
+            <b>{tr.mean != null ? `${tr.mean}%` : (tr.note || '-')} {tr.isolated_spike ? '(⚠ spike)' : ''}</b>
           </div>
           <div className="diag-row">
             <span>Symbol neighbourhood</span>
-            <b>{sr.mean != null ? `${sr.mean}%` : '-'}</b>
+            <b>{sr.mean != null ? `${sr.mean}%` : (sr.note || '-')}</b>
           </div>
           <div className="diag-row">
             <span>Concentration</span>
@@ -83,7 +162,10 @@ function CandidatePanel({ item, title }) {
         <div className="sub-card">
           <h4>Test windows (untouched OOS)</h4>
           <MetricRow label="Median net TWR" value={test.median_net_twr} pct />
-          <MetricRow label="Windows valid" value={test.valid ? `${test.n_test_windows}/${test.required_test_windows} PASS` : `${test.n_test_windows}/${test.required_test_windows} INVALID`} digits={0} />
+          <div className="diag-row">
+            <span>Windows valid</span>
+            <b>{test.valid ? `${test.n_test_windows}/${test.required_test_windows} PASS` : `${test.n_test_windows || 0}/${test.required_test_windows || 1} INVALID`}</b>
+          </div>
         </div>
       </div>
     </div>
@@ -107,7 +189,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((it, i) => {
+          {items.map((it) => {
             const key = `${it.symbols.join('|')}::${it.allocation_days.join(',')}`;
             const m = it.metrics || {};
             const r = it.robust || {};
@@ -171,7 +253,7 @@ export default function OptimizerDetailPage({ experiment }) {
   );
 
   const selectedItem = lookup[selected];
-
+  const capitalConfig = experiment.meta?.capital_config || {};
   const winners = experiment.winners || {};
   const winnerLabels = {
     best_return: 'Best Return',
@@ -218,10 +300,8 @@ export default function OptimizerDetailPage({ experiment }) {
         </h1>
         <p className="muted">
           seed {experiment.meta?.seed} · {experiment.meta?.universe?.length} symbols ·
-          {experiment.meta?.n_windows} windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'}
-          {experiment.meta?.mode === 'timing' && experiment.meta?.fixed_symbols ? ` · FIXED ${experiment.meta.fixed_symbols.join(' ')}` : ''} ·
-          max-day {experiment.meta?.max_allocation_day} · costs{' '}
-          {JSON.stringify(experiment.meta?.cost_config || {})}
+          {experiment.meta?.n_windows} windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'} ·
+          CPU workers {experiment.meta?.parallel_workers || 1} · initial {formatMoney(capitalConfig.initial_balance || 0)} · annual {formatMoney(capitalConfig.annual_deposit || 0)}
         </p>
         <div className="report-links">
           <a className="btn-export" href={optimizerDownloadAllUrl(experiment.experiment_id)}>
@@ -270,14 +350,14 @@ export default function OptimizerDetailPage({ experiment }) {
                 <MetricRow label="Robust return" value={br?.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={br?.robust?.median_net_twr} pct />
                 <MetricRow label="Test median TWR" value={br?.test?.median_net_twr} pct />
-                <MetricRow label="Test valid" value={br?.test?.valid ? 'PASS' : 'INVALID'} digits={0} />
+                <div className="diag-row"><span>Test valid</span><b>{br?.test?.valid ? 'PASS' : 'INVALID'}</b></div>
               </div>
               <div className="sub-card">
                 <h4>Baseline quarterly</h4>
                 <MetricRow label="Robust return" value={experiment.baseline.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={experiment.baseline.robust?.median_net_twr} pct />
                 <MetricRow label="Test median TWR" value={experiment.baseline.test?.median_net_twr} pct />
-                <MetricRow label="Test valid" value={experiment.baseline.test?.valid ? 'PASS' : 'INVALID'} digits={0} />
+                <div className="diag-row"><span>Test valid</span><b>{experiment.baseline.test?.valid ? 'PASS' : 'INVALID'}</b></div>
               </div>
             </div>
           </div>
@@ -286,13 +366,14 @@ export default function OptimizerDetailPage({ experiment }) {
 
       {selectedItem && (
         <div className="card">
-          <h3>Allocation history — {selectedItem.symbols.join(' ')}</h3>
+          <h3>Portfolio history — {selectedItem.symbols.join(' ')}</h3>
           {historyError ? (
             <div className="error">Failed to load history: {historyError}</div>
           ) : !history ? (
-            <div className="muted">Generating allocation history…</div>
+            <div className="muted">Generating portfolio history…</div>
           ) : (
             <>
+              <CapitalDeploymentPanel history={history} capitalConfig={history.capital_config || capitalConfig} />
               <div className="chart">
                 <EquityChart data={chartData} />
               </div>
