@@ -1,7 +1,7 @@
 """Configuration for the Shannon/ERC combination backtest.
 
 All quantitative parameters mirror the reference implementation
-(portfolio_allocation) unless explicitly marked as a risk overlay.  The risk
+(portfolio_allocation) unless explicitly marked as a risk overlay. The risk
 overlay is orthogonal to ERC: ERC determines relative weights; the overlay can
 scale total equity exposure and leave the remainder in cash.
 """
@@ -15,63 +15,60 @@ from dataclasses import dataclass, asdict
 class BacktestParams:
     # Data
     data_dir: str = "F:/data_finance/data"
-    # CSV price column values are thousands of VND (ACB 22.4 => 22,400 VND).
     price_scale: int = 1000
 
     # Money
-    initial_balance: float = 200_000_000      # 200M VND starting cash
-    annual_deposit: float = 20_000_000        # 20M VND deposited each calendar year
-    deposit_at_start_year: bool = True        # deposit on each Jan 1 boundary during the run
+    initial_balance: float = 200_000_000
+    annual_deposit: float = 20_000_000
+    deposit_at_start_year: bool = True
 
     # Combination generation
     num_combinations: int = 50
     min_symbols: int = 5
     max_symbols: int = 10
-    # When set, generation uses exactly this many symbols instead of min..max.
     portfolio_size: int | None = None
     seed: int = 42
-    symbols_file: str | None = None           # optional explicit ticker list (newline separated)
+    symbols_file: str | None = None
 
-    # ERC calibration (walk-forward, look-ahead free)
+    # ERC calibration
     annualization_factor: int = 252
     minimum_observations: int = 60
-    lookback_days: int = 252                  # trailing trading days used to estimate covariance
+    lookback_days: int = 252
 
     # Allocation schedule
-    #   "quarterly" -> first trading day of each quarter (Jan/Apr/Jul/Oct)
-    #   "annual"    -> first trading day of each calendar year
     allocation_frequency: str = "quarterly"
 
-    # Shannon drift bands (relative to each asset's current live target weight)
-    normal_band: float = 0.10                 # +/- 10%  -> NORMAL (no trade)
-    soft_band: float = 0.20                   # +/- 20%  -> SOFT / HARD outer envelope
+    # Shannon drift bands
+    normal_band: float = 0.10
+    soft_band: float = 0.20
 
-    # Absolute-risk overlay.  With risk_overlay_enabled=False the engine remains
-    # a 100%-equity ERC/Shannon portfolio (except residual execution cash).
+    # Absolute-risk overlay. ERC stays fixed until the next allocation event;
+    # exposure may be refreshed more often without re-solving ERC.
     risk_overlay_enabled: bool = False
-    target_volatility: float = 0.18           # annualized portfolio vol target (18%)
-    risk_fast_lookback: int = 63              # faster crisis-sensitive estimate
-    risk_slow_lookback: int = 252             # slow/stable estimate
-    min_equity_exposure: float = 0.25         # no leverage; lower bound while risk estimate exists
-    risk_missing_data_exposure: float = 0.0   # fail closed when risk cannot be estimated
-    max_position_weight: float | None = 0.30  # cap relative ERC weight before exposure scaling
+    target_volatility: float = 0.18
+    risk_fast_lookback: int = 63
+    risk_slow_lookback: int = 252
+    risk_refresh_days: int = 5               # weekly D1 exposure refresh; daily drift checks remain
+    min_equity_exposure: float = 0.25
+    risk_missing_data_exposure: float = 0.0
+    max_position_weight: float | None = 0.30
 
     # Execution
-    fractional_shares: bool = True            # False = whole shares (floor buys, floor sells)
-    rebalance_every_days: int = 1             # band check frequency (1 = daily)
-    execution_lag: int = 1                    # 0 = execute at signal close; 1 = execute at next close (no look-ahead)
+    fractional_shares: bool = True
+    rebalance_every_days: int = 1
+    execution_lag: int = 1
 
-    # Transaction costs (basis points of executed trade notional; 1 bps = 0.01%)
-    fee_buy_bps: float = 15.0                 # broker commission on buys
-    fee_sell_bps: float = 15.0                # broker commission on sells
-    tax_sell_bps: float = 10.0                # sell-side tax (e.g. Vietnamese 0.1%)
-    slippage_bps: float = 5.0                 # adverse execution slippage on both sides
+    # Transaction costs (basis points)
+    fee_buy_bps: float = 15.0
+    fee_sell_bps: float = 15.0
+    tax_sell_bps: float = 10.0
+    slippage_bps: float = 5.0
 
-    # Simulation window (optional overrides; default = full data range)
-    start_date: str | None = None             # YYYY-MM-DD
-    end_date: str | None = None               # YYYY-MM-DD
+    # Simulation window
+    start_date: str | None = None
+    end_date: str | None = None
 
-    # Universe filter: all | vn30 | vn50 | vn100 (vn100 == every symbol in data_dir)
+    # Universe
     universe: str = "all"
 
     # Output
