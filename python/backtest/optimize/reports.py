@@ -26,14 +26,7 @@ def pareto_frontier(items: list[dict]) -> list[dict]:
 
 
 def _pre_holdout_live_growth_score(item: dict) -> float:
-    """Growth-first live ranking using only information available pre-holdout.
-
-    All components are percentages on comparable scales. The rolling robust score
-    receives the largest weight, while P10 and recent performance prevent a high
-    median from hiding weak tails or a deteriorating latest regime. The final
-    holdout is deliberately absent: it may reject the frozen winner, never select
-    a different one.
-    """
+    """Growth-first live ranking using only information available pre-holdout."""
     m = item.get("metrics") or {}
     r = item.get("robust") or {}
     recent = item.get("recent_validation") or {}
@@ -48,10 +41,8 @@ def _pre_holdout_live_growth_score(item: dict) -> float:
 def leaderboards(results: list[dict]) -> dict:
     """Research leaderboards and a pre-holdout frozen live winner.
 
-    Final-holdout fields are never used for ranking. This is intentional: once
-    the holdout is inspected it is assessment evidence, not a candidate-selection
-    signal. A frozen winner may therefore fail the holdout without the system
-    silently switching to a different candidate that happened to perform better.
+    Final-holdout fields are never used for ranking. A frozen winner may fail the
+    holdout without the system silently switching to a different candidate.
     """
     valid = [r for r in results if r.get("metrics") and not r["metrics"].get("error")]
     if not valid:
@@ -93,10 +84,7 @@ def leaderboards(results: list[dict]) -> dict:
 
     live = [r for r in valid if r.get("live_eligible") and r.get("robust")]
     if live:
-        winners["best_live_eligible"] = max(
-            live,
-            key=_pre_holdout_live_growth_score,
-        )
+        winners["best_live_eligible"] = max(live, key=_pre_holdout_live_growth_score)
     return winners
 
 
@@ -110,6 +98,7 @@ def _row(item: dict) -> dict:
     row = {
         "symbols": " ".join(c.symbols),
         "n_symbols": len(c.symbols),
+        "allocation_count_per_year": len(c.allocation_days),
         "allocation_days": "[" + ",".join(str(d) for d in c.allocation_days) + "]",
         "live_eligible": item.get("live_eligible"),
         "eligibility_reasons": ";".join(item.get("eligibility_reasons") or []),
@@ -122,6 +111,8 @@ def _row(item: dict) -> dict:
         "worst_year", "positive_year_ratio", "score", "final_nav", "first_allocation_date",
         "measurement_start_date", "measurement_start_nav",
         "measurement_external_contributions", "measurement_profit",
+        "initial_deployment_date", "initial_deployment_before_measurement",
+        "n_clamped_allocations", "n_skipped_allocations",
     ]:
         row[f"train_{k}"] = m.get(k)
     for k in [
@@ -133,7 +124,8 @@ def _row(item: dict) -> dict:
     for k in [
         "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "max_drawdown_pct",
         "cdar95_pct", "measurement_start_nav", "measurement_external_contributions",
-        "measurement_profit", "final_nav",
+        "measurement_profit", "final_nav", "initial_deployment_date",
+        "initial_deployment_before_measurement",
     ]:
         row[f"recent_{k}"] = recent.get(k)
     for k in [
@@ -145,6 +137,7 @@ def _row(item: dict) -> dict:
         "net_twr_annualized_pct", "net_xirr_pct", "measurement_start_date",
         "measurement_start_nav", "measurement_external_contributions",
         "measurement_profit", "final_nav", "avg_equity_exposure",
+        "initial_deployment_date", "initial_deployment_before_measurement",
     ]:
         row[f"test_period_{k}"] = test_period.get(k)
     row["timing_spike"] = item.get("timing_robust", {}).get("isolated_spike")
@@ -209,6 +202,8 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
             "base_test_valid": bt.get("valid"),
             "opt_train_net_twr_ann": m.get("net_twr_annualized_pct"),
             "base_train_net_twr_ann": bm.get("net_twr_annualized_pct"),
+            "opt_initial_deployment_date": m.get("initial_deployment_date"),
+            "base_initial_deployment_date": bm.get("initial_deployment_date"),
         })
     if winners:
         for name, item in winners.items():
@@ -258,6 +253,7 @@ def item_to_json(item: dict) -> dict:
     return {
         "symbols": list(c.symbols),
         "n_symbols": len(c.symbols),
+        "allocation_count_per_year": len(c.allocation_days),
         "allocation_days": list(c.allocation_days),
         "metrics": item.get("metrics"),
         "train_metrics": item.get("train_metrics") or item.get("metrics"),
@@ -326,8 +322,14 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Live eligibility: {'PASS' if item.get('live_eligible') else 'FAIL'}",
         f"- Eligibility reasons: {item.get('eligibility_reasons') or []}",
         "",
-        "## Allocation times",
+        "## Initial deployment",
+        f"- Initial deployment date: {m.get('initial_deployment_date', '-')}",
+        f"- Before TRAIN measurement boundary: {m.get('initial_deployment_before_measurement', '-')}",
+        "",
+        "## Annual recalibration times",
+        f"- Events/year: {len(c.allocation_days)}",
         *[f"- T{i+1}: {d}" for i, d in enumerate(c.allocation_days)],
+        f"- Partial-year scheduled events skipped: {m.get('n_skipped_allocations', 0)}",
         "",
         "## TRAIN",
         f"- Net TWR annualized: {m.get('net_twr_annualized_pct', '-')}%",
@@ -352,6 +354,7 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Net TWR annualized: {recent.get('net_twr_annualized_pct', '-')}%",
         f"- Net XIRR: {recent.get('net_xirr_pct', '-')}%",
         f"- MDD: {recent.get('max_drawdown_pct', '-')}%",
+        f"- Initial deployment date: {recent.get('initial_deployment_date', '-')}",
         "",
         "## FINAL HOLDOUT",
         f"- Windows: {t.get('n_test_windows', '-')} / {t.get('required_test_windows', '-')} ({'PASS' if t.get('valid') else 'INVALID'})",
@@ -363,6 +366,7 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Final NAV: {tp.get('final_nav', '-')}",
         f"- Worst MDD: {t.get('worst_mdd', '-')}%",
         f"- Worst CDaR95: {t.get('worst_cdar95', '-')}%",
+        f"- Initial deployment date: {tp.get('initial_deployment_date', '-')}",
         "",
         "## Robustness",
         f"- Timing mean / median / std: {tr.get('mean', '-')} / {tr.get('median', '-')} / {tr.get('std', '-')}",

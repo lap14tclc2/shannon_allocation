@@ -181,7 +181,7 @@ export default function OptimizerListPage({ experiments }) {
   const [targetVolPct, setTargetVolPct] = useState(18);
   const [maxOosDrawdownPct, setMaxOosDrawdownPct] = useState(35);
   const [maxPositionPct, setMaxPositionPct] = useState(30);
-  const [minEquityPct, setMinEquityPct] = useState(25);
+  const [minEquityPct, setMinEquityPct] = useState(0);
 
   const [preset, setPreset] = useState('balanced');
   const [seed, setSeed] = useState(42);
@@ -349,6 +349,7 @@ export default function OptimizerListPage({ experiments }) {
     if (!Number.isFinite(Number(annualDeposit)) || Number(annualDeposit) < 0) return 'Annual contribution cannot be negative.';
     if (riskOverlay && Number(maxPositionPct) + 1e-9 < minFeasiblePositionPct) return `With ${effectiveN} symbols, max stock weight cannot be below ${minFeasiblePositionPct.toFixed(1)}%.`;
     if (Number(maxOosDrawdownPct) <= 0 || Number(maxOosDrawdownPct) > 100) return 'Max OOS drawdown must be 0–100%.';
+    if (Number(minEquityPct) < 0 || Number(minEquityPct) > 100) return 'Strategic minimum market exposure must be 0–100%.';
     return '';
   }
 
@@ -545,7 +546,9 @@ export default function OptimizerListPage({ experiments }) {
           <NumberField label="Target volatility %" min={5} max={50} value={targetVolPct} onChange={setTargetVolPct} disabled={!riskOverlay || running} />
           <NumberField label="Max OOS drawdown %" min={10} max={80} value={maxOosDrawdownPct} onChange={setMaxOosDrawdownPct} disabled={running} />
           <NumberField label="Max stock weight %" min={Math.ceil(minFeasiblePositionPct)} max={100} value={maxPositionPct} onChange={setMaxPositionPct} disabled={!riskOverlay || running} />
-          <NumberField label="Min equity exposure %" min={0} max={100} step={5} value={minEquityPct} onChange={setMinEquityPct} disabled={!riskOverlay || running} />
+        </div>
+        <div className="muted" style={{ marginTop: 8 }}>
+          Default risk policy has no forced equity floor: valid volatility targeting may de-risk all the way to cash. If risk data is unavailable, the system separately fails closed to 0% equity.
         </div>
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
@@ -566,6 +569,24 @@ export default function OptimizerListPage({ experiments }) {
 
         {showAdvanced && (
           <div className="sub-card" style={{ marginBottom: 14 }}>
+            <h4 style={{ marginTop: 0 }}>Advanced risk</h4>
+            <div className="run-form" style={{ marginBottom: 12 }}>
+              <NumberField
+                label="Strategic minimum market exposure %"
+                min={0}
+                max={100}
+                step={5}
+                value={minEquityPct}
+                onChange={setMinEquityPct}
+                disabled={!riskOverlay || running}
+                hint="0% recommended; this floor applies only when risk is valid"
+              />
+            </div>
+            <div className="muted" style={{ marginBottom: 14 }}>
+              Missing/invalid risk data is not overridden by this floor: the fail-closed exposure remains 0%.
+            </div>
+
+            <h4>Advanced search</h4>
             <div className="run-form">
               <NumberField label="Seed" min={0} value={seed} onChange={setSeed} disabled={running} />
               <NumberField label="Population" min={10} value={population} onChange={setCustom(setPopulation)} disabled={running} />
@@ -587,7 +608,7 @@ export default function OptimizerListPage({ experiments }) {
             <div><span>Allocation search</span><b>1–6 events/year + timing</b></div>
             <div><span>Initial balance</span><b>{moneyShort(initialBalance)}</b></div>
             <div><span>Annual money</span><b>{moneyShort(annualDeposit)}</b></div>
-            <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD` : '100% equity'}</b></div>
+            <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD${Number(minEquityPct) > 0 ? ` / ${minEquityPct}% floor` : ''}` : '100% equity'}</b></div>
           </div>
         </div>
 

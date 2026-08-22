@@ -3,6 +3,13 @@
 The optimizer is growth-first: TRAIN search rewards return and risk-adjusted
 growth, while drawdown/CDaR are enforced later as rolling OOS/final risk gates.
 ERC, Shannon, transaction costs and risk-overlay mechanics are unchanged.
+
+A candidate's 1–6 annual allocation events are recalibration events, not a reason
+to keep a new portfolio in cash until the first scheduled date. Every evaluation
+therefore adds one INITIAL DEPLOYMENT event at the earliest date where strictly-
+past data can actually solve ERC and, when the risk overlay is enabled, produce a
+non-zero deployable risk target. If warm-up history exists, this deployment can
+occur before the measurement boundary.
 """
 
 from __future__ import annotations
@@ -15,10 +22,12 @@ import os
 import pandas as pd
 
 from ..config import BacktestParams
+from ..erc import ERCError, log_returns_from_window, solve_erc
+from ..risk import risk_adjusted_targets
 from ..simulation import simulate_combination
 from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
-OPTIMIZER_METRIC_SCHEMA = "growth-v7-skip-partial-year"
+OPTIMIZER_METRIC_SCHEMA = "growth-v9-deployable-initialization-risk-state"
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -109,6 +118,108 @@ def result_metrics(result) -> dict:
     }
 
 
+def _simulation_bounds(prices: pd.DataFrame, start, end, warmup_days: int) -> tuple[int, int]:
+    """Return inclusive raw-price bounds matching simulate_combination warm-up semantics."""
+    if prices.empty:
+        return 0, -1
+    if start:
+        start_idx = int(prices.index.searchsorted(pd.Timestamp(start)))
+        lo = max(0, start_idx - max(0, int(warmup_days)))
+    else:
+        lo = 0
+    if end:
+        hi = int(prices.index.searchsorted(pd.Timestamp(end), side="right")) - 1
+    else:
+        hi = len(prices) - 1
+    return lo, min(hi, len(prices) - 1)
+
+
+def initial_deployment_date(
+    candidate: Candidate,
+    prices: pd.DataFrame,
+    params: BacktestParams,
+    window: tuple[str | None, str | None] = (None, None),
+    warmup_days: int | None = None,
+):
+    """Earliest look-ahead-free date at which the portfolio can truly deploy.
+
+    A date is accepted only when strictly-past aligned closes satisfy ERC's
+    observation requirement, the ERC solver succeeds, and the risk overlay (when
+    enabled) yields positive target equity exposure. This prevents an artificial
+    INITIAL DEPLOYMENT marker on a day that would still fail closed to 100% cash.
+    """
+    if prices.empty:
+        return None
+    symbols = list(candidate.symbols)
+    if any(s not in prices.columns for s in symbols):
+        return None
+
+    # Match simulate_combination's candidate-specific raw calendar. Positions used
+    # below must therefore be positions in this frame, not in the wider panel.
+    raw = prices[symbols].dropna(how="all")
+    if raw.empty:
+        return None
+
+    warmup = params.lookback_days if warmup_days is None else max(0, int(warmup_days))
+    start, end = window
+    lo, hi = _simulation_bounds(raw, start, end, warmup)
+    if hi <= lo:
+        return None
+
+    aligned = raw[symbols].notna().all(axis=1).astype(int)
+    past_counts = (
+        aligned.shift(1, fill_value=0)
+        .rolling(window=max(1, int(params.lookback_days)), min_periods=1)
+        .sum()
+    )
+    required = max(2, int(params.minimum_observations))
+    eligible_positions = [
+        pos
+        for pos in range(lo, hi + 1)
+        if float(past_counts.iloc[pos]) >= required
+    ]
+
+    for pos in eligible_positions:
+        hist_start = max(0, pos - int(params.lookback_days))
+        hist = raw.iloc[hist_start:pos][symbols].dropna()
+        if len(hist) < required:
+            continue
+        try:
+            returns = log_returns_from_window(hist.to_numpy(dtype=float))
+            erc = solve_erc(returns, params)
+        except ERCError:
+            continue
+
+        relative = dict(zip(symbols, erc.weights.tolist()))
+        if not params.risk_overlay_enabled:
+            return raw.index[pos]
+
+        live_targets, _risk_info = risk_adjusted_targets(
+            raw, symbols, pos, relative, params
+        )
+        if sum(float(v) for v in live_targets.values()) > 1e-12:
+            return raw.index[pos]
+
+    return None
+
+
+def allocation_dates_with_initialization(
+    candidate: Candidate,
+    prices: pd.DataFrame,
+    params: BacktestParams,
+    all_dates,
+    window: tuple[str | None, str | None] = (None, None),
+    warmup_days: int | None = None,
+):
+    """Candidate recalibration dates plus one independent initial-deployment date."""
+    scheduled = schedule_for_window(candidate, all_dates)
+    init = initial_deployment_date(candidate, prices, params, window, warmup_days)
+    if init is None:
+        return scheduled, None
+    merged = sorted({pd.Timestamp(d).normalize() for d in scheduled} | {pd.Timestamp(init).normalize()})
+    return merged, pd.Timestamp(init).normalize()
+
+
 class EvaluationCache:
     """In-memory + JSON-file cache keyed by candidate, window and config fingerprint."""
 
@@ -157,17 +268,39 @@ def evaluate_candidate(
         if hit is not None:
             return hit
 
-    alloc_dates = schedule_for_window(candidate, all_dates)
+    effective_warmup = params.lookback_days if warmup_days is None else warmup_days
+    alloc_dates, init_date = allocation_dates_with_initialization(
+        candidate,
+        prices,
+        params,
+        all_dates,
+        window,
+        effective_warmup,
+    )
     run_params = dataclasses.replace(params, start_date=start, end_date=end)
     result = simulate_combination(
         list(candidate.symbols),
         prices,
         run_params,
         allocation_dates=alloc_dates,
-        warmup_days=params.lookback_days if warmup_days is None else warmup_days,
+        warmup_days=effective_warmup,
         metrics_from="window_start",
     )
+
+    init_text = str(init_date.date()) if init_date is not None else None
+    if init_text:
+        for record in result.allocations:
+            if record.get("allocation_date") == init_text:
+                record["allocation_role"] = "INITIAL_DEPLOYMENT"
+            else:
+                record.setdefault("allocation_role", "SCHEDULED_RECALIBRATION")
+
     metrics = result_metrics(result)
+    metrics["initial_deployment_date"] = init_text
+    if init_date is not None and start:
+        metrics["initial_deployment_before_measurement"] = bool(init_date < pd.Timestamp(start))
+    else:
+        metrics["initial_deployment_before_measurement"] = False
 
     try:
         _, mapping = resolve_allocation_dates(candidate, all_dates, max_allocation_day)

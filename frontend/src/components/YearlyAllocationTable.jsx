@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { formatMoney } from '../lib/format.js';
 
-// Per-year money allocation rollup computed from the quarterly allocation records:
-// deposits added, NAV start/end, buy/sell notional at allocation events, cash after.
+// Per-year money-allocation rollup computed from initial deployment + scheduled
+// ERC/risk recalibration records: deposits added, NAV start/end, buy/sell notional,
+// and cash after each event.
 export default function YearlyAllocationTable({ allocations }) {
   const rows = useMemo(() => {
     const byYear = {};
@@ -37,10 +38,10 @@ export default function YearlyAllocationTable({ allocations }) {
             <th>Deposits</th>
             <th>NAV start</th>
             <th>NAV end</th>
-            <th>Buys (alloc)</th>
-            <th>Sells (alloc)</th>
+            <th>Buys (events)</th>
+            <th>Sells (events)</th>
             <th>Cash after</th>
-            <th>Allocations</th>
+            <th>Events</th>
           </tr>
         </thead>
         <tbody>
@@ -58,7 +59,7 @@ export default function YearlyAllocationTable({ allocations }) {
           ))}
         </tbody>
       </table>
-      <div className="muted">Buys/Sells = allocation-event notional only (intra-period band rebalances not included).</div>
+      <div className="muted">Buys/Sells = initial-deployment/recalibration notional only; intra-period Shannon band rebalances are not included.</div>
     </div>
   );
 }

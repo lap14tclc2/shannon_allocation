@@ -49,8 +49,10 @@ class BacktestParams:
     risk_fast_lookback: int = 63
     risk_slow_lookback: int = 252
     risk_refresh_days: int = 5               # weekly D1 exposure refresh; daily drift checks remain
-    min_equity_exposure: float = 0.25
-    risk_missing_data_exposure: float = 0.0
+    # Strategic floor only. 0.0 means volatility targeting may fully de-risk.
+    # Missing/invalid risk data is controlled separately by risk_missing_data_exposure.
+    min_equity_exposure: float = 0.0
+    risk_missing_data_exposure: float = 0.0  # fail closed when no valid risk estimate exists
     max_position_weight: float | None = 0.30
 
     # Execution
