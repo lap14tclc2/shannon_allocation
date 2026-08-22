@@ -1,25 +1,29 @@
-"""Live-deployment eligibility gates for optimizer candidates.
+"""Live-deployment eligibility and soft risk/reward quality for optimizer candidates.
 
-These gates are intentionally OUTSIDE ERC, Shannon, risk targeting and NSGA-II.
-They do not change how a candidate is generated or scored during research. They
-only answer a later question: is this research candidate stable enough to be
-considered for live deployment?
+Hard gates are reserved for genuinely dangerous evidence: missing validation,
+negative OOS tail performance, or a materially negative recent pre-holdout
+regime.  TRAIN/Recent Calmar and validation return-to-drawdown are deliberately
+SOFT quality inputs rather than cliffs.  A candidate with Calmar 0.34 should not
+be treated as categorically different from one at 0.36.
 
-The policy deliberately avoids a hard required CAGR. A hard historical return
-target encourages the search to fit noise. Instead, live promotion requires
-positive pre-holdout growth plus a minimum return-to-drawdown quality across
-TRAIN, rolling OOS validation and the recent pre-holdout regime.
+These rules remain outside ERC, Shannon, volatility targeting and the final
+holdout.  The final holdout may reject a frozen winner; it never selects one.
 """
 
 from __future__ import annotations
 
+import math
 
-# Production defaults. These are intentionally modest: they reject combinations
-# that accept large drawdowns for tiny returns without forcing the optimizer to
-# manufacture a 20%+ historical CAGR.
-DEFAULT_MIN_TRAIN_CALMAR = 0.35
-DEFAULT_MIN_VALIDATION_RETURN_TO_DRAWDOWN = 0.50
-DEFAULT_MIN_RECENT_CALMAR = 0.35
+
+# Reference levels for the soft quality score.  They are NOT deployment gates.
+DEFAULT_REFERENCE_TRAIN_CALMAR = 0.35
+DEFAULT_REFERENCE_VALIDATION_RETURN_TO_DRAWDOWN = 0.50
+DEFAULT_REFERENCE_RECENT_CALMAR = 0.35
+
+# A small recent loss is allowed so the system does not turn a noisy threshold
+# around zero into a binary cliff.  Larger recent deterioration remains a hard
+# pre-holdout warning.  Users can override this through OptimizerConfig.
+DEFAULT_MIN_RECENT_TWR_PCT = -5.0
 
 
 def _return_to_drawdown(
@@ -27,15 +31,11 @@ def _return_to_drawdown(
     drawdown_pct: float | None,
     calmar: float | None = None,
 ) -> float | None:
-    """Return a positive return/drawdown ratio when enough data exists.
-
-    Prefer the simulator's Calmar value when available. For aggregate validation
-    windows there is no single Calmar metric, so median OOS return divided by the
-    absolute worst OOS drawdown is used as a deliberately conservative proxy.
-    """
+    """Return return/drawdown quality when enough data exists."""
     if calmar is not None:
         try:
-            return float(calmar)
+            value = float(calmar)
+            return value if math.isfinite(value) else None
         except (TypeError, ValueError):
             pass
     if return_pct is None or drawdown_pct is None:
@@ -44,9 +44,78 @@ def _return_to_drawdown(
         dd = abs(float(drawdown_pct))
         if dd <= 1e-12:
             return None
-        return float(return_pct) / dd
+        value = float(return_pct) / dd
+        return value if math.isfinite(value) else None
     except (TypeError, ValueError):
         return None
+
+
+def _soft_component(value: float | None, reference: float) -> float:
+    """Map a risk/reward ratio to a bounded 0..1 quality component.
+
+    The reference level maps to 0.5.  Values improve smoothly above it and fade
+    smoothly below it; there is intentionally no discontinuity.
+    """
+    if value is None or not math.isfinite(float(value)):
+        return 0.0
+    ref = max(1e-9, float(reference))
+    x = max(0.0, float(value)) / ref
+    return x / (1.0 + x)
+
+
+def live_risk_reward_score(
+    train_metrics: dict | None,
+    validation_metrics: dict | None,
+    recent_metrics: dict | None,
+    *,
+    reference_train_calmar: float = DEFAULT_REFERENCE_TRAIN_CALMAR,
+    reference_validation_return_to_drawdown: float = DEFAULT_REFERENCE_VALIDATION_RETURN_TO_DRAWDOWN,
+    reference_recent_calmar: float = DEFAULT_REFERENCE_RECENT_CALMAR,
+) -> dict:
+    """Return explainable soft quality diagnostics on a 0..100 scale."""
+    train = train_metrics or {}
+    validation = validation_metrics or {}
+    recent = recent_metrics or {}
+
+    train_ratio = _return_to_drawdown(
+        train.get("net_twr_annualized_pct"),
+        train.get("max_drawdown_pct"),
+        train.get("calmar"),
+    )
+    validation_ratio = _return_to_drawdown(
+        validation.get("median_net_twr"),
+        validation.get("worst_mdd"),
+    )
+    recent_ratio = _return_to_drawdown(
+        recent.get("net_twr_annualized_pct"),
+        recent.get("max_drawdown_pct"),
+        recent.get("calmar"),
+    )
+
+    train_q = _soft_component(train_ratio, reference_train_calmar)
+    validation_q = _soft_component(
+        validation_ratio, reference_validation_return_to_drawdown
+    )
+    recent_q = _soft_component(recent_ratio, reference_recent_calmar)
+
+    # OOS and recent evidence matter more than TRAIN fit.
+    overall = 100.0 * (0.20 * train_q + 0.45 * validation_q + 0.35 * recent_q)
+    return {
+        "overall": round(overall, 4),
+        "train_calmar": train_ratio,
+        "validation_return_to_drawdown": validation_ratio,
+        "recent_calmar": recent_ratio,
+        "components": {
+            "train": round(train_q * 100.0, 4),
+            "validation": round(validation_q * 100.0, 4),
+            "recent": round(recent_q * 100.0, 4),
+        },
+        "references": {
+            "train_calmar": reference_train_calmar,
+            "validation_return_to_drawdown": reference_validation_return_to_drawdown,
+            "recent_calmar": reference_recent_calmar,
+        },
+    }
 
 
 def assess_live_eligibility(
@@ -54,13 +123,18 @@ def assess_live_eligibility(
     validation_metrics: dict | None,
     recent_metrics: dict | None,
     *,
-    min_train_twr_pct: float = 0.0,
+    min_train_twr_pct: float | None = None,
     min_validation_p10_twr_pct: float = 0.0,
-    min_recent_twr_pct: float = 0.0,
-    min_train_calmar: float = DEFAULT_MIN_TRAIN_CALMAR,
-    min_validation_return_to_drawdown: float = DEFAULT_MIN_VALIDATION_RETURN_TO_DRAWDOWN,
-    min_recent_calmar: float = DEFAULT_MIN_RECENT_CALMAR,
+    min_recent_twr_pct: float = DEFAULT_MIN_RECENT_TWR_PCT,
+    **_legacy_soft_thresholds,
 ) -> tuple[bool, list[str]]:
+    """Apply only hard pre-holdout deployment gates.
+
+    ``min_train_twr_pct`` is retained for API compatibility but defaults to None,
+    meaning TRAIN return is a ranking input rather than a live cliff.  Legacy
+    Calmar keyword arguments are accepted and ignored so older callers/tests do
+    not break while the policy migrates to soft scoring.
+    """
     reasons: list[str] = []
     train = train_metrics or {}
     validation = validation_metrics or {}
@@ -69,9 +143,10 @@ def assess_live_eligibility(
     if not validation:
         reasons.append("validation_failed")
 
-    train_twr = train.get("net_twr_annualized_pct")
-    if train_twr is None or train_twr < min_train_twr_pct:
-        reasons.append(f"train_twr_below_{min_train_twr_pct:g}%")
+    if min_train_twr_pct is not None:
+        train_twr = train.get("net_twr_annualized_pct")
+        if train_twr is None or train_twr < min_train_twr_pct:
+            reasons.append(f"train_twr_below_{min_train_twr_pct:g}%")
 
     p10 = validation.get("p10_net_twr")
     if p10 is None or p10 < min_validation_p10_twr_pct:
@@ -84,37 +159,5 @@ def assess_live_eligibility(
         reasons.append(
             f"recent_validation_twr_below_{min_recent_twr_pct:g}%"
         )
-
-    # Risk/reward gates. Missing ratio data is not treated as an automatic failure
-    # so older experiment fixtures remain readable; real simulator metrics always
-    # provide the required MDD/Calmar fields.
-    train_ratio = _return_to_drawdown(
-        train_twr,
-        train.get("max_drawdown_pct"),
-        train.get("calmar"),
-    )
-    if train_ratio is not None and train_ratio < min_train_calmar:
-        reasons.append(f"train_calmar_below_{min_train_calmar:g}")
-
-    validation_ratio = _return_to_drawdown(
-        validation.get("median_net_twr"),
-        validation.get("worst_mdd"),
-    )
-    if (
-        validation_ratio is not None
-        and validation_ratio < min_validation_return_to_drawdown
-    ):
-        reasons.append(
-            "validation_return_to_drawdown_below_"
-            f"{min_validation_return_to_drawdown:g}"
-        )
-
-    recent_ratio = _return_to_drawdown(
-        recent_twr,
-        recent.get("max_drawdown_pct"),
-        recent.get("calmar"),
-    )
-    if recent_ratio is not None and recent_ratio < min_recent_calmar:
-        reasons.append(f"recent_calmar_below_{min_recent_calmar:g}")
 
     return not reasons, reasons
