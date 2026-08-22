@@ -112,15 +112,10 @@ class TestDynamicAlpha(unittest.TestCase):
 
         self.assertIsNone(result.error)
         self.assertGreater(result.final_nav, 0)
-        self.assertGreater(result.trade_count, 0)
+        self.assertGreaterEqual(len(result.deployment_events), 1)
         self.assertGreaterEqual(len(result.alpha_selection_history), 2)
-        self.assertEqual(
-            result.alpha_selection_history[0]["role"],
-            "INITIAL_DEPLOYMENT",
-        )
-        self.assertTrue(
-            all(len(x["selected_symbols"]) == 5 for x in result.alpha_selection_history)
-        )
+        self.assertEqual(result.alpha_selection_history[0]["role"], "INITIAL_DEPLOYMENT")
+        self.assertTrue(all(len(x["selected_symbols"]) == 5 for x in result.alpha_selection_history))
         self.assertGreaterEqual(len(result.alpha_unique_symbols), 5)
 
 
