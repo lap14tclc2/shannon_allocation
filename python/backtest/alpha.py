@@ -5,7 +5,7 @@ weights; ERC remains responsible for relative risk weights after selection.
 
 The methodology is deliberately transparent and fixed (not optimizer genes):
 - 3M / 6M / 12M momentum when enough history exists
-- trend versus a long moving average (or 3M fallback early in history)
+- trend versus a long moving average (or available-history fallback early on)
 - downside-aware drawdown quality
 - volatility penalty
 - cross-sectional z-score normalization
@@ -54,9 +54,9 @@ def _zscore(series: pd.Series) -> pd.Series:
     clean = pd.to_numeric(series, errors="coerce")
     mean = clean.mean(skipna=True)
     std = clean.std(skipna=True, ddof=0)
-    if not math.isfinite(float(mean)) if pd.notna(mean) else True:
+    if pd.isna(mean) or not math.isfinite(float(mean)):
         return pd.Series(0.0, index=series.index)
-    if pd.isna(std) or float(std) <= 1e-12:
+    if pd.isna(std) or not math.isfinite(float(std)) or float(std) <= 1e-12:
         return pd.Series(0.0, index=series.index)
     return ((clean - float(mean)) / float(std)).fillna(0.0)
 
