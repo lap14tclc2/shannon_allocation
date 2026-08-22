@@ -51,8 +51,9 @@ def test_vol_target_reduces_exposure_when_risk_is_high():
     )
     targets, info = risk_adjusted_targets(prices, symbols, 400, relative, params)
     assert 0.0 < info["equity_exposure"] < 1.0
-    assert abs(sum(targets.values()) - info["equity_exposure"]) < 1e-9
-    assert abs(info["cash_target"] - (1.0 - info["equity_exposure"])) < 1e-9
+    # Diagnostic exposure is serialized to 6 decimals.
+    assert abs(sum(targets.values()) - info["equity_exposure"]) < 1e-6
+    assert abs(info["cash_target"] - (1.0 - info["equity_exposure"])) < 1e-6
 
 
 def test_risk_overlay_disabled_preserves_full_equity():
