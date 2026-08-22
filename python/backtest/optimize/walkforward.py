@@ -1,9 +1,9 @@
 """Walk-forward validation, robust fitness, and successive halving / racing.
 
-WINDOW discipline: optimization uses TRAIN windows, ranking uses VALIDATION
-windows, and the untouched TEST windows are reserved for final evaluation.
-A candidate's robustness is measured across K validation windows (median, lower
-tail, dispersion), not a single backtest.
+Optimization uses TRAIN windows, ranking uses VALIDATION windows, and TEST is
+reserved for final evaluation.  Robust fitness can enforce a hard OOS maximum-
+drawdown ceiling so a high-return candidate cannot win while violating the
+portfolio's risk budget.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from statistics import median
 
 
 def make_windows(dates, train_days=504, val_days=252, test_days=252, step=252) -> list[dict]:
-    """Rolling train/val/test windows over the date list."""
     windows = []
     i = 0
     n = len(dates)
@@ -37,13 +36,18 @@ def _p(vals, p):
     return vals[lo] + (k - lo) * (vals[hi] - vals[lo])
 
 
-def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5, min_windows: int | None = None) -> dict | None:
-    """Evaluate `candidate` on every window and aggregate into robust metrics.
+def evaluate_robust(
+    candidate,
+    eval_fn,
+    windows: list[dict],
+    lamb: float = 0.5,
+    min_windows: int | None = None,
+    max_drawdown_abs_pct: float | None = None,
+) -> dict | None:
+    """Evaluate a candidate on every window and aggregate robust metrics.
 
-    eval_fn(candidate, window) -> metrics dict (or None on failure).
-    Returns None if no window succeeded, or if `min_windows` is set and fewer
-    than that many windows succeeded (100% coverage policy: a candidate that
-    fails ANY validation window is INVALID, not partially robust).
+    ``max_drawdown_abs_pct`` is a positive number, e.g. 35 means every validation
+    window must have MDD >= -35%.  A violation makes the candidate ineligible.
     """
     per = []
     for w in windows:
@@ -59,6 +63,10 @@ def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5, 
     twrs = [m["net_twr_annualized_pct"] for m in per]
     sharpes = [m["sharpe"] for m in per]
     mdds = [m["max_drawdown_pct"] for m in per]
+    cdars = [m.get("cdar95_pct", 0.0) for m in per]
+    if max_drawdown_abs_pct is not None and any(mdd < -abs(max_drawdown_abs_pct) for mdd in mdds):
+        return None
+
     mean = sum(twrs) / len(twrs)
     var = sum((t - mean) ** 2 for t in twrs) / (len(twrs) - 1) if len(twrs) > 1 else 0.0
     robust = {
@@ -69,9 +77,12 @@ def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5, 
         "return_std": var ** 0.5,
         "median_sharpe": median(sharpes),
         "worst_mdd": min(mdds),
+        "median_cdar95": median(cdars),
+        "worst_cdar95": min(cdars),
         "positive_window_ratio": sum(1 for t in twrs if t > 0) / len(twrs),
         "n_windows": len(twrs),
         "robust_return": median(twrs) - lamb * (var ** 0.5),
+        "drawdown_gate_pct": max_drawdown_abs_pct,
     }
     return robust
 
@@ -84,11 +95,6 @@ def halving(
     lamb: float = 0.5,
     progress: bool = True,
 ):
-    """Successive halving: cheap eval -> retain best -> expensive eval -> ...
-
-    `eval_fn(candidate, level_index) -> metrics or None`. Candidates are ranked
-    by robust_return at each level. Returns list of (candidate, metrics, reason).
-    """
     population = list(candidates)
     eliminated = []
     for level, cutoff in enumerate(cutoffs):
