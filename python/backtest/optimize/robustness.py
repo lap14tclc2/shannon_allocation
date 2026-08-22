@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from statistics import median
 
-from ..candidate import Candidate, MAX_SYMBOLS, MIN_SYMBOLS, random_candidate, repair_allocation_days
+from ..candidate import Candidate, repair_allocation_days
 
 
 def timing_neighbourhood(
@@ -21,24 +21,7 @@ def timing_neighbourhood(
     max_day: int = 252,
     value_key: str = "net_twr_annualized_pct",
 ):
-    """Stress each allocation time with representative local/boundary shocks.
-
-    The old implementation evaluated every integer perturbation from ``-radius``
-    through ``+radius`` for every Ti. That was expensive because each neighbour is
-    itself a full walk-forward robustness evaluation, while intermediate shifts
-    such as +/-2, +/-3 and +/-4 add little information once local (+/-1) and outer
-    (+/-5) behaviour is known.
-
-    We therefore evaluate deterministic magnitudes ``1``, ``5`` (when available),
-    and ``radius``. For radius=5 this is exactly +/-1 and +/-5 for each Ti; for a
-    future radius=10 it becomes +/-1, +/-5 and +/-10. Candidate ranking is
-    unchanged because neighbourhood testing is diagnostic and occurs after
-    finalist selection.
-
-    ``eval_fn`` may return a plain metrics dict (value_key =
-    ``net_twr_annualized_pct``) or a walk-forward robust dict (value_key =
-    ``robust_return``).
-    """
+    """Stress each allocation event with representative local/boundary shocks."""
     results = []
     base = candidate.allocation_days
     seen = set()
@@ -49,7 +32,7 @@ def timing_neighbourhood(
         magnitudes.add(5)
     deltas = sorted({-m for m in magnitudes} | magnitudes)
 
-    for i in range(4):
+    for i in range(len(base)):
         for delta in deltas:
             days = list(base)
             days[i] = days[i] + delta
