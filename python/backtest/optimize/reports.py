@@ -25,19 +25,37 @@ def pareto_frontier(items: list[dict]) -> list[dict]:
     return out
 
 
-def leaderboards(results: list[dict]) -> dict:
-    """Research leaderboards plus a separate live-eligible robust winner.
+def _pre_holdout_live_growth_score(item: dict) -> float:
+    """Growth-first live ranking using only information available pre-holdout.
 
-    The original research leaderboards are intentionally preserved. The
-    best_live_eligible entry is an additional post-research deployment view and
-    does not alter ERC/Shannon/NSGA-II scoring.
+    All components are percentages on comparable scales. The rolling robust score
+    receives the largest weight, while P10 and recent performance prevent a high
+    median from hiding weak tails or a deteriorating latest regime. The final
+    holdout is deliberately absent: it may reject the frozen winner, never select
+    a different one.
+    """
+    m = item.get("metrics") or {}
+    r = item.get("robust") or {}
+    recent = item.get("recent_validation") or {}
+    return float(
+        0.45 * r.get("robust_return", -1e9)
+        + 0.25 * r.get("p10_net_twr", -1e9)
+        + 0.20 * recent.get("net_twr_annualized_pct", -1e9)
+        + 0.10 * m.get("net_twr_annualized_pct", -1e9)
+    )
+
+
+def leaderboards(results: list[dict]) -> dict:
+    """Research leaderboards and a pre-holdout frozen live winner.
+
+    Final-holdout fields are never used for ranking. This is intentional: once
+    the holdout is inspected it is assessment evidence, not a candidate-selection
+    signal. A frozen winner may therefore fail the holdout without the system
+    silently switching to a different candidate that happened to perform better.
     """
     valid = [r for r in results if r.get("metrics") and not r["metrics"].get("error")]
     if not valid:
         return {}
-
-    def test_ok(r: dict) -> bool:
-        return bool((r.get("test") or {}).get("valid"))
 
     best_return = max(valid, key=lambda r: r["metrics"].get("net_twr_annualized_pct", -1e9))
     best_risk = max(
@@ -56,8 +74,8 @@ def leaderboards(results: list[dict]) -> dict:
             + 0.35 * r["metrics"].get("cdar95_pct", -1e9)
         ),
     )
-    tested = [r for r in valid if test_ok(r) and r.get("robust")]
-    robust_pool = tested or [r for r in valid if r.get("robust")]
+
+    robust_pool = [r for r in valid if r.get("robust")]
     if robust_pool:
         best_robust = max(
             robust_pool,
@@ -74,12 +92,10 @@ def leaderboards(results: list[dict]) -> dict:
     }
 
     live = [r for r in valid if r.get("live_eligible") and r.get("robust")]
-    tested_live = [r for r in live if test_ok(r)]
-    live_pool = tested_live or live
-    if live_pool:
+    if live:
         winners["best_live_eligible"] = max(
-            live_pool,
-            key=lambda r: (r.get("robust") or {}).get("robust_return", -1e9),
+            live,
+            key=_pre_holdout_live_growth_score,
         )
     return winners
 
