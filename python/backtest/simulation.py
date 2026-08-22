@@ -6,7 +6,7 @@ Look-ahead free by construction:
   - a signal (allocation or band rebalance) is computed at close[t]
   - orders execute at close[t+1] (execution_lag=1), applying transaction costs
 
-The raw price panel is never forward-filled for risk estimation.  A separate
+The raw price panel is never forward-filled for risk estimation. A separate
 forward-filled valuation panel is used only to mark existing holdings to their
 last known close on dates where a symbol has no print.
 """
@@ -32,6 +32,12 @@ class SimulationResult:
     gross_nav_history: list[tuple[str, float]] = field(default_factory=list)
     allocations: list[dict] = field(default_factory=list)
     allocation_schedule: list = field(default_factory=list)
+
+    # Cash-flow audit trail. Contributions show when money entered the portfolio;
+    # deployment events show when cash was actually converted into/out of equities.
+    capital_events: list[dict] = field(default_factory=list)
+    deployment_events: list[dict] = field(default_factory=list)
+
     final_nav: float = 0.0
     total_deposits: float = 0.0
     total_return_pct: float = 0.0
@@ -144,6 +150,15 @@ def simulate_combination(
     shares: dict[str, float] = {s: 0.0 for s in symbols}
     cash = params.initial_balance
     result.total_deposits = params.initial_balance
+    result.capital_events.append(
+        {
+            "date": str(dates[0].date()),
+            "type": "INITIAL_CAPITAL",
+            "amount": round(float(params.initial_balance), 2),
+            "cash_after": round(float(cash), 2),
+            "note": "Initial capital became available to the portfolio.",
+        }
+    )
     cumulative_cost = 0.0
     net_invested: dict[str, float] = {s: 0.0 for s in symbols}
 
@@ -166,13 +181,12 @@ def simulate_combination(
     first_invested_idx: int | None = None
 
     def execute_pending(pos: int, d, px):
-        """Execute pending orders at close[t+1] with explicit slippage + costs.
-
-        ``execution_price`` remains the next-session reference close for backward
-        compatible auditing. ``actual_execution_price`` records the adverse
-        slippage-adjusted fill that is used for cash and holdings accounting.
-        """
+        """Execute pending orders at close[t+1] with explicit slippage + costs."""
         nonlocal cash, cumulative_cost, total_traded_value, trade_count, first_invested_idx
+        buy_cash_deployed = 0.0
+        sell_cash_released = 0.0
+        executed_trades = 0
+
         for rec in pending["recs"]:
             sym = rec["symbol"]
             rec["execution_date"] = str(d.date())
@@ -203,6 +217,8 @@ def simulate_combination(
                 cumulative_cost += fee + slippage_cost
                 total_traded_value += reference_notional
                 trade_count += 1
+                executed_trades += 1
+                buy_cash_deployed += exec_notional + fee
                 net_invested[sym] += exec_notional + fee
                 rec["execution_price"] = round(reference_price, 2)
                 rec["actual_execution_price"] = round(exec_price, 2)
@@ -228,6 +244,8 @@ def simulate_combination(
                 cumulative_cost += explicit_cost + slippage_cost
                 total_traded_value += reference_notional
                 trade_count += 1
+                executed_trades += 1
+                sell_cash_released += exec_notional - explicit_cost
                 net_invested[sym] -= exec_notional - explicit_cost
                 rec["execution_price"] = round(reference_price, 2)
                 rec["actual_execution_price"] = round(exec_price, 2)
@@ -235,6 +253,22 @@ def simulate_combination(
                 rec["executed_notional"] = round(exec_notional, 2)
                 rec["cost"] = round(explicit_cost + slippage_cost, 2)
                 rec["slippage_cost"] = round(slippage_cost, 2)
+
+        if executed_trades:
+            signal_pos = int(pending.get("signal_pos", max(0, pos - 1)))
+            signal_date = dates[signal_pos] if 0 <= signal_pos < len(dates) else d
+            result.deployment_events.append(
+                {
+                    "signal_date": str(signal_date.date()),
+                    "execution_date": str(d.date()),
+                    "kind": str(pending.get("kind", "rebalance")).upper(),
+                    "buy_cash_deployed": round(buy_cash_deployed, 2),
+                    "sell_cash_released": round(sell_cash_released, 2),
+                    "net_cash_deployed": round(buy_cash_deployed - sell_cash_released, 2),
+                    "trade_count": executed_trades,
+                    "cash_after": round(cash, 2),
+                }
+            )
 
         record = pending.get("record")
         if record is not None:
@@ -270,6 +304,16 @@ def simulate_combination(
             deposit_indices.add(pos)
             deposit_dates.append(d)
             deposit_amounts.append(params.annual_deposit)
+            if params.annual_deposit > 0:
+                result.capital_events.append(
+                    {
+                        "date": str(d.date()),
+                        "type": "ANNUAL_CONTRIBUTION",
+                        "amount": round(float(params.annual_deposit), 2),
+                        "cash_after": round(float(cash), 2),
+                        "note": "Annual contribution added on the first trading session of the year.",
+                    }
+                )
 
         if is_allocation_date(d, prev, pos):
             computed = _compute_targets(raw, symbols, pos, params)
