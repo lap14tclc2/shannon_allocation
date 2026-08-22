@@ -1,14 +1,13 @@
 """Absolute portfolio-risk overlay for ERC targets.
 
-ERC remains responsible for relative risk allocation.  This module controls how
-much total equity exposure the portfolio is allowed to carry:
+ERC remains responsible for relative risk allocation. When enabled, this module
+controls total equity exposure:
 
     live_weight_i = equity_exposure * bounded_erc_weight_i
     cash_target   = 1 - equity_exposure
 
-The exposure is based only on historical prices strictly before the signal day.
-A fast and a slow volatility estimate are computed and the more conservative
-(higher) estimate is used.  No leverage is allowed.
+When disabled, ERC targets are returned unchanged (apart from numerical
+normalisation) so old backtests remain a valid A/B baseline.
 """
 
 from __future__ import annotations
@@ -60,12 +59,7 @@ def _normalise(weights: dict[str, float]) -> dict[str, float]:
 
 
 def apply_position_cap(weights: dict[str, float], max_weight: float | None) -> dict[str, float]:
-    """Return long-only weights summing to one with an optional per-name cap.
-
-    Excess weight is redistributed proportionally across uncapped names.  If the
-    requested cap is mathematically impossible (cap * N < 1), the smallest
-    feasible cap 1/N is used rather than silently losing capital.
-    """
+    """Return long-only weights summing to one with an optional per-name cap."""
     w = _normalise(weights)
     if not w or max_weight is None or max_weight <= 0 or max_weight >= 1:
         return w
@@ -96,7 +90,6 @@ def apply_position_cap(weights: dict[str, float], max_weight: float | None) -> d
             remaining_mass -= cap
             remaining.remove(k)
 
-    # Numerical cleanup.
     total = sum(out.values())
     if total > 0:
         out = {k: v / total for k, v in out.items()}
@@ -111,7 +104,6 @@ def _portfolio_volatility(
     weights: dict[str, float],
     annualization_factor: int,
 ) -> tuple[float | None, int]:
-    """Estimate annualized portfolio volatility from raw, non-forward-filled data."""
     start = max(0, pos - max(2, int(lookback)))
     window = raw_prices.iloc[start:pos][symbols].dropna()
     if len(window) < 3:
@@ -137,15 +129,12 @@ def risk_adjusted_targets(
     erc_targets: dict[str, float],
     params: BacktestParams,
 ) -> tuple[dict[str, float], dict]:
-    """Scale ERC weights by an absolute volatility target.
+    """Scale ERC weights by an absolute volatility target using only past data."""
+    original = _normalise(erc_targets)
 
-    The function uses data strictly before ``pos``.  When the overlay is disabled
-    it still applies the optional position cap and returns 100% equity exposure.
-    """
-    bounded = apply_position_cap(erc_targets, params.max_position_weight)
-
+    # True legacy baseline: no cap and no cash scaling when overlay is disabled.
     if not params.risk_overlay_enabled:
-        return bounded, {
+        return original, {
             "enabled": False,
             "equity_exposure": 1.0,
             "cash_target": 0.0,
@@ -153,10 +142,11 @@ def risk_adjusted_targets(
             "slow_volatility": None,
             "risk_volatility": None,
             "target_volatility": params.target_volatility,
-            "relative_targets": {k: round(v, 6) for k, v in bounded.items()},
-            "targets": {k: round(v, 6) for k, v in bounded.items()},
+            "relative_targets": {k: round(v, 6) for k, v in original.items()},
+            "targets": {k: round(v, 6) for k, v in original.items()},
         }
 
+    bounded = apply_position_cap(original, params.max_position_weight)
     fast, n_fast = _portfolio_volatility(
         raw_prices,
         symbols,
@@ -173,11 +163,13 @@ def risk_adjusted_targets(
         bounded,
         params.annualization_factor,
     )
-    available = [v for v in (fast, slow) if v is not None and math.isfinite(v) and v > 1e-12]
+    available = [
+        v for v in (fast, slow)
+        if v is not None and math.isfinite(v) and v > 1e-12
+    ]
     risk_vol = max(available) if available else None
 
     if risk_vol is None:
-        # Fail conservatively: do not lever and do not invent a risk estimate.
         exposure = min(1.0, max(0.0, params.risk_missing_data_exposure))
     else:
         exposure = params.target_volatility / risk_vol if params.target_volatility > 0 else 0.0
