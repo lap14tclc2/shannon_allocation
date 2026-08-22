@@ -13,6 +13,11 @@ optimizer searches.
 
 When disabled, ERC targets are returned unchanged (apart from numerical
 normalisation) so old backtests remain a valid A/B baseline.
+
+Two cash states are deliberately separated:
+- volatility de-risking: a valid risk estimate intentionally scales equity down;
+- fail-closed: risk cannot be estimated, so risk_missing_data_exposure is used.
+The strategic minimum-equity floor applies only to the first state.
 """
 
 from __future__ import annotations
@@ -38,6 +43,8 @@ class RiskOverlayResult:
     target_volatility: float
     observations_fast: int
     observations_slow: int
+    exposure_state: str
+    strategic_floor_applied: bool
 
     def as_dict(self) -> dict:
         return {
@@ -50,6 +57,8 @@ class RiskOverlayResult:
             "target_volatility": round(self.target_volatility, 6),
             "observations_fast": self.observations_fast,
             "observations_slow": self.observations_slow,
+            "exposure_state": self.exposure_state,
+            "strategic_floor_applied": self.strategic_floor_applied,
             "relative_targets": {k: round(v, 6) for k, v in self.relative_targets.items()},
             "targets": {k: round(v, 6) for k, v in self.targets.items()},
         }
@@ -184,6 +193,8 @@ def risk_adjusted_targets(
             "target_volatility": params.target_volatility,
             "risk_refresh_days": params.risk_refresh_days,
             "risk_snapshot_position": pos,
+            "exposure_state": "overlay_disabled_full_equity",
+            "strategic_floor_applied": False,
             "relative_targets": {k: round(v, 6) for k, v in original.items()},
             "targets": {k: round(v, 6) for k, v in original.items()},
         }
@@ -212,11 +223,22 @@ def risk_adjusted_targets(
     ]
     risk_vol = max(available) if available else None
 
+    floor_applied = False
     if risk_vol is None:
         exposure = min(1.0, max(0.0, params.risk_missing_data_exposure))
+        exposure_state = "risk_missing_fail_closed"
     else:
-        exposure = params.target_volatility / risk_vol if params.target_volatility > 0 else 0.0
-        exposure = min(1.0, max(params.min_equity_exposure, exposure))
+        raw_exposure = params.target_volatility / risk_vol if params.target_volatility > 0 else 0.0
+        bounded_exposure = min(1.0, max(0.0, raw_exposure))
+        strategic_floor = min(1.0, max(0.0, params.min_equity_exposure))
+        exposure = max(strategic_floor, bounded_exposure)
+        floor_applied = exposure > bounded_exposure + 1e-12
+        if exposure >= 1.0 - 1e-12:
+            exposure_state = "volatility_target_full_equity"
+        elif floor_applied:
+            exposure_state = "strategic_floor_applied"
+        else:
+            exposure_state = "volatility_de_risked"
 
     targets = {s: bounded[s] * exposure for s in symbols}
     result = RiskOverlayResult(
@@ -230,8 +252,12 @@ def risk_adjusted_targets(
         target_volatility=params.target_volatility,
         observations_fast=n_fast,
         observations_slow=n_slow,
+        exposure_state=exposure_state,
+        strategic_floor_applied=floor_applied,
     )
     info = result.as_dict()
     info["risk_refresh_days"] = max(1, int(params.risk_refresh_days))
     info["risk_snapshot_position"] = int(risk_pos)
+    info["strategic_min_equity_exposure"] = round(float(params.min_equity_exposure), 6)
+    info["missing_data_exposure"] = round(float(params.risk_missing_data_exposure), 6)
     return targets, info
