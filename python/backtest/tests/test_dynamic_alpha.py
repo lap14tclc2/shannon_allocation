@@ -6,9 +6,12 @@ import numpy as np
 import pandas as pd
 
 from backtest.alpha import alpha_score_table, select_alpha_symbols
+from backtest.candidate import Candidate
 from backtest.config import BacktestParams
 from backtest.dynamic_simulation import simulate_dynamic_alpha
 from backtest.optimize.eligibility import assess_live_eligibility, live_risk_reward_score
+from backtest.optimize.reports import item_to_json
+from backtest.recommendation import build_recommendation
 
 
 class TestDynamicAlpha(unittest.TestCase):
@@ -117,6 +120,56 @@ class TestDynamicAlpha(unittest.TestCase):
         self.assertEqual(result.alpha_selection_history[0]["role"], "INITIAL_DEPLOYMENT")
         self.assertTrue(all(len(x["selected_symbols"]) == 5 for x in result.alpha_selection_history))
         self.assertGreaterEqual(len(result.alpha_unique_symbols), 5)
+
+    def test_dynamic_artifact_keeps_active_n_without_fake_static_symbols(self):
+        candidate = Candidate((), (40, 120, 200))
+        metrics = {
+            "dynamic_alpha": True,
+            "net_twr_annualized_pct": 12.0,
+            "max_drawdown_pct": -15.0,
+            "calmar": 0.8,
+            "alpha_selection_history": [
+                {
+                    "date": "2025-01-10",
+                    "role": "INITIAL_DEPLOYMENT",
+                    "selected_symbols": ["A", "B", "C", "D", "E"],
+                }
+            ],
+            "alpha_unique_symbol_count": 5,
+            "alpha_unique_symbols": ["A", "B", "C", "D", "E"],
+            "alpha_membership_turnover": 0.2,
+        }
+        item = {
+            "candidate": candidate,
+            "metrics": metrics,
+            "robust": {"p10_net_twr": 5.0, "median_net_twr": 10.0, "worst_mdd": -12.0, "robust_return": 9.0},
+            "recent_validation": {"net_twr_annualized_pct": 7.0, "max_drawdown_pct": -10.0, "calmar": 0.7},
+            "live_eligible": True,
+            "eligibility_reasons": [],
+            "test": {"valid": True, "median_net_twr": 6.0, "worst_mdd": -10.0},
+        }
+        encoded = item_to_json(item)
+        self.assertTrue(encoded["dynamic_alpha"])
+        self.assertEqual(encoded["symbols"], [])
+        self.assertEqual(encoded["n_symbols"], 5)
+
+        experiment = {
+            "experiment_id": "alpha-contract",
+            "meta": {
+                "mode": "alpha",
+                "dynamic_alpha": {"enabled": True, "portfolio_size": 5},
+            },
+            "winners": {"best_live_eligible": encoded},
+            "baseline": {
+                "allocation_days": [1, 61, 122, 183],
+                "robust": {"robust_return": 8.0},
+                "test": {"valid": True, "median_net_twr": 5.0, "worst_mdd": -10.0},
+            },
+        }
+        rec = build_recommendation(experiment)
+        self.assertEqual(rec["n_symbols"], 5)
+        self.assertEqual(rec["symbols"], [])
+        self.assertEqual(rec["membership_policy"], "dynamic_strictly_past_alpha_selection")
 
 
 class TestSoftLivePolicy(unittest.TestCase):
