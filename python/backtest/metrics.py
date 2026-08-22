@@ -9,6 +9,7 @@ Return convention (fractions unless noted):
   - xirr                 : investor money-weighted annualized return
   - sortino / calmar     : risk-adjusted
   - annual_returns       : per-calendar-year TWR
+  - cdar                 : conditional drawdown-at-risk, tail average of drawdowns
 """
 
 from __future__ import annotations
@@ -46,18 +47,57 @@ def time_weighted_return(navs, deposit_indices, start_idx, end_idx):
     return prod - 1.0
 
 
-def max_drawdown(navs, start_idx, end_idx):
+def drawdown_series(navs, start_idx, end_idx):
+    """Return point-in-time drawdowns (0 at high-water marks, negative underwater)."""
     running_max = -1e18
-    worst = 0.0
+    out = []
     for i in range(start_idx, end_idx + 1):
         v = navs[i]
         if v > running_max:
             running_max = v
-        if running_max > 0:
-            dd = v / running_max - 1.0
-            if dd < worst:
-                worst = dd
-    return worst
+        out.append(v / running_max - 1.0 if running_max > 0 else 0.0)
+    return out
+
+
+def max_drawdown(navs, start_idx, end_idx):
+    dds = drawdown_series(navs, start_idx, end_idx)
+    return min(dds) if dds else 0.0
+
+
+def conditional_drawdown_at_risk(navs, start_idx, end_idx, alpha=0.95):
+    """Average of the worst (1-alpha) fraction of point-in-time drawdowns.
+
+    Returns a negative fraction.  At alpha=0.95 this is the mean of the worst 5%
+    drawdown observations, complementing the single-point maximum drawdown metric.
+    """
+    dds = drawdown_series(navs, start_idx, end_idx)
+    if not dds:
+        return 0.0
+    ordered = sorted(dds)
+    tail_n = max(1, int(math.ceil(len(ordered) * max(0.0, min(1.0, 1.0 - alpha)))))
+    tail = ordered[:tail_n]
+    return sum(tail) / len(tail)
+
+
+def underwater_stats(navs, dates, start_idx, end_idx):
+    """Return (underwater_ratio, max_underwater_trading_days).
+
+    A point is underwater whenever NAV is below the running high-water mark.
+    """
+    dds = drawdown_series(navs, start_idx, end_idx)
+    if not dds:
+        return 0.0, 0
+    underwater = [d < -1e-12 for d in dds]
+    ratio = sum(1 for x in underwater if x) / len(underwater)
+    longest = 0
+    current = 0
+    for flag in underwater:
+        if flag:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return ratio, longest
 
 
 def annual_returns(navs, dates, deposit_indices, start_idx, end_idx):
@@ -113,7 +153,7 @@ def xirr(flows):
 
     def f(r):
         base = 1.0 + r
-        if abs(base) < 1e-9:  # floor avoids overflow at extremely negative rates
+        if abs(base) < 1e-9:
             base = math.copysign(1e-9, base)
         total = 0.0
         for ti, a in zip(t, amts):
@@ -136,8 +176,14 @@ def xirr(flows):
     return 0.5 * (lo + hi)
 
 
-def portfolio_score(twr_annualized, sharpe, mdd, positive_year_ratio):
-    """Composite 0-100 score: return quality + risk-adjusted + drawdown + consistency."""
+def portfolio_score(twr_annualized, sharpe, mdd, positive_year_ratio, cdar95=None):
+    """Composite 0-100 score: return + risk-adjusted + drawdown + consistency.
+
+    CDaR is optional for backward compatibility.  When supplied, half of the old
+    drawdown component is assigned to max drawdown and half to drawdown-tail
+    quality, so a portfolio cannot score well merely because one MDD observation
+    hides a generally poor underwater profile.
+    """
     if twr_annualized is None:
         twr_annualized = 0.0
     if sharpe is None:
@@ -145,6 +191,11 @@ def portfolio_score(twr_annualized, sharpe, mdd, positive_year_ratio):
     mdd_frac = abs(mdd) if mdd is not None else 0.0
     ret_pts = clamp01(twr_annualized * 100.0 / 50.0) * 40.0
     sharpe_pts = clamp01((sharpe + 1.0) / 3.0) * 25.0
-    mdd_pts = clamp01(1.0 - mdd_frac / 0.60) * 20.0
+    if cdar95 is None:
+        mdd_pts = clamp01(1.0 - mdd_frac / 0.60) * 20.0
+    else:
+        cdar_frac = abs(cdar95)
+        mdd_pts = clamp01(1.0 - mdd_frac / 0.60) * 10.0
+        mdd_pts += clamp01(1.0 - cdar_frac / 0.45) * 10.0
     cons_pts = clamp01(positive_year_ratio) * 15.0
     return round(ret_pts + sharpe_pts + mdd_pts + cons_pts, 2)
