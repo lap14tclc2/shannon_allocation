@@ -128,7 +128,13 @@ def resolve_allocation_dates(
     all_dates,
     max_allocation_day: int = DEFAULT_MAX_ALLOCATION_DAY,
 ) -> tuple[list, list[dict]]:
-    """Map allocation-day positions to actual market dates per calendar year."""
+    """Map allocation-day positions to actual market dates per calendar year.
+
+    Partial calendar years at the beginning/end of a dataset may not contain a
+    requested trading-session index. Such an event is skipped instead of being
+    clamped to the year's last available date. Clamping created artificial
+    allocations near research/holdout boundaries and could distort timing tests.
+    """
     by_year: dict[int, list] = {}
     for d in all_dates:
         by_year.setdefault(d.year, []).append(d)
@@ -139,14 +145,27 @@ def resolve_allocation_dates(
         days = by_year[year]
         for ti in candidate.allocation_days:
             idx = ti - 1
-            resolved = days[idx] if idx < len(days) else days[-1]
+            if idx >= len(days):
+                mapping.append(
+                    {
+                        "year": int(year),
+                        "requested_index": int(ti),
+                        "resolved_date": None,
+                        "clamped": False,
+                        "skipped": True,
+                        "reason": "partial_year_missing_session",
+                    }
+                )
+                continue
+            resolved = days[idx]
             dates_out.append(resolved)
             mapping.append(
                 {
                     "year": int(year),
                     "requested_index": int(ti),
                     "resolved_date": str(resolved.date()),
-                    "clamped": idx >= len(days),
+                    "clamped": False,
+                    "skipped": False,
                 }
             )
     dates_out.sort()
