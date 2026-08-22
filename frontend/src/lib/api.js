@@ -21,6 +21,15 @@ export async function getCombination(runId, slug) {
   return getJSON(`/api/runs/${encodeURIComponent(runId)}/combinations/${encodeURIComponent(slug)}`);
 }
 
+export async function listAvailableSymbols() {
+  const data = await getJSON('/api/symbols');
+  return {
+    symbols: data.symbols || [],
+    minSelected: Number(data.min_selected || 5),
+    maxSelected: Number(data.max_selected || 10),
+  };
+}
+
 export async function listOptimizerExperiments() {
   const data = await getJSON('/api/optimizer');
   return data.experiments || [];
