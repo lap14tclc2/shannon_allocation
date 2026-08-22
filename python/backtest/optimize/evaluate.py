@@ -2,7 +2,6 @@
 
 The evaluator is the single point that maps a Candidate (+ optional date window)
 to a metrics dict used by NSGA-II, random search, walk-forward and robustness.
-
 NET performance (after transaction costs) is always used for optimization.
 """
 
@@ -21,7 +20,7 @@ from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
-    """Fingerprint of every quant-affecting parameter (so cached results are safe)."""
+    """Fingerprint every quant-affecting parameter so cached results are safe."""
     keys = [
         "price_scale",
         "initial_balance",
@@ -39,6 +38,13 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
         "fee_sell_bps",
         "tax_sell_bps",
         "slippage_bps",
+        "risk_overlay_enabled",
+        "target_volatility",
+        "risk_fast_lookback",
+        "risk_slow_lookback",
+        "min_equity_exposure",
+        "risk_missing_data_exposure",
+        "max_position_weight",
     ]
     payload = {k: getattr(params, k) for k in keys}
     raw = json.dumps(payload, sort_keys=True) + "|" + data_version
@@ -46,7 +52,7 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
 
 
 def result_metrics(result) -> dict:
-    """Extract the scalar metrics that define the objective vector (all NET)."""
+    """Extract scalar metrics that define the optimizer objective vector (all NET)."""
     return {
         "net_twr_annualized_pct": result.twr_annualized,
         "net_xirr_pct": result.xirr,
@@ -54,6 +60,9 @@ def result_metrics(result) -> dict:
         "sortino": result.sortino,
         "calmar": result.calmar,
         "max_drawdown_pct": result.max_drawdown_pct,
+        "cdar95_pct": result.cdar95_pct,
+        "underwater_ratio": result.underwater_ratio,
+        "max_underwater_days": result.max_underwater_days,
         "turnover_pct": result.turnover,
         "cost_pct_of_nav": result.cost_pct_of_nav,
         "transaction_cost": result.transaction_cost,
@@ -67,6 +76,9 @@ def result_metrics(result) -> dict:
         "final_nav": result.final_nav,
         "n_allocations": len(result.allocations),
         "first_allocation_date": result.first_allocation_date,
+        "min_equity_exposure": result.min_equity_exposure,
+        "avg_equity_exposure": result.avg_equity_exposure,
+        "score": result.score,
         "error": result.error,
     }
 
@@ -111,18 +123,7 @@ def evaluate_candidate(
     warmup_days: int | None = None,
     max_allocation_day: int = 252,
 ) -> dict:
-    """Run (or fetch from cache) the backtest for `candidate` over a date window.
-
-    Returns the metrics dict. window = (start_date, end_date) strings or None.
-
-    Evaluation convention (walk-forward windows):
-      - ERC gets `warmup_days` (default: params.lookback_days) of price history
-        strictly BEFORE the window start so the first allocation inside the window
-        can calibrate without look-ahead.
-      - Performance is measured from the WINDOW START (cash period included), never
-        from the first allocation inside the window, so a schedule whose first
-        allocation lands late cannot inflate annualized returns.
-    """
+    """Run (or fetch from cache) the backtest for ``candidate`` over a date window."""
     start, end = window
     key = f"{start or ''}|{end or ''}"
     if cache:
@@ -142,8 +143,6 @@ def evaluate_candidate(
     )
     metrics = result_metrics(result)
 
-    # Day-252 / short-year handling: count how many scheduled trading-day positions
-    # had to be clamped to the last actual trading day of a year.
     try:
         _, mapping = resolve_allocation_dates(candidate, all_dates, max_allocation_day)
         metrics["n_clamped_allocations"] = sum(1 for m in mapping if m.get("clamped"))
@@ -158,8 +157,9 @@ def evaluate_candidate(
 def objectives(metrics: dict) -> list[float]:
     """Objective vector for NSGA-II (all maximised).
 
-    maximise: net TWR annualized, Sharpe, Sortino, Calmar, MDD (less negative)
-    minimise (negated): turnover, transaction cost, instability
+    Return and risk-adjusted performance are rewarded.  MDD and CDaR are kept as
+    negative percentages, therefore values closer to zero are naturally better.
+    Turnover/cost/instability/underwater time are negated.
     """
     instability = _instability(metrics)
     return [
@@ -167,7 +167,9 @@ def objectives(metrics: dict) -> list[float]:
         metrics.get("sharpe", 0.0),
         metrics.get("sortino", 0.0),
         metrics.get("calmar", 0.0),
-        metrics.get("max_drawdown_pct", 0.0),           # maximise (closer to 0 better)
+        metrics.get("max_drawdown_pct", 0.0),
+        metrics.get("cdar95_pct", 0.0),
+        -metrics.get("underwater_ratio", 0.0),
         -metrics.get("turnover_pct", 0.0),
         -metrics.get("cost_pct_of_nav", 0.0),
         -instability,
@@ -180,6 +182,8 @@ OBJECTIVE_NAMES = [
     "sortino",
     "calmar",
     "mdd",
+    "cdar95",
+    "underwater",
     "turnover",
     "cost",
     "instability",
