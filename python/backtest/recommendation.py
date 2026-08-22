@@ -1,8 +1,13 @@
 """Suggest what to deploy next based on a completed optimizer experiment.
 
-This is a historical robustness recommendation, not a forecast.  Deployment
-verdicts require both validation improvement and non-degradation on FINAL TEST;
-a strong validation score alone is insufficient.
+This is a historical robustness recommendation, not a forecast. Deployment
+verdicts require:
+  - the candidate to pass the post-research LIVE eligibility gates,
+  - valid final holdout evidence,
+  - validation improvement and non-degradation versus the quarterly baseline.
+
+The eligibility gates are deliberately outside ERC/Shannon/NSGA-II and therefore
+do not modify the system's portfolio-allocation theory.
 """
 from __future__ import annotations
 
@@ -13,9 +18,15 @@ from datetime import datetime
 
 def build_recommendation(experiment: dict) -> dict:
     meta = experiment.get("meta") or {}
-    best = experiment.get("winners", {}).get("best_robust") or {}
+    winners = experiment.get("winners", {}) or {}
+    live_best = winners.get("best_live_eligible") or {}
+    research_best = winners.get("best_robust") or {}
+    deployment_eligible = bool(live_best)
+    best = live_best or research_best
+
     winner_metrics = best.get("metrics") or best.get("train_metrics") or {}
     winner_robust = best.get("robust") or best.get("validation_metrics") or {}
+    winner_recent = best.get("recent_validation") or {}
     winner_test = best.get("test") or best.get("test_metrics") or {}
     symbols = best.get("symbols") or []
     allocation_days = best.get("allocation_days") or []
@@ -42,13 +53,16 @@ def build_recommendation(experiment: dict) -> dict:
         if opt_test is not None and base_test is not None
         else None
     )
-    verdict = _improvement_verdict(
-        delta_robust,
-        delta_test,
-        bool(winner_test.get("valid")),
-        opt_test_mdd,
-        base_test_mdd,
-    )
+    if deployment_eligible:
+        verdict = _improvement_verdict(
+            delta_robust,
+            delta_test,
+            bool(winner_test.get("valid")),
+            opt_test_mdd,
+            base_test_mdd,
+        )
+    else:
+        verdict = "no_live_eligible_candidate"
 
     next_event_idx = _next_quarterly_index(allocation_days)
     return {
@@ -56,6 +70,8 @@ def build_recommendation(experiment: dict) -> dict:
         "generated_at": generated_at,
         "universe_variant": universe_variant,
         "data_end": data_end,
+        "deployment_eligible": deployment_eligible,
+        "eligibility_reasons": list(best.get("eligibility_reasons") or []),
         "symbols": list(symbols),
         "n_symbols": len(symbols),
         "allocation_days": list(allocation_days),
@@ -63,9 +79,12 @@ def build_recommendation(experiment: dict) -> dict:
         "score": float(best.get("score") or winner_metrics.get("score") or 0.0),
         "robust_return_pct": float(winner_robust.get("robust_return") or 0.0),
         "oos_median_net_twr_pct": float(winner_robust.get("median_net_twr") or 0.0),
+        "oos_p10_net_twr_pct": float(winner_robust.get("p10_net_twr") or 0.0),
         "oos_worst_net_twr_pct": float(winner_robust.get("worst_net_twr") or 0.0),
         "oos_worst_mdd_pct": float(winner_robust.get("worst_mdd") or 0.0),
         "oos_worst_cdar95_pct": float(winner_robust.get("worst_cdar95") or 0.0),
+        "recent_validation_net_twr_pct": winner_recent.get("net_twr_annualized_pct"),
+        "recent_validation_mdd_pct": winner_recent.get("max_drawdown_pct"),
         "test_median_net_twr_pct": float(winner_test.get("median_net_twr") or 0.0),
         "test_worst_mdd_pct": winner_test.get("worst_mdd"),
         "test_worst_cdar95_pct": winner_test.get("worst_cdar95"),
@@ -89,11 +108,13 @@ def build_recommendation(experiment: dict) -> dict:
             ),
             "verdict": verdict,
         },
+        "eligibility_config": meta.get("live_eligibility") or {},
         "risk_config": meta.get("risk_config") or {},
         "cost_config": meta.get("cost_config") or {},
         "caveats": [
-            "Recommendation is the most historically robust candidate, NOT a forecast.",
-            "Deployment requires valid final-test windows and should remain user-approved.",
+            "Recommendation is a historically robust candidate, NOT a forecast.",
+            "Research ranking and live eligibility are separate: eligibility does not alter ERC/Shannon/NSGA-II theory.",
+            "Deployment requires a LIVE-eligible candidate plus valid final-holdout evidence and remains user-approved.",
             "Re-run research when new market data materially changes the selection/risk assumptions.",
         ],
     }
