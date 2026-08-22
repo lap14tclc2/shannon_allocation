@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--universe", choices=["all", "vn30", "vn50", "vn100"], default="all")
     p.add_argument("--combos", type=int, default=50)
     p.add_argument("--portfolio-size", type=int, default=None,
-                   help="exact number of symbols; overrides --min-symbols/--max-symbols")
+                   help="exact number of symbols (5..10); overrides --min-symbols/--max-symbols")
     p.add_argument("--min-symbols", type=int, default=5)
     p.add_argument("--max-symbols", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
@@ -81,8 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.portfolio_size is not None and not (1 <= args.portfolio_size <= 10):
-        raise SystemExit("--portfolio-size must be between 1 and 10")
+    if args.portfolio_size is not None and not (5 <= args.portfolio_size <= 10):
+        raise SystemExit("--portfolio-size must be between 5 and 10")
 
     params = BacktestParams(
         data_dir=args.data_dir,
@@ -139,7 +139,6 @@ def main() -> None:
     )
     results = run_combinations(combos, prices, params, progress=not args.no_progress)
 
-    run_dir = None
     if not args.no_save:
         from backtest.persist import save_run
         run_dir = save_run(params, results, params.output_dir, run_id=args.run_id)
@@ -164,7 +163,7 @@ def main() -> None:
             r["rank"], r["symbols"][:28], r["n_symbols"], r["score"],
             r["twr_annualized_pct"], r["sharpe"], r["sortino"],
             r["max_drawdown_pct"], r["cdar95_pct"], r["ann_volatility_pct"],
-            r["avg_equity_exposure"], 0.0, r["final_nav"]))
+            r["avg_equity_exposure"], r["cost_pct_of_nav"], r["final_nav"]))
 
     if failed:
         print(f"\n{len(failed)} combinations skipped:")
