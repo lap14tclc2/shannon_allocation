@@ -1,21 +1,8 @@
 """Suggest what to deploy next based on a completed optimizer experiment.
 
-The system is purely historical/backward-looking — it has no forecast engine
-and no live runner. But the *most robust historical candidate* is a sensible
-"what to deploy next" recommendation: it survived the most historical
-walk-forward windows, so it's the portfolio most likely to behave well under
-realistic regime changes. This module lifts that answer out of the experiment
-so the UI can surface it as an actionable recommendation, clearly labelled.
-
-Honest caveats (exported alongside the suggestion):
-  - This is NOT a forecast. It is the candidate with the strongest historical
-    robustness from the last optimizer experiment.
-  - The live daily runner (fetch open prices at 09:20, compute today's signal,
-    produce real target trades) is not built yet — the recommendation here is
-    meant to be acted on manually at the next allocation event.
-  - The recommendation becomes invalid as soon as new market data invalidates
-    the assumptions used by ERC on the chosen universe. Re-run the optimizer
-    periodically.
+This is a historical robustness recommendation, not a forecast.  Deployment
+verdicts require both validation improvement and non-degradation on FINAL TEST;
+a strong validation score alone is insufficient.
 """
 from __future__ import annotations
 
@@ -25,16 +12,11 @@ from datetime import datetime
 
 
 def build_recommendation(experiment: dict) -> dict:
-    """Derive the next-action recommendation from an optimizer experiment.
-
-    Input: the experiment JSON returned by /api/optimizer/<id>
-    Output: a dict with deployment-ready fields.
-    """
     meta = experiment.get("meta") or {}
     best = experiment.get("winners", {}).get("best_robust") or {}
-    winner_metrics = best.get("metrics") or {}
-    winner_robust = best.get("robust") or {}
-    winner_test = best.get("test") or {}
+    winner_metrics = best.get("metrics") or best.get("train_metrics") or {}
+    winner_robust = best.get("robust") or best.get("validation_metrics") or {}
+    winner_test = best.get("test") or best.get("test_metrics") or {}
     symbols = best.get("symbols") or []
     allocation_days = best.get("allocation_days") or []
     universe_variant = meta.get("universe_variant") or "all"
@@ -45,11 +27,28 @@ def build_recommendation(experiment: dict) -> dict:
     baseline = experiment.get("baseline") or {}
     base_robust = (baseline.get("robust") or {}).get("robust_return")
     base_test = (baseline.get("test") or {}).get("median_net_twr")
+    base_test_mdd = (baseline.get("test") or {}).get("worst_mdd")
     opt_robust = winner_robust.get("robust_return")
     opt_test = winner_test.get("median_net_twr")
-    delta_robust = (opt_robust - base_robust) if (opt_robust is not None and base_robust is not None) else None
-    delta_test = (opt_test - base_test) if (opt_test is not None and base_test is not None) else None
-    verdict = _improvement_verdict(delta_robust, delta_test)
+    opt_test_mdd = winner_test.get("worst_mdd")
+
+    delta_robust = (
+        opt_robust - base_robust
+        if opt_robust is not None and base_robust is not None
+        else None
+    )
+    delta_test = (
+        opt_test - base_test
+        if opt_test is not None and base_test is not None
+        else None
+    )
+    verdict = _improvement_verdict(
+        delta_robust,
+        delta_test,
+        bool(winner_test.get("valid")),
+        opt_test_mdd,
+        base_test_mdd,
+    )
 
     next_event_idx = _next_quarterly_index(allocation_days)
     return {
@@ -61,54 +60,68 @@ def build_recommendation(experiment: dict) -> dict:
         "n_symbols": len(symbols),
         "allocation_days": list(allocation_days),
         "next_allocation_index": next_event_idx,
-        "score": float(best.get("score") or 0.0),
+        "score": float(best.get("score") or winner_metrics.get("score") or 0.0),
         "robust_return_pct": float(winner_robust.get("robust_return") or 0.0),
         "oos_median_net_twr_pct": float(winner_robust.get("median_net_twr") or 0.0),
         "oos_worst_net_twr_pct": float(winner_robust.get("worst_net_twr") or 0.0),
         "oos_worst_mdd_pct": float(winner_robust.get("worst_mdd") or 0.0),
+        "oos_worst_cdar95_pct": float(winner_robust.get("worst_cdar95") or 0.0),
         "test_median_net_twr_pct": float(winner_test.get("median_net_twr") or 0.0),
+        "test_worst_mdd_pct": winner_test.get("worst_mdd"),
+        "test_worst_cdar95_pct": winner_test.get("worst_cdar95"),
         "test_valid": bool(winner_test.get("valid")),
         "train_net_twr_annualized_pct": float(winner_metrics.get("net_twr_annualized_pct") or 0.0),
         "train_sharpe": float(winner_metrics.get("sharpe") or 0.0),
         "train_max_drawdown_pct": float(winner_metrics.get("max_drawdown_pct") or 0.0),
+        "train_cdar95_pct": float(winner_metrics.get("cdar95_pct") or 0.0),
+        "avg_equity_exposure": winner_metrics.get("avg_equity_exposure"),
         "baseline_allocation_days": [int(d) for d in (baseline.get("allocation_days") or [])],
         "baseline_robust_return_pct": base_robust,
         "baseline_test_median_net_twr_pct": base_test,
+        "baseline_test_worst_mdd_pct": base_test_mdd,
         "improvement_vs_baseline": {
             "delta_robust_return": delta_robust,
             "delta_test_median_twr": delta_test,
+            "delta_test_mdd": (
+                opt_test_mdd - base_test_mdd
+                if opt_test_mdd is not None and base_test_mdd is not None
+                else None
+            ),
             "verdict": verdict,
         },
+        "risk_config": meta.get("risk_config") or {},
         "cost_config": meta.get("cost_config") or {},
         "caveats": [
-            "Recommendation is the most historically robust candidate from the optimizer, NOT a forecast.",
-            "No live daily runner is built yet — the open-price-once-at-09:20 fetch and target-trade generation are pending.",
-            "Re-run the optimizer whenever new market data materially changes the ERC signal.",
+            "Recommendation is the most historically robust candidate, NOT a forecast.",
+            "Deployment requires valid final-test windows and should remain user-approved.",
+            "Re-run research when new market data materially changes the selection/risk assumptions.",
         ],
     }
 
 
-def _improvement_verdict(delta_robust, delta_test):
-    """Should we deploy the optimized schedule over the plain quarterly baseline?"""
-    if delta_robust is None:
+def _improvement_verdict(delta_robust, delta_test, test_valid=True, opt_mdd=None, base_mdd=None):
+    """Return a conservative optimized-vs-baseline deployment verdict."""
+    if delta_robust is None or delta_test is None:
         return "unknown"
-    if delta_robust >= 5.0:
+    if not test_valid:
+        return "keep_baseline"
+    if delta_test < 0:
+        return "keep_baseline"
+    if opt_mdd is not None and base_mdd is not None and opt_mdd < base_mdd - 2.0:
+        return "keep_baseline"
+    if delta_robust >= 5.0 and delta_test >= 1.0:
         return "materially_better"
-    if delta_robust >= 1.0:
+    if delta_robust >= 1.0 and delta_test >= 0.0:
         return "marginal_better"
     return "not_significantly_better"
 
 
 def _next_quarterly_index(allocation_days: list[int]) -> int:
-    """Return the next allocation index (1-based) in the order they will fire."""
     return 1 if allocation_days else 0
 
 
-# --------------------------------------------------------------------- file I/O
-
 def write_recommendation(experiment_id: str, out_dir: str) -> str | None:
-    """Read experiment.json and write recommendation.json next to it."""
-    base = os.path.join(out_dir, "runs" if False else "optimizer", experiment_id)
+    base = os.path.join(out_dir, "optimizer", experiment_id)
     exp_path = os.path.join(base, "experiment.json")
     if not os.path.isfile(exp_path):
         return None
