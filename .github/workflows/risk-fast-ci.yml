@@ -35,7 +35,7 @@ jobs:
         # TestCostsAndLookahead intentionally reads F:/data_finance/data and is
         # exercised in the real-data/local environment; GitHub runners do not
         # have that private historical dataset.
-        run: python -m pytest backtest/tests/test_optimizer.py backtest/tests/test_risk_fast_optimizer.py backtest/tests/test_window_accounting.py backtest/tests/test_fixed_combination_contract.py backtest/tests/test_combination_health.py backtest/tests/test_variable_allocation.py backtest/tests/test_live_risk_reward_policy.py backtest/tests/test_risk_policy_initialization.py -q -k "not TestCostsAndLookahead"
+        run: python -m pytest backtest/tests/test_optimizer.py backtest/tests/test_risk_fast_optimizer.py backtest/tests/test_window_accounting.py backtest/tests/test_fixed_combination_contract.py backtest/tests/test_combination_health.py backtest/tests/test_variable_allocation.py backtest/tests/test_live_risk_reward_policy.py backtest/tests/test_risk_policy_initialization.py backtest/tests/test_dynamic_alpha.py -q -k "not TestCostsAndLookahead"
 
   frontend:
     runs-on: ubuntu-latest

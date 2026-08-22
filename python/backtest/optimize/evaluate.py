@@ -2,14 +2,12 @@
 
 The optimizer is growth-first: TRAIN search rewards return and risk-adjusted
 growth, while drawdown/CDaR are enforced later as rolling OOS/final risk gates.
-ERC, Shannon, transaction costs and risk-overlay mechanics are unchanged.
+ERC, Shannon, transaction costs and risk-overlay mechanics remain unchanged.
 
-A candidate's 1–6 annual allocation events are recalibration events, not a reason
-to keep a new portfolio in cash until the first scheduled date. Every evaluation
-therefore adds one INITIAL DEPLOYMENT event at the earliest date where strictly-
-past data can actually solve ERC and, when the risk overlay is enabled, produce a
-non-zero deployable risk target. If warm-up history exists, this deployment can
-occur before the measurement boundary.
+Static portfolios receive an independent INITIAL DEPLOYMENT event as before.
+Dynamic-alpha portfolios instead initialize themselves at the first strictly-past
+date where alpha selection, ERC and risk targeting are all deployable; their
+candidate genome therefore controls recalibration timing, not the stock names.
 """
 
 from __future__ import annotations
@@ -25,9 +23,10 @@ from ..config import BacktestParams
 from ..erc import ERCError, log_returns_from_window, solve_erc
 from ..risk import risk_adjusted_targets
 from ..simulation import simulate_combination
+from ..dynamic_simulation import simulate_dynamic_alpha
 from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
-OPTIMIZER_METRIC_SCHEMA = "growth-v9-deployable-initialization-risk-state"
+OPTIMIZER_METRIC_SCHEMA = "growth-v10-dynamic-alpha-soft-live-quality"
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -57,6 +56,14 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
         "min_equity_exposure",
         "risk_missing_data_exposure",
         "max_position_weight",
+        "dynamic_alpha_enabled",
+        "dynamic_alpha_portfolio_size",
+        "alpha_min_observations",
+        "alpha_short_lookback",
+        "alpha_medium_lookback",
+        "alpha_long_lookback",
+        "alpha_correlation_lookback",
+        "alpha_max_pair_correlation",
     ]
     payload = {k: getattr(params, k) for k in keys}
     raw = json.dumps(payload, sort_keys=True) + "|" + data_version + "|" + OPTIMIZER_METRIC_SCHEMA
@@ -64,12 +71,7 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
 
 
 def _growth_score(result) -> float:
-    """TRAIN-only scalar used by the surrogate/racing fallback.
-
-    Return has the largest direct weight. Risk-adjusted quality helps break ties;
-    turnover/cost are modest penalties. Drawdown is deliberately not rewarded
-    here because the rolling OOS stage already applies the hard MDD gate.
-    """
+    """TRAIN-only scalar used by the surrogate/racing fallback."""
     return float(
         result.twr_annualized
         + 4.0 * result.sharpe
@@ -83,6 +85,8 @@ def _growth_score(result) -> float:
 
 def result_metrics(result) -> dict:
     """Extract scalar NET metrics used by optimization/validation/reporting."""
+    alpha_history = list(getattr(result, "alpha_selection_history", []) or [])
+    alpha_unique = list(getattr(result, "alpha_unique_symbols", []) or [])
     return {
         "net_twr_annualized_pct": result.twr_annualized,
         "net_xirr_pct": result.xirr,
@@ -112,6 +116,12 @@ def result_metrics(result) -> dict:
         "first_allocation_date": result.first_allocation_date,
         "min_equity_exposure": result.min_equity_exposure,
         "avg_equity_exposure": result.avg_equity_exposure,
+        "dynamic_alpha": bool(alpha_history),
+        "alpha_selection_count": len(alpha_history),
+        "alpha_unique_symbols": alpha_unique,
+        "alpha_unique_symbol_count": len(alpha_unique),
+        "alpha_membership_turnover": float(getattr(result, "alpha_membership_turnover", 0.0) or 0.0),
+        "alpha_selection_history": alpha_history,
         "score": _growth_score(result),
         "legacy_score": result.score,
         "error": result.error,
@@ -141,21 +151,13 @@ def initial_deployment_date(
     window: tuple[str | None, str | None] = (None, None),
     warmup_days: int | None = None,
 ):
-    """Earliest look-ahead-free date at which the portfolio can truly deploy.
-
-    A date is accepted only when strictly-past aligned closes satisfy ERC's
-    observation requirement, the ERC solver succeeds, and the risk overlay (when
-    enabled) yields positive target equity exposure. This prevents an artificial
-    INITIAL DEPLOYMENT marker on a day that would still fail closed to 100% cash.
-    """
+    """Earliest look-ahead-free date at which a STATIC portfolio can deploy."""
     if prices.empty:
         return None
     symbols = list(candidate.symbols)
     if any(s not in prices.columns for s in symbols):
         return None
 
-    # Match simulate_combination's candidate-specific raw calendar. Positions used
-    # below must therefore be positions in this frame, not in the wider panel.
     raw = prices[symbols].dropna(how="all")
     if raw.empty:
         return None
@@ -211,7 +213,7 @@ def allocation_dates_with_initialization(
     window: tuple[str | None, str | None] = (None, None),
     warmup_days: int | None = None,
 ):
-    """Candidate recalibration dates plus one independent initial-deployment date."""
+    """Static candidate recalibration dates plus independent initial deployment."""
     scheduled = schedule_for_window(candidate, all_dates)
     init = initial_deployment_date(candidate, prices, params, window, warmup_days)
     if init is None:
@@ -260,7 +262,7 @@ def evaluate_candidate(
     warmup_days: int | None = None,
     max_allocation_day: int = 252,
 ) -> dict:
-    """Run (or fetch from cache) the backtest for ``candidate`` over a date window."""
+    """Run (or fetch from cache) one timing/static candidate over a date window."""
     start, end = window
     key = f"{start or ''}|{end or ''}"
     if cache:
@@ -269,31 +271,47 @@ def evaluate_candidate(
             return hit
 
     effective_warmup = params.lookback_days if warmup_days is None else warmup_days
-    alloc_dates, init_date = allocation_dates_with_initialization(
-        candidate,
-        prices,
-        params,
-        all_dates,
-        window,
-        effective_warmup,
-    )
     run_params = dataclasses.replace(params, start_date=start, end_date=end)
-    result = simulate_combination(
-        list(candidate.symbols),
-        prices,
-        run_params,
-        allocation_dates=alloc_dates,
-        warmup_days=effective_warmup,
-        metrics_from="window_start",
-    )
 
-    init_text = str(init_date.date()) if init_date is not None else None
-    if init_text:
+    if params.dynamic_alpha_enabled:
+        alloc_dates = schedule_for_window(candidate, all_dates)
+        result = simulate_dynamic_alpha(
+            prices,
+            run_params,
+            allocation_dates=alloc_dates,
+            warmup_days=effective_warmup,
+            metrics_from="window_start",
+        )
+        init_text = None
         for record in result.allocations:
-            if record.get("allocation_date") == init_text:
-                record["allocation_role"] = "INITIAL_DEPLOYMENT"
-            else:
-                record.setdefault("allocation_role", "SCHEDULED_RECALIBRATION")
+            if record.get("allocation_role") == "INITIAL_DEPLOYMENT":
+                init_text = record.get("allocation_date")
+                break
+        init_date = pd.Timestamp(init_text) if init_text else None
+    else:
+        alloc_dates, init_date = allocation_dates_with_initialization(
+            candidate,
+            prices,
+            params,
+            all_dates,
+            window,
+            effective_warmup,
+        )
+        result = simulate_combination(
+            list(candidate.symbols),
+            prices,
+            run_params,
+            allocation_dates=alloc_dates,
+            warmup_days=effective_warmup,
+            metrics_from="window_start",
+        )
+        init_text = str(init_date.date()) if init_date is not None else None
+        if init_text:
+            for record in result.allocations:
+                if record.get("allocation_date") == init_text:
+                    record["allocation_role"] = "INITIAL_DEPLOYMENT"
+                else:
+                    record.setdefault("allocation_role", "SCHEDULED_RECALIBRATION")
 
     metrics = result_metrics(result)
     metrics["initial_deployment_date"] = init_text
@@ -316,11 +334,7 @@ def evaluate_candidate(
 
 
 def objectives(metrics: dict) -> list[float]:
-    """Growth-first TRAIN objective vector for NSGA-II (all maximised).
-
-    MDD/CDaR are intentionally not separate TRAIN objectives anymore. They remain
-    reported and are enforced by rolling OOS/final drawdown gates.
-    """
+    """Growth-first TRAIN objective vector for NSGA-II (all maximised)."""
     return [
         metrics.get("net_twr_annualized_pct", 0.0),
         metrics.get("sharpe", 0.0),

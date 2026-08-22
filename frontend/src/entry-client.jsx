@@ -16,6 +16,10 @@ const PAGES = {
   optimizer_detail: OptimizerDetailPage,
 };
 
-const page = window.__PAGE__ || { page: 'home', props: { runs: [] } };
-const C = PAGES[page.page] || HomePage;
+// Optimizer is the product landing experience. The explicit `home` key remains
+// supported because the Python SSR server uses it for `/` as a compatibility
+// adapter, but a missing page payload now fails toward the optimizer rather than
+// the retired legacy backtest landing page.
+const page = window.__PAGE__ || { page: 'optimizer_list', props: { experiments: [] } };
+const C = PAGES[page.page] || OptimizerListPage;
 hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));

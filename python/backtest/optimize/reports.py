@@ -7,6 +7,7 @@ import json
 import os
 
 from ..candidate import Candidate
+from .eligibility import live_risk_reward_score
 from .nsga2 import dominates
 
 
@@ -25,16 +26,46 @@ def pareto_frontier(items: list[dict]) -> list[dict]:
     return out
 
 
+def _is_dynamic(item: dict) -> bool:
+    return bool((item.get("metrics") or {}).get("dynamic_alpha"))
+
+
+def _active_n(item: dict) -> int:
+    if not _is_dynamic(item):
+        return len(item["candidate"].symbols)
+    history = (item.get("metrics") or {}).get("alpha_selection_history") or []
+    if history:
+        return len(history[0].get("selected_symbols") or [])
+    return 0
+
+
+def _symbols_label(item: dict) -> str:
+    return "DYNAMIC_ALPHA" if _is_dynamic(item) else " ".join(item["candidate"].symbols)
+
+
+def _quality(item: dict) -> dict:
+    existing = item.get("live_quality")
+    if existing:
+        return existing
+    return live_risk_reward_score(
+        item.get("metrics"),
+        item.get("robust"),
+        item.get("recent_validation"),
+    )
+
+
 def _pre_holdout_live_growth_score(item: dict) -> float:
     """Growth-first live ranking using only information available pre-holdout."""
     m = item.get("metrics") or {}
     r = item.get("robust") or {}
     recent = item.get("recent_validation") or {}
+    q = _quality(item)
     return float(
-        0.45 * r.get("robust_return", -1e9)
-        + 0.25 * r.get("p10_net_twr", -1e9)
+        0.42 * r.get("robust_return", -1e9)
+        + 0.23 * r.get("p10_net_twr", -1e9)
         + 0.20 * recent.get("net_twr_annualized_pct", -1e9)
         + 0.10 * m.get("net_twr_annualized_pct", -1e9)
+        + 0.05 * q.get("overall", 0.0)
     )
 
 
@@ -95,13 +126,21 @@ def _row(item: dict) -> dict:
     recent = item.get("recent_validation") or {}
     t = item.get("test") or {}
     test_period = ((t.get("per_window") or [{}])[0] or {}) if t else {}
+    quality = _quality(item)
     row = {
-        "symbols": " ".join(c.symbols),
-        "n_symbols": len(c.symbols),
+        "symbols": _symbols_label(item),
+        "n_symbols": _active_n(item),
+        "dynamic_alpha": _is_dynamic(item),
         "allocation_count_per_year": len(c.allocation_days),
         "allocation_days": "[" + ",".join(str(d) for d in c.allocation_days) + "]",
         "live_eligible": item.get("live_eligible"),
         "eligibility_reasons": ";".join(item.get("eligibility_reasons") or []),
+        "live_quality_score": quality.get("overall"),
+        "live_quality_train_calmar": quality.get("train_calmar"),
+        "live_quality_validation_return_to_drawdown": quality.get("validation_return_to_drawdown"),
+        "live_quality_recent_calmar": quality.get("recent_calmar"),
+        "alpha_unique_symbol_count": m.get("alpha_unique_symbol_count"),
+        "alpha_membership_turnover": m.get("alpha_membership_turnover"),
     }
     for k in [
         "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "sortino", "calmar",
@@ -125,7 +164,8 @@ def _row(item: dict) -> dict:
         "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "max_drawdown_pct",
         "cdar95_pct", "measurement_start_nav", "measurement_external_contributions",
         "measurement_profit", "final_nav", "initial_deployment_date",
-        "initial_deployment_before_measurement",
+        "initial_deployment_before_measurement", "alpha_unique_symbol_count",
+        "alpha_membership_turnover",
     ]:
         row[f"recent_{k}"] = recent.get(k)
     for k in [
@@ -138,6 +178,7 @@ def _row(item: dict) -> dict:
         "measurement_start_nav", "measurement_external_contributions",
         "measurement_profit", "final_nav", "avg_equity_exposure",
         "initial_deployment_date", "initial_deployment_before_measurement",
+        "alpha_unique_symbol_count", "alpha_membership_turnover",
     ]:
         row[f"test_period_{k}"] = test_period.get(k)
     row["timing_spike"] = item.get("timing_robust", {}).get("isolated_spike")
@@ -177,10 +218,11 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
         m = item.get("metrics") or {}
         bm = b.get("train") or {}
         rows.append({
-            "symbols": " ".join(c.symbols),
+            "symbols": _symbols_label(item),
             "optimized_allocation_days": "[" + ",".join(str(d) for d in c.allocation_days) + "]",
             "baseline_allocation_days": "[" + ",".join(str(d) for d in baseline_days) + "]",
             "live_eligible": item.get("live_eligible"),
+            "live_quality_score": _quality(item).get("overall"),
             "eligibility_reasons": ";".join(item.get("eligibility_reasons") or []),
             "opt_recent_twr": (item.get("recent_validation") or {}).get("net_twr_annualized_pct"),
             "opt_robust_return": r.get("robust_return"),
@@ -209,9 +251,10 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
         for name, item in winners.items():
             if item is None:
                 continue
+            wanted_symbols = _symbols_label(item)
+            wanted_days = "[" + ",".join(str(d) for d in item["candidate"].allocation_days) + "]"
             for rw in rows:
-                if rw["symbols"] == " ".join(item["candidate"].symbols) and \
-                   rw["optimized_allocation_days"] == "[" + ",".join(str(d) for d in item["candidate"].allocation_days) + "]":
+                if rw["symbols"] == wanted_symbols and rw["optimized_allocation_days"] == wanted_days:
                     rw["leaderboard"] = (rw.get("leaderboard") or "") + name + ";"
     _write_csv(os.path.join(out_dir, "baseline_comparison.csv"), rows)
 
@@ -250,9 +293,11 @@ def write_exports(
 def item_to_json(item: dict) -> dict:
     c: Candidate = item["candidate"]
     test = item.get("test") or {}
+    dynamic = _is_dynamic(item)
     return {
-        "symbols": list(c.symbols),
-        "n_symbols": len(c.symbols),
+        "symbols": [] if dynamic else list(c.symbols),
+        "n_symbols": _active_n(item),
+        "dynamic_alpha": dynamic,
         "allocation_count_per_year": len(c.allocation_days),
         "allocation_days": list(c.allocation_days),
         "metrics": item.get("metrics"),
@@ -260,6 +305,7 @@ def item_to_json(item: dict) -> dict:
         "validation_metrics": item.get("validation_metrics") or item.get("robust"),
         "recent_validation": item.get("recent_validation"),
         "live_eligible": bool(item.get("live_eligible")),
+        "live_quality": _quality(item),
         "eligibility_reasons": list(item.get("eligibility_reasons") or []),
         "test_metrics": item.get("test_metrics") or test,
         "robust": item.get("robust"),
@@ -313,14 +359,21 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
     tr = item.get("timing_robust") or {}
     sr = item.get("symbol_robust") or {}
     conc = item.get("concentration") or {}
+    q = _quality(item)
+    dynamic = _is_dynamic(item)
     lines = [
         f"# Finalist: {name}",
         "",
         "## Portfolio",
-        f"- Symbols: {' '.join(c.symbols)}",
-        f"- N: {len(c.symbols)}",
+        f"- Membership: {'DYNAMIC ALPHA' if dynamic else 'STATIC'}",
+        f"- Symbols: {'re-ranked from universe at every recalibration' if dynamic else ' '.join(c.symbols)}",
+        f"- Active N: {_active_n(item)}",
+        f"- Unique symbols seen in TRAIN: {m.get('alpha_unique_symbol_count', '-') if dynamic else len(c.symbols)}",
+        f"- Alpha membership turnover: {m.get('alpha_membership_turnover', '-') if dynamic else '-'}",
         f"- Live eligibility: {'PASS' if item.get('live_eligible') else 'FAIL'}",
         f"- Eligibility reasons: {item.get('eligibility_reasons') or []}",
+        f"- Soft live quality score: {q.get('overall', '-')}/100",
+        f"- Soft quality TRAIN Calmar / validation R-DD / recent Calmar: {q.get('train_calmar', '-')} / {q.get('validation_return_to_drawdown', '-')} / {q.get('recent_calmar', '-')}",
         "",
         "## Initial deployment",
         f"- Initial deployment date: {m.get('initial_deployment_date', '-')}",
@@ -350,7 +403,7 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Drawdown gate: {r.get('drawdown_gate_pct', '-')}%",
         f"- Robust return: {r.get('robust_return', '-')}",
         "",
-        "## RECENT PRE-HOLDOUT VALIDATION (eligibility only)",
+        "## RECENT PRE-HOLDOUT VALIDATION",
         f"- Net TWR annualized: {recent.get('net_twr_annualized_pct', '-')}%",
         f"- Net XIRR: {recent.get('net_xirr_pct', '-')}%",
         f"- MDD: {recent.get('max_drawdown_pct', '-')}%",
@@ -379,6 +432,15 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Stock contributions: {m.get('stock_contributions', {})}",
         "",
     ]
+    if dynamic:
+        lines.extend(["## Dynamic alpha membership", ""])
+        for selection in m.get("alpha_selection_history") or []:
+            lines.append(
+                f"- {selection.get('date')} [{selection.get('role')}]: "
+                f"{' '.join(selection.get('selected_symbols') or [])} "
+                f"(max corr={selection.get('max_selected_correlation')})"
+            )
+        lines.append("")
     path = os.path.join(out_dir, f"finalist_{name}.md")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))

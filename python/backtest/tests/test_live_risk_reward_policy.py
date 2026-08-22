@@ -1,60 +1,72 @@
-"""Regression tests for risk/reward live promotion and holdout isolation."""
+"""Regression tests for soft risk/reward promotion and holdout isolation."""
 
 from __future__ import annotations
 
 import pandas as pd
 
 from backtest.candidate import Candidate, resolve_allocation_dates
-from backtest.optimize.eligibility import assess_live_eligibility
+from backtest.optimize.eligibility import assess_live_eligibility, live_risk_reward_score
 from backtest.optimize.reports import leaderboards
 from backtest.recommendation import build_recommendation
 
 
-def test_low_return_large_drawdown_fails_live_gate():
-    ok, reasons = assess_live_eligibility(
-        {
-            "net_twr_annualized_pct": 1.62,
-            "max_drawdown_pct": -27.47,
-            "calmar": 0.059,
-        },
-        {
-            "p10_net_twr": 12.0,
-            "median_net_twr": 22.45,
-            "worst_mdd": -30.0,
-            "robust_return": 18.0,
-        },
-        {
-            "net_twr_annualized_pct": 3.86,
-            "max_drawdown_pct": -20.24,
-            "calmar": 0.19,
-        },
-    )
-    assert ok is False
-    assert "train_calmar_below_0.35" in reasons
-    assert "recent_calmar_below_0.35" in reasons
-
-
-def test_healthy_risk_reward_passes_live_gate():
-    ok, reasons = assess_live_eligibility(
-        {
-            "net_twr_annualized_pct": 14.0,
-            "max_drawdown_pct": -20.0,
-            "calmar": 0.70,
-        },
-        {
-            "p10_net_twr": 8.0,
-            "median_net_twr": 15.0,
-            "worst_mdd": -22.0,
-            "robust_return": 12.0,
-        },
-        {
-            "net_twr_annualized_pct": 10.0,
-            "max_drawdown_pct": -16.0,
-            "calmar": 0.625,
-        },
-    )
+def test_low_return_large_drawdown_is_soft_quality_not_binary_failure():
+    train = {
+        "net_twr_annualized_pct": 1.62,
+        "max_drawdown_pct": -27.47,
+        "calmar": 0.059,
+    }
+    validation = {
+        "p10_net_twr": 12.0,
+        "median_net_twr": 22.45,
+        "worst_mdd": -30.0,
+        "robust_return": 18.0,
+    }
+    recent = {
+        "net_twr_annualized_pct": 3.86,
+        "max_drawdown_pct": -20.24,
+        "calmar": 0.19,
+    }
+    ok, reasons = assess_live_eligibility(train, validation, recent)
     assert ok is True
     assert reasons == []
+    quality = live_risk_reward_score(train, validation, recent)
+    assert quality["overall"] < 60.0
+    assert quality["train_calmar"] == 0.059
+    assert quality["recent_calmar"] == 0.19
+
+
+def test_healthy_risk_reward_passes_live_gate_and_scores_better():
+    train = {
+        "net_twr_annualized_pct": 14.0,
+        "max_drawdown_pct": -20.0,
+        "calmar": 0.70,
+    }
+    validation = {
+        "p10_net_twr": 8.0,
+        "median_net_twr": 15.0,
+        "worst_mdd": -22.0,
+        "robust_return": 12.0,
+    }
+    recent = {
+        "net_twr_annualized_pct": 10.0,
+        "max_drawdown_pct": -16.0,
+        "calmar": 0.625,
+    }
+    ok, reasons = assess_live_eligibility(train, validation, recent)
+    assert ok is True
+    assert reasons == []
+    assert live_risk_reward_score(train, validation, recent)["overall"] > 50.0
+
+
+def test_negative_oos_tail_is_still_a_hard_gate():
+    ok, reasons = assess_live_eligibility(
+        {"net_twr_annualized_pct": 20.0, "calmar": 1.0},
+        {"p10_net_twr": -1.0, "median_net_twr": 20.0, "worst_mdd": -10.0},
+        {"net_twr_annualized_pct": 10.0, "calmar": 1.0},
+    )
+    assert ok is False
+    assert "validation_p10_below_0%" in reasons
 
 
 def _item(symbol_suffix: str, robust: float, p10: float, recent: float, train: float, holdout_valid: bool):
@@ -81,9 +93,6 @@ def _item(symbol_suffix: str, robust: float, p10: float, recent: float, train: f
 
 
 def test_live_winner_is_not_reranked_by_final_holdout():
-    # Candidate E has better pre-holdout growth but fails the final holdout.
-    # Candidate F passes holdout. Selection must remain E; holdout may reject E
-    # later, but may not silently switch the winner to F.
     e = _item("E", robust=20.0, p10=15.0, recent=14.0, train=16.0, holdout_valid=False)
     f = _item("F", robust=12.0, p10=10.0, recent=9.0, train=11.0, holdout_valid=True)
     winners = leaderboards([e, f])
@@ -128,7 +137,6 @@ def test_negative_final_holdout_blocks_deployment_even_after_live_gate():
 
 
 def test_partial_year_missing_allocation_session_is_skipped_not_clamped():
-    # 2024 is complete enough for day 200; 2025 contains only 20 sessions.
     dates = list(pd.bdate_range("2024-01-02", periods=252))
     dates += list(pd.bdate_range("2025-01-02", periods=20))
     c = Candidate(("A", "B", "C", "D", "E"), (40, 100, 200))
@@ -138,5 +146,4 @@ def test_partial_year_missing_allocation_session_is_skipped_not_clamped():
     assert partial["skipped"] is True
     assert partial["resolved_date"] is None
     assert partial["clamped"] is False
-    # No artificial duplicate at 2025's final available trading day.
     assert dates[-1] not in resolved

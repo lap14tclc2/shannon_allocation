@@ -117,7 +117,10 @@ if (existsSync(ssrEntry)) {
   ({ renderPage } = await import(`file://${ssrEntry.replace(/\\/g, '/')}`));
 
   const homeHtml = renderPage('home', { runs: fixtures.runs });
-  check('home SSR renders run links', homeHtml.includes('r1') && homeHtml.includes('/runs/r1'));
+  check('home SSR renders Dynamic Alpha optimizer landing page', homeHtml.includes('Growth Optimizer') && homeHtml.includes('Dynamic Alpha + allocation'));
+
+  const optimizerHtml = renderPage('optimizer_list', { experiments: [] });
+  check('optimizer SSR renders the same primary workflow', optimizerHtml.includes('Growth Optimizer') && optimizerHtml.includes('Dynamic Alpha + allocation'));
 
   const runHtml = renderPage('run', { meta: fixtures.meta, index: fixtures.index });
   check('run SSR renders ranking row', runHtml.includes('HAG') && runHtml.includes('45.4'));
@@ -148,7 +151,6 @@ if (existsSync(clientJs)) {
 
   const errors = [];
   window.addEventListener('error', (e) => errors.push(e.message));
-  // Pre-populate the DOM with the server-rendered HTML so hydration matches.
   const comboHtml = renderPage('combo', { combo: fixtures.combo, runId: 'r1' });
   window.document.getElementById('root').innerHTML = comboHtml;
   window.__PAGE__ = { page: 'combo', props: { combo: fixtures.combo, runId: 'r1' } };
