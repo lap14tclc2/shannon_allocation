@@ -1,16 +1,14 @@
 """Walk-forward simulation of one portfolio candidate.
 
 Look-ahead free by construction:
-  - ERC targets are calibrated using price data strictly BEFORE the signal day
+  - ERC targets are calibrated using raw price data strictly BEFORE the signal day
+  - the absolute-risk overlay also uses data strictly before the signal day
   - a signal (allocation or band rebalance) is computed at close[t]
   - orders execute at close[t+1] (execution_lag=1), applying transaction costs
 
-A candidate may supply a custom allocation schedule (`allocation_dates`): the
-exact market dates on which ERC targets are recalculated. When None, the default
-quarter/annual boundary schedule is used.
-
-Every allocation is recorded with signal date, execution date, execution prices,
-targets, ERC diagnostics, holdings before/after and the executed trades.
+The raw price panel is never forward-filled for risk estimation.  A separate
+forward-filled valuation panel is used only to mark existing holdings to their
+last known close on dates where a symbol has no print.
 """
 
 from __future__ import annotations
@@ -22,6 +20,7 @@ import pandas as pd
 
 from .config import BacktestParams
 from .erc import ERCError, log_returns_from_window, solve_erc
+from .risk import risk_adjusted_targets
 from .strategy import compute_recommendations, snapshot_holdings, total_nav
 from . import metrics as mt
 
@@ -32,7 +31,7 @@ class SimulationResult:
     nav_history: list[tuple[str, float]] = field(default_factory=list)
     gross_nav_history: list[tuple[str, float]] = field(default_factory=list)
     allocations: list[dict] = field(default_factory=list)
-    allocation_schedule: list = field(default_factory=list)   # actual signal dates
+    allocation_schedule: list = field(default_factory=list)
     final_nav: float = 0.0
     total_deposits: float = 0.0
     total_return_pct: float = 0.0
@@ -41,11 +40,16 @@ class SimulationResult:
     sharpe: float = 0.0
     max_drawdown_pct: float = 0.0
 
+    # --- drawdown-tail diagnostics ---
+    cdar95_pct: float = 0.0
+    underwater_ratio: float = 0.0
+    max_underwater_days: int = 0
+
     # --- net metrics (after costs) ---
     first_allocation_date: str = ""
-    twr: float = 0.0                 # net time-weighted total return %
-    twr_annualized: float = 0.0      # net annualized TWR %
-    xirr: float = 0.0                # net investor money-weighted return %
+    twr: float = 0.0
+    twr_annualized: float = 0.0
+    xirr: float = 0.0
     sortino: float = 0.0
     calmar: float = 0.0
     absolute_profit: float = 0.0
@@ -56,17 +60,21 @@ class SimulationResult:
     trade_count: int = 0
     score: float = 0.0
 
-    # --- gross (no costs) ---
+    # --- gross (fees/tax/slippage added back approximately) ---
     gross_twr: float = 0.0
     gross_twr_annualized: float = 0.0
     gross_xirr: float = 0.0
 
     # --- transaction costs ---
-    transaction_cost: float = 0.0        # total VND paid in costs
-    cost_pct_of_nav: float = 0.0         # total cost / mean NAV, %
+    transaction_cost: float = 0.0
+    cost_pct_of_nav: float = 0.0
+
+    # --- risk overlay diagnostics ---
+    min_equity_exposure: float = 1.0
+    avg_equity_exposure: float = 1.0
 
     # --- concentration ---
-    stock_contributions: dict = field(default_factory=dict)   # symbol -> P&L VND
+    stock_contributions: dict = field(default_factory=dict)
 
     error: str | None = None
 
@@ -75,7 +83,7 @@ QUARTER_MONTHS = (1, 4, 7, 10)
 
 
 def _compute_targets(prices: pd.DataFrame, symbols: list[str], pos: int, params: BacktestParams):
-    """Return (targets dict, diagnostics dict) calibrated on data strictly before `pos`."""
+    """Return relative ERC targets calibrated strictly before ``pos``."""
     start = max(0, pos - params.lookback_days)
     window = prices.iloc[start:pos][symbols].dropna()
     if len(window) < params.minimum_observations:
@@ -107,43 +115,41 @@ def simulate_combination(
     warmup_days: int | None = None,
     metrics_from: str = "first_allocation",
 ) -> SimulationResult:
-    """Simulate one candidate. `allocation_dates` = market dates for ERC recalc (optional).
+    """Simulate one candidate.
 
-    `warmup_days`: number of trading days of data loaded BEFORE params.start_date so
-    ERC has enough history to calibrate at the first allocation inside the window.
-    Warm-up data is used only for calibration; it is never part of performance.
-
-    `metrics_from`: "first_allocation" (default, ranking board convention — the
-    performance clock starts at the first investment) or "window_start" (the whole
-    evaluation window counts, including the cash period before the first allocation;
-    used by the optimizer's walk-forward windows so a late allocation cannot inflate
-    annualized returns).
+    ``prices`` must be a raw (non-forward-filled) panel.  ``allocation_dates`` may
+    provide exact ERC recalculation dates.  Warm-up data is available to the
+    model but excluded from performance when ``metrics_from='window_start'``.
     """
     symbols = sorted(symbols)
     result = SimulationResult(symbols=tuple(symbols))
 
-    sub = prices[symbols].dropna(how="all")
-    if len(sub) < params.minimum_observations + 1:
-        result.error = "Not enough aligned history."
+    raw = prices[symbols].dropna(how="all")
+    if len(raw) < params.minimum_observations + 1:
+        result.error = "Not enough history."
         return result
 
-    perf_start_idx = 0  # index in `sub` where performance measurement begins
+    perf_start_idx = 0
     if params.start_date:
         ts = pd.Timestamp(params.start_date)
-        idx = sub.index.searchsorted(ts)
+        idx = raw.index.searchsorted(ts)
         if warmup_days:
             lo = max(0, idx - warmup_days)
-            sub = sub.iloc[lo:]
+            raw = raw.iloc[lo:]
             perf_start_idx = idx - lo
         else:
-            sub = sub.iloc[idx:]
+            raw = raw.iloc[idx:]
     if params.end_date:
-        sub = sub[sub.index <= pd.Timestamp(params.end_date)]
-    if len(sub) < 2:
+        raw = raw[raw.index <= pd.Timestamp(params.end_date)]
+    if len(raw) < 2:
         result.error = "Empty date window."
         return result
 
-    dates = list(sub.index)
+    # Valuation may use the last known close; risk estimation above/below always
+    # uses ``raw`` so a suspension cannot become a sequence of artificial zeros.
+    valuation = raw.ffill()
+    dates = list(raw.index)
+
     alloc_set = None
     if allocation_dates is not None:
         alloc_set = {pd.Timestamp(x).normalize() for x in allocation_dates}
@@ -155,15 +161,16 @@ def simulate_combination(
     cumulative_cost = 0.0
     net_invested: dict[str, float] = {s: 0.0 for s in symbols}
 
-    targets: dict[str, float] | None = None
+    relative_targets: dict[str, float] | None = None
     allocated = False
     net_nav_series: list[float] = []
     gross_nav_series: list[float] = []
     nav_history: list[tuple[str, float]] = []
     gross_nav_history: list[tuple[str, float]] = []
+    exposure_history: list[float] = []
     rebalances_since_allocation = 0
-    pending = None  # {'recs','record','kind','signal_pos'}
-    allocation_indices: list[int] = []  # positions where an allocation signal fired
+    pending = None
+    allocation_indices: list[int] = []
 
     deposit_indices: set[int] = set()
     deposit_dates: list = []
@@ -173,63 +180,68 @@ def simulate_combination(
     first_invested_idx: int | None = None
 
     def execute_pending(pos: int, d, px):
-        """Execute pending orders at close[t+1] with transaction costs."""
+        """Execute pending orders at close[t+1] with explicit slippage + costs."""
         nonlocal cash, cumulative_cost, total_traded_value, trade_count, first_invested_idx
         for rec in pending["recs"]:
             sym = rec["symbol"]
             rec["execution_date"] = str(d.date())
             side = rec["recommendation"]
             amount = rec["funded_trade_amount"]
-            price = px[sym]
-            if side == "HOLD" or amount <= 0 or price <= 0:
+            reference_price = px[sym]
+            if side == "HOLD" or amount <= 0 or reference_price <= 0:
                 continue
+
             if side == "BUY":
-                slip = 1.0 + params.slippage_bps / 10000.0
+                exec_price = reference_price * (1.0 + params.slippage_bps / 10000.0)
                 fee_rate = params.fee_buy_bps / 10000.0
-                qty = amount / (price * slip)
+                qty = amount / exec_price
                 if not params.fractional_shares:
                     qty = _floor(qty)
-                affordable = cash / (price + price * fee_rate) if price > 0 else 0.0
+                affordable = cash / (exec_price * (1.0 + fee_rate)) if exec_price > 0 else 0.0
                 qty = min(qty, affordable)
                 if not params.fractional_shares:
                     qty = _floor(qty)
-                notional = qty * price
-                fee = notional * fee_rate
-                if qty <= 0 or notional + fee > cash + 1e-6:
+                exec_notional = qty * exec_price
+                reference_notional = qty * reference_price
+                fee = exec_notional * fee_rate
+                slippage_cost = max(0.0, exec_notional - reference_notional)
+                if qty <= 0 or exec_notional + fee > cash + 1e-6:
                     continue
                 shares[sym] = shares.get(sym, 0.0) + qty
-                cash -= notional + fee
-                cumulative_cost += fee
-                total_traded_value += notional
+                cash -= exec_notional + fee
+                cumulative_cost += fee + slippage_cost
+                total_traded_value += reference_notional
                 trade_count += 1
-                net_invested[sym] += notional + fee
-                rec["execution_price"] = round(price, 2)
+                net_invested[sym] += exec_notional + fee
+                rec["execution_price"] = round(exec_price, 2)
                 rec["shares_to_trade"] = round(qty, 4)
-                rec["executed_notional"] = round(notional, 2)
-                rec["cost"] = round(fee, 2)
+                rec["executed_notional"] = round(exec_notional, 2)
+                rec["cost"] = round(fee + slippage_cost, 2)
+                rec["slippage_cost"] = round(slippage_cost, 2)
             else:  # SELL
-                slip = 1.0 - params.slippage_bps / 10000.0
-                exec_price = price * slip
-                qty = min(amount / exec_price, shares.get(sym, 0.0))
+                exec_price = reference_price * (1.0 - params.slippage_bps / 10000.0)
+                qty = min(amount / max(exec_price, 1e-9), shares.get(sym, 0.0))
                 if not params.fractional_shares:
                     qty = _floor(qty)
                 if qty <= 0:
                     continue
-                notional = qty * price
-                fee = notional * params.fee_sell_bps / 10000.0
-                tax = notional * params.tax_sell_bps / 10000.0
-                cost = fee + tax
-                proceeds = qty * exec_price
+                exec_notional = qty * exec_price
+                reference_notional = qty * reference_price
+                fee = exec_notional * params.fee_sell_bps / 10000.0
+                tax = exec_notional * params.tax_sell_bps / 10000.0
+                slippage_cost = max(0.0, reference_notional - exec_notional)
+                explicit_cost = fee + tax
                 shares[sym] = shares.get(sym, 0.0) - qty
-                cash += proceeds - cost
-                cumulative_cost += cost
-                total_traded_value += notional
+                cash += exec_notional - explicit_cost
+                cumulative_cost += explicit_cost + slippage_cost
+                total_traded_value += reference_notional
                 trade_count += 1
-                net_invested[sym] -= proceeds
-                rec["execution_price"] = round(price, 2)
+                net_invested[sym] -= exec_notional - explicit_cost
+                rec["execution_price"] = round(exec_price, 2)
                 rec["shares_to_trade"] = round(qty, 4)
-                rec["executed_notional"] = round(notional, 2)
-                rec["cost"] = round(cost, 2)
+                rec["executed_notional"] = round(exec_notional, 2)
+                rec["cost"] = round(explicit_cost + slippage_cost, 2)
+                rec["slippage_cost"] = round(slippage_cost, 2)
 
         record = pending.get("record")
         if record is not None:
@@ -251,7 +263,7 @@ def simulate_combination(
         return new_year
 
     for pos, d in enumerate(dates):
-        prices_now = sub.loc[d].fillna(0.0).to_dict()
+        prices_now = valuation.loc[d].fillna(0.0).to_dict()
         prev = dates[pos - 1] if pos > 0 else None
 
         # 1) Execute yesterday's signal at today's close.
@@ -270,13 +282,17 @@ def simulate_combination(
 
         # 3) Signal computation at close[t].
         if is_allocation_date(d, prev, pos):
-            computed = _compute_targets(sub, symbols, pos, params)
+            computed = _compute_targets(raw, symbols, pos, params)
             if computed is not None:
-                new_targets, erc_info = computed
+                new_relative_targets, erc_info = computed
+                live_targets, risk_info = risk_adjusted_targets(
+                    raw, symbols, pos, new_relative_targets, params
+                )
+                relative_targets = new_relative_targets
+                exposure_history.append(float(risk_info.get("equity_exposure", 1.0)))
                 nav_before = total_nav(shares, cash, prices_now)
                 holdings_before = snapshot_holdings(shares, prices_now, nav_before)
-                recs, funding = compute_recommendations(shares, cash, prices_now, new_targets, params)
-                targets = new_targets
+                recs, funding = compute_recommendations(shares, cash, prices_now, live_targets, params)
                 allocated = True
                 record = {
                     "year": int(d.year),
@@ -292,7 +308,9 @@ def simulate_combination(
                     "nav_after": None,
                     "cash_after": None,
                     "erc": erc_info,
-                    "targets": {s: round(t, 6) for s, t in new_targets.items()},
+                    "relative_targets": {s: round(t, 6) for s, t in new_relative_targets.items()},
+                    "targets": {s: round(t, 6) for s, t in live_targets.items()},
+                    "risk_overlay": risk_info,
                     "holdings_before": holdings_before,
                     "recommendations": recs,
                     "holdings_after": None,
@@ -302,8 +320,10 @@ def simulate_combination(
                 rebalances_since_allocation = 0
                 allocation_indices.append(pos)
                 pending = {"recs": recs, "record": record, "kind": "allocation", "signal_pos": pos}
-        elif allocated and targets is not None and pos % params.rebalance_every_days == 0:
-            recs, _ = compute_recommendations(shares, cash, prices_now, targets, params)
+        elif allocated and relative_targets is not None and pos % params.rebalance_every_days == 0:
+            live_targets, risk_info = risk_adjusted_targets(raw, symbols, pos, relative_targets, params)
+            exposure_history.append(float(risk_info.get("equity_exposure", 1.0)))
+            recs, _ = compute_recommendations(shares, cash, prices_now, live_targets, params)
             if any(r["recommendation"] != "HOLD" for r in recs):
                 pending = {"recs": recs, "record": None, "kind": "rebalance", "signal_pos": pos}
                 rebalances_since_allocation += 1
@@ -328,10 +348,11 @@ def simulate_combination(
         s: round(shares.get(s, 0.0) * prices_now.get(s, 0.0) - net_invested.get(s, 0.0), 2)
         for s in symbols
     }
-    if metrics_from == "window_start":
-        perf_start = perf_start_idx
-    else:
-        perf_start = first_invested_idx
+    if exposure_history:
+        result.min_equity_exposure = min(exposure_history)
+        result.avg_equity_exposure = sum(exposure_history) / len(exposure_history)
+
+    perf_start = perf_start_idx if metrics_from == "window_start" else first_invested_idx
     _fill_performance(
         result,
         net_nav_series,
@@ -381,7 +402,6 @@ def _fill_performance(
 
     days = (dates[end_idx].toordinal() - dates[perf_start].toordinal()) + 1
 
-    # Net metrics.
     if metrics_from == "window_start":
         in_window = [i for i in allocation_indices if i >= perf_start]
         fa_idx = min(in_window) if in_window else first_invested_idx
@@ -403,7 +423,14 @@ def _fill_performance(
         result.sortino = sortino if sortino is not None else 0.0
 
     mdd = mt.max_drawdown(net_nav_series, perf_start, end_idx)
+    cdar95 = mt.conditional_drawdown_at_risk(net_nav_series, perf_start, end_idx, 0.95)
+    underwater_ratio, max_underwater_days = mt.underwater_stats(
+        net_nav_series, dates, perf_start, end_idx
+    )
     result.max_drawdown_pct = mdd * 100.0
+    result.cdar95_pct = cdar95 * 100.0
+    result.underwater_ratio = underwater_ratio
+    result.max_underwater_days = max_underwater_days
     result.calmar = (ann_twr / abs(mdd)) if (ann_twr is not None and mdd < 0) else 0.0
 
     flow_anchor = perf_start if metrics_from == "window_start" else 0
@@ -428,7 +455,6 @@ def _fill_performance(
     result.trade_count = trade_count
     result.cost_pct_of_nav = (cumulative_cost / mean_nav * 100.0) if mean_nav > 0 else 0.0
 
-    # Gross metrics (cumulative cost added back to NAV).
     gt = mt.time_weighted_return(gross_nav_series, deposit_indices, perf_start, end_idx)
     result.gross_twr = gt * 100.0
     gann = mt.annualized_from_total(gt, days)
@@ -446,10 +472,10 @@ def _fill_performance(
         result.sharpe,
         result.max_drawdown_pct / 100.0,
         result.positive_year_ratio,
+        result.cdar95_pct / 100.0,
     )
 
 
 def _floor(shares: float) -> float:
     import math
-
     return math.floor(shares + 1e-9)
