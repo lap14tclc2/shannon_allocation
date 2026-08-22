@@ -1,9 +1,9 @@
 """Configuration for the Shannon/ERC combination backtest.
 
 All quantitative parameters mirror the reference implementation
-(portfolio_allocation) unless explicitly marked as a risk overlay. The risk
-overlay is orthogonal to ERC: ERC determines relative weights; the overlay can
-scale total equity exposure and leave the remainder in cash.
+(portfolio_allocation) unless explicitly marked as a risk/alpha overlay. ERC
+still determines relative risk weights; the optional alpha layer only decides
+which symbols are active at a recalibration event using strictly-past prices.
 """
 
 from __future__ import annotations
@@ -37,6 +37,20 @@ class BacktestParams:
 
     # Allocation schedule
     allocation_frequency: str = "quarterly"
+
+    # Dynamic alpha selection. When enabled, the configured market universe is
+    # re-ranked at every ERC recalibration using only observations strictly before
+    # the signal day. The selector chooses the active names; ERC still owns their
+    # relative weights. These fixed coefficients are methodology, not optimized
+    # genes, so the final holdout cannot tune them.
+    dynamic_alpha_enabled: bool = False
+    dynamic_alpha_portfolio_size: int = 7
+    alpha_min_observations: int = 60
+    alpha_short_lookback: int = 63
+    alpha_medium_lookback: int = 126
+    alpha_long_lookback: int = 252
+    alpha_correlation_lookback: int = 126
+    alpha_max_pair_correlation: float = 0.80
 
     # Shannon drift bands
     normal_band: float = 0.10
