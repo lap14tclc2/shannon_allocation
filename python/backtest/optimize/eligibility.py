@@ -2,12 +2,12 @@
 
 Hard gates are reserved for genuinely dangerous evidence: missing validation,
 negative OOS tail performance, or a materially negative recent pre-holdout
-regime.  TRAIN/Recent Calmar and validation return-to-drawdown are deliberately
-SOFT quality inputs rather than cliffs.  A candidate with Calmar 0.34 should not
+regime. TRAIN/Recent Calmar and validation return-to-drawdown are deliberately
+SOFT quality inputs rather than cliffs. A candidate with Calmar 0.34 should not
 be treated as categorically different from one at 0.36.
 
 These rules remain outside ERC, Shannon, volatility targeting and the final
-holdout.  The final holdout may reject a frozen winner; it never selects one.
+holdout. The final holdout may reject a frozen winner; it never selects one.
 """
 
 from __future__ import annotations
@@ -15,14 +15,9 @@ from __future__ import annotations
 import math
 
 
-# Reference levels for the soft quality score.  They are NOT deployment gates.
 DEFAULT_REFERENCE_TRAIN_CALMAR = 0.35
 DEFAULT_REFERENCE_VALIDATION_RETURN_TO_DRAWDOWN = 0.50
 DEFAULT_REFERENCE_RECENT_CALMAR = 0.35
-
-# A small recent loss is allowed so the system does not turn a noisy threshold
-# around zero into a binary cliff.  Larger recent deterioration remains a hard
-# pre-holdout warning.  Users can override this through OptimizerConfig.
 DEFAULT_MIN_RECENT_TWR_PCT = -5.0
 
 
@@ -51,11 +46,7 @@ def _return_to_drawdown(
 
 
 def _soft_component(value: float | None, reference: float) -> float:
-    """Map a risk/reward ratio to a bounded 0..1 quality component.
-
-    The reference level maps to 0.5.  Values improve smoothly above it and fade
-    smoothly below it; there is intentionally no discontinuity.
-    """
+    """Map a risk/reward ratio to a bounded 0..1 quality component."""
     if value is None or not math.isfinite(float(value)):
         return 0.0
     ref = max(1e-9, float(reference))
@@ -98,7 +89,6 @@ def live_risk_reward_score(
     )
     recent_q = _soft_component(recent_ratio, reference_recent_calmar)
 
-    # OOS and recent evidence matter more than TRAIN fit.
     overall = 100.0 * (0.20 * train_q + 0.45 * validation_q + 0.35 * recent_q)
     return {
         "overall": round(overall, 4),
@@ -130,10 +120,10 @@ def assess_live_eligibility(
 ) -> tuple[bool, list[str]]:
     """Apply only hard pre-holdout deployment gates.
 
-    ``min_train_twr_pct`` is retained for API compatibility but defaults to None,
-    meaning TRAIN return is a ranking input rather than a live cliff.  Legacy
-    Calmar keyword arguments are accepted and ignored so older callers/tests do
-    not break while the policy migrates to soft scoring.
+    A legacy value of ``0`` for TRAIN return now means "no TRAIN hard gate".
+    Likewise the old zero recent threshold is migrated to the -5% catastrophic
+    default. Positive explicit thresholds still work for callers that truly want
+    them. Legacy Calmar keyword arguments are accepted and ignored.
     """
     reasons: list[str] = []
     train = train_metrics or {}
@@ -143,7 +133,7 @@ def assess_live_eligibility(
     if not validation:
         reasons.append("validation_failed")
 
-    if min_train_twr_pct is not None:
+    if min_train_twr_pct is not None and float(min_train_twr_pct) > 0.0:
         train_twr = train.get("net_twr_annualized_pct")
         if train_twr is None or train_twr < min_train_twr_pct:
             reasons.append(f"train_twr_below_{min_train_twr_pct:g}%")
@@ -154,10 +144,15 @@ def assess_live_eligibility(
             f"validation_p10_below_{min_validation_p10_twr_pct:g}%"
         )
 
+    effective_recent_floor = (
+        DEFAULT_MIN_RECENT_TWR_PCT
+        if float(min_recent_twr_pct) == 0.0
+        else float(min_recent_twr_pct)
+    )
     recent_twr = recent.get("net_twr_annualized_pct")
-    if recent_twr is None or recent.get("error") or recent_twr < min_recent_twr_pct:
+    if recent_twr is None or recent.get("error") or recent_twr < effective_recent_floor:
         reasons.append(
-            f"recent_validation_twr_below_{min_recent_twr_pct:g}%"
+            f"recent_validation_twr_below_{effective_recent_floor:g}%"
         )
 
     return not reasons, reasons
