@@ -2,8 +2,13 @@
 
 This is a historical robustness recommendation, not a forecast. Candidate
 selection is frozen before the final holdout. The holdout may accept/reject that
-candidate (or show that the simple quarterly schedule is safer), but it must never
-be used to re-rank the research candidates after inspection.
+candidate (or show that the simple quarterly schedule is safer), but it must
+never be used to re-rank the research candidates after inspection.
+
+For Dynamic Alpha experiments the recommendation describes the *selection rule*
+and active portfolio size rather than pretending a static symbol list exists.
+Current live membership must be generated from the latest strictly-past alpha
+snapshot at execution time.
 """
 from __future__ import annotations
 
@@ -44,6 +49,8 @@ def _holdout_quality(test: dict | None) -> tuple[bool, list[str], float | None]:
 
 def build_recommendation(experiment: dict) -> dict:
     meta = experiment.get("meta") or {}
+    dynamic_alpha = meta.get("dynamic_alpha") or {}
+    is_dynamic = bool(dynamic_alpha.get("enabled") or meta.get("mode") == "alpha")
     winners = experiment.get("winners", {}) or {}
     live_best = winners.get("best_live_eligible") or {}
     research_best = winners.get("best_robust") or {}
@@ -54,7 +61,12 @@ def build_recommendation(experiment: dict) -> dict:
     winner_robust = best.get("robust") or best.get("validation_metrics") or {}
     winner_recent = best.get("recent_validation") or {}
     winner_test = best.get("test") or best.get("test_metrics") or {}
-    symbols = best.get("symbols") or []
+    symbols = [] if is_dynamic else (best.get("symbols") or [])
+    n_symbols = (
+        int(dynamic_alpha.get("portfolio_size") or best.get("n_symbols") or 0)
+        if is_dynamic
+        else len(symbols)
+    )
     allocation_days = best.get("allocation_days") or []
     universe_variant = meta.get("universe_variant") or "all"
     experiment_id = experiment.get("experiment_id") or ""
@@ -105,9 +117,6 @@ def build_recommendation(experiment: dict) -> dict:
     elif optimized_holdout_ok and verdict in _ALLOWED_OPTIMIZED_VERDICTS:
         deployment_variant = "optimized"
     elif verdict == "keep_baseline" and baseline_holdout_ok:
-        # The symbol combination survived research, but the optimized event
-        # schedule did not improve the same-symbol quarterly benchmark. Prefer the
-        # simpler benchmark instead of searching the holdout for another winner.
         deployment_variant = "quarterly_baseline"
     else:
         deployment_reasons.extend(optimized_holdout_reasons)
@@ -130,18 +139,40 @@ def build_recommendation(experiment: dict) -> dict:
     )
 
     next_event_idx = _next_allocation_index(recommended_allocation_days)
+    caveats = [
+        "Recommendation is a historically robust candidate, NOT a forecast.",
+        "The research/live winner is frozen before the final holdout is inspected.",
+        "Final holdout is an accept/reject assessment and cannot select a different candidate.",
+        "Growth-first research does not change ERC/Shannon execution mechanics.",
+        "Deployment requires positive final return with acceptable return-to-drawdown quality.",
+        "Missing benchmark evidence fails closed instead of auto-deploying the optimized schedule.",
+        "Re-run research when new market data materially changes the selection/risk assumptions.",
+    ]
+    if is_dynamic:
+        caveats.insert(
+            1,
+            "Dynamic Alpha membership is re-ranked from strictly-past market data at each recalibration; the recommendation intentionally has no frozen ticker list.",
+        )
+
     return {
         "experiment_id": experiment_id,
         "generated_at": generated_at,
         "universe_variant": universe_variant,
         "data_end": data_end,
+        "dynamic_alpha": dynamic_alpha if is_dynamic else None,
         "pre_holdout_live_eligible": pre_holdout_eligible,
         "deployment_eligible": deployment_eligible,
         "deployment_variant": deployment_variant,
         "deployment_reasons": deployment_reasons,
         "eligibility_reasons": list(best.get("eligibility_reasons") or []),
+        "live_quality": best.get("live_quality") or {},
         "symbols": list(symbols),
-        "n_symbols": len(symbols),
+        "n_symbols": n_symbols,
+        "membership_policy": (
+            "dynamic_strictly_past_alpha_selection"
+            if is_dynamic
+            else "fixed_symbols"
+        ),
         "allocation_count_per_year": len(allocation_days),
         "allocation_days": list(allocation_days),
         "recommended_allocation_days": recommended_allocation_days,
@@ -166,6 +197,8 @@ def build_recommendation(experiment: dict) -> dict:
         "train_max_drawdown_pct": float(winner_metrics.get("max_drawdown_pct") or 0.0),
         "train_cdar95_pct": float(winner_metrics.get("cdar95_pct") or 0.0),
         "avg_equity_exposure": winner_metrics.get("avg_equity_exposure"),
+        "alpha_unique_symbols": winner_metrics.get("alpha_unique_symbols") if is_dynamic else None,
+        "alpha_membership_turnover": winner_metrics.get("alpha_membership_turnover") if is_dynamic else None,
         "baseline_allocation_days": [int(d) for d in (baseline.get("allocation_days") or [])],
         "baseline_robust_return_pct": base_robust,
         "baseline_test_median_net_twr_pct": base_test,
@@ -189,15 +222,7 @@ def build_recommendation(experiment: dict) -> dict:
         "eligibility_config": meta.get("live_eligibility") or {},
         "risk_config": meta.get("risk_config") or {},
         "cost_config": meta.get("cost_config") or {},
-        "caveats": [
-            "Recommendation is a historically robust candidate, NOT a forecast.",
-            "The research/live winner is frozen before the final holdout is inspected.",
-            "Final holdout is an accept/reject assessment and cannot select a different candidate.",
-            "Growth-first search changes research ranking but does not change ERC/Shannon execution mechanics.",
-            "Deployment requires positive final return with acceptable return-to-drawdown quality.",
-            "Missing benchmark evidence fails closed instead of auto-deploying the optimized schedule.",
-            "Re-run research when new market data materially changes the selection/risk assumptions.",
-        ],
+        "caveats": caveats,
     }
 
 
@@ -219,8 +244,6 @@ def _improvement_verdict(delta_robust, delta_test, test_valid=True, opt_mdd=None
 
 
 def _next_allocation_index(allocation_days: list[int]) -> int:
-    # Calendar-date resolution belongs to the live scheduler. The research
-    # recommendation only exposes that an allocation sequence exists.
     return 1 if allocation_days else 0
 
 
