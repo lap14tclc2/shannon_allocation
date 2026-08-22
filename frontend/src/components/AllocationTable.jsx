@@ -105,7 +105,19 @@ function WeightsBar({ targets }) {
   );
 }
 
+function exposureStateLabel(state) {
+  const labels = {
+    overlay_disabled_full_equity: 'Overlay disabled · full equity',
+    volatility_target_full_equity: 'Valid risk · full equity',
+    volatility_de_risked: 'Valid risk · volatility de-risked',
+    strategic_floor_applied: 'Valid risk · strategic floor applied',
+    risk_missing_fail_closed: 'Risk unavailable · fail closed to cash',
+  };
+  return labels[state] || state || '-';
+}
+
 function AllocationExpanded({ a }) {
+  const risk = a.risk_overlay || {};
   return (
     <div className="expanded">
       <div className="erc-card">
@@ -116,6 +128,22 @@ function AllocationExpanded({ a }) {
           <div><span>Portfolio risk</span><b>{formatPercent((a.erc?.portfolio_risk || 0) * 100)}</b></div>
           <div><span>ERC error</span><b>{a.erc?.erc_error}</b></div>
         </div>
+
+        <h4>Risk overlay</h4>
+        <div className="diag-grid">
+          <div><span>State</span><b>{exposureStateLabel(risk.exposure_state)}</b></div>
+          <div><span>Target equity exposure</span><b>{formatWeight(risk.equity_exposure)}</b></div>
+          <div><span>Cash target</span><b>{formatWeight(risk.cash_target)}</b></div>
+          <div><span>Risk volatility</span><b>{risk.risk_volatility == null ? '-' : formatPercent(risk.risk_volatility * 100)}</b></div>
+          <div><span>Volatility target</span><b>{risk.target_volatility == null ? '-' : formatPercent(risk.target_volatility * 100)}</b></div>
+          <div><span>Strategic floor</span><b>{risk.strategic_min_equity_exposure == null ? '-' : formatWeight(risk.strategic_min_equity_exposure)}</b></div>
+        </div>
+        {risk.exposure_state === 'risk_missing_fail_closed' && (
+          <div className="muted" style={{ marginTop: 6 }}>
+            This is not volatility de-risking. The risk estimate was unavailable, so the system used the separate fail-closed cash policy.
+          </div>
+        )}
+
         <h4>Target weights</h4>
         <WeightsBar targets={a.targets} />
         <div className="diag-grid">
@@ -134,23 +162,28 @@ function AllocationExpanded({ a }) {
 
 function AllocationRow({ a }) {
   const [open, setOpen] = useState(false);
-  const trades = (a.recommendations || []).filter((r) => r.recommendation !== 'HOLD');
+  const role = a.allocation_role === 'INITIAL_DEPLOYMENT'
+    ? 'Initial deployment'
+    : a.initial_allocation
+      ? 'Initial'
+      : 'Recalibration';
   return (
     <>
       <tr className="alloc-row" onClick={() => setOpen((o) => !o)}>
         <td className="alloc-toggle">{open ? '▼' : '▶'}</td>
         <td>{a.allocation_date}</td>
         <td>Q{a.quarter}</td>
-        <td>{a.initial_allocation ? 'Initial' : ''}</td>
+        <td>{role}</td>
         <td className="num">{a.deposit_amount ? formatMoney(a.deposit_amount) : '—'}</td>
         <td className="num">{formatMoney(a.nav_after)}</td>
         <td className="num">{formatMoney(a.cash_after)}</td>
         <td className="num">{a.erc?.observations}</td>
+        <td>{exposureStateLabel(a.risk_overlay?.exposure_state)}</td>
         <td><TradesSummary recs={a.recommendations} /></td>
       </tr>
       {open && (
         <tr className="alloc-expanded-row">
-          <td colSpan={9}>
+          <td colSpan={10}>
             <AllocationExpanded a={a} />
           </td>
         </tr>
@@ -162,18 +195,19 @@ function AllocationRow({ a }) {
 export default function AllocationTable({ allocations }) {
   return (
     <div className="card">
-      <h3>Quarterly allocations ({allocations.length})</h3>
+      <h3>Allocation / recalibration events ({allocations.length})</h3>
       <table className="alloc-table">
         <thead>
           <tr>
             <th style={{ width: 24 }}></th>
             <th>Date</th>
             <th>Q</th>
-            <th>Note</th>
+            <th>Role</th>
             <th>Deposit</th>
             <th>NAV</th>
             <th>Cash after</th>
             <th>Obs</th>
+            <th>Risk state</th>
             <th>Trades</th>
           </tr>
         </thead>
