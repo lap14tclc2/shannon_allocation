@@ -1,8 +1,8 @@
-"""Candidate evaluation: run the backtest for a candidate, extract objectives, cache.
+"""Candidate evaluation: run backtest, extract metrics, cache, map to objectives.
 
-The evaluator is the single point that maps a Candidate (+ optional date window)
-to a metrics dict used by NSGA-II, random search, walk-forward and robustness.
-NET performance (after transaction costs) is always used for optimization.
+The optimizer is now growth-first: TRAIN search rewards return and risk-adjusted
+growth, while drawdown/CDaR are enforced later as rolling OOS/final risk gates.
+ERC, Shannon, transaction costs and risk-overlay mechanics are unchanged.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
 
 
 def result_metrics(result) -> dict:
-    """Extract scalar metrics that define the optimizer objective vector (all NET)."""
+    """Extract scalar NET metrics used by optimization/validation/reporting."""
     return {
         "net_twr_annualized_pct": result.twr_annualized,
         "net_xirr_pct": result.xirr,
@@ -160,24 +160,21 @@ def evaluate_candidate(
 
 
 def objectives(metrics: dict) -> list[float]:
-    """Objective vector for NSGA-II (all maximised).
+    """Growth-first TRAIN objective vector for NSGA-II (all maximised).
 
-    Return and risk-adjusted performance are rewarded. MDD and CDaR are kept as
-    negative percentages, therefore values closer to zero are naturally better.
-    Turnover/cost/instability/underwater time are negated.
+    MDD/CDaR are intentionally not separate TRAIN objectives anymore.  They remain
+    reported and, more importantly, are enforced by rolling OOS/final drawdown
+    gates.  This prevents the search from spending too much Pareto capacity on
+    ultra-defensive low-return portfolios while still failing closed on risk.
     """
-    instability = _instability(metrics)
     return [
         metrics.get("net_twr_annualized_pct", 0.0),
         metrics.get("sharpe", 0.0),
         metrics.get("sortino", 0.0),
         metrics.get("calmar", 0.0),
-        metrics.get("max_drawdown_pct", 0.0),
-        metrics.get("cdar95_pct", 0.0),
-        -metrics.get("underwater_ratio", 0.0),
+        metrics.get("positive_year_ratio", 0.0),
         -metrics.get("turnover_pct", 0.0),
         -metrics.get("cost_pct_of_nav", 0.0),
-        -instability,
     ]
 
 
@@ -186,21 +183,7 @@ OBJECTIVE_NAMES = [
     "sharpe",
     "sortino",
     "calmar",
-    "mdd",
-    "cdar95",
-    "underwater",
+    "positive_year_ratio",
     "turnover",
     "cost",
-    "instability",
 ]
-
-
-def _instability(metrics: dict) -> float:
-    """Proxy for single-period instability: std of annual returns (or 0)."""
-    annual = metrics.get("annual_returns") or {}
-    vals = [v for v in annual.values()]
-    if len(vals) < 2:
-        return 0.0
-    mean = sum(vals) / len(vals)
-    var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
-    return float(var ** 0.5)
