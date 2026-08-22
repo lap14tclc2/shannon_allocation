@@ -1,6 +1,6 @@
 """Candidate evaluation: run backtest, extract metrics, cache, map to objectives.
 
-The optimizer is now growth-first: TRAIN search rewards return and risk-adjusted
+The optimizer is growth-first: TRAIN search rewards return and risk-adjusted
 growth, while drawdown/CDaR are enforced later as rolling OOS/final risk gates.
 ERC, Shannon, transaction costs and risk-overlay mechanics are unchanged.
 """
@@ -17,6 +17,8 @@ import pandas as pd
 from ..config import BacktestParams
 from ..simulation import simulate_combination
 from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
+
+OPTIMIZER_METRIC_SCHEMA = "growth-v6-variable-allocation"
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -48,8 +50,26 @@ def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
         "max_position_weight",
     ]
     payload = {k: getattr(params, k) for k in keys}
-    raw = json.dumps(payload, sort_keys=True) + "|" + data_version
+    raw = json.dumps(payload, sort_keys=True) + "|" + data_version + "|" + OPTIMIZER_METRIC_SCHEMA
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _growth_score(result) -> float:
+    """TRAIN-only scalar used by the surrogate/racing fallback.
+
+    Return has the largest direct weight. Risk-adjusted quality helps break ties;
+    turnover/cost are modest penalties. Drawdown is deliberately not rewarded
+    here because the rolling OOS stage already applies the hard MDD gate.
+    """
+    return float(
+        result.twr_annualized
+        + 4.0 * result.sharpe
+        + 1.5 * result.sortino
+        + 2.0 * result.calmar
+        + 2.0 * result.positive_year_ratio
+        - 0.02 * result.turnover
+        - 1.5 * result.cost_pct_of_nav
+    )
 
 
 def result_metrics(result) -> dict:
@@ -83,7 +103,8 @@ def result_metrics(result) -> dict:
         "first_allocation_date": result.first_allocation_date,
         "min_equity_exposure": result.min_equity_exposure,
         "avg_equity_exposure": result.avg_equity_exposure,
-        "score": result.score,
+        "score": _growth_score(result),
+        "legacy_score": result.score,
         "error": result.error,
     }
 
@@ -162,10 +183,8 @@ def evaluate_candidate(
 def objectives(metrics: dict) -> list[float]:
     """Growth-first TRAIN objective vector for NSGA-II (all maximised).
 
-    MDD/CDaR are intentionally not separate TRAIN objectives anymore.  They remain
-    reported and, more importantly, are enforced by rolling OOS/final drawdown
-    gates.  This prevents the search from spending too much Pareto capacity on
-    ultra-defensive low-return portfolios while still failing closed on risk.
+    MDD/CDaR are intentionally not separate TRAIN objectives anymore. They remain
+    reported and are enforced by rolling OOS/final drawdown gates.
     """
     return [
         metrics.get("net_twr_annualized_pct", 0.0),
