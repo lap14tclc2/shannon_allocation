@@ -87,6 +87,7 @@ MIME = {
 }
 
 _ssr_proc: subprocess.Popen | None = None
+_ssr_lock = threading.Lock()
 
 
 def _ssr_health() -> bool:
@@ -98,25 +99,35 @@ def _ssr_health() -> bool:
 
 
 def _ensure_ssr_worker() -> None:
+    """Start (or restart) the Node SSR renderer.
+
+    Called at server startup AND lazily before every SSR render, so a worker that
+    died mid-session is automatically respawned instead of the page failing with
+    'connection refused'. Guarded by a lock for the threaded server.
+    """
     global _ssr_proc
     if _ssr_health():
         return
-    if not os.path.isfile(os.path.join(FRONTEND_DIR, "dist-ssr", "ssr-entry.mjs")):
-        raise RuntimeError("SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr")
-    if not os.path.isfile(os.path.join(DIST_DIR, "assets", "client.js")):
-        raise RuntimeError("Client bundle not built. Run: cd frontend && npm run build")
-    env = dict(os.environ, SSR_PORT=str(SSR_PORT), SSR_HOST=SSR_HOST)
-    _ssr_proc = subprocess.Popen(
-        ["node", NODE_SSR], cwd=FRONTEND_DIR, env=env, stdout=sys.stdout, stderr=sys.stderr
-    )
-    for _ in range(50):
+    with _ssr_lock:
         if _ssr_health():
             return
-        time.sleep(0.1)
-    raise RuntimeError("Node SSR worker failed to start.")
+        if not os.path.isfile(os.path.join(FRONTEND_DIR, "dist-ssr", "ssr-entry.mjs")):
+            raise RuntimeError("SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr")
+        if not os.path.isfile(os.path.join(DIST_DIR, "assets", "client.js")):
+            raise RuntimeError("Client bundle not built. Run: cd frontend && npm run build")
+        env = dict(os.environ, SSR_PORT=str(SSR_PORT), SSR_HOST=SSR_HOST)
+        _ssr_proc = subprocess.Popen(
+            ["node", NODE_SSR], cwd=FRONTEND_DIR, env=env, stdout=sys.stdout, stderr=sys.stderr
+        )
+        for _ in range(50):
+            if _ssr_health():
+                return
+            time.sleep(0.1)
+        raise RuntimeError("Node SSR worker failed to start.")
 
 
 def _ssr_render(page: str, props: dict) -> str:
+    _ensure_ssr_worker()
     body = json.dumps({"page": page, "props": props}).encode("utf-8")
     req = urllib.request.Request(
         f"{SSR_URL}/render",
