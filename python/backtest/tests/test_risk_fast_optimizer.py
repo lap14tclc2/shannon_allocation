@@ -10,12 +10,15 @@ import random
 import numpy as np
 import pandas as pd
 
-from backtest.candidate import Candidate, random_candidate, validate_candidate
+from backtest.candidate import Candidate, random_candidate, validate_candidate, schedule_for_window
 from backtest.config import BacktestParams
+from backtest.optimize.evaluate import config_fingerprint, evaluate_candidate
+from backtest.optimize.parallel import ParallelEvaluator
 from backtest.optimize.screening import screen_universe
 from backtest.optimize.walkforward import make_train_val_windows, split_research_holdout, evaluate_robust
 from backtest.recommendation import _improvement_verdict
 from backtest.risk import apply_position_cap, risk_adjusted_targets
+from backtest.simulation import simulate_combination
 from backtest.strategy import compute_recommendations
 
 
@@ -51,7 +54,6 @@ def test_vol_target_reduces_exposure_when_risk_is_high():
     )
     targets, info = risk_adjusted_targets(prices, symbols, 400, relative, params)
     assert 0.0 < info["equity_exposure"] < 1.0
-    # Diagnostic exposure is serialized to 6 decimals.
     assert abs(sum(targets.values()) - info["equity_exposure"]) < 1e-6
     assert abs(info["cash_target"] - (1.0 - info["equity_exposure"])) < 1e-6
 
@@ -96,7 +98,6 @@ def test_screening_uses_only_train_dates():
     chosen1, rows1 = screen_universe(prices, list(prices.columns), train, top_k=5, min_observations=100)
 
     mutated = prices.copy()
-    # Extreme future changes after TRAIN must not alter screening.
     mutated.loc[mutated.index > train[1], "H"] *= 100.0
     chosen2, rows2 = screen_universe(mutated, list(mutated.columns), train, top_k=5, min_observations=100)
     assert chosen1 == chosen2
@@ -134,3 +135,46 @@ def test_deployment_verdict_requires_final_holdout_non_degradation():
     assert _improvement_verdict(5.0, -0.1, True, -20.0, -25.0) == "keep_baseline"
     assert _improvement_verdict(5.0, 1.5, False, -20.0, -25.0) == "keep_baseline"
     assert _improvement_verdict(5.0, 1.5, True, -20.0, -25.0) == "materially_better"
+
+
+def test_capital_contributions_and_actual_deployment_are_separate_events():
+    prices = _panel(n=650)
+    symbols = ["A", "B", "C", "D", "E"]
+    params = BacktestParams(
+        initial_balance=100_000_000,
+        annual_deposit=10_000_000,
+        minimum_observations=20,
+        lookback_days=63,
+        risk_overlay_enabled=False,
+    )
+    candidate = Candidate(tuple(symbols), (1, 61, 122, 183))
+    alloc_dates = schedule_for_window(candidate, list(prices.index))
+    result = simulate_combination(symbols, prices, params, allocation_dates=alloc_dates)
+    assert result.error is None
+    assert result.capital_events[0]["type"] == "INITIAL_CAPITAL"
+    assert result.capital_events[0]["amount"] == 100_000_000
+    assert any(e["type"] == "ANNUAL_CONTRIBUTION" for e in result.capital_events)
+    assert result.deployment_events
+    assert any(e["buy_cash_deployed"] > 0 for e in result.deployment_events)
+    assert all(e["execution_date"] >= e["signal_date"] for e in result.deployment_events)
+
+
+def test_parallel_candidate_evaluation_matches_serial_result():
+    prices = _panel(n=650)
+    symbols = ["A", "B", "C", "D", "E"]
+    params = BacktestParams(
+        annual_deposit=0,
+        minimum_observations=20,
+        lookback_days=63,
+        risk_overlay_enabled=False,
+    )
+    dates = list(prices.index)
+    candidate = Candidate(tuple(symbols), (1, 61, 122, 183))
+    cfg = config_fingerprint(params, "parallel-test")
+    serial = evaluate_candidate(candidate, prices, params, dates, cache=None, cfg=cfg, max_allocation_day=252)
+    with ParallelEvaluator(prices, params, dates, cfg, 252, workers=2) as evaluator:
+        parallel = evaluator.evaluate_many([candidate], None, None)[0]
+    assert serial["error"] == parallel["error"]
+    assert abs(serial["net_twr_annualized_pct"] - parallel["net_twr_annualized_pct"]) < 1e-9
+    assert abs(serial["max_drawdown_pct"] - parallel["max_drawdown_pct"]) < 1e-9
+    assert abs(serial["final_nav"] - parallel["final_nav"]) < 1e-6
