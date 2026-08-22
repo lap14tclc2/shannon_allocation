@@ -65,9 +65,6 @@ def _symbol_features(history: pd.Series, params: BacktestParams) -> dict | None:
     x = history.dropna().astype(float)
     if len(x) < max(3, int(params.alpha_min_observations)):
         return None
-    # Require a fresh observation immediately before the signal. Stale suspended
-    # names are not eligible for a new allocation even though existing holdings
-    # may still be valued using forward-filled prices elsewhere.
     if history.empty or pd.isna(history.iloc[-1]):
         return None
 
@@ -142,8 +139,6 @@ def alpha_score_table(
         return pd.DataFrame()
 
     df = pd.DataFrame.from_dict(rows, orient="index")
-    # Missing longer-horizon momentum early in history is neutral (z=0), not an
-    # automatic positive/negative signal. Available horizons carry the ranking.
     z_short = _zscore(df["mom_short"])
     z_medium = _zscore(df["mom_medium"])
     z_long = _zscore(df["mom_long"])
@@ -151,8 +146,6 @@ def alpha_score_table(
     z_vol = _zscore(df["volatility"])
     z_dd = _zscore(df["drawdown"])
 
-    # Growth first, but quality matters. Higher drawdown value means closer to
-    # zero (less damaged), so its z-score is rewarded. High volatility is penalized.
     df["alpha_score"] = (
         0.20 * z_short
         + 0.25 * z_medium
@@ -185,6 +178,39 @@ def _pair_corr(
     return corr if math.isfinite(corr) else None
 
 
+def _selection_cache_key(
+    raw_prices: pd.DataFrame,
+    universe: list[str],
+    pos: int,
+    params: BacktestParams,
+    n: int,
+):
+    """Key one immutable historical alpha snapshot safely across window copies."""
+    max_lb = max(
+        int(params.alpha_long_lookback),
+        int(params.alpha_medium_lookback),
+        int(params.alpha_short_lookback),
+        int(params.alpha_correlation_lookback),
+        int(params.alpha_min_observations),
+    )
+    hist_start = max(0, int(pos) - max_lb - 2)
+    start_label = str(raw_prices.index[hist_start]) if len(raw_prices) else ""
+    past_end_label = str(raw_prices.index[pos - 1]) if 0 < pos <= len(raw_prices) else ""
+    return (
+        tuple(sorted(universe)),
+        start_label,
+        past_end_label,
+        int(n),
+        int(params.alpha_min_observations),
+        int(params.alpha_short_lookback),
+        int(params.alpha_medium_lookback),
+        int(params.alpha_long_lookback),
+        int(params.alpha_correlation_lookback),
+        round(float(params.alpha_max_pair_correlation), 8),
+        int(params.annualization_factor),
+    )
+
+
 def select_alpha_symbols(
     raw_prices: pd.DataFrame,
     universe: list[str],
@@ -192,21 +218,38 @@ def select_alpha_symbols(
     params: BacktestParams,
     portfolio_size: int | None = None,
 ) -> AlphaSelectionResult:
-    """Rank the market and greedily diversify the top alpha names."""
+    """Rank the market and greedily diversify the top alpha names.
+
+    Timing candidates repeatedly revisit the same market dates. A worker-local
+    cache stores the deterministic strictly-past selection so expensive
+    cross-sectional ranking/correlation work is paid once per historical snapshot.
+    """
     n = int(portfolio_size or params.dynamic_alpha_portfolio_size)
     if n < 1:
         return AlphaSelectionResult((), {}, {"reason": "invalid_portfolio_size"})
 
+    cache = raw_prices.attrs.setdefault("_alpha_selection_cache", {})
+    cache_key = _selection_cache_key(raw_prices, universe, pos, params, n)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    def finish(result: AlphaSelectionResult) -> AlphaSelectionResult:
+        cache[cache_key] = result
+        return result
+
     table = alpha_score_table(raw_prices, universe, pos, params)
     if table.empty or len(table) < n:
-        return AlphaSelectionResult(
-            (),
-            {},
-            {
-                "reason": "insufficient_alpha_candidates",
-                "eligible": int(len(table)),
-                "required": n,
-            },
+        return finish(
+            AlphaSelectionResult(
+                (),
+                {},
+                {
+                    "reason": "insufficient_alpha_candidates",
+                    "eligible": int(len(table)),
+                    "required": n,
+                },
+            )
         )
 
     ranked = list(table.index)
@@ -243,8 +286,6 @@ def select_alpha_symbols(
             else:
                 correlations = [corr(symbol, s) for s in selected]
                 finite = [c for c in correlations if c is not None]
-                # Missing correlation is conservative at the primary threshold:
-                # defer the name to later passes rather than inventing diversity.
                 if len(finite) != len(correlations) and threshold <= base_limit + 1e-12:
                     continue
                 max_corr = max(finite) if finite else 0.0
@@ -283,4 +324,4 @@ def select_alpha_symbols(
         ],
         "selected_pairs": selected_pairs,
     }
-    return AlphaSelectionResult(tuple(selected), selected_scores, diagnostics)
+    return finish(AlphaSelectionResult(tuple(selected), selected_scores, diagnostics))
