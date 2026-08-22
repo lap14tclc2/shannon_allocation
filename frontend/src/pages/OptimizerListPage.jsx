@@ -9,7 +9,7 @@ const SEARCH_PRESETS = {
     surrogateProposals: 25, earlyStop: 10,
   },
   balanced: {
-    label: 'Balanced', note: 'Recommended for ~90 symbols',
+    label: 'Balanced', note: 'Recommended for normal research',
     population: 60, generations: 30, random: 250,
     preselectTop: 45, robustPool: 180, surrogatePool: 5000,
     surrogateProposals: 40, earlyStop: 15,
@@ -47,12 +47,23 @@ function NumberField({ label, value, onChange, min, max, step = 1, disabled = fa
   );
 }
 
+function moneyShort(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B VND`;
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M VND`;
+  return `${n.toLocaleString('en-US')} VND`;
+}
+
 export default function OptimizerListPage({ experiments }) {
   const [items, setItems] = useState(experiments || []);
   const [universe, setUniverse] = useState('all');
   const [mode, setMode] = useState('joint');
   const [fixedSymbols, setFixedSymbols] = useState('');
   const [portfolioSize, setPortfolioSize] = useState(7);
+
+  const [initialBalance, setInitialBalance] = useState(200_000_000);
+  const [annualDeposit, setAnnualDeposit] = useState(20_000_000);
 
   const [riskOverlay, setRiskOverlay] = useState(true);
   const [targetVolPct, setTargetVolPct] = useState(18);
@@ -122,6 +133,8 @@ export default function OptimizerListPage({ experiments }) {
       return 'Timing-only mode needs 5–10 fixed tickers.';
     }
     if (new Set(fixedList).size !== fixedList.length) return 'Fixed portfolio contains duplicate tickers.';
+    if (!Number.isFinite(Number(initialBalance)) || Number(initialBalance) <= 0) return 'Initial capital must be greater than 0 VND.';
+    if (!Number.isFinite(Number(annualDeposit)) || Number(annualDeposit) < 0) return 'Annual contribution cannot be negative.';
     if (riskOverlay && (Number(targetVolPct) <= 0 || Number(targetVolPct) > 100)) return 'Target volatility must be between 0% and 100%.';
     if (Number(maxOosDrawdownPct) <= 0 || Number(maxOosDrawdownPct) > 100) return 'Max OOS drawdown must be between 0% and 100%.';
     if (riskOverlay && (Number(minEquityPct) < 0 || Number(minEquityPct) > 100)) return 'Minimum equity exposure must be between 0% and 100%.';
@@ -146,7 +159,7 @@ export default function OptimizerListPage({ experiments }) {
     setElapsed(0);
     const sizeDesc = mode === 'timing' ? `${fixedList.length} fixed symbols` : `exactly ${portfolioSize} symbols`;
     const riskDesc = riskOverlay ? `risk target ${targetVolPct}% · OOS MDD gate ${maxOosDrawdownPct}%` : 'legacy 100% equity baseline';
-    setMessage(`${selectedUniverse.label} · ${sizeDesc} · ${riskDesc}`);
+    setMessage(`${selectedUniverse.label} · ${sizeDesc} · ${moneyShort(initialBalance)} initial · ${riskDesc}`);
 
     try {
       const res = await startOptimizerRun({
@@ -158,6 +171,8 @@ export default function OptimizerListPage({ experiments }) {
         mode,
         fixed_symbols: mode === 'timing' ? fixedList : undefined,
         portfolio_size: mode === 'joint' ? Number(portfolioSize) : undefined,
+        initial_balance: Number(initialBalance),
+        annual_deposit: Number(annualDeposit),
         risk_overlay: Boolean(riskOverlay),
         target_volatility: Number(targetVolPct) / 100,
         max_oos_drawdown_pct: Number(maxOosDrawdownPct),
@@ -168,6 +183,7 @@ export default function OptimizerListPage({ experiments }) {
         surrogate_pool_size: Number(surrogatePool),
         surrogate_proposals: Number(surrogateProposals),
         early_stop_generations: Number(earlyStop),
+        parallel_workers: 0,
       });
       if (!res.run_id) throw new Error(res.error || 'Optimizer did not start.');
       const runId = res.run_id;
@@ -226,8 +242,7 @@ export default function OptimizerListPage({ experiments }) {
       <header className="page-head">
         <h1>Portfolio Optimizer</h1>
         <p className="muted">
-          Configure and launch everything here: universe, exact portfolio size, risk policy, and search budget.
-          No command line is required.
+          Configure universe, exact portfolio size, capital plan, risk policy, and search budget. No command line is required.
         </p>
       </header>
 
@@ -238,7 +253,7 @@ export default function OptimizerListPage({ experiments }) {
             <div>
               <b>Optimizer is running · {elapsed}s</b>
               <div className="muted">{message}</div>
-              <div className="muted">Run ID: {activeRun || '-'}</div>
+              <div className="muted">Multi-core evaluation is automatic · Run ID: {activeRun || '-'}</div>
             </div>
           </div>
         </div>
@@ -289,7 +304,34 @@ export default function OptimizerListPage({ experiments }) {
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>2. Drawdown / exposure policy</h3>
+        <h3 style={{ marginBottom: 4 }}>2. Capital plan</h3>
+        <div className="muted" style={{ marginBottom: 12 }}>
+          Initial capital is available from the beginning of the simulation. The annual contribution is added on the first trading session of each new year; the result page separately shows when that cash is actually deployed into equities.
+        </div>
+        <div className="run-form">
+          <NumberField
+            label="Initial capital (VND)"
+            min={1_000_000}
+            step={1_000_000}
+            value={initialBalance}
+            onChange={setInitialBalance}
+            disabled={running}
+            hint={moneyShort(initialBalance)}
+          />
+          <NumberField
+            label="Annual contribution (VND)"
+            min={0}
+            step={1_000_000}
+            value={annualDeposit}
+            onChange={setAnnualDeposit}
+            disabled={running}
+            hint={`${moneyShort(annualDeposit)} · first trading session each year`}
+          />
+        </div>
+
+        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
+
+        <h3 style={{ marginBottom: 4 }}>3. Drawdown / exposure policy</h3>
         <div className="muted" style={{ marginBottom: 12 }}>
           ERC controls relative stock weights. Risk-aware mode can reduce total equity exposure and keep the balance in cash.
           Risk exposure is refreshed weekly while Shannon drift checks remain daily.
@@ -309,9 +351,9 @@ export default function OptimizerListPage({ experiments }) {
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>3. Search budget</h3>
+        <h3 style={{ marginBottom: 4 }}>4. Search budget</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
-          Balanced is the default for the full ~90-symbol universe. Fast is useful for exploration; Thorough spends more real evaluations.
+          Candidate simulations now use multiple CPU processes automatically. Balanced remains the default; Fast is useful for exploration and Thorough spends more real evaluations.
         </div>
         <div className="universe-buttons" style={{ marginBottom: 12 }}>
           {Object.entries(SEARCH_PRESETS).map(([key, p]) => (
@@ -353,6 +395,8 @@ export default function OptimizerListPage({ experiments }) {
           <div className="diag-grid" style={{ marginBottom: 0 }}>
             <div><span>Universe</span><b>{selectedUniverse.label}</b></div>
             <div><span>Portfolio</span><b>{mode === 'joint' ? `${portfolioSize} symbols` : `${fixedList.length} fixed symbols`}</b></div>
+            <div><span>Initial capital</span><b>{moneyShort(initialBalance)}</b></div>
+            <div><span>Annual contribution</span><b>{moneyShort(annualDeposit)}</b></div>
             <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD` : 'Baseline 100% equity'}</b></div>
             <div><span>Search</span><b>{SEARCH_PRESETS[preset]?.label || 'Custom'}</b></div>
             <div><span>TRAIN preselect</span><b>{preselectTop || 'OFF'}</b></div>
@@ -370,7 +414,7 @@ export default function OptimizerListPage({ experiments }) {
           {running ? 'Optimizer running…' : '▶ Run optimizer'}
         </button>
         <div className="muted" style={{ marginTop: 10 }}>
-          TRAIN-only screening → real random baseline → NSGA-II → surrogate ranking → validation shortlist → robustness → untouched final holdout.
+          TRAIN-only screening → parallel real search → NSGA-II → surrogate ranking → parallel OOS validation → robustness → untouched final holdout.
         </div>
       </form>
 
