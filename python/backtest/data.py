@@ -2,6 +2,13 @@
 
 Each symbol is a column; the index is a normalised trading date (YYYY-MM-DD).
 Prices are converted from "thousands of VND" to VND via price_scale.
+
+Important: the returned panel is intentionally NOT forward-filled.  Forward
+filling is appropriate for marking an already-held suspended security to its
+last known price, but it is unsafe for covariance/volatility estimation because
+it creates artificial zero-return observations.  The simulator creates a
+separate forward-filled valuation view while all risk calculations use this raw
+panel.
 """
 
 from __future__ import annotations
@@ -67,12 +74,11 @@ def load_universe(name: str, data_dir: str) -> list[str] | None:
 
 
 def load_panel(params: BacktestParams) -> tuple[pd.DataFrame, list[str]]:
-    """Load all symbols into a forward-filled DataFrame of close prices (VND).
+    """Load all symbols into a raw, non-forward-filled close-price panel (VND).
 
-    Returns (prices, symbols). The panel is sorted by date and forward filled so
-    holdings can be valued on every trading date (suspensions use last price).
-    When params.universe names an index (vn30/vn50), only those symbols are kept
-    (intersected with the CSVs actually present in the data folder).
+    The panel is sorted by date. Missing observations stay missing so suspensions
+    and stale data cannot masquerade as zero-volatility history.  Simulation uses
+    a separate ``panel.ffill()`` view only for NAV valuation.
     """
     if params.symbols_file:
         symbols = _read_symbols_file(params.symbols_file)
@@ -91,7 +97,6 @@ def load_panel(params: BacktestParams) -> tuple[pd.DataFrame, list[str]]:
     series_list = [load_symbol(params.data_dir, t, params.price_scale) for t in symbols]
     panel = pd.concat(series_list, axis=1, join="outer")
     panel = panel.sort_index()
-    panel = panel.ffill()
     return panel, symbols
 
 

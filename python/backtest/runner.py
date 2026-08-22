@@ -17,7 +17,12 @@ def generate_combinations(symbols: list[str], params: BacktestParams) -> list[li
     max_attempts = params.num_combinations * 100 + 1000
     while len(combos) < params.num_combinations and attempts < max_attempts:
         attempts += 1
-        n = rng.randint(params.min_symbols, min(params.max_symbols, len(symbols)))
+        if params.portfolio_size is not None:
+            n = int(params.portfolio_size)
+            if n < 1 or n > len(symbols):
+                raise ValueError(f"portfolio_size={n} outside available symbol range 1..{len(symbols)}")
+        else:
+            n = rng.randint(params.min_symbols, min(params.max_symbols, len(symbols)))
         combo = tuple(sorted(rng.sample(symbols, n)))
         combos.add(combo)
     return [list(c) for c in sorted(combos)]
@@ -62,9 +67,16 @@ def ranking_rows(results: list[SimulationResult]) -> list[dict]:
                 "sortino": round(r.sortino, 3),
                 "calmar": round(r.calmar, 3),
                 "max_drawdown_pct": round(r.max_drawdown_pct, 2),
+                "cdar95_pct": round(r.cdar95_pct, 2),
+                "underwater_ratio": round(r.underwater_ratio, 3),
+                "max_underwater_days": r.max_underwater_days,
+                "min_equity_exposure": round(r.min_equity_exposure, 3),
+                "avg_equity_exposure": round(r.avg_equity_exposure, 3),
                 "worst_year": round(r.worst_year, 2),
                 "positive_year_ratio": round(r.positive_year_ratio, 3),
                 "turnover_pct": round(r.turnover, 1),
+                "cost_pct_of_nav": round(r.cost_pct_of_nav, 3),
+                "transaction_cost": round(r.transaction_cost, 0),
                 "trade_count": r.trade_count,
                 "first_allocation_date": r.first_allocation_date,
                 "error": r.error,
@@ -101,11 +113,11 @@ def aggregate_stats(results: list[SimulationResult]) -> dict:
             "sharpe": _pctiles([r.sharpe for r in ok]),
             "sortino": _pctiles([r.sortino for r in ok]),
             "max_drawdown_pct": _pctiles([r.max_drawdown_pct for r in ok]),
+            "cdar95_pct": _pctiles([r.cdar95_pct for r in ok]),
             "score": _pctiles([r.score for r in ok]),
         },
     }
 
-    # By portfolio size (N symbols).
     by_n = {}
     for r in ok:
         by_n.setdefault(len(r.symbols), []).append(r)
@@ -116,12 +128,12 @@ def aggregate_stats(results: list[SimulationResult]) -> dict:
             "avg_sharpe": round(sum(x.sharpe for x in grp) / len(grp), 3),
             "avg_sortino": round(sum(x.sortino for x in grp) / len(grp), 3),
             "avg_mdd_pct": round(sum(x.max_drawdown_pct for x in grp) / len(grp), 2),
+            "avg_cdar95_pct": round(sum(x.cdar95_pct for x in grp) / len(grp), 2),
             "avg_score": round(sum(x.score for x in grp) / len(grp), 2),
         }
         for n, grp in sorted(by_n.items())
     }
 
-    # Per-symbol association: mean performance of portfolios containing each symbol.
     sym_stats = {}
     for r in ok:
         for s in r.symbols:

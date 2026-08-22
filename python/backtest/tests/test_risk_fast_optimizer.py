@@ -1,0 +1,136 @@
+"""Synthetic regression tests for risk-aware / fast optimizer changes.
+
+These tests require no external VN price-data directory.
+"""
+
+from __future__ import annotations
+
+import random
+
+import numpy as np
+import pandas as pd
+
+from backtest.candidate import Candidate, random_candidate, validate_candidate
+from backtest.config import BacktestParams
+from backtest.optimize.screening import screen_universe
+from backtest.optimize.walkforward import make_train_val_windows, split_research_holdout, evaluate_robust
+from backtest.recommendation import _improvement_verdict
+from backtest.risk import apply_position_cap, risk_adjusted_targets
+from backtest.strategy import compute_recommendations
+
+
+def _panel(n=520, seed=3):
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2020-01-02", periods=n)
+    out = {}
+    for i, s in enumerate("ABCDEFGH"):
+        sigma = 0.006 + i * 0.0005
+        rets = 0.0002 + sigma * rng.standard_normal(n)
+        out[s] = 100.0 * np.exp(np.cumsum(rets))
+    return pd.DataFrame(out, index=dates)
+
+
+def test_position_cap_stays_normalized_and_bounded():
+    w = {"A": 0.60, "B": 0.20, "C": 0.10, "D": 0.10}
+    capped = apply_position_cap(w, 0.35)
+    assert abs(sum(capped.values()) - 1.0) < 1e-9
+    assert max(capped.values()) <= 0.35 + 1e-9
+
+
+def test_vol_target_reduces_exposure_when_risk_is_high():
+    prices = _panel()
+    symbols = ["A", "B", "C", "D", "E"]
+    relative = {s: 0.2 for s in symbols}
+    params = BacktestParams(
+        risk_overlay_enabled=True,
+        target_volatility=0.05,
+        risk_fast_lookback=63,
+        risk_slow_lookback=252,
+        min_equity_exposure=0.0,
+        max_position_weight=0.40,
+    )
+    targets, info = risk_adjusted_targets(prices, symbols, 400, relative, params)
+    assert 0.0 < info["equity_exposure"] < 1.0
+    # Diagnostic exposure is serialized to 6 decimals.
+    assert abs(sum(targets.values()) - info["equity_exposure"]) < 1e-6
+    assert abs(info["cash_target"] - (1.0 - info["equity_exposure"])) < 1e-6
+
+
+def test_risk_overlay_disabled_preserves_full_equity():
+    prices = _panel()
+    symbols = ["A", "B", "C", "D", "E"]
+    relative = {s: 0.2 for s in symbols}
+    params = BacktestParams(risk_overlay_enabled=False, max_position_weight=0.40)
+    targets, info = risk_adjusted_targets(prices, symbols, 400, relative, params)
+    assert info["equity_exposure"] == 1.0
+    assert abs(sum(targets.values()) - 1.0) < 1e-9
+
+
+def test_zero_live_target_generates_sell_not_hold():
+    params = BacktestParams()
+    shares = {"A": 10.0, "B": 10.0}
+    prices = {"A": 100.0, "B": 100.0}
+    recs, _ = compute_recommendations(
+        shares,
+        cash=0.0,
+        prices=prices,
+        targets={"A": 0.0, "B": 1.0},
+        params=params,
+    )
+    by_symbol = {r["symbol"]: r for r in recs}
+    assert by_symbol["A"]["recommendation"] == "SELL"
+
+
+def test_exact_portfolio_size_random_candidates():
+    universe = list("ABCDEFGHIJKL")
+    rng = random.Random(42)
+    for _ in range(100):
+        c = random_candidate(rng, universe, 40, 252, portfolio_size=7)
+        assert len(c.symbols) == 7
+        assert validate_candidate(c, set(universe), 252, 40, portfolio_size=7) == []
+
+
+def test_screening_uses_only_train_dates():
+    prices = _panel(n=400)
+    train = (prices.index[0], prices.index[199])
+    chosen1, rows1 = screen_universe(prices, list(prices.columns), train, top_k=5, min_observations=100)
+
+    mutated = prices.copy()
+    # Extreme future changes after TRAIN must not alter screening.
+    mutated.loc[mutated.index > train[1], "H"] *= 100.0
+    chosen2, rows2 = screen_universe(mutated, list(mutated.columns), train, top_k=5, min_observations=100)
+    assert chosen1 == chosen2
+    assert [r["symbol"] for r in rows1] == [r["symbol"] for r in rows2]
+
+
+def test_global_holdout_never_overlaps_research_windows():
+    dates = list(pd.bdate_range("2018-01-02", periods=1800))
+    research, holdout = split_research_holdout(dates, 252)
+    windows = make_train_val_windows(research, train_days=378, val_days=252, step=120)
+    assert windows
+    assert research[-1] < holdout[0]
+    for w in windows:
+        assert w["train"][1] < holdout[0]
+        assert w["val"][1] < holdout[0]
+
+
+def test_robust_drawdown_gate_rejects_candidate():
+    c = Candidate(("A", "B", "C", "D", "E"), (40, 100, 160, 220))
+    windows = [{"val": 1}, {"val": 2}]
+
+    def fake_eval(_c, w):
+        return {
+            "net_twr_annualized_pct": 12.0,
+            "sharpe": 1.0,
+            "max_drawdown_pct": -40.0 if w["val"] == 2 else -10.0,
+            "cdar95_pct": -20.0,
+        }
+
+    assert evaluate_robust(c, fake_eval, windows, min_windows=2, max_drawdown_abs_pct=35) is None
+    assert evaluate_robust(c, fake_eval, windows, min_windows=2, max_drawdown_abs_pct=45) is not None
+
+
+def test_deployment_verdict_requires_final_holdout_non_degradation():
+    assert _improvement_verdict(5.0, -0.1, True, -20.0, -25.0) == "keep_baseline"
+    assert _improvement_verdict(5.0, 1.5, False, -20.0, -25.0) == "keep_baseline"
+    assert _improvement_verdict(5.0, 1.5, True, -20.0, -25.0) == "materially_better"

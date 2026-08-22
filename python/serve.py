@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the SSR frontend (Python backend + React SSR via a Node renderer) + the run data API.
-
-Pages (server-rendered HTML, React hydrates on the client):
-    GET /                                          -> home (list of runs)
-    GET /runs/<run_id>                             -> ranking board for a run
-    GET /runs/<run_id>/combinations/<slug>         -> combination detail
-
-JSON API:
-    GET /api/runs
-    GET /api/runs/<run_id>/meta
-    GET /api/runs/<run_id>/index
-    GET /api/runs/<run_id>/combinations/<slug>
-
-React SSR is done by a small Node worker (frontend/ssr/server.mjs, port 8099) which
-renders the shared React components to HTML via react-dom/server. The Python server
-spawns it automatically if it is not already running.
-
-Build the frontend first:
-    cd frontend && npm run build && npm run build:ssr
-
-Run:
-    python serve.py [--port 8080]
-"""
+"""Serve the SSR frontend + run/optimizer APIs."""
 
 from __future__ import annotations
 
@@ -36,11 +14,12 @@ import threading
 import time
 import urllib.request
 import zipfile
+from dataclasses import replace
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse, parse_qsl
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../shannon_allocation
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS_DIR = os.path.join(REPO, "python", "results")
 OPTIMIZER_DIR = os.path.join(RESULTS_DIR, "optimizer")
 FRONTEND_DIR = os.path.join(REPO, "frontend")
@@ -55,8 +34,6 @@ CLIENT_JS = "/assets/client.js"
 CLIENT_CSS_DEFAULT = "/assets/entry-client.css"
 
 _css_url = None
-
-# Lazy-loaded backtest engine (price panel loaded once).
 _backtest_ctx = None
 _optimizer_runs: dict = {}
 _optimizer_lock = threading.Lock()
@@ -70,7 +47,7 @@ def _get_backtest():
         from backtest.simulation import simulate_combination
         from backtest.optimize.evaluate import result_metrics
 
-        params = BacktestParams()  # default costs/lookahead + F:/data_finance/data
+        params = BacktestParams()
         prices, _ = load_panel(params)
         _backtest_ctx = {
             "params": params,
@@ -85,7 +62,6 @@ def _get_backtest():
 
 
 def _client_css_url() -> str:
-    """Discover the emitted CSS asset (named after the entry chunk)."""
     global _css_url
     if _css_url is None:
         assets = os.path.join(DIST_DIR, "assets")
@@ -97,6 +73,7 @@ def _client_css_url() -> str:
         if _css_url is None:
             _css_url = CLIENT_CSS_DEFAULT
     return _css_url
+
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -112,7 +89,6 @@ MIME = {
 _ssr_proc: subprocess.Popen | None = None
 
 
-# --------------------------------------------------------------------------- SSR worker
 def _ssr_health() -> bool:
     try:
         with urllib.request.urlopen(f"{SSR_URL}/health", timeout=1.5):
@@ -126,25 +102,16 @@ def _ensure_ssr_worker() -> None:
     if _ssr_health():
         return
     if not os.path.isfile(os.path.join(FRONTEND_DIR, "dist-ssr", "ssr-entry.mjs")):
-        raise RuntimeError(
-            "SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr"
-        )
+        raise RuntimeError("SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr")
     if not os.path.isfile(os.path.join(DIST_DIR, "assets", "client.js")):
         raise RuntimeError("Client bundle not built. Run: cd frontend && npm run build")
     env = dict(os.environ, SSR_PORT=str(SSR_PORT), SSR_HOST=SSR_HOST)
     _ssr_proc = subprocess.Popen(
-        ["node", NODE_SSR],
-        cwd=FRONTEND_DIR,
-        env=env,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
+        ["node", NODE_SSR], cwd=FRONTEND_DIR, env=env, stdout=sys.stdout, stderr=sys.stderr
     )
-    # Wait for the worker to come up.
     for _ in range(50):
         if _ssr_health():
             return
-        import time
-
         time.sleep(0.1)
     raise RuntimeError("Node SSR worker failed to start.")
 
@@ -180,17 +147,13 @@ def _build_document(page: str, props: dict, title: str) -> bytes:
     return doc.encode("utf-8")
 
 
-# --------------------------------------------------------------------------- data helpers
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, fmt, *args):  # quieter
+    def log_message(self, fmt, *args):
         pass
 
     def _write_body(self, body):
-        # A browser may abort an in-flight request (e.g. user navigates away or
-        # clicks a different candidate) while we are still writing. Swallow those
-        # connection errors instead of crashing the request thread.
         try:
             self.wfile.write(body)
             self.wfile.flush()
@@ -263,7 +226,6 @@ class Handler(BaseHTTPRequestHandler):
         out.sort(key=lambda r: r.get("generated_at") or "", reverse=True)
         return out
 
-    # --------------------------------------------------------------------- API
     def _handle_api(self, parts):
         if not parts:
             return self._send_json(404, {"error": "Not found."})
@@ -322,7 +284,6 @@ class Handler(BaseHTTPRequestHandler):
             shutil.rmtree(exp, ignore_errors=True)
         return self._send_json(200, {"ok": True, "run_id": rid})
 
-    # --------------------------------------------------------------------- optimizer
     def _list_optimizer_experiments(self):
         if not os.path.isdir(OPTIMIZER_DIR):
             return []
@@ -342,7 +303,6 @@ class Handler(BaseHTTPRequestHandler):
         return out
 
     def _handle_optimizer(self, parts):
-        # parts[0] == 'optimizer' is already stripped; parts = [eid] or [eid, 'file'] or ['status']
         if not parts:
             return self._send_json(200, {"experiments": self._list_optimizer_experiments()})
         if parts == ["status"]:
@@ -356,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
             if os.path.isfile(exp_path):
                 with open(exp_path, "r", encoding="utf-8") as fh:
                     return self._send_json(200, json.load(fh))
-            return self._send_json(404, {"error": f"No experiment.json for {eid} (re-run the optimizer)."})
+            return self._send_json(404, {"error": f"No experiment.json for {eid}."})
         if len(parts) == 2 and parts[1] == "file":
             params = dict(parse_qsl(urlparse(self.path).query))
             name = params.get("name", "")
@@ -373,7 +333,6 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(404, {"error": "Not found."})
 
     def _handle_optimizer_download(self, eid):
-        """One-button download: ZIP the entire optimizer experiment directory."""
         base = self._safe_join(OPTIMIZER_DIR, eid)
         if not base or not os.path.isdir(base):
             return self._send_json(404, {"error": f"Optimizer experiment not found: {eid}"})
@@ -399,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(exp_path):
             return self._send_json(404, {"error": "experiment.json not found."})
         try:
-            from backtest.optimize.recommendation import build_recommendation
+            from backtest.recommendation import build_recommendation
             with open(exp_path, "r", encoding="utf-8") as fh:
                 experiment = json.load(fh)
             rec = build_recommendation(experiment)
@@ -408,15 +367,25 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, rec)
 
     def _handle_optimizer_candidate(self, eid):
-        """Backtest one candidate on-demand and return its full allocation history."""
-        params = dict(parse_qsl(urlparse(self.path).query))
-        symbols = [s.strip().upper() for s in params.get("symbols", "").split(",") if s.strip()]
-        days = [int(x) for x in params.get("days", "").split(",") if x.strip()]
+        """Backtest one candidate with the experiment's risk/cost configuration."""
+        query = dict(parse_qsl(urlparse(self.path).query))
+        symbols = [s.strip().upper() for s in query.get("symbols", "").split(",") if s.strip()]
+        days = [int(x) for x in query.get("days", "").split(",") if x.strip()]
         if len(symbols) < 5 or len(days) != 4:
             return self._send_json(400, {"error": "Need symbols (>=5) and exactly 4 allocation days."})
         bt = _get_backtest()
-        alloc_dates = bt["schedule_for_window"](bt["Candidate"](tuple(sorted(symbols)), tuple(days)), bt["dates"])
-        result = bt["simulate_combination"](symbols, bt["prices"], bt["params"], allocation_dates=alloc_dates)
+        exp_meta = self._read_json(os.path.join(OPTIMIZER_DIR, eid), "optimizer_config.json") or {}
+        risk_cfg = exp_meta.get("risk_config") or {}
+        cost_cfg = exp_meta.get("cost_config") or {}
+        allowed = set(bt["params"].as_dict())
+        overrides = {k: v for k, v in {**risk_cfg, **cost_cfg}.items() if k in allowed}
+        run_params = replace(bt["params"], **overrides)
+        alloc_dates = bt["schedule_for_window"](
+            bt["Candidate"](tuple(sorted(symbols)), tuple(days)), bt["dates"]
+        )
+        result = bt["simulate_combination"](
+            symbols, bt["prices"], run_params, allocation_dates=alloc_dates
+        )
         if result.error:
             return self._send_json(500, {"error": result.error})
         payload = {
@@ -431,39 +400,87 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_optimizer_run(self, body: dict):
         """Start an optimizer run in a background thread; returns immediately."""
         seed = int(body.get("seed", 42))
-        population = int(body.get("population", 30))
-        generations = int(body.get("generations", 15))
-        random_n = int(body.get("random", 150))
-        finalists = int(body.get("finalists", 5))
+        population = max(10, int(body.get("population", 60)))
+        generations = max(1, int(body.get("generations", 30)))
+        random_n = max(20, int(body.get("random", 250)))
+        finalists = max(1, int(body.get("finalists", 5)))
         universe = str(body.get("universe", "all"))
         mode = str(body.get("mode", "joint"))
         fixed_symbols = body.get("fixed_symbols") or None
+        portfolio_size = int(body.get("portfolio_size", 7)) if mode == "joint" else None
+
+        risk_overlay = bool(body.get("risk_overlay", True))
+        target_volatility = float(body.get("target_volatility", 0.18))
+        max_oos_drawdown_pct = float(body.get("max_oos_drawdown_pct", 35.0))
+        max_position_weight = float(body.get("max_position_weight", 0.30))
+        min_equity_exposure = float(body.get("min_equity_exposure", 0.25))
+
+        preselect_top = int(body.get("preselect_top", 45))
+        robust_pool_size = max(finalists, int(body.get("robust_pool_size", 180)))
+        surrogate_pool_size = max(0, int(body.get("surrogate_pool_size", 5000)))
+        surrogate_proposals = max(0, int(body.get("surrogate_proposals", 40)))
+        early_stop_generations = int(body.get("early_stop_generations", 15))
+
         if mode not in ("joint", "timing"):
             return self._send_json(400, {"error": f"Unknown mode '{mode}' (expected joint|timing)."})
         if universe not in ("all", "vn30", "vn50", "vn100"):
             return self._send_json(400, {"error": f"Unknown universe '{universe}'."})
+        if mode == "joint" and not (5 <= portfolio_size <= 10):
+            return self._send_json(400, {"error": "portfolio_size must be between 5 and 10."})
         if mode == "timing":
             if isinstance(fixed_symbols, str):
                 fixed_symbols = [s.strip().upper() for s in fixed_symbols.split(",") if s.strip()]
             if not fixed_symbols:
-                return self._send_json(400, {"error": "mode='timing' requires fixed_symbols "
-                                                     "(the portfolio set is frozen; only [T1..T4] is optimized)."})
+                return self._send_json(400, {"error": "mode='timing' requires fixed_symbols."})
+        if target_volatility <= 0 or target_volatility > 1:
+            return self._send_json(400, {"error": "target_volatility must be in (0, 1]."})
+        if not (0 <= min_equity_exposure <= 1):
+            return self._send_json(400, {"error": "min_equity_exposure must be 0..1."})
+        if not (0 < max_position_weight <= 1):
+            return self._send_json(400, {"error": "max_position_weight must be in (0, 1]."})
+
         run_id = f"run_{int(time.time())}"
         started = datetime.now().isoformat(timespec="seconds")
         with _optimizer_lock:
-            _optimizer_runs[run_id] = {"status": "running", "started_at": started,
-                                       "universe": universe, "mode": mode,
-                                       "fixed_symbols": fixed_symbols}
+            _optimizer_runs[run_id] = {
+                "status": "running",
+                "started_at": started,
+                "universe": universe,
+                "mode": mode,
+                "fixed_symbols": fixed_symbols,
+                "portfolio_size": portfolio_size,
+                "risk_overlay": risk_overlay,
+            }
 
         def work():
             try:
                 from backtest.optimize import run_optimizer, OptimizerConfig
                 from backtest import BacktestParams
 
-                params = BacktestParams(universe=universe)
-                opt = OptimizerConfig(seed=seed, population_size=population, generations=generations,
-                                      n_random=random_n, n_finalists=finalists,
-                                      mode=mode, fixed_symbols=fixed_symbols)
+                params = BacktestParams(
+                    universe=universe,
+                    portfolio_size=portfolio_size,
+                    risk_overlay_enabled=risk_overlay,
+                    target_volatility=target_volatility,
+                    min_equity_exposure=min_equity_exposure,
+                    max_position_weight=max_position_weight,
+                )
+                opt = OptimizerConfig(
+                    seed=seed,
+                    population_size=population,
+                    generations=generations,
+                    n_random=random_n,
+                    n_finalists=finalists,
+                    mode=mode,
+                    fixed_symbols=fixed_symbols,
+                    portfolio_size=portfolio_size,
+                    preselect_top=preselect_top if preselect_top > 0 else None,
+                    robust_pool_size=robust_pool_size,
+                    surrogate_pool_size=surrogate_pool_size,
+                    surrogate_proposals=surrogate_proposals,
+                    early_stop_generations=early_stop_generations if early_stop_generations > 0 else None,
+                    max_oos_drawdown_pct=max_oos_drawdown_pct if max_oos_drawdown_pct > 0 else None,
+                )
                 res = run_optimizer(params, opt, progress=False)
                 with _optimizer_lock:
                     _optimizer_runs[run_id] = {
@@ -475,28 +492,41 @@ class Handler(BaseHTTPRequestHandler):
                     }
             except Exception as exc:
                 with _optimizer_lock:
-                    _optimizer_runs[run_id] = {"status": "failed", "error": str(exc), "started_at": started}
+                    _optimizer_runs[run_id] = {
+                        "status": "failed",
+                        "error": str(exc),
+                        "started_at": started,
+                    }
 
         threading.Thread(target=work, daemon=True).start()
-        return self._send_json(202, {"run_id": run_id, "status": "running",
-                                     "started_at": started, "universe": universe, "mode": mode})
+        return self._send_json(
+            202,
+            {
+                "run_id": run_id,
+                "status": "running",
+                "started_at": started,
+                "universe": universe,
+                "mode": mode,
+                "portfolio_size": portfolio_size,
+            },
+        )
 
     def _handle_optimizer_status(self):
         with _optimizer_lock:
             runs = [dict(v, run_id=k) for k, v in _optimizer_runs.items()]
         return self._send_json(200, {"runs": runs})
 
-    # --------------------------------------------------------------------- pages
     def _handle_page(self, parts):
-        # parts[0] is 'runs' for run/combo pages, empty for home
         try:
             if not parts:
                 return self._send_page("home", {"runs": self._runs()}, "Shannon / ERC Backtest")
             if parts[0] == "optimizer":
                 if len(parts) == 1:
-                    return self._send_page("optimizer_list",
-                                           {"experiments": self._list_optimizer_experiments()},
-                                           "Optimizer · Shannon/ERC")
+                    return self._send_page(
+                        "optimizer_list",
+                        {"experiments": self._list_optimizer_experiments()},
+                        "Optimizer · Shannon/ERC",
+                    )
                 eid = parts[1]
                 base = self._safe_join(OPTIMIZER_DIR, eid)
                 exp = None
@@ -524,14 +554,13 @@ class Handler(BaseHTTPRequestHandler):
                 title = " ".join(combo.get("symbols", [])) or slug
                 return self._send_page("combo", {"combo": combo, "runId": rid}, f"{title} · Shannon/ERC")
             return self._send_json(404, {"error": "Not found."})
-        except Exception as exc:  # SSR worker errors
+        except Exception as exc:
             return self._send_json(500, {"error": f"SSR failed: {exc}"})
 
     def _send_page(self, page, props, title):
         body = _build_document(page, props, title)
         self._send_bytes(200, body, "text/html; charset=utf-8")
 
-    # --------------------------------------------------------------------- entry
     def do_GET(self):
         path = urlparse(self.path).path
         if path.startswith("/api/"):
@@ -585,7 +614,6 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(404, {"error": "Not found."})
 
 
-# --------------------------------------------------------------------------- entry
 def _bind_with_fallback(host, port, handler, attempts=20):
     for offset in range(attempts):
         candidate = port + offset

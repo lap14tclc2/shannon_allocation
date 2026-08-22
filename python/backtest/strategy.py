@@ -1,15 +1,8 @@
 """Shannon-style rebalancing with sell-to-buy + cash funding.
 
 Signal computation is separated from execution so the simulation can compute a
-signal at close[t] and execute at close[t+1] (no look-ahead), applying
-transaction costs at execution time.
-
-Funding model (mirrors the reference portfolio_allocation):
-- NORMAL band (target * (1 +/- normal_band)) -> HOLD, no trade
-- outside NORMAL: drift < 0 -> BUY, drift >= 0 -> SELL
-- target trade amount = |target_value - current_value|
-- available funding = totalSell + cashReserve
-- funded buy total = min(totalBuy, available funding), pro-rata buy scaling
+signal at close[t] and execute at close[t+1].  Targets may sum to less than one
+when the risk overlay intentionally reserves cash.
 """
 
 from __future__ import annotations
@@ -20,6 +13,9 @@ from .config import BacktestParams
 
 
 def classify_band(weight: float, target: float, params: BacktestParams) -> str:
+    # A zero target is an explicit exit instruction, not a normal drift band.
+    if target <= 0:
+        return "HARD" if weight > 0 else "NORMAL"
     normal_low = target * (1 - params.normal_band)
     normal_high = target * (1 + params.normal_band)
     if normal_low <= weight <= normal_high:
@@ -39,17 +35,13 @@ def compute_recommendations(
     targets: dict[str, float],
     params: BacktestParams,
 ):
-    """Compute the rebalance signal at current prices. Does NOT mutate anything.
-
-    Returns (recs, funding) where each rec carries target/funded trade amounts in
-    VND (signal-price based) and `funding` summarises the funding math.
-    """
+    """Compute the rebalance signal at current prices without mutating state."""
     values = {s: shares.get(s, 0.0) * prices[s] for s in shares}
     equity = sum(values.values())
     total_nav = equity + cash
 
-    buys: list[tuple[str, float]] = []  # (symbol, target_trade_amount)
-    sells: list[tuple[str, float]] = []  # (symbol, target_trade_amount)
+    buys: list[tuple[str, float]] = []
+    sells: list[tuple[str, float]] = []
     recs: list[dict] = []
 
     if total_nav <= 0:
@@ -57,7 +49,7 @@ def compute_recommendations(
 
     for s in shares:
         weight = values[s] / total_nav
-        target = targets.get(s, 0.0)
+        target = max(0.0, targets.get(s, 0.0))
         band = classify_band(weight, target, params)
         drift = weight - target
         rec = {
@@ -73,10 +65,12 @@ def compute_recommendations(
             "shares_to_trade": 0.0,
             "execution_price": None,
         }
-        if band == "NORMAL" or target <= 0:
+        if band == "NORMAL":
             recs.append(rec)
             continue
-        trade = abs(target * total_nav - values[s])
+
+        target_value = target * total_nav
+        trade = abs(target_value - values[s])
         rec["target_trade_amount"] = round(trade, 2)
         if trade <= 0:
             recs.append(rec)
@@ -107,12 +101,13 @@ def compute_recommendations(
         "available_funding": available_funding,
         "funded_buy_total": funded_buy_total,
         "buy_scale": buy_scale,
+        "target_equity_weight": sum(max(0.0, t) for t in targets.values()),
+        "target_cash_weight": max(0.0, 1.0 - sum(max(0.0, t) for t in targets.values())),
     }
     return recs, funding
 
 
 def snapshot_holdings(shares: dict[str, float], prices: dict[str, float], total_nav: float) -> list[dict]:
-    """Snapshot current holdings with value and weight per symbol."""
     holdings = []
     for s in sorted(shares):
         value = shares.get(s, 0.0) * prices.get(s, 0.0)

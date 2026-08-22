@@ -1,9 +1,9 @@
 """NSGA-II multi-objective optimizer.
 
 Population is ranked by Pareto dominance into fronts; within a front, crowding
-distance preserves diversity. Elitism keeps the best parents each generation.
-Symbols and the four allocation times are evolved JOINTLY (crossover and
-mutation operate on both parts of the chromosome).
+distance preserves diversity.  ``portfolio_size`` keeps joint-mode symbol genomes
+at an exact user-selected N.  ``early_stop_generations`` stops when the Pareto
+front has not materially changed for a configurable number of generations.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from .operators import crossover, mutate
 
 
 def dominates(a, b) -> bool:
-    """True if `a` (maximised objectives) weakly dominates `b` and is strictly better somewhere."""
     better = False
     for x, y in zip(a, b):
         if x < y - 1e-12:
@@ -26,7 +25,6 @@ def dominates(a, b) -> bool:
 
 
 def fast_non_dominated_sort(fitness: list[list[float]]) -> list[list[int]]:
-    """Return a list of fronts (lists of population indices)."""
     n = len(fitness)
     dominated_by = [[] for _ in range(n)]
     domination_count = [0] * n
@@ -56,8 +54,9 @@ def fast_non_dominated_sort(fitness: list[list[float]]) -> list[list[int]]:
 
 
 def crowding_distance(front_indices: list[int], fitness: list[list[float]]) -> dict[int, float]:
-    """Return {index: crowding distance} within a front."""
     dist = {idx: 0.0 for idx in front_indices}
+    if not front_indices:
+        return dist
     m = len(fitness[0])
     for o in range(m):
         ordered = sorted(front_indices, key=lambda idx: fitness[idx][o])
@@ -101,6 +100,14 @@ def select_parents(pop, fitness, rng: random.Random, fronts, crowd):
     return p1, p2
 
 
+def _front_signature(pop, fitness, front):
+    """Stable, rounded signature used only for optional early stopping."""
+    rows = []
+    for idx in front:
+        rows.append((pop[idx].key(), tuple(round(float(v), 4) for v in fitness[idx])))
+    return tuple(sorted(rows))
+
+
 def nsga2(
     initial_population: list[Candidate],
     evaluate,
@@ -114,16 +121,17 @@ def nsga2(
     max_day: int = 252,
     progress: bool = True,
     fixed_symbols: list[str] | None = None,
+    portfolio_size: int | None = None,
+    early_stop_generations: int | None = 15,
 ):
-    """Run NSGA-II. `evaluate(candidate) -> list[float]` (maximised objectives).
-
-    With `fixed_symbols` the symbol set is frozen and only the four allocation
-    times are evolved. Returns (final_population, fitness_matrix, front_sizes).
-    """
+    """Run NSGA-II; all objective values are maximised."""
     pop = list(initial_population)
     fitness = [evaluate(c) for c in pop]
 
     front_sizes = []
+    last_signature = None
+    stable_generations = 0
+
     for gen in range(generations):
         fronts = fast_non_dominated_sort(fitness)
         crowd = {}
@@ -131,20 +139,32 @@ def nsga2(
             crowd.update(crowding_distance(front, fitness))
         front_sizes.append([len(f) for f in fronts])
 
-        # Produce offspring.
         offspring: list[Candidate] = []
-        while len(offspring) < population_size:
+        seen_offspring = set()
+        attempts = 0
+        while len(offspring) < population_size and attempts < population_size * 20:
+            attempts += 1
             p1, p2 = select_parents(pop, fitness, rng, fronts, crowd)
             child = None
             if rng.random() < crossover_prob:
-                child = crossover(p1, p2, universe, rng, min_gap, max_day, fixed_symbols)
+                child = crossover(
+                    p1, p2, universe, rng, min_gap, max_day, fixed_symbols, portfolio_size
+                )
             if child is None:
                 child = p1 if rng.random() < 0.5 else p2
             if rng.random() < mutation_prob:
-                m = mutate(child, universe, rng, min_gap, max_day, fixed_symbols)
+                m = mutate(
+                    child, universe, rng, min_gap, max_day, fixed_symbols, portfolio_size
+                )
                 if m is not None:
                     child = m
+            if child.key() in seen_offspring:
+                continue
+            seen_offspring.add(child.key())
             offspring.append(child)
+
+        while len(offspring) < population_size:
+            offspring.append(pop[rng.randrange(len(pop))])
 
         combined = pop + offspring
         combined_fit = fitness + [evaluate(c) for c in offspring]
@@ -168,9 +188,29 @@ def nsga2(
                 break
         pop, fitness = selected, selected_fit
 
+        current_fronts = fast_non_dominated_sort(fitness)
+        signature = _front_signature(pop, fitness, current_fronts[0]) if current_fronts else ()
+        if signature == last_signature:
+            stable_generations += 1
+        else:
+            stable_generations = 0
+            last_signature = signature
+
         if progress and (gen + 1) % 10 == 0:
             best = max(range(len(fitness)), key=lambda i: fitness[i][0])
-            print(f"  gen {gen+1}/{generations}: fronts={len(fronts)} "
-                  f"best net_twr_ann={fitness[best][0]:.2f}% {pop[best]}", flush=True)
+            print(
+                f"  gen {gen+1}/{generations}: fronts={len(current_fronts)} "
+                f"best net_twr_ann={fitness[best][0]:.2f}% {pop[best]}",
+                flush=True,
+            )
+
+        if early_stop_generations and stable_generations >= early_stop_generations:
+            if progress:
+                print(
+                    f"  NSGA-II early stop at generation {gen+1}: Pareto front unchanged "
+                    f"for {stable_generations} generations.",
+                    flush=True,
+                )
+            break
 
     return pop, fitness, front_sizes
