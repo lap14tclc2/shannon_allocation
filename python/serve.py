@@ -50,9 +50,9 @@ def _get_backtest():
     global _backtest_ctx
     if _backtest_ctx is None:
         from backtest import BacktestParams, load_panel
-        from backtest.candidate import Candidate, schedule_for_window
+        from backtest.candidate import Candidate
         from backtest.simulation import simulate_combination
-        from backtest.optimize.evaluate import result_metrics
+        from backtest.optimize.evaluate import result_metrics, allocation_dates_with_initialization
 
         params = BacktestParams(universe="all")
         prices, _ = load_panel(params)
@@ -62,7 +62,7 @@ def _get_backtest():
             "dates": list(prices.index),
             "symbols": sorted(str(c).upper() for c in prices.columns),
             "Candidate": Candidate,
-            "schedule_for_window": schedule_for_window,
+            "allocation_dates_with_initialization": allocation_dates_with_initialization,
             "simulate_combination": simulate_combination,
             "result_metrics": result_metrics,
         }
@@ -274,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
                     "min_allocations": MIN_ALLOCATIONS,
                     "max_allocations": MAX_ALLOCATIONS,
                     "selection_policy": "joint_or_user_fixed",
+                    "default_strategic_min_equity_exposure": 0.0,
+                    "risk_missing_data_exposure": 0.0,
                 },
             )
         except Exception as exc:
@@ -462,8 +464,14 @@ class Handler(BaseHTTPRequestHandler):
         allowed = set(bt["params"].as_dict())
         overrides = {k: v for k, v in {**risk_cfg, **cost_cfg, **capital_cfg}.items() if k in allowed}
         run_params = replace(bt["params"], **overrides)
-        alloc_dates = bt["schedule_for_window"](
-            bt["Candidate"](tuple(sorted(symbols)), tuple(days)), bt["dates"]
+        candidate = bt["Candidate"](tuple(sorted(symbols)), tuple(days))
+        alloc_dates, init_date = bt["allocation_dates_with_initialization"](
+            candidate,
+            bt["prices"],
+            run_params,
+            bt["dates"],
+            (None, None),
+            run_params.lookback_days,
         )
         result = bt["simulate_combination"](
             symbols,
@@ -473,11 +481,20 @@ class Handler(BaseHTTPRequestHandler):
         )
         if result.error:
             return self._send_json(500, {"error": result.error})
+        init_text = str(init_date.date()) if init_date is not None else None
+        for record in result.allocations:
+            if init_text and record.get("allocation_date") == init_text:
+                record["allocation_role"] = "INITIAL_DEPLOYMENT"
+            else:
+                record.setdefault("allocation_role", "SCHEDULED_RECALIBRATION")
+        metrics = bt["result_metrics"](result)
+        metrics["initial_deployment_date"] = init_text
         payload = {
             "symbols": list(result.symbols),
             "allocation_days": days,
             "allocation_count": len(days),
-            "metrics": bt["result_metrics"](result),
+            "initial_deployment_date": init_text,
+            "metrics": metrics,
             "nav_history": result.nav_history,
             "allocations": result.allocations,
             "capital_events": result.capital_events,
@@ -544,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
         target_volatility = float(body.get("target_volatility", 0.18))
         max_oos_drawdown_pct = float(body.get("max_oos_drawdown_pct", 35.0))
         max_position_weight = float(body.get("max_position_weight", 0.30))
-        min_equity_exposure = float(body.get("min_equity_exposure", 0.25))
+        min_equity_exposure = float(body.get("min_equity_exposure", 0.0))
 
         if initial_balance <= 0:
             return self._send_json(400, {"error": "initial_balance must be > 0."})
@@ -579,7 +596,9 @@ class Handler(BaseHTTPRequestHandler):
                 "risk_overlay": risk_overlay,
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
-                "allocation_search": f"{MIN_ALLOCATIONS}-{MAX_ALLOCATIONS} events/year",
+                "strategic_min_equity_exposure": min_equity_exposure,
+                "risk_missing_data_exposure": 0.0,
+                "allocation_search": f"{MIN_ALLOCATIONS}-{MAX_ALLOCATIONS} recalibrations/year",
                 "combination_health_status": health.get("status") if health else None,
                 "combination_health_score": (health.get("score") or {}).get("overall") if health else None,
             }
@@ -597,6 +616,7 @@ class Handler(BaseHTTPRequestHandler):
                     risk_overlay_enabled=risk_overlay,
                     target_volatility=target_volatility,
                     min_equity_exposure=min_equity_exposure,
+                    risk_missing_data_exposure=0.0,
                     max_position_weight=max_position_weight,
                 )
                 opt = OptimizerConfig(
@@ -652,6 +672,8 @@ class Handler(BaseHTTPRequestHandler):
                 "portfolio_size": portfolio_size,
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
+                "strategic_min_equity_exposure": min_equity_exposure,
+                "risk_missing_data_exposure": 0.0,
                 "allocation_search": {"min": MIN_ALLOCATIONS, "max": MAX_ALLOCATIONS},
             },
         )
