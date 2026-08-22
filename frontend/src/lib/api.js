@@ -30,6 +30,21 @@ export async function listAvailableSymbols() {
   };
 }
 
+export async function analyzeCombination(symbols, includeSuggestions = true) {
+  const res = await fetch('/api/combination/health', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      symbols: symbols || [],
+      include_suggestions: Boolean(includeSuggestions),
+      suggestion_limit: 5,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Combination analysis failed: ${res.status}`);
+  return data;
+}
+
 export async function listOptimizerExperiments() {
   const data = await getJSON('/api/optimizer');
   return data.experiments || [];
