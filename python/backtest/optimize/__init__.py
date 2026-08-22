@@ -1,4 +1,4 @@
-"""Risk-aware portfolio + allocation-time optimizer."""
+"""Risk-aware dynamic-alpha/static portfolio optimizer."""
 
 from ..candidate import Candidate
 from .run import run_optimizer as _run_optimizer, OptimizerConfig
@@ -15,7 +15,20 @@ from .walkforward import (
 
 
 def run_optimizer(params, opt, progress=True):
-    """Run optimizer after resolving standard preset budgets for small universes."""
+    """Run the product optimizer.
+
+    Product ``joint`` mode now means dynamic alpha membership: the machine ranks
+    the configured market universe at each recalibration, then ERC allocates the
+    selected names. This removes the static-combination bottleneck while keeping
+    ``timing`` mode available for a user-owned fixed combination.
+    """
+    if opt.mode == "joint":
+        from .alpha_run import run_alpha_optimizer
+
+        params.dynamic_alpha_enabled = True
+        params.dynamic_alpha_portfolio_size = int(opt.portfolio_size or 7)
+        return run_alpha_optimizer(params, opt, progress=progress)
+
     resolved = adapt_optimizer_budget(params, opt)
     if resolved:
         before = resolved["before"]
