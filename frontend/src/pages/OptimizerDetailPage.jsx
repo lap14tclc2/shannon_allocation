@@ -9,12 +9,15 @@ function allocationLabel(item) {
   return `[${(item.allocation_days || []).join(', ')}]`;
 }
 
-function MetricRow({ label, value, digits = 2, pct = false }) {
+function MetricRow({ label, value, digits = 2, pct = false, money = false }) {
   if (value == null || Number.isNaN(Number(value))) return null;
+  let rendered = Number(value).toFixed(digits);
+  if (pct) rendered = formatPercent(value, digits);
+  if (money) rendered = formatMoney(value);
   return (
     <div className="diag-row">
       <span>{label}</span>
-      <b>{pct ? formatPercent(value, digits) : Number(value).toFixed(digits)}</b>
+      <b>{rendered}</b>
     </div>
   );
 }
@@ -101,10 +104,14 @@ function CapitalDeploymentPanel({ history, capitalConfig }) {
 function CandidatePanel({ item, title }) {
   const m = item.metrics || {};
   const r = item.robust || {};
+  const recent = item.recent_validation || {};
   const tr = item.timing_robust || {};
   const sr = item.symbol_robust || {};
   const conc = item.concentration || {};
   const test = item.test || {};
+  const testPeriod = (test.per_window || [])[0] || {};
+  const eligibilityReasons = item.eligibility_reasons || [];
+
   return (
     <div className="card">
       <h3>{title}</h3>
@@ -112,11 +119,26 @@ function CandidatePanel({ item, title }) {
         <span className="candidate-symbols">{item.symbols.join(' ')}</span>
         <span className="muted">N={item.n_symbols} · allocation {allocationLabel(item)}</span>
       </div>
+
+      <div className="sub-card" style={{ marginBottom: 14 }}>
+        <h4>Live eligibility</h4>
+        <div className="diag-row">
+          <span>Research-to-live gate</span>
+          <b className={item.live_eligible ? 'pos' : 'neg'}>{item.live_eligible ? 'PASS' : 'FAIL'}</b>
+        </div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          This gate does not change ERC, Shannon, volatility targeting, NSGA-II objectives, or robust-return ranking. It only blocks weak research candidates from being proposed for live deployment.
+        </div>
+        {!item.live_eligible && eligibilityReasons.length > 0 && (
+          <div className="muted" style={{ marginTop: 6 }}>Reasons: {eligibilityReasons.join(' · ')}</div>
+        )}
+      </div>
+
       <div className="expand-grid">
         <div className="sub-card">
           <h4>TRAIN (optimization window)</h4>
           <MetricRow label="Net TWR annualized" value={m.net_twr_annualized_pct} pct />
-          <MetricRow label="Net XIRR" value={m.net_xirr_pct} pct />
+          <MetricRow label="Net XIRR (window anchored)" value={m.net_xirr_pct} pct />
           <MetricRow label="Gross TWR annualized" value={m.gross_twr_annualized_pct} pct />
           <MetricRow label="Sharpe" value={m.sharpe} digits={3} />
           <MetricRow label="Sortino" value={m.sortino} digits={3} />
@@ -124,10 +146,13 @@ function CandidatePanel({ item, title }) {
           <MetricRow label="Max drawdown" value={m.max_drawdown_pct} pct />
           <MetricRow label="Worst year" value={m.worst_year} pct />
           <MetricRow label="Positive-year ratio" value={m.positive_year_ratio} digits={3} />
-          <MetricRow label="Final NAV" value={m.final_nav} pct={false} digits={0} />
+          <MetricRow label="Measurement start NAV" value={m.measurement_start_nav} money />
+          <MetricRow label="External contributions" value={m.measurement_external_contributions} money />
+          <MetricRow label="Measured profit" value={m.measurement_profit} money />
+          <MetricRow label="Final NAV" value={m.final_nav} money />
         </div>
         <div className="sub-card">
-          <h4>Robustness (OOS validation)</h4>
+          <h4>Rolling OOS validation</h4>
           <MetricRow label="Median OOS net TWR" value={r.median_net_twr} pct />
           <MetricRow label="P10 OOS net TWR" value={r.p10_net_twr} pct />
           <MetricRow label="Worst OOS net TWR" value={r.worst_net_twr} pct />
@@ -136,7 +161,6 @@ function CandidatePanel({ item, title }) {
           <MetricRow label="Worst OOS MDD" value={r.worst_mdd} pct />
           <MetricRow label="Positive-window ratio" value={r.positive_window_ratio} digits={3} />
           <MetricRow label="Robust return" value={r.robust_return} pct />
-          <MetricRow label="Test median net TWR" value={test.median_net_twr} pct />
           <div className="diag-row">
             <span>Timing neighbourhood</span>
             <b>{tr.mean != null ? `${tr.mean}%` : (tr.note || '-')} {tr.isolated_spike ? '(⚠ spike)' : ''}</b>
@@ -151,21 +175,41 @@ function CandidatePanel({ item, title }) {
           </div>
         </div>
       </div>
-      <div className="diag-grid">
+
+      <div className="expand-grid" style={{ marginTop: 14 }}>
+        <div className="sub-card">
+          <h4>Recent pre-holdout validation</h4>
+          <div className="muted" style={{ marginBottom: 8 }}>Eligibility-only window ending immediately before the untouched final holdout. It is not added to the robust-return score.</div>
+          <MetricRow label="Net TWR annualized" value={recent.net_twr_annualized_pct} pct />
+          <MetricRow label="Net XIRR" value={recent.net_xirr_pct} pct />
+          <MetricRow label="Sharpe" value={recent.sharpe} digits={3} />
+          <MetricRow label="MDD" value={recent.max_drawdown_pct} pct />
+          <MetricRow label="CDaR95" value={recent.cdar95_pct} pct />
+        </div>
+        <div className="sub-card">
+          <h4>Final untouched holdout</h4>
+          <MetricRow label="Net TWR annualized" value={test.median_net_twr} pct />
+          <MetricRow label="Net XIRR (window anchored)" value={testPeriod.net_xirr_pct} pct />
+          <MetricRow label="Measurement start NAV" value={testPeriod.measurement_start_nav} money />
+          <MetricRow label="External contributions" value={testPeriod.measurement_external_contributions} money />
+          <MetricRow label="Measured profit" value={testPeriod.measurement_profit} money />
+          <MetricRow label="Final NAV" value={testPeriod.final_nav} money />
+          <MetricRow label="MDD" value={test.worst_mdd} pct />
+          <MetricRow label="CDaR95" value={test.worst_cdar95} pct />
+          <div className="diag-row">
+            <span>Holdout valid</span>
+            <b>{test.valid ? `${test.n_test_windows}/${test.required_test_windows} PASS` : `${test.n_test_windows || 0}/${test.required_test_windows || 1} INVALID`}</b>
+          </div>
+        </div>
+      </div>
+
+      <div className="diag-grid" style={{ marginTop: 14 }}>
         <div className="sub-card">
           <h4>Trading</h4>
           <MetricRow label="Turnover" value={m.turnover_pct} pct />
           <MetricRow label="Trade count" value={m.trade_count} digits={0} />
-          <MetricRow label="Transaction cost" value={m.transaction_cost} digits={0} />
+          <MetricRow label="Transaction cost" value={m.transaction_cost} money />
           <MetricRow label="Cost % of NAV" value={m.cost_pct_of_nav} pct />
-        </div>
-        <div className="sub-card">
-          <h4>Test windows (untouched OOS)</h4>
-          <MetricRow label="Median net TWR" value={test.median_net_twr} pct />
-          <div className="diag-row">
-            <span>Windows valid</span>
-            <b>{test.valid ? `${test.n_test_windows}/${test.required_test_windows} PASS` : `${test.n_test_windows || 0}/${test.required_test_windows || 1} INVALID`}</b>
-          </div>
         </div>
       </div>
     </div>
@@ -181,6 +225,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
           <tr>
             <th>Symbols</th>
             <th>N</th>
+            <th>Live</th>
             <th>Allocation days</th>
             <th>Net TWR ann</th>
             <th>Sharpe</th>
@@ -197,6 +242,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
               <tr key={key} className={selected === key ? 'row-selected' : ''} onClick={() => onSelect(key)}>
                 <td className="symbols-cell">{it.symbols.join(' ')}</td>
                 <td>{it.n_symbols}</td>
+                <td className={it.live_eligible ? 'pos' : 'neg'}>{it.live_eligible ? 'PASS' : 'FAIL'}</td>
                 <td>{it.allocation_days.join(', ')}</td>
                 <td className={Number(m.net_twr_annualized_pct) >= 0 ? 'pos' : 'neg'}>{formatPercent(m.net_twr_annualized_pct)}</td>
                 <td className="num">{m.sharpe?.toFixed(2)}</td>
@@ -213,7 +259,7 @@ function CandidateTable({ items, selected, onSelect, title }) {
 
 export default function OptimizerDetailPage({ experiment }) {
   const [selected, setSelected] = useState(() => {
-    const wr = experiment.winners?.best_robust;
+    const wr = experiment.winners?.best_live_eligible || experiment.winners?.best_robust;
     return wr ? `${wr.symbols.join('|')}::${wr.allocation_days.join(',')}` : '';
   });
   const [history, setHistory] = useState(null);
@@ -222,6 +268,7 @@ export default function OptimizerDetailPage({ experiment }) {
   const lookup = useMemo(() => {
     const map = {};
     const add = (it) => {
+      if (!it) return;
       map[`${it.symbols.join('|')}::${it.allocation_days.join(',')}`] = it;
     };
     (experiment.winners ? Object.values(experiment.winners) : []).forEach(add);
@@ -254,12 +301,14 @@ export default function OptimizerDetailPage({ experiment }) {
 
   const selectedItem = lookup[selected];
   const capitalConfig = experiment.meta?.capital_config || {};
+  const eligibilityConfig = experiment.meta?.live_eligibility || {};
   const winners = experiment.winners || {};
   const winnerLabels = {
     best_return: 'Best Return',
     best_risk_adjusted: 'Best Risk-Adjusted',
     best_low_drawdown: 'Best Low-Drawdown',
-    best_robust: 'Best Robust',
+    best_robust: 'Best Robust (Research)',
+    best_live_eligible: 'Best Live-Eligible',
   };
 
   return (
@@ -300,8 +349,11 @@ export default function OptimizerDetailPage({ experiment }) {
         </h1>
         <p className="muted">
           seed {experiment.meta?.seed} · {experiment.meta?.universe?.length} symbols ·
-          {experiment.meta?.n_windows} windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'} ·
+          {experiment.meta?.n_windows} rolling windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'} ·
           CPU workers {experiment.meta?.parallel_workers || 1} · initial {formatMoney(capitalConfig.initial_balance || 0)} · annual {formatMoney(capitalConfig.annual_deposit || 0)}
+        </p>
+        <p className="muted">
+          Live gate: TRAIN ≥ {formatPercent(eligibilityConfig.min_train_twr_pct ?? 0)} · validation P10 ≥ {formatPercent(eligibilityConfig.min_validation_p10_twr_pct ?? 0)} · recent validation ≥ {formatPercent(eligibilityConfig.min_recent_twr_pct ?? 0)} · eligible {eligibilityConfig.eligible_candidates ?? 0} candidate(s).
         </p>
         <div className="report-links">
           <a className="btn-export" href={optimizerDownloadAllUrl(experiment.experiment_id)}>
@@ -326,7 +378,7 @@ export default function OptimizerDetailPage({ experiment }) {
               {formatPercent(it.robust?.robust_return ?? it.metrics?.net_twr_annualized_pct)}
             </div>
             <div className="muted">
-              OOS med {formatPercent(it.robust?.median_net_twr)} · MDD {formatPercent(it.metrics?.max_drawdown_pct)} · Sharpe {it.metrics?.sharpe?.toFixed(2)}
+              Live {it.live_eligible ? 'PASS' : 'FAIL'} · OOS med {formatPercent(it.robust?.median_net_twr)} · MDD {formatPercent(it.metrics?.max_drawdown_pct)} · Sharpe {it.metrics?.sharpe?.toFixed(2)}
             </div>
           </div>
         ))}
@@ -335,29 +387,30 @@ export default function OptimizerDetailPage({ experiment }) {
       {selectedItem && <CandidatePanel item={selectedItem} title="Selected candidate" />}
 
       {(() => {
-        const br = experiment.winners?.best_robust;
-        if (!experiment.baseline) return null;
+        const br = experiment.winners?.best_live_eligible || experiment.winners?.best_robust;
+        if (!experiment.baseline || !br) return null;
         return (
           <div className="card">
             <h3>Quarterly baseline comparison (same symbols)</h3>
             <p className="muted">
               Standard four-times-per-year schedule <code>[{(experiment.baseline.allocation_days || []).join(', ')}]</code>{' '}
-              evaluated on the same walk-forward windows as the optimized schedule.
+              evaluated with the same portfolio, costs, risk overlay, rolling validation and untouched holdout.
             </p>
             <div className="expand-grid">
               <div className="sub-card">
-                <h4>Optimized (Best Robust)</h4>
+                <h4>Optimized ({br.live_eligible ? 'Live-Eligible' : 'Research only'})</h4>
                 <MetricRow label="Robust return" value={br?.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={br?.robust?.median_net_twr} pct />
-                <MetricRow label="Test median TWR" value={br?.test?.median_net_twr} pct />
-                <div className="diag-row"><span>Test valid</span><b>{br?.test?.valid ? 'PASS' : 'INVALID'}</b></div>
+                <MetricRow label="Recent validation TWR" value={br?.recent_validation?.net_twr_annualized_pct} pct />
+                <MetricRow label="Holdout TWR" value={br?.test?.median_net_twr} pct />
+                <div className="diag-row"><span>Holdout valid</span><b>{br?.test?.valid ? 'PASS' : 'INVALID'}</b></div>
               </div>
               <div className="sub-card">
                 <h4>Baseline quarterly</h4>
                 <MetricRow label="Robust return" value={experiment.baseline.robust?.robust_return} pct />
                 <MetricRow label="Median OOS TWR" value={experiment.baseline.robust?.median_net_twr} pct />
-                <MetricRow label="Test median TWR" value={experiment.baseline.test?.median_net_twr} pct />
-                <div className="diag-row"><span>Test valid</span><b>{experiment.baseline.test?.valid ? 'PASS' : 'INVALID'}</b></div>
+                <MetricRow label="Holdout TWR" value={experiment.baseline.test?.median_net_twr} pct />
+                <div className="diag-row"><span>Holdout valid</span><b>{experiment.baseline.test?.valid ? 'PASS' : 'INVALID'}</b></div>
               </div>
             </div>
           </div>
@@ -388,13 +441,13 @@ export default function OptimizerDetailPage({ experiment }) {
         items={experiment.pareto || []}
         selected={selected}
         onSelect={setSelected}
-        title="Pareto frontier (non-dominated)"
+        title="Pareto frontier (non-dominated research candidates)"
       />
       <CandidateTable
         items={(experiment.top_candidates || []).slice(0, 25)}
         selected={selected}
         onSelect={setSelected}
-        title="Top candidates (by robust return)"
+        title="Top research candidates (by robust return)"
       />
     </div>
   );
