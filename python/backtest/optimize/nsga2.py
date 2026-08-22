@@ -1,16 +1,15 @@
 """NSGA-II multi-objective optimizer.
 
 Population is ranked by Pareto dominance into fronts; within a front, crowding
-distance preserves diversity.  ``portfolio_size`` keeps joint-mode symbol genomes
-at an exact user-selected N.  ``early_stop_generations`` stops when the Pareto
-front has not materially changed for a configurable number of generations.
+distance preserves diversity.  Joint mode may evolve both symbols and a
+variable-length annual allocation schedule.
 """
 
 from __future__ import annotations
 
 import random
 
-from ..candidate import Candidate
+from ..candidate import Candidate, MIN_ALLOCATIONS, MAX_ALLOCATIONS
 from .operators import crossover, mutate
 
 
@@ -101,7 +100,6 @@ def select_parents(pop, fitness, rng: random.Random, fronts, crowd):
 
 
 def _front_signature(pop, fitness, front):
-    """Stable, rounded signature used only for optional early stopping."""
     rows = []
     for idx in front:
         rows.append((pop[idx].key(), tuple(round(float(v), 4) for v in fitness[idx])))
@@ -124,12 +122,10 @@ def nsga2(
     portfolio_size: int | None = None,
     early_stop_generations: int | None = 15,
     evaluate_many=None,
+    min_allocations: int = MIN_ALLOCATIONS,
+    max_allocations: int = MAX_ALLOCATIONS,
 ):
-    """Run NSGA-II; all objective values are maximised.
-
-    ``evaluate_many`` may evaluate a generation concurrently. The algorithm,
-    RNG sequence, Pareto sorting and selection criteria are otherwise unchanged.
-    """
+    """Run NSGA-II; all objective values are maximised."""
     pop = list(initial_population)
     fitness = evaluate_many(pop) if evaluate_many else [evaluate(c) for c in pop]
 
@@ -153,13 +149,30 @@ def nsga2(
             child = None
             if rng.random() < crossover_prob:
                 child = crossover(
-                    p1, p2, universe, rng, min_gap, max_day, fixed_symbols, portfolio_size
+                    p1,
+                    p2,
+                    universe,
+                    rng,
+                    min_gap,
+                    max_day,
+                    fixed_symbols,
+                    portfolio_size,
+                    min_allocations,
+                    max_allocations,
                 )
             if child is None:
                 child = p1 if rng.random() < 0.5 else p2
             if rng.random() < mutation_prob:
                 m = mutate(
-                    child, universe, rng, min_gap, max_day, fixed_symbols, portfolio_size
+                    child,
+                    universe,
+                    rng,
+                    min_gap,
+                    max_day,
+                    fixed_symbols,
+                    portfolio_size,
+                    min_allocations,
+                    max_allocations,
                 )
                 if m is not None:
                     child = m

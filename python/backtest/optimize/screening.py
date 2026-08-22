@@ -1,12 +1,9 @@
-"""Cheap train-only symbol screening for large combinatorial searches.
+"""Cheap TRAIN-only symbol screening for large combinatorial searches.
 
-The optimizer still performs full portfolio backtests for candidates.  Screening
-only narrows a very large input universe (for example ~90 names) before NSGA-II
-using information from the TRAIN window only, so validation/test remain untouched.
-
-Because current price files expose close prices only, the screen focuses on data
-coverage, individual Sharpe, drawdown and volatility.  Liquidity/sector filters
-can be layered in later when point-in-time metadata is available.
+The screen is intentionally growth-first: it keeps names with stronger historical
+return/risk-adjusted momentum in the TRAIN slice while still requiring adequate
+data and penalising pathological volatility/drawdown.  It is only a speed screen;
+rolling OOS validation and MDD gates remain the real risk controls.
 """
 
 from __future__ import annotations
@@ -35,12 +32,7 @@ def screen_universe(
     annualization: int = 252,
     min_observations: int = 126,
 ) -> tuple[list[str], list[dict]]:
-    """Return (screened_symbols, diagnostics), ranked from strongest to weakest.
-
-    ``train_window`` is a (start, end) pair of timestamps.  No data after end is
-    inspected.  If top_k is None/0 or >= universe size, the original universe is
-    returned after data-quality filtering.
-    """
+    """Return TRAIN-only screened symbols ranked strongest to weakest."""
     start, end = train_window
     frame = prices.loc[(prices.index >= start) & (prices.index <= end), universe]
     rows: list[dict] = []
@@ -63,14 +55,16 @@ def screen_universe(
         mdd = _max_drawdown(vals)
         coverage = len(s) / max(1, len(frame))
 
-        # Deliberately simple and bounded.  This is a speed screen, not the final
-        # portfolio objective.  Low drawdown/data quality matter more than raw return.
+        # Growth-first pre-screen. Return and Sharpe now dominate the ranking.
+        # Drawdown/volatility remain mild penalties here because the expensive
+        # portfolio-level rolling OOS stage already enforces the hard MDD gate.
+        bounded_return = max(-1.0, min(2.0, ann_return))
         score = (
-            max(-3.0, min(3.0, sharpe))
-            + 1.25 * mdd
-            - 0.35 * max(0.0, ann_vol - 0.35)
-            + 0.50 * coverage
-            + 0.15 * max(-1.0, min(1.0, ann_return))
+            1.35 * max(-3.0, min(3.0, sharpe))
+            + 1.10 * bounded_return
+            + 0.35 * mdd
+            - 0.20 * max(0.0, ann_vol - 0.45)
+            + 0.35 * coverage
         )
         rows.append(
             {

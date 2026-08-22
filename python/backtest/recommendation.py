@@ -1,13 +1,9 @@
 """Suggest what to deploy next based on a completed optimizer experiment.
 
 This is a historical robustness recommendation, not a forecast. Deployment
-verdicts require:
-  - the candidate to pass the post-research LIVE eligibility gates,
-  - valid final holdout evidence,
-  - validation improvement and non-degradation versus the quarterly baseline.
-
-The eligibility gates are deliberately outside ERC/Shannon/NSGA-II and therefore
-do not modify the system's portfolio-allocation theory.
+verdicts require a LIVE-eligible candidate, valid assessment-holdout evidence,
+and non-degradation versus the simple quarterly benchmark for the same symbols.
+The optimized candidate itself may use 1–6 annual allocation/recalibration events.
 """
 from __future__ import annotations
 
@@ -64,7 +60,7 @@ def build_recommendation(experiment: dict) -> dict:
     else:
         verdict = "no_live_eligible_candidate"
 
-    next_event_idx = _next_quarterly_index(allocation_days)
+    next_event_idx = _next_allocation_index(allocation_days)
     return {
         "experiment_id": experiment_id,
         "generated_at": generated_at,
@@ -74,6 +70,7 @@ def build_recommendation(experiment: dict) -> dict:
         "eligibility_reasons": list(best.get("eligibility_reasons") or []),
         "symbols": list(symbols),
         "n_symbols": len(symbols),
+        "allocation_count_per_year": len(allocation_days),
         "allocation_days": list(allocation_days),
         "next_allocation_index": next_event_idx,
         "score": float(best.get("score") or winner_metrics.get("score") or 0.0),
@@ -113,15 +110,16 @@ def build_recommendation(experiment: dict) -> dict:
         "cost_config": meta.get("cost_config") or {},
         "caveats": [
             "Recommendation is a historically robust candidate, NOT a forecast.",
-            "Research ranking and live eligibility are separate: eligibility does not alter ERC/Shannon/NSGA-II theory.",
-            "Deployment requires a LIVE-eligible candidate plus valid final-holdout evidence and remains user-approved.",
+            "Growth-first search changes research ranking but does not change ERC/Shannon execution mechanics.",
+            "The allocation event count is optimized jointly with event timing; quarterly remains a benchmark only.",
+            "Deployment still requires LIVE eligibility plus valid assessment-holdout evidence and remains user-approved.",
             "Re-run research when new market data materially changes the selection/risk assumptions.",
         ],
     }
 
 
 def _improvement_verdict(delta_robust, delta_test, test_valid=True, opt_mdd=None, base_mdd=None):
-    """Return a conservative optimized-vs-baseline deployment verdict."""
+    """Return a conservative optimized-vs-quarterly-baseline deployment verdict."""
     if delta_robust is None or delta_test is None:
         return "unknown"
     if not test_valid:
@@ -137,7 +135,9 @@ def _improvement_verdict(delta_robust, delta_test, test_valid=True, opt_mdd=None
     return "not_significantly_better"
 
 
-def _next_quarterly_index(allocation_days: list[int]) -> int:
+def _next_allocation_index(allocation_days: list[int]) -> int:
+    # Calendar-date resolution belongs to the live scheduler. The research
+    # recommendation only exposes that an allocation sequence exists.
     return 1 if allocation_days else 0
 
 

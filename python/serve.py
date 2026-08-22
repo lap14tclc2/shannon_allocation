@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the SSR frontend + fixed-combination allocation optimizer APIs."""
+"""Serve SSR frontend + joint/fixed allocation optimizer APIs."""
 
 from __future__ import annotations
 
@@ -36,6 +36,9 @@ CLIENT_CSS_DEFAULT = "/assets/entry-client.css"
 
 MIN_FIXED_SYMBOLS = 5
 MAX_FIXED_SYMBOLS = 10
+MIN_ALLOCATIONS = 1
+MAX_ALLOCATIONS = 6
+VALID_UNIVERSES = {"all", "vn100", "vn50", "vn30"}
 
 _css_url = None
 _backtest_ctx = None
@@ -279,7 +282,9 @@ class Handler(BaseHTTPRequestHandler):
                     "count": len(bt["symbols"]),
                     "min_selected": MIN_FIXED_SYMBOLS,
                     "max_selected": MAX_FIXED_SYMBOLS,
-                    "selection_policy": "user_fixed",
+                    "min_allocations": MIN_ALLOCATIONS,
+                    "max_allocations": MAX_ALLOCATIONS,
+                    "selection_policy": "joint_or_user_fixed",
                 },
             )
         except Exception as exc:
@@ -290,20 +295,13 @@ class Handler(BaseHTTPRequestHandler):
         if len(set(symbols)) != len(symbols):
             return self._send_json(400, {"error": "Combination contains duplicate symbols."})
         if not (MIN_FIXED_SYMBOLS <= len(symbols) <= MAX_FIXED_SYMBOLS):
-            return self._send_json(
-                400,
-                {"error": f"Select {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} symbols before analysis."},
-            )
+            return self._send_json(400, {"error": f"Select {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} symbols before analysis."})
         try:
             bt = _get_backtest()
-        except Exception as exc:
-            return self._send_json(500, {"error": f"Could not load market data: {exc}"})
-        unknown = [s for s in symbols if s not in set(bt["symbols"])]
-        if unknown:
-            return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
-        try:
+            unknown = [s for s in symbols if s not in set(bt["symbols"])]
+            if unknown:
+                return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
             from backtest.combination_health import analyze_combination_health
-
             result = analyze_combination_health(
                 bt["prices"],
                 symbols,
@@ -380,14 +378,13 @@ class Handler(BaseHTTPRequestHandler):
                     meta = json.load(fh)
             except Exception:
                 meta = {}
-            out.append(
-                {
-                    "experiment_id": eid,
-                    "generated_at": meta.get("generated_at"),
-                    "fixed_symbols": meta.get("fixed_symbols") or [],
-                    "mode": meta.get("mode"),
-                }
-            )
+            out.append({
+                "experiment_id": eid,
+                "generated_at": meta.get("generated_at"),
+                "fixed_symbols": meta.get("fixed_symbols") or [],
+                "mode": meta.get("mode"),
+                "portfolio_size": meta.get("portfolio_size"),
+            })
         out.sort(key=lambda e: e.get("generated_at") or "", reverse=True)
         return out
 
@@ -456,14 +453,17 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, rec)
 
     def _handle_optimizer_candidate(self, eid):
-        """Backtest one fixed combination with the experiment's exact configuration."""
+        """Backtest one candidate with the experiment's exact configuration."""
         query = dict(parse_qsl(urlparse(self.path).query))
         symbols = _normalise_symbols(query.get("symbols", ""))
-        days = [int(x) for x in query.get("days", "").split(",") if x.strip()]
-        if not (MIN_FIXED_SYMBOLS <= len(symbols) <= MAX_FIXED_SYMBOLS) or len(days) != 4:
+        try:
+            days = sorted({int(x) for x in query.get("days", "").split(",") if x.strip()})
+        except ValueError:
+            days = []
+        if not (MIN_FIXED_SYMBOLS <= len(symbols) <= MAX_FIXED_SYMBOLS) or not (MIN_ALLOCATIONS <= len(days) <= MAX_ALLOCATIONS):
             return self._send_json(
                 400,
-                {"error": f"Need {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} symbols and exactly 4 allocation days."},
+                {"error": f"Need {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} symbols and {MIN_ALLOCATIONS}–{MAX_ALLOCATIONS} allocation days."},
             )
         bt = _get_backtest()
         exp_meta = self._read_json(os.path.join(OPTIMIZER_DIR, eid), "optimizer_config.json") or {}
@@ -471,11 +471,7 @@ class Handler(BaseHTTPRequestHandler):
         cost_cfg = exp_meta.get("cost_config") or {}
         capital_cfg = exp_meta.get("capital_config") or {}
         allowed = set(bt["params"].as_dict())
-        overrides = {
-            k: v
-            for k, v in {**risk_cfg, **cost_cfg, **capital_cfg}.items()
-            if k in allowed
-        }
+        overrides = {k: v for k, v in {**risk_cfg, **cost_cfg, **capital_cfg}.items() if k in allowed}
         run_params = replace(bt["params"], **overrides)
         alloc_dates = bt["schedule_for_window"](
             bt["Candidate"](tuple(sorted(symbols)), tuple(days)), bt["dates"]
@@ -490,7 +486,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(500, {"error": result.error})
         payload = {
             "symbols": list(result.symbols),
-            "allocation_days": sorted(days),
+            "allocation_days": days,
+            "allocation_count": len(days),
             "metrics": bt["result_metrics"](result),
             "nav_history": result.nav_history,
             "allocations": result.allocations,
@@ -501,71 +498,56 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, payload)
 
     def _handle_optimizer_run(self, body: dict):
-        """Optimize allocation timing for a user-owned, fixed stock combination."""
-        requested_mode = str(body.get("mode", "timing"))
-        if requested_mode != "timing":
-            return self._send_json(
-                400,
-                {
-                    "error": (
-                        "Joint symbol search has been retired. Select the symbols yourself "
-                        "and run mode='timing'."
-                    )
-                },
-            )
+        """Run joint growth search or timing search for a user-owned combination."""
+        requested_mode = str(body.get("mode", "joint")).lower()
+        if requested_mode not in {"joint", "timing"}:
+            return self._send_json(400, {"error": "mode must be 'joint' or 'timing'."})
 
-        fixed_symbols = _normalise_symbols(body.get("fixed_symbols"))
-        if len(set(fixed_symbols)) != len(fixed_symbols):
-            return self._send_json(400, {"error": "fixed_symbols contains duplicates."})
-        if not (MIN_FIXED_SYMBOLS <= len(fixed_symbols) <= MAX_FIXED_SYMBOLS):
-            return self._send_json(
-                400,
-                {"error": f"Select {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} fixed symbols."},
-            )
+        universe = str(body.get("universe", "all")).lower()
+        if universe not in VALID_UNIVERSES:
+            return self._send_json(400, {"error": f"universe must be one of {sorted(VALID_UNIVERSES)}"})
 
-        try:
-            bt = _get_backtest()
-        except Exception as exc:
-            return self._send_json(500, {"error": f"Could not load market data: {exc}"})
-        available = set(bt["symbols"])
-        unknown = [s for s in fixed_symbols if s not in available]
-        if unknown:
-            return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
-
-        # Server-side safety gate: even if a stale/custom client bypasses the UI,
-        # an INVALID combination cannot start the expensive timing optimizer.
-        try:
-            from backtest.combination_health import analyze_combination_health
-
-            health = analyze_combination_health(
-                bt["prices"],
-                fixed_symbols,
-                params=bt["params"],
-                available_symbols=bt["symbols"],
-                holdout_days=252,
-                include_suggestions=False,
-            )
-        except Exception as exc:
-            return self._send_json(400, {"error": f"Combination health check failed: {exc}"})
-        if health.get("status") == "invalid":
-            return self._send_json(
-                400,
-                {
-                    "error": "Combination is INVALID and cannot be optimized.",
-                    "health": health,
-                },
-            )
+        fixed_symbols = None
+        health = None
+        if requested_mode == "timing":
+            fixed_symbols = _normalise_symbols(body.get("fixed_symbols"))
+            if len(set(fixed_symbols)) != len(fixed_symbols):
+                return self._send_json(400, {"error": "fixed_symbols contains duplicates."})
+            if not (MIN_FIXED_SYMBOLS <= len(fixed_symbols) <= MAX_FIXED_SYMBOLS):
+                return self._send_json(400, {"error": f"Select {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS} fixed symbols."})
+            try:
+                bt = _get_backtest()
+                available = set(bt["symbols"])
+                unknown = [s for s in fixed_symbols if s not in available]
+                if unknown:
+                    return self._send_json(400, {"error": f"Symbols not in loaded data: {unknown}"})
+                from backtest.combination_health import analyze_combination_health
+                health = analyze_combination_health(
+                    bt["prices"], fixed_symbols, params=bt["params"],
+                    available_symbols=bt["symbols"], holdout_days=252,
+                    include_suggestions=False,
+                )
+            except Exception as exc:
+                return self._send_json(400, {"error": f"Combination health check failed: {exc}"})
+            if health.get("status") == "invalid":
+                return self._send_json(400, {"error": "Combination is INVALID and cannot be optimized.", "health": health})
+            portfolio_size = len(fixed_symbols)
+        else:
+            portfolio_size = int(body.get("portfolio_size", 7))
+            if not (MIN_FIXED_SYMBOLS <= portfolio_size <= MAX_FIXED_SYMBOLS):
+                return self._send_json(400, {"error": f"portfolio_size must be {MIN_FIXED_SYMBOLS}–{MAX_FIXED_SYMBOLS}."})
 
         seed = int(body.get("seed", 42))
-        population = max(10, int(body.get("population", 36)))
-        generations = max(1, int(body.get("generations", 18)))
-        random_n = max(20, int(body.get("random", 80)))
+        population = max(10, int(body.get("population", 60 if requested_mode == "joint" else 36)))
+        generations = max(1, int(body.get("generations", 30 if requested_mode == "joint" else 18)))
+        random_n = max(20, int(body.get("random", 250 if requested_mode == "joint" else 80)))
         finalists = max(1, int(body.get("finalists", 5)))
-        robust_pool_size = max(finalists, int(body.get("robust_pool_size", 50)))
-        surrogate_pool_size = max(0, int(body.get("surrogate_pool_size", 1500)))
-        surrogate_proposals = max(0, int(body.get("surrogate_proposals", 16)))
-        early_stop_generations = int(body.get("early_stop_generations", 8))
+        robust_pool_size = max(finalists, int(body.get("robust_pool_size", 180 if requested_mode == "joint" else 50)))
+        surrogate_pool_size = max(0, int(body.get("surrogate_pool_size", 5000 if requested_mode == "joint" else 1500)))
+        surrogate_proposals = max(0, int(body.get("surrogate_proposals", 40 if requested_mode == "joint" else 16)))
+        early_stop_generations = int(body.get("early_stop_generations", 15 if requested_mode == "joint" else 8))
         parallel_workers = max(0, int(body.get("parallel_workers", 0)))
+        preselect_top = int(body.get("preselect_top", 45)) if requested_mode == "joint" else None
 
         initial_balance = float(body.get("initial_balance", 1_000_000_000))
         annual_deposit = float(body.get("annual_deposit", 20_000_000))
@@ -585,23 +567,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(400, {"error": "min_equity_exposure must be 0..1."})
         if not (0 < max_position_weight <= 1):
             return self._send_json(400, {"error": "max_position_weight must be in (0, 1]."})
-        min_feasible = 1.0 / len(fixed_symbols)
+        min_feasible = 1.0 / portfolio_size
         if risk_overlay and max_position_weight + 1e-12 < min_feasible:
             return self._send_json(
                 400,
-                {
-                    "error": (
-                        f"With {len(fixed_symbols)} fixed symbols, max_position_weight "
-                        f"cannot be below {min_feasible:.4f}."
-                    )
-                },
+                {"error": f"With {portfolio_size} symbols, max_position_weight cannot be below {min_feasible:.4f}."},
             )
 
-        mode = "timing"
-        universe = "all"
+        mode = requested_mode
         started = datetime.now().isoformat(timespec="seconds")
         run_id = f"run_{int(time.time())}"
-        frozen_symbols = sorted(fixed_symbols)
+        frozen_symbols = sorted(fixed_symbols) if fixed_symbols else None
 
         with _optimizer_lock:
             _optimizer_runs[run_id] = {
@@ -610,12 +586,13 @@ class Handler(BaseHTTPRequestHandler):
                 "universe": universe,
                 "mode": mode,
                 "fixed_symbols": frozen_symbols,
-                "portfolio_size": len(frozen_symbols),
+                "portfolio_size": portfolio_size,
                 "risk_overlay": risk_overlay,
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
-                "combination_health_status": health.get("status"),
-                "combination_health_score": (health.get("score") or {}).get("overall"),
+                "allocation_search": f"{MIN_ALLOCATIONS}-{MAX_ALLOCATIONS} events/year",
+                "combination_health_status": health.get("status") if health else None,
+                "combination_health_score": (health.get("score") or {}).get("overall") if health else None,
             }
 
         def work():
@@ -624,7 +601,7 @@ class Handler(BaseHTTPRequestHandler):
                 from backtest import BacktestParams
 
                 params = BacktestParams(
-                    universe="all",
+                    universe=universe,
                     portfolio_size=None,
                     initial_balance=initial_balance,
                     annual_deposit=annual_deposit,
@@ -639,20 +616,16 @@ class Handler(BaseHTTPRequestHandler):
                     generations=generations,
                     n_random=random_n,
                     n_finalists=finalists,
-                    mode="timing",
+                    mode=mode,
                     fixed_symbols=frozen_symbols,
-                    portfolio_size=None,
-                    preselect_top=None,
+                    portfolio_size=None if mode == "timing" else portfolio_size,
+                    preselect_top=preselect_top,
                     robust_pool_size=robust_pool_size,
                     surrogate_pool_size=surrogate_pool_size,
                     surrogate_proposals=surrogate_proposals,
-                    early_stop_generations=(
-                        early_stop_generations if early_stop_generations > 0 else None
-                    ),
+                    early_stop_generations=early_stop_generations if early_stop_generations > 0 else None,
                     parallel_workers=parallel_workers,
-                    max_oos_drawdown_pct=(
-                        max_oos_drawdown_pct if max_oos_drawdown_pct > 0 else None
-                    ),
+                    max_oos_drawdown_pct=max_oos_drawdown_pct if max_oos_drawdown_pct > 0 else None,
                 )
                 res = run_optimizer(params, opt, progress=False)
                 with _optimizer_lock:
@@ -662,7 +635,9 @@ class Handler(BaseHTTPRequestHandler):
                         "out_dir": res["out_dir"],
                         "started_at": started,
                         "finished_at": datetime.now().isoformat(timespec="seconds"),
+                        "mode": mode,
                         "fixed_symbols": frozen_symbols,
+                        "portfolio_size": portfolio_size,
                     }
             except Exception as exc:
                 with _optimizer_lock:
@@ -670,7 +645,9 @@ class Handler(BaseHTTPRequestHandler):
                         "status": "failed",
                         "error": str(exc),
                         "started_at": started,
+                        "mode": mode,
                         "fixed_symbols": frozen_symbols,
+                        "portfolio_size": portfolio_size,
                     }
 
         threading.Thread(target=work, daemon=True).start()
@@ -683,11 +660,10 @@ class Handler(BaseHTTPRequestHandler):
                 "universe": universe,
                 "mode": mode,
                 "fixed_symbols": frozen_symbols,
-                "portfolio_size": len(frozen_symbols),
+                "portfolio_size": portfolio_size,
                 "initial_balance": initial_balance,
                 "annual_deposit": annual_deposit,
-                "combination_health_status": health.get("status"),
-                "combination_health_score": (health.get("score") or {}).get("overall"),
+                "allocation_search": {"min": MIN_ALLOCATIONS, "max": MAX_ALLOCATIONS},
             },
         )
 
@@ -705,7 +681,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send_page(
                         "optimizer_list",
                         {"experiments": self._list_optimizer_experiments()},
-                        "Allocation Optimizer · Shannon/ERC",
+                        "Growth Optimizer · Shannon/ERC",
                     )
                 eid = parts[1]
                 base = self._safe_join(OPTIMIZER_DIR, eid)
@@ -715,7 +691,7 @@ class Handler(BaseHTTPRequestHandler):
                         exp = json.load(fh)
                 if exp is None:
                     return self._send_json(404, {"error": f"Experiment not found: {eid}"})
-                return self._send_page("optimizer_detail", {"experiment": exp}, f"Allocation {eid}")
+                return self._send_page("optimizer_detail", {"experiment": exp}, f"Optimizer {eid}")
             rid = parts[0]
             base = self._safe_join(RESULTS_DIR, "runs", rid)
             if not base or not os.path.isdir(base):
@@ -753,8 +729,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/" or path == "":
             return self._handle_page([])
         if path == "/optimizer" or path.startswith("/optimizer/"):
-            parts = [unquote(p) for p in path.split("/") if p]
-            return self._handle_page(parts)
+            return self._handle_page([unquote(p) for p in path.split("/") if p])
         if path.startswith("/runs/"):
             parts = [unquote(p) for p in path.split("/") if p]
             return self._handle_page(parts[1:])
@@ -809,7 +784,7 @@ def _bind_with_fallback(host, port, handler, attempts=20):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Serve SSR frontend + fixed-combination allocation optimizer")
+    ap = argparse.ArgumentParser(description="Serve SSR frontend + growth-first joint allocation optimizer")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="127.0.0.1")
     args = ap.parse_args()

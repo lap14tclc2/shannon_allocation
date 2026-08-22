@@ -1,15 +1,15 @@
 """Lightweight surrogate model to prioritise expensive evaluations.
 
-Extra Trees / Random Forest / Gradient Boosting (sklearn) predict candidate
-performance from a cheap feature encoding. Surrogate predictions are NEVER used
-as final results — finalists always receive real backtests.
+Extra Trees / Random Forest / Gradient Boosting predict candidate performance
+from a fixed-width cheap feature encoding. Variable allocation schedules use six
+padded timing slots plus an explicit allocation-count feature.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from ..candidate import Candidate
+from ..candidate import Candidate, MAX_ALLOCATIONS
 
 
 class Surrogate:
@@ -28,13 +28,23 @@ class Surrogate:
             self.model = ExtraTreesRegressor(n_estimators=200, random_state=seed, n_jobs=-1)
 
     def encode(self, candidate: Candidate, max_day: int = 252) -> np.ndarray:
-        onehot = np.zeros(len(self.universe))
+        onehot = np.zeros(len(self.universe), dtype=float)
         for s in candidate.symbols:
             if s in self.sym_index:
                 onehot[self.sym_index[s]] = 1.0
-        timing = np.array(candidate.allocation_days, dtype=float) / max_day
-        n = np.array([len(candidate.symbols) / 10.0])
-        return np.concatenate([onehot, timing, n])
+
+        timing = np.zeros(MAX_ALLOCATIONS, dtype=float)
+        for i, day in enumerate(candidate.allocation_days[:MAX_ALLOCATIONS]):
+            timing[i] = float(day) / max(1.0, float(max_day))
+
+        meta = np.array(
+            [
+                len(candidate.symbols) / 10.0,
+                len(candidate.allocation_days) / float(MAX_ALLOCATIONS),
+            ],
+            dtype=float,
+        )
+        return np.concatenate([onehot, timing, meta])
 
     def fit(self, candidates: list[Candidate], targets: list[float]):
         X = np.vstack([self.encode(c) for c in candidates])
