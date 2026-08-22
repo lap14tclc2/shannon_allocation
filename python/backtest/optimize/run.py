@@ -7,7 +7,13 @@ Large-universe search is intentionally staged:
   4. The surrogate ranks thousands of unevaluated candidates cheaply; only the
      strongest proposals receive real TRAIN backtests.
   5. A diverse TRAIN shortlist receives expensive rolling VALIDATION.
-  6. Only finalists receive neighbourhood robustness + the untouched holdout.
+  6. A recent anchored validation gate checks the latest pre-holdout regime.
+  7. Only finalists receive neighbourhood robustness + the untouched holdout.
+
+The recent/live eligibility gate is deliberately orthogonal to the optimizer:
+it does NOT change ERC, Shannon, risk targeting, NSGA-II objectives, or the
+rolling robust-return formula. It only decides which research candidates are
+eligible to be considered for live deployment.
 
 Independent candidate simulations are evaluated across CPU processes when
 available. This changes wall-clock time, not the quantitative methodology.
@@ -26,6 +32,7 @@ from datetime import datetime
 from ..config import BacktestParams
 from ..data import load_panel
 from ..candidate import Candidate, random_candidate, validate_candidate
+from .eligibility import assess_live_eligibility
 from .evaluate import EvaluationCache, config_fingerprint, evaluate_candidate, objectives
 from .nsga2 import nsga2
 from .parallel import ParallelEvaluator, auto_worker_count
@@ -63,7 +70,7 @@ class OptimizerConfig:
     test_days: int = 252                 # one global untouched holdout
     window_step: int = 120
     use_surrogate: bool = True
-    data_version: str = "v4-risk-fast-global-holdout"
+    data_version: str = "v5-window-accounting-live-eligibility"
     cache_path: str = "F:/workspace/shannon_allocation/python/results/optimizer_cache.json"
     out_dir: str = "F:/workspace/shannon_allocation/python/results/optimizer"
 
@@ -84,6 +91,13 @@ class OptimizerConfig:
 
     # Positive number: validation and final holdout MDD must be no worse than -this%.
     max_oos_drawdown_pct: float | None = 35.0
+
+    # LIVE-ELIGIBILITY gates. These do not alter research scoring. The recent
+    # window ends exactly at research_end, immediately before FINAL HOLDOUT.
+    recent_validation_days: int = 252
+    min_live_train_twr_pct: float = 0.0
+    min_live_validation_p10_twr_pct: float = 0.0
+    min_live_recent_twr_pct: float = 0.0
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -195,6 +209,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     if opt.portfolio_size is not None and not (5 <= opt.portfolio_size <= 10):
         raise ValueError("portfolio_size must be between 5 and 10")
 
+    # FINAL HOLDOUT is reserved before any research ranking or eligibility gate.
     research_dates, final_holdout = split_research_holdout(dates, opt.test_days)
     windows = make_train_val_windows(
         research_dates, opt.train_days, opt.val_days, opt.window_step
@@ -204,6 +219,12 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             "Not enough pre-holdout data for one train/validation window. "
             "Reduce train/val/test lengths only if the research design justifies it."
         )
+
+    recent_days = min(max(2, int(opt.recent_validation_days)), len(research_dates))
+    recent_validation = (
+        research_dates[-recent_days],
+        research_dates[-1],
+    )
 
     max_day = opt.max_day if opt.max_day else _min_year_session_count(research_dates)
     if max_day < 4 * opt.min_gap:
@@ -259,7 +280,8 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
 
     print(
         f"Data {dates[0].date()} -> {dates[-1].date()}; research ends "
-        f"{research_dates[-1].date()}; {len(windows)} validation windows; "
+        f"{research_dates[-1].date()}; {len(windows)} rolling validation windows; "
+        f"RECENT VALIDATION {recent_validation[0].date()} -> {recent_validation[1].date()}; "
         f"FINAL HOLDOUT {final_holdout[0].date()} -> {final_holdout[1].date()}; "
         f"MDD gate={opt.max_oos_drawdown_pct}%",
         flush=True,
@@ -271,6 +293,8 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     train_start = str(windows[0]["train"][0].date())
     train_end = str(windows[0]["train"][1].date())
     train_cache_key = f"{train_start}|{train_end}"
+    recent_start = str(recent_validation[0].date())
+    recent_end = str(recent_validation[1].date())
 
     parallel = None
     resolved_workers = auto_worker_count(opt.parallel_workers)
@@ -299,6 +323,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         )
 
     train_eval = make_eval(windows[0]["train"])
+    recent_eval = make_eval(recent_validation)
 
     def train_eval_many(candidates):
         nonlocal parallel, resolved_workers
@@ -484,28 +509,72 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         resolved_workers = 1
         robust_results = [robust_of(c) for c in shortlist]
 
+    # Build the research records first. LIVE eligibility is evaluated only after
+    # the existing robust-return calculation, so research ranking is unchanged.
+    train_metrics = train_eval_many(shortlist)
+    all_items = []
+    for c, m, robust in zip(shortlist, train_metrics, robust_results):
+        all_items.append(
+            {
+                "candidate": c,
+                "metrics": m,
+                "robust": robust,
+                "objectives": objectives(m),
+                "train_metrics": m,
+                "validation_metrics": robust,
+            }
+        )
+
+    # Avoid spending a recent-window backtest on candidates that already fail an
+    # earlier live gate. This affects runtime only, not eligibility semantics.
+    recent_candidates = []
+    for item in all_items:
+        m = item["metrics"] or {}
+        r = item["robust"] or {}
+        if not r:
+            continue
+        if m.get("net_twr_annualized_pct", -1e18) < opt.min_live_train_twr_pct:
+            continue
+        if r.get("p10_net_twr", -1e18) < opt.min_live_validation_p10_twr_pct:
+            continue
+        recent_candidates.append(item["candidate"])
+
+    recent_by_key = {}
+    if recent_candidates:
+        try:
+            recent_results = (
+                parallel.evaluate_many(recent_candidates, recent_start, recent_end)
+                if parallel is not None
+                else [recent_eval(c) for c in recent_candidates]
+            )
+        except Exception as exc:
+            print(f"Parallel RECENT validation failed; falling back to serial: {exc}", flush=True)
+            if parallel is not None:
+                parallel.close()
+            parallel = None
+            resolved_workers = 1
+            recent_results = [recent_eval(c) for c in recent_candidates]
+        recent_by_key = {
+            c.key(): m for c, m in zip(recent_candidates, recent_results)
+        }
+
+    for item in all_items:
+        recent = recent_by_key.get(item["candidate"].key())
+        eligible, reasons = assess_live_eligibility(
+            item.get("metrics"),
+            item.get("robust"),
+            recent,
+            min_train_twr_pct=opt.min_live_train_twr_pct,
+            min_validation_p10_twr_pct=opt.min_live_validation_p10_twr_pct,
+            min_recent_twr_pct=opt.min_live_recent_twr_pct,
+        )
+        item["recent_validation"] = recent
+        item["live_eligible"] = eligible
+        item["eligibility_reasons"] = reasons
+
     if parallel is not None:
         parallel.close()
         parallel = None
-
-    all_items = []
-    for idx, (c, robust) in enumerate(zip(shortlist, robust_results)):
-        m = train_eval(c)
-        item = {
-            "candidate": c,
-            "metrics": m,
-            "robust": robust,
-            "objectives": objectives(m),
-            "train_metrics": m,
-            "validation_metrics": robust,
-        }
-        all_items.append(item)
-        if progress and (idx + 1) % 25 == 0:
-            print(
-                f"  validation {idx+1}/{len(shortlist)} "
-                f"robust={(robust or {}).get('robust_return')}",
-                flush=True,
-            )
 
     by_robust = sorted(
         [i for i in all_items if i["robust"]],
@@ -516,7 +585,24 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             "No candidate passed the validation risk/coverage gate. "
             "Inspect risk configuration before loosening the MDD ceiling."
         )
-    finalists = by_robust[: opt.n_finalists]
+
+    by_live_robust = [i for i in by_robust if i.get("live_eligible")]
+    if by_live_robust:
+        finalists = by_live_robust[: opt.n_finalists]
+        print(
+            f"LIVE eligibility: {len(by_live_robust)}/{len(by_robust)} robust candidates passed; "
+            f"testing top {len(finalists)} on FINAL HOLDOUT.",
+            flush=True,
+        )
+    else:
+        # Keep the research experiment usable even when nothing is deployable.
+        # The recommendation layer will explicitly block live deployment.
+        finalists = by_robust[: opt.n_finalists]
+        print(
+            "LIVE eligibility: 0 candidates passed. Final holdout is still run for research, "
+            "but no candidate may be recommended for live deployment.",
+            flush=True,
+        )
 
     def full_test_eval(cc):
         r = evaluate_candidate(
@@ -553,9 +639,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             "per_window": [r] if r else [],
         }
 
-    # The first finalist is already the validation Best Robust candidate. Expensive
-    # neighbourhood diagnostics do not determine the winner, so run them only for
-    # that candidate; the other finalists still receive the untouched holdout.
+    # Diagnostics are informational; they do not determine research ranking.
     diagnostic_key = finalists[0]["candidate"].key()
     for item in finalists:
         c = item["candidate"]
@@ -602,7 +686,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
 
     provisional = leaderboards(all_items)
     for item in provisional.values():
-        if "test" not in item:
+        if item is not None and "test" not in item:
             item["test"] = full_test_eval(item["candidate"])
             item["test_metrics"] = item["test"]
 
@@ -634,10 +718,23 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         "data_start": str(dates[0].date()),
         "data_end": str(dates[-1].date()),
         "research_end": str(research_dates[-1].date()),
+        "recent_validation": {
+            "start": recent_start,
+            "end": recent_end,
+            "trading_days": recent_days,
+            "purpose": "pre-holdout live eligibility only; not included in robust-return score",
+        },
         "final_holdout": {
             "start": str(final_holdout[0].date()),
             "end": str(final_holdout[1].date()),
             "trading_days": opt.test_days,
+        },
+        "live_eligibility": {
+            "min_train_twr_pct": opt.min_live_train_twr_pct,
+            "min_validation_p10_twr_pct": opt.min_live_validation_p10_twr_pct,
+            "min_recent_twr_pct": opt.min_live_recent_twr_pct,
+            "eligible_candidates": len(by_live_robust),
+            "note": "Post-research deployment gate; ERC/Shannon/NSGA-II scoring unchanged.",
         },
         "max_allocation_day": max_day,
         "baseline_allocation_days": list(baseline_days),
@@ -709,6 +806,9 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
                 "allocation_days": list(item["candidate"].allocation_days),
                 "train_metrics": item["metrics"],
                 "validation_metrics": item["robust"],
+                "recent_validation_metrics": item.get("recent_validation"),
+                "live_eligible": item.get("live_eligible"),
+                "eligibility_reasons": item.get("eligibility_reasons"),
             }
         )
     timing_rows = [
@@ -748,7 +848,8 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         out_dir, finalists, baseline_items, baseline_days, winners
     )
     for name, item in winners.items():
-        final_report(item, out_dir, name)
+        if item is not None:
+            final_report(item, out_dir, name)
     write_experiment_json(
         out_dir,
         meta,
@@ -790,7 +891,11 @@ def _write_recommendation(
     baseline_days,
 ) -> str | None:
     """Write recommendation.json with the same baseline used by the report."""
-    best = winners.get("best_robust") or next(iter(winners.values()), None)
+    best = (
+        winners.get("best_live_eligible")
+        or winners.get("best_robust")
+        or next((v for v in winners.values() if v is not None), None)
+    )
     baseline = {}
     if best is not None:
         b = baseline_items.get(best["candidate"].key()) or {}
@@ -804,7 +909,11 @@ def _write_recommendation(
         "experiment_id": meta["experiment_id"],
         "generated_at": meta.get("generated_at"),
         "meta": meta,
-        "winners": {name: item_to_json(item) for name, item in winners.items()},
+        "winners": {
+            name: item_to_json(item)
+            for name, item in winners.items()
+            if item is not None
+        },
         "baseline": baseline,
     }
     rec = build_recommendation(payload)
