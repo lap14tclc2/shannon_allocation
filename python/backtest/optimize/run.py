@@ -9,8 +9,8 @@ Large-universe search is intentionally staged:
   5. A diverse TRAIN shortlist receives expensive rolling VALIDATION.
   6. Only finalists receive neighbourhood robustness + the untouched holdout.
 
-The global holdout is never used by screening, surrogate fitting, NSGA-II, or
-validation ranking.
+Independent candidate simulations are evaluated across CPU processes when
+available. This changes wall-clock time, not the quantitative methodology.
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ import time
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from statistics import median
 
 from ..config import BacktestParams
 from ..data import load_panel
 from ..candidate import Candidate, random_candidate, validate_candidate
 from .evaluate import EvaluationCache, config_fingerprint, evaluate_candidate, objectives
 from .nsga2 import nsga2
+from .parallel import ParallelEvaluator, auto_worker_count
 from .reports import (
     item_to_json,
     leaderboards,
@@ -78,6 +78,9 @@ class OptimizerConfig:
     surrogate_pool_size: int = 5000
     surrogate_proposals: int = 40
     early_stop_generations: int | None = 15
+
+    # 0 = auto (up to 6 processes, leaving one logical CPU for UI/server).
+    parallel_workers: int = 0
 
     # Positive number: validation and final holdout MDD must be no worse than -this%.
     max_oos_drawdown_pct: float | None = 35.0
@@ -192,7 +195,6 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     if opt.portfolio_size is not None and not (5 <= opt.portfolio_size <= 10):
         raise ValueError("portfolio_size must be between 5 and 10")
 
-    # Reserve the final holdout BEFORE creating any research windows.
     research_dates, final_holdout = split_research_holdout(dates, opt.test_days)
     windows = make_train_val_windows(
         research_dates, opt.train_days, opt.val_days, opt.window_step
@@ -266,6 +268,22 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     cfg = config_fingerprint(params, opt.data_version)
     cache = EvaluationCache(opt.cache_path)
 
+    train_start = str(windows[0]["train"][0].date())
+    train_end = str(windows[0]["train"][1].date())
+    train_cache_key = f"{train_start}|{train_end}"
+
+    parallel = None
+    resolved_workers = auto_worker_count(opt.parallel_workers)
+    try:
+        parallel = ParallelEvaluator(
+            prices, params, dates, cfg, max_day, workers=opt.parallel_workers
+        )
+        print(f"Parallel evaluation: {resolved_workers} worker process(es).", flush=True)
+    except Exception as exc:
+        print(f"Parallel evaluation unavailable; using serial path: {exc}", flush=True)
+        parallel = None
+        resolved_workers = 1
+
     def make_eval(win):
         start = str(win[0].date())
         end = str(win[1].date())
@@ -281,9 +299,46 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         )
 
     train_eval = make_eval(windows[0]["train"])
+
+    def train_eval_many(candidates):
+        nonlocal parallel, resolved_workers
+        candidates = list(candidates)
+        out = [None] * len(candidates)
+        missing = []
+        missing_indices = []
+        for idx, c in enumerate(candidates):
+            hit = cache.get(c, train_cache_key, cfg)
+            if hit is not None:
+                out[idx] = hit
+            else:
+                missing.append(c)
+                missing_indices.append(idx)
+        if missing:
+            try:
+                metrics = (
+                    parallel.evaluate_many(missing, train_start, train_end)
+                    if parallel is not None
+                    else [train_eval(c) for c in missing]
+                )
+            except Exception as exc:
+                print(f"Parallel TRAIN batch failed; falling back to serial: {exc}", flush=True)
+                if parallel is not None:
+                    parallel.close()
+                parallel = None
+                resolved_workers = 1
+                metrics = [train_eval(c) for c in missing]
+            for idx, c, m in zip(missing_indices, missing, metrics):
+                out[idx] = m
+                cache.put(c, train_cache_key, cfg, m)
+        return out
+
     train_obj_eval = lambda c: objectives(train_eval(c))
+    train_obj_many = lambda candidates: [objectives(m) for m in train_eval_many(candidates)]
 
     val_window_dicts = [{"val": w["val"]} for w in windows]
+    val_windows_serialized = [
+        (str(w["val"][0].date()), str(w["val"][1].date())) for w in windows
+    ]
     min_val_windows = len(val_window_dicts) if opt.require_full_coverage else None
 
     def robust_eval_fn(cc, w):
@@ -320,8 +375,11 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         progress=progress,
         fixed_symbols=list(fixed) if fixed else None,
         portfolio_size=None if fixed else opt.portfolio_size,
+        evaluate_many=train_eval_many,
     )
     if not baseline:
+        if parallel is not None:
+            parallel.close()
         raise RuntimeError("No valid candidates survived the TRAIN random baseline.")
 
     print(f"NSGA-II: pop={opt.population_size} gen={opt.generations} on TRAIN...", flush=True)
@@ -355,6 +413,7 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         fixed_symbols=list(fixed) if fixed else None,
         portfolio_size=None if fixed else opt.portfolio_size,
         early_stop_generations=opt.early_stop_generations,
+        evaluate_many=train_obj_many,
     )
 
     proposed = []
@@ -383,12 +442,11 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
                 opt.surrogate_proposals,
                 exclude,
             )
-            real_proposed = []
-            for c in proposed:
-                m = train_eval(c)
-                if m and not m.get("error"):
-                    real_proposed.append(c)
-            proposed = real_proposed
+            proposed_metrics = train_eval_many(proposed)
+            proposed = [
+                c for c, m in zip(proposed, proposed_metrics)
+                if m and not m.get("error")
+            ]
         except Exception as exc:
             print(f"Surrogate disabled for this run: {exc}", flush=True)
             proposed = []
@@ -406,10 +464,33 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         flush=True,
     )
 
+    try:
+        robust_results = (
+            parallel.robust_many(
+                shortlist,
+                val_windows_serialized,
+                opt.lamb,
+                opt.require_full_coverage,
+                opt.max_oos_drawdown_pct,
+            )
+            if parallel is not None
+            else [robust_of(c) for c in shortlist]
+        )
+    except Exception as exc:
+        print(f"Parallel VALIDATION failed; falling back to serial: {exc}", flush=True)
+        if parallel is not None:
+            parallel.close()
+        parallel = None
+        resolved_workers = 1
+        robust_results = [robust_of(c) for c in shortlist]
+
+    if parallel is not None:
+        parallel.close()
+        parallel = None
+
     all_items = []
-    for idx, c in enumerate(shortlist):
+    for idx, (c, robust) in enumerate(zip(shortlist, robust_results)):
         m = train_eval(c)
-        robust = robust_of(c)
         item = {
             "candidate": c,
             "metrics": m,
@@ -437,7 +518,6 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         )
     finalists = by_robust[: opt.n_finalists]
 
-    # One globally untouched final holdout, evaluated only after ranking finalists.
     def full_test_eval(cc):
         r = evaluate_candidate(
             cc,
@@ -473,33 +553,53 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
             "per_window": [r] if r else [],
         }
 
+    # The first finalist is already the validation Best Robust candidate. Expensive
+    # neighbourhood diagnostics do not determine the winner, so run them only for
+    # that candidate; the other finalists still receive the untouched holdout.
+    diagnostic_key = finalists[0]["candidate"].key()
     for item in finalists:
         c = item["candidate"]
-        item["timing_robust"] = timing_neighbourhood(
-            c,
-            robust_of,
-            radius=5,
-            min_gap=opt.min_gap,
-            max_day=max_day,
-            value_key="robust_return",
-        )
-        if fixed is None:
-            item["symbol_robust"] = symbol_neighbourhood(
-                c, search_universe, train_eval, rng
+        if c.key() == diagnostic_key:
+            item["timing_robust"] = timing_neighbourhood(
+                c,
+                robust_of,
+                radius=5,
+                min_gap=opt.min_gap,
+                max_day=max_day,
+                value_key="robust_return",
             )
+            if fixed is None:
+                item["symbol_robust"] = symbol_neighbourhood(
+                    c, search_universe, train_eval, rng
+                )
+            else:
+                item["symbol_robust"] = {
+                    "n_neighbours": 0,
+                    "mean": None,
+                    "median": None,
+                    "std": None,
+                    "note": "symbols fixed in timing mode",
+                }
         else:
+            item["timing_robust"] = {
+                "n_neighbours": 0,
+                "mean": None,
+                "median": None,
+                "std": None,
+                "isolated_spike": None,
+                "note": "diagnostic skipped for non-best finalist",
+            }
             item["symbol_robust"] = {
                 "n_neighbours": 0,
                 "mean": None,
                 "median": None,
                 "std": None,
-                "note": "symbols fixed in timing mode",
+                "note": "diagnostic skipped for non-best finalist",
             }
         item["concentration"] = concentration(item["metrics"])
         item["test"] = full_test_eval(c)
         item["test_metrics"] = item["test"]
 
-    # Attach holdout blocks to train-focused leaderboard winners too.
     provisional = leaderboards(all_items)
     for item in provisional.values():
         if "test" not in item:
@@ -508,7 +608,6 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
 
     winners = leaderboards(all_items)
 
-    # Same-symbol quarterly baseline for each finalist.
     baseline_items = {}
     for item in finalists:
         c = item["candidate"]
@@ -545,6 +644,12 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
         "n_windows": len(windows),
         "n_train_candidates": len({c.key() for c in candidate_pool}),
         "n_validation_candidates": len(shortlist),
+        "parallel_workers": resolved_workers,
+        "capital_config": {
+            "initial_balance": params.initial_balance,
+            "annual_deposit": params.annual_deposit,
+            "deposit_at_start_year": params.deposit_at_start_year,
+        },
         "screening": {
             "raw_universe_size": len(universe_sorted),
             "screened_universe_size": len(search_universe),
@@ -659,7 +764,8 @@ def run_optimizer(params: BacktestParams, opt: OptimizerConfig, progress: bool =
     )
     cache.flush()
 
-    print(f"\nOptimizer done in {time.time()-t0:.1f}s. Experiment {experiment_id}")
+    elapsed = time.time() - t0
+    print(f"\nOptimizer done in {elapsed:.1f}s. Experiment {experiment_id}")
     print(f"Exports -> {out_dir}")
     return {
         "experiment_id": experiment_id,
