@@ -7,21 +7,25 @@ import {
   analyzeCombination,
 } from '../lib/api.js';
 
+// Product joint mode is now Dynamic Alpha: membership is selected from the
+// market universe at each recalibration, so the optimizer only needs to search
+// frequency/timing. Budgets therefore match a timing search rather than the old
+// combinatorial static-symbol search.
 const JOINT_PRESETS = {
   fast: {
-    label: 'Fast', note: 'Quick growth search',
-    population: 40, generations: 18, random: 150, preselect: 40,
-    robustPool: 100, surrogatePool: 3000, surrogateProposals: 25, earlyStop: 10,
+    label: 'Fast', note: 'Quick dynamic-alpha timing search',
+    population: 24, generations: 10, random: 40, preselect: 0,
+    robustPool: 25, surrogatePool: 500, surrogateProposals: 8, earlyStop: 6,
   },
   balanced: {
-    label: 'Balanced', note: 'Recommended joint search',
-    population: 60, generations: 30, random: 250, preselect: 45,
-    robustPool: 180, surrogatePool: 5000, surrogateProposals: 40, earlyStop: 15,
+    label: 'Balanced', note: 'Recommended dynamic-alpha search',
+    population: 36, generations: 18, random: 80, preselect: 0,
+    robustPool: 50, surrogatePool: 1500, surrogateProposals: 16, earlyStop: 8,
   },
   thorough: {
-    label: 'Thorough', note: 'More combination + timing coverage',
-    population: 90, generations: 45, random: 500, preselect: 60,
-    robustPool: 300, surrogatePool: 10000, surrogateProposals: 80, earlyStop: 20,
+    label: 'Thorough', note: 'More frequency + timing coverage',
+    population: 50, generations: 28, random: 140, preselect: 0,
+    robustPool: 80, surrogatePool: 3000, surrogateProposals: 24, earlyStop: 12,
   },
 };
 
@@ -338,7 +342,7 @@ export default function OptimizerListPage({ experiments }) {
 
   function validate() {
     if (mode === 'joint') {
-      if (Number(portfolioSize) < 5 || Number(portfolioSize) > 10) return 'Portfolio size must be 5–10.';
+      if (Number(portfolioSize) < 5 || Number(portfolioSize) > 10) return 'Dynamic portfolio size must be 5–10.';
     } else {
       const selectionError = validateFixedSelection();
       if (selectionError) return selectionError;
@@ -361,7 +365,7 @@ export default function OptimizerListPage({ experiments }) {
     setRunning(true);
     setElapsed(0);
     const desc = mode === 'joint'
-      ? `Joint growth search · ${portfolioSize} stocks · universe ${universe.toUpperCase()} · allocation frequency + timing 1–6/year`
+      ? `Dynamic Alpha · top ${portfolioSize} from ${universe.toUpperCase()} re-ranked at each event · timing 1–6/year`
       : `Fixed ${selectedSymbols.join(' ')} · allocation frequency + timing 1–6/year`;
     setMessage(`${desc} · ${moneyShort(initialBalance)} initial · ${moneyShort(annualDeposit)}/year`);
 
@@ -443,11 +447,11 @@ export default function OptimizerListPage({ experiments }) {
 
   return (
     <div className="page">
-      <div className="breadcrumb"><a href="/">All runs</a> <span>/</span> Growth Optimizer</div>
+      <div className="breadcrumb">Growth Optimizer</div>
       <header className="page-head">
         <h1>Growth Optimizer</h1>
         <p className="muted">
-          Growth-first search with hard OOS risk gates. ERC, Shannon drift, transaction costs and the untouched final holdout remain in place.
+          Dynamic Alpha ranks the market with strictly-past momentum/trend/risk data at every recalibration, then ERC + volatility targeting + Shannon manage the selected portfolio. Final holdout remains assessment-only.
         </p>
       </header>
 
@@ -467,20 +471,20 @@ export default function OptimizerListPage({ experiments }) {
       <form className="card" onSubmit={runOptimizer}>
         <h3>1. Search mode</h3>
         <div className="universe-buttons" style={{ marginBottom: 12 }}>
-          <button type="button" className="btn-variant" disabled={running} onClick={() => changeMode('joint')} style={{ borderColor: mode === 'joint' ? 'var(--accent)' : 'var(--border)', minWidth: 260 }}>
-            <b>{mode === 'joint' ? '✓ ' : ''}Optimize combination + allocation</b>
-            <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>Machine selects stocks, allocation frequency and timing.</div>
+          <button type="button" className="btn-variant" disabled={running} onClick={() => changeMode('joint')} style={{ borderColor: mode === 'joint' ? 'var(--accent)' : 'var(--border)', minWidth: 280 }}>
+            <b>{mode === 'joint' ? '✓ ' : ''}Dynamic Alpha + allocation</b>
+            <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>Machine re-ranks the universe and may change stocks at every recalibration.</div>
           </button>
-          <button type="button" className="btn-variant" disabled={running} onClick={() => changeMode('timing')} style={{ borderColor: mode === 'timing' ? 'var(--accent)' : 'var(--border)', minWidth: 260 }}>
+          <button type="button" className="btn-variant" disabled={running} onClick={() => changeMode('timing')} style={{ borderColor: mode === 'timing' ? 'var(--accent)' : 'var(--border)', minWidth: 280 }}>
             <b>{mode === 'timing' ? '✓ ' : ''}Use my own combination</b>
-            <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>You select stocks; machine optimizes frequency and timing.</div>
+            <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>You freeze stocks; machine optimizes frequency and timing.</div>
           </button>
         </div>
 
         {mode === 'joint' ? (
           <div className="sub-card">
             <div className="run-form">
-              <label>Search universe
+              <label>Alpha universe
                 <select value={universe} onChange={(e) => setUniverse(e.target.value)} disabled={running} style={{ width: 170 }}>
                   <option value="all">All data</option>
                   <option value="vn100">VN100</option>
@@ -488,10 +492,10 @@ export default function OptimizerListPage({ experiments }) {
                   <option value="vn30">VN30</option>
                 </select>
               </label>
-              <NumberField label="Exact portfolio size" min={5} max={10} value={portfolioSize} onChange={setPortfolioSize} disabled={running} />
+              <NumberField label="Active stocks per recalibration" min={5} max={10} value={portfolioSize} onChange={setPortfolioSize} disabled={running} hint="5–7 recommended for stronger growth concentration" />
             </div>
             <div className="muted">
-              The machine searches the stock combination and automatically searches 1–6 annual ERC/risk recalibration events plus their trading-session positions. Quarterly is only a benchmark now.
+              At each event the engine uses only past prices to score 3M/6M/12M momentum, trend, drawdown quality and volatility; it then applies a correlation filter, selects the strongest names, solves ERC and searches 1–6 recalibrations/year. The alpha formula is fixed and is not tuned against the holdout.
             </div>
           </div>
         ) : (
@@ -535,7 +539,7 @@ export default function OptimizerListPage({ experiments }) {
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
         <h3>3. Risk policy</h3>
-        <div className="muted" style={{ marginBottom: 10 }}>Growth is the search priority; risk remains a hard validation constraint.</div>
+        <div className="muted" style={{ marginBottom: 10 }}>Growth is the search priority; catastrophic OOS risk remains a hard constraint. Calmar/return-to-drawdown are now smooth ranking quality, not binary cliffs.</div>
         <div className="run-form">
           <label>Risk policy
             <select value={riskOverlay ? 'on' : 'off'} onChange={(e) => setRiskOverlay(e.target.value === 'on')} disabled={running} style={{ width: 220 }}>
@@ -548,7 +552,7 @@ export default function OptimizerListPage({ experiments }) {
           <NumberField label="Max stock weight %" min={Math.ceil(minFeasiblePositionPct)} max={100} value={maxPositionPct} onChange={setMaxPositionPct} disabled={!riskOverlay || running} />
         </div>
         <div className="muted" style={{ marginTop: 8 }}>
-          Default risk policy has no forced equity floor: valid volatility targeting may de-risk all the way to cash. If risk data is unavailable, the system separately fails closed to 0% equity.
+          Default risk policy has no forced equity floor: valid volatility targeting may de-risk all the way to cash. Missing risk data independently fails closed to 0% equity.
         </div>
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
@@ -583,7 +587,7 @@ export default function OptimizerListPage({ experiments }) {
               />
             </div>
             <div className="muted" style={{ marginBottom: 14 }}>
-              Missing/invalid risk data is not overridden by this floor: the fail-closed exposure remains 0%.
+              Missing/invalid risk data is not overridden by this floor: fail-closed exposure remains 0%.
             </div>
 
             <h4>Advanced search</h4>
@@ -592,7 +596,7 @@ export default function OptimizerListPage({ experiments }) {
               <NumberField label="Population" min={10} value={population} onChange={setCustom(setPopulation)} disabled={running} />
               <NumberField label="Generations" min={1} value={generations} onChange={setCustom(setGenerations)} disabled={running} />
               <NumberField label="Random backtests" min={20} value={random} onChange={setCustom(setRandom)} disabled={running} />
-              <NumberField label="TRAIN preselect" min={0} value={preselect} onChange={setCustom(setPreselect)} disabled={running || mode !== 'joint'} />
+              {mode === 'timing' && <NumberField label="TRAIN preselect" min={0} value={preselect} onChange={setCustom(setPreselect)} disabled />}
               <NumberField label="Validation shortlist" min={5} value={robustPool} onChange={setCustom(setRobustPool)} disabled={running} />
               <NumberField label="Surrogate pool" min={0} value={surrogatePool} onChange={setCustom(setSurrogatePool)} disabled={running} />
               <NumberField label="Real surrogate proposals" min={0} value={surrogateProposals} onChange={setCustom(setSurrogateProposals)} disabled={running} />
@@ -603,9 +607,9 @@ export default function OptimizerListPage({ experiments }) {
 
         <div className="sub-card" style={{ marginBottom: 14 }}>
           <div className="diag-grid" style={{ marginBottom: 0 }}>
-            <div><span>Mode</span><b>{mode === 'joint' ? 'Joint growth' : 'Fixed combination'}</b></div>
-            <div><span>Portfolio</span><b>{mode === 'joint' ? `${portfolioSize} stocks from ${universe.toUpperCase()}` : selectedSymbols.join(' ') || '-'}</b></div>
-            <div><span>Allocation search</span><b>1–6 events/year + timing</b></div>
+            <div><span>Mode</span><b>{mode === 'joint' ? 'Dynamic Alpha' : 'Fixed combination'}</b></div>
+            <div><span>Portfolio</span><b>{mode === 'joint' ? `${portfolioSize} active stocks from ${universe.toUpperCase()}` : selectedSymbols.join(' ') || '-'}</b></div>
+            <div><span>Allocation search</span><b>1–6 recalibrations/year + timing</b></div>
             <div><span>Initial balance</span><b>{moneyShort(initialBalance)}</b></div>
             <div><span>Annual money</span><b>{moneyShort(annualDeposit)}</b></div>
             <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD${Number(minEquityPct) > 0 ? ` / ${minEquityPct}% floor` : ''}` : '100% equity'}</b></div>
@@ -619,10 +623,10 @@ export default function OptimizerListPage({ experiments }) {
           disabled={running || symbolsLoading || (mode === 'timing' && (!healthCurrent || health?.status === 'invalid'))}
           style={{ border: 0, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.55 : 1, fontSize: 14, padding: '11px 20px' }}
         >
-          {running ? 'Optimizer running…' : mode === 'joint' ? '▶ Find best growth combination + allocation' : '▶ Optimize my combination'}
+          {running ? 'Optimizer running…' : mode === 'joint' ? '▶ Optimize Dynamic Alpha portfolio' : '▶ Optimize my combination'}
         </button>
         <div className="muted" style={{ marginTop: 10 }}>
-          Growth-first TRAIN search → rolling OOS risk gate → recent pre-holdout validation → untouched final holdout. Final holdout is never used to generate candidates.
+          Strictly-past alpha selection → ERC/risk/Shannon → rolling OOS hard-risk gate + soft risk/reward quality → recent pre-holdout check → untouched final holdout. Final holdout never generates or re-ranks candidates.
         </div>
       </form>
 
