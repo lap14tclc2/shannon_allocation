@@ -21,20 +21,36 @@ def timing_neighbourhood(
     max_day: int = 252,
     value_key: str = "net_twr_annualized_pct",
 ):
-    """Backtest every Ti +/- 1..radius schedule; return stats + spike detection.
+    """Stress each allocation time with representative local/boundary shocks.
 
-    `eval_fn` may return a plain metrics dict (value_key = 'net_twr_annualized_pct')
-    or a walk-forward robust dict (value_key = 'robust_return'). The latter measures
-    neighbourhood stability from OOS robust scores, which is what the ranking
-    actually selected on — a single-window spike test cannot.
+    The old implementation evaluated every integer perturbation from ``-radius``
+    through ``+radius`` for every Ti. That was expensive because each neighbour is
+    itself a full walk-forward robustness evaluation, while intermediate shifts
+    such as +/-2, +/-3 and +/-4 add little information once local (+/-1) and outer
+    (+/-5) behaviour is known.
+
+    We therefore evaluate deterministic magnitudes ``1``, ``5`` (when available),
+    and ``radius``. For radius=5 this is exactly +/-1 and +/-5 for each Ti; for a
+    future radius=10 it becomes +/-1, +/-5 and +/-10. Candidate ranking is
+    unchanged because neighbourhood testing is diagnostic and occurs after
+    finalist selection.
+
+    ``eval_fn`` may return a plain metrics dict (value_key =
+    ``net_twr_annualized_pct``) or a walk-forward robust dict (value_key =
+    ``robust_return``).
     """
     results = []
     base = candidate.allocation_days
     seen = set()
+
+    r = max(1, int(radius))
+    magnitudes = {1, r}
+    if r >= 5:
+        magnitudes.add(5)
+    deltas = sorted({-m for m in magnitudes} | magnitudes)
+
     for i in range(4):
-        for delta in range(-radius, radius + 1):
-            if delta == 0:
-                continue
+        for delta in deltas:
             days = list(base)
             days[i] = days[i] + delta
             repaired = repair_allocation_days(days, min_gap, max_day)
@@ -51,6 +67,7 @@ def timing_neighbourhood(
             if val is None:
                 continue
             results.append({"candidate": nb, value_key: val, "metrics": m})
+
     vals = [r[value_key] for r in results]
     mean = sum(vals) / len(vals) if vals else 0.0
     var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1) if len(vals) > 1 else 0.0
