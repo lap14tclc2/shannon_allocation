@@ -13,6 +13,11 @@ from datetime import datetime
 
 
 MIN_FINAL_RETURN_TO_DRAWDOWN = 0.25
+_ALLOWED_OPTIMIZED_VERDICTS = {
+    "materially_better",
+    "marginal_better",
+    "not_significantly_better",
+}
 
 
 def _holdout_quality(test: dict | None) -> tuple[bool, list[str], float | None]:
@@ -97,7 +102,7 @@ def build_recommendation(experiment: dict) -> dict:
     deployment_reasons: list[str] = []
     if not pre_holdout_eligible:
         deployment_reasons.extend(best.get("eligibility_reasons") or ["no_live_eligible_candidate"])
-    elif optimized_holdout_ok and verdict != "keep_baseline":
+    elif optimized_holdout_ok and verdict in _ALLOWED_OPTIMIZED_VERDICTS:
         deployment_variant = "optimized"
     elif verdict == "keep_baseline" and baseline_holdout_ok:
         # The symbol combination survived research, but the optimized event
@@ -112,6 +117,8 @@ def build_recommendation(experiment: dict) -> dict:
                 deployment_reasons.extend(
                     f"baseline:{r}" for r in baseline_holdout_reasons
                 )
+        elif verdict == "unknown":
+            deployment_reasons.append("benchmark_evidence_incomplete")
 
     deployment_eligible = deployment_variant != "none"
     recommended_allocation_days = (
@@ -188,6 +195,7 @@ def build_recommendation(experiment: dict) -> dict:
             "Final holdout is an accept/reject assessment and cannot select a different candidate.",
             "Growth-first search changes research ranking but does not change ERC/Shannon execution mechanics.",
             "Deployment requires positive final return with acceptable return-to-drawdown quality.",
+            "Missing benchmark evidence fails closed instead of auto-deploying the optimized schedule.",
             "Re-run research when new market data materially changes the selection/risk assumptions.",
         ],
     }
