@@ -113,10 +113,12 @@ def nsga2(
     min_gap: int = 40,
     max_day: int = 252,
     progress: bool = True,
+    fixed_symbols: list[str] | None = None,
 ):
     """Run NSGA-II. `evaluate(candidate) -> list[float]` (maximised objectives).
 
-    Returns (final_population, fitness_matrix, history_of_pop_sizes_by_front).
+    With `fixed_symbols` the symbol set is frozen and only the four allocation
+    times are evolved. Returns (final_population, fitness_matrix, front_sizes).
     """
     pop = list(initial_population)
     fitness = [evaluate(c) for c in pop]
@@ -135,11 +137,11 @@ def nsga2(
             p1, p2 = select_parents(pop, fitness, rng, fronts, crowd)
             child = None
             if rng.random() < crossover_prob:
-                child = crossover(p1, p2, universe, rng, min_gap, max_day)
+                child = crossover(p1, p2, universe, rng, min_gap, max_day, fixed_symbols)
             if child is None:
                 child = p1 if rng.random() < 0.5 else p2
             if rng.random() < mutation_prob:
-                m = mutate(child, universe, rng, min_gap, max_day)
+                m = mutate(child, universe, rng, min_gap, max_day, fixed_symbols)
                 if m is not None:
                     child = m
             offspring.append(child)

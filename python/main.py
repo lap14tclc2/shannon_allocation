@@ -49,6 +49,8 @@ def _print_pctiles(summary: dict, rows) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Shannon/ERC combination ranking backtest")
     p.add_argument("--data-dir", default="F:/data_finance/data", help="folder with <TICKER>.csv files")
+    p.add_argument("--universe", choices=["all", "vn30", "vn50", "vn100"], default="all",
+                   help="filter symbols to an index universe (vn100 = every symbol in the data folder)")
     p.add_argument("--combos", type=int, default=50, help="number of random combinations")
     p.add_argument("--min-symbols", type=int, default=5)
     p.add_argument("--max-symbols", type=int, default=10)
@@ -86,6 +88,7 @@ def main() -> None:
 
     params = BacktestParams(
         data_dir=args.data_dir,
+        universe=args.universe,
         num_combinations=args.combos,
         min_symbols=args.min_symbols,
         max_symbols=args.max_symbols,

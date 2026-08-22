@@ -1,9 +1,13 @@
 """Symbol + timing mutation operators and crossover, with repair.
 
 All operators produce candidates that satisfy the constraints (5..10 unique
-symbols from the universe, exactly 4 ordered allocation days with a minimum gap).
-Operators that cannot produce a valid child return None (the caller keeps the
-parent / rejects the child).
+symbols from the universe, exactly 4 ordered allocation days with a minimum gap
+including the cyclic year-end gap). Operators that cannot produce a valid child
+return None (the caller keeps the parent / rejects the child).
+
+When `fixed_symbols` is passed, the symbol set is frozen and the operators act on
+timing only (Mode A / Mode B: "optimize only [T1,T2,T3,T4]" against a fixed
+portfolio set).
 """
 
 from __future__ import annotations
@@ -28,15 +32,19 @@ def repair_candidate(
     rng,
     min_gap: int,
     max_day: int,
+    fixed_symbols: list[str] | None = None,
 ) -> Candidate | None:
     """Repair symbol set + timing to satisfy all constraints, or return None."""
-    syms = sorted(set(symbols) & set(universe))
-    while len(syms) < MIN_SYMBOLS:
-        extra = rng.choice([s for s in universe if s not in syms])
-        syms.append(extra)
-    while len(syms) > MAX_SYMBOLS:
-        syms.pop(rng.randrange(len(syms)))
-    syms = sorted(syms)
+    if fixed_symbols is not None:
+        syms = sorted(fixed_symbols)
+    else:
+        syms = sorted(set(symbols) & set(universe))
+        while len(syms) < MIN_SYMBOLS:
+            extra = rng.choice([s for s in universe if s not in syms])
+            syms.append(extra)
+        while len(syms) > MAX_SYMBOLS:
+            syms.pop(rng.randrange(len(syms)))
+        syms = sorted(syms)
 
     days = repair_allocation_days(allocation_days, min_gap, max_day)
     if days is None:
@@ -86,27 +94,40 @@ def _replace_symbols(syms, universe, rng, k):
     return syms
 
 
-def mutate(candidate: Candidate, universe: list[str], rng: random.Random, min_gap: int, max_day: int) -> Candidate | None:
-    """Apply a random symbol and/or timing mutation, then repair."""
+def mutate(
+    candidate: Candidate,
+    universe: list[str],
+    rng: random.Random,
+    min_gap: int,
+    max_day: int,
+    fixed_symbols: list[str] | None = None,
+) -> Candidate | None:
+    """Apply a symbol and/or timing mutation, then repair.
+
+    With `fixed_symbols`, symbol mutation is disabled and only timing is mutated.
+    """
     syms = list(candidate.symbols)
-    op = rng.choice(["symbol", "symbol", "timing", "both"])
-    if op in ("symbol", "both"):
-        roll = rng.random()
-        if roll < 0.4 and len(syms) < MAX_SYMBOLS:
-            syms = _add_symbol(syms, universe, rng)
-        elif roll < 0.6 and len(syms) > MIN_SYMBOLS:
-            syms = _remove_symbol(syms, rng)
-        elif roll < 0.85:
-            syms = _replace_symbols(syms, universe, rng, 1)
-        else:
-            syms = _replace_symbols(syms, universe, rng, rng.randint(2, min(3, len(syms))))
+    if fixed_symbols is None:
+        op = rng.choice(["symbol", "symbol", "timing", "both"])
+        if op in ("symbol", "both"):
+            roll = rng.random()
+            if roll < 0.4 and len(syms) < MAX_SYMBOLS:
+                syms = _add_symbol(syms, universe, rng)
+            elif roll < 0.6 and len(syms) > MIN_SYMBOLS:
+                syms = _remove_symbol(syms, rng)
+            elif roll < 0.85:
+                syms = _replace_symbols(syms, universe, rng, 1)
+            else:
+                syms = _replace_symbols(syms, universe, rng, rng.randint(2, min(3, len(syms))))
+    else:
+        op = "timing"
 
     days = candidate.allocation_days
     if op in ("timing", "both"):
         days = mutate_allocation_days(days, rng, min_gap, max_day)
         if days is None:
             return None
-    return repair_candidate(syms, days, universe, rng, min_gap, max_day)
+    return repair_candidate(syms, days, universe, rng, min_gap, max_day, fixed_symbols)
 
 
 # --------------------------------------------------------------------------- crossover
@@ -133,9 +154,21 @@ def timing_crossover(a: Candidate, b: Candidate, rng: random.Random, min_gap: in
     return repair_allocation_days(child, min_gap, max_day)
 
 
-def crossover(a: Candidate, b: Candidate, universe: list[str], rng: random.Random, min_gap: int, max_day: int) -> Candidate | None:
-    syms = symbol_crossover(a, b, universe, rng)
+def crossover(
+    a: Candidate,
+    b: Candidate,
+    universe: list[str],
+    rng: random.Random,
+    min_gap: int,
+    max_day: int,
+    fixed_symbols: list[str] | None = None,
+) -> Candidate | None:
+    """Symbol (+ timing) crossover. With `fixed_symbols`, timing crossover only."""
+    if fixed_symbols is not None:
+        syms = sorted(fixed_symbols)
+    else:
+        syms = symbol_crossover(a, b, universe, rng)
     days = timing_crossover(a, b, rng, min_gap, max_day)
     if days is None:
         return None
-    return repair_candidate(syms, days, universe, rng, min_gap, max_day)
+    return repair_candidate(syms, days, universe, rng, min_gap, max_day, fixed_symbols)

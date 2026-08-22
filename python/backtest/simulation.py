@@ -104,8 +104,21 @@ def simulate_combination(
     prices: pd.DataFrame,
     params: BacktestParams,
     allocation_dates: list | None = None,
+    warmup_days: int | None = None,
+    metrics_from: str = "first_allocation",
 ) -> SimulationResult:
-    """Simulate one candidate. `allocation_dates` = market dates for ERC recalc (optional)."""
+    """Simulate one candidate. `allocation_dates` = market dates for ERC recalc (optional).
+
+    `warmup_days`: number of trading days of data loaded BEFORE params.start_date so
+    ERC has enough history to calibrate at the first allocation inside the window.
+    Warm-up data is used only for calibration; it is never part of performance.
+
+    `metrics_from`: "first_allocation" (default, ranking board convention — the
+    performance clock starts at the first investment) or "window_start" (the whole
+    evaluation window counts, including the cash period before the first allocation;
+    used by the optimizer's walk-forward windows so a late allocation cannot inflate
+    annualized returns).
+    """
     symbols = sorted(symbols)
     result = SimulationResult(symbols=tuple(symbols))
 
@@ -114,8 +127,16 @@ def simulate_combination(
         result.error = "Not enough aligned history."
         return result
 
+    perf_start_idx = 0  # index in `sub` where performance measurement begins
     if params.start_date:
-        sub = sub[sub.index >= pd.Timestamp(params.start_date)]
+        ts = pd.Timestamp(params.start_date)
+        idx = sub.index.searchsorted(ts)
+        if warmup_days:
+            lo = max(0, idx - warmup_days)
+            sub = sub.iloc[lo:]
+            perf_start_idx = idx - lo
+        else:
+            sub = sub.iloc[idx:]
     if params.end_date:
         sub = sub[sub.index <= pd.Timestamp(params.end_date)]
     if len(sub) < 2:
@@ -142,6 +163,7 @@ def simulate_combination(
     gross_nav_history: list[tuple[str, float]] = []
     rebalances_since_allocation = 0
     pending = None  # {'recs','record','kind','signal_pos'}
+    allocation_indices: list[int] = []  # positions where an allocation signal fired
 
     deposit_indices: set[int] = set()
     deposit_dates: list = []
@@ -278,6 +300,7 @@ def simulate_combination(
                 }
                 result.allocations.append(record)
                 rebalances_since_allocation = 0
+                allocation_indices.append(pos)
                 pending = {"recs": recs, "record": record, "kind": "allocation", "signal_pos": pos}
         elif allocated and targets is not None and pos % params.rebalance_every_days == 0:
             recs, _ = compute_recommendations(shares, cash, prices_now, targets, params)
@@ -305,19 +328,26 @@ def simulate_combination(
         s: round(shares.get(s, 0.0) * prices_now.get(s, 0.0) - net_invested.get(s, 0.0), 2)
         for s in symbols
     }
+    if metrics_from == "window_start":
+        perf_start = perf_start_idx
+    else:
+        perf_start = first_invested_idx
     _fill_performance(
         result,
         net_nav_series,
         gross_nav_series,
         dates,
         deposit_indices,
+        perf_start,
         first_invested_idx,
+        allocation_indices,
         total_traded_value,
         trade_count,
         deposit_dates,
         deposit_amounts,
         params.initial_balance,
         cumulative_cost,
+        metrics_from,
     )
     return result
 
@@ -328,13 +358,16 @@ def _fill_performance(
     gross_nav_series: list[float],
     dates,
     deposit_indices: set[int],
-    start: int,
+    perf_start: int,
+    first_invested_idx: int,
+    allocation_indices: list[int],
     total_traded_value: float,
     trade_count: int,
     deposit_dates,
     deposit_amounts,
     initial_balance: float,
     cumulative_cost: float,
+    metrics_from: str = "first_allocation",
 ) -> None:
     arr = np.asarray(net_nav_series, dtype=float)
     gross_arr = np.asarray(gross_nav_series, dtype=float)
@@ -346,17 +379,22 @@ def _fill_performance(
     if years_data > 0 and arr[-1] > 0:
         result.cagr_pct = ((arr[-1] / deposits) ** (1.0 / years_data) - 1.0) * 100.0
 
-    days = (dates[end_idx].toordinal() - dates[start].toordinal()) + 1
+    days = (dates[end_idx].toordinal() - dates[perf_start].toordinal()) + 1
 
     # Net metrics.
-    result.first_allocation_date = dates[start].strftime("%Y-%m-%d")
-    twr = mt.time_weighted_return(net_nav_series, deposit_indices, start, end_idx)
+    if metrics_from == "window_start":
+        in_window = [i for i in allocation_indices if i >= perf_start]
+        fa_idx = min(in_window) if in_window else first_invested_idx
+    else:
+        fa_idx = first_invested_idx
+    result.first_allocation_date = dates[fa_idx].strftime("%Y-%m-%d")
+    twr = mt.time_weighted_return(net_nav_series, deposit_indices, perf_start, end_idx)
     result.twr = twr * 100.0
     ann_twr = mt.annualized_from_total(twr, days)
     result.twr_annualized = (ann_twr * 100.0) if ann_twr is not None else 0.0
     result.absolute_profit = arr[-1] - deposits
 
-    period = arr[start:]
+    period = arr[perf_start:]
     log_ret = np.diff(np.log(np.maximum(period, 1e-9)))
     if len(log_ret) > 1:
         result.annualized_volatility_pct = float(np.std(log_ret, ddof=1) * np.sqrt(252) * 100.0)
@@ -364,38 +402,41 @@ def _fill_performance(
         result.sharpe = sharpe if sharpe is not None else 0.0
         result.sortino = sortino if sortino is not None else 0.0
 
-    mdd = mt.max_drawdown(net_nav_series, start, end_idx)
+    mdd = mt.max_drawdown(net_nav_series, perf_start, end_idx)
     result.max_drawdown_pct = mdd * 100.0
     result.calmar = (ann_twr / abs(mdd)) if (ann_twr is not None and mdd < 0) else 0.0
 
-    day0 = dates[0].toordinal()
+    flow_anchor = perf_start if metrics_from == "window_start" else 0
+    day0 = dates[flow_anchor].toordinal()
     flows = [(-initial_balance, day0)]
     for dd, amt in zip(deposit_dates, deposit_amounts):
-        flows.append((-amt, dd.toordinal()))
+        if dd.toordinal() >= day0:
+            flows.append((-amt, dd.toordinal()))
     flows.append((arr[-1], dates[end_idx].toordinal()))
     xirr = mt.xirr(flows)
     result.xirr = (xirr * 100.0) if xirr is not None else 0.0
 
-    annual = mt.annual_returns(net_nav_series, dates, deposit_indices, start, end_idx)
+    annual = mt.annual_returns(net_nav_series, dates, deposit_indices, perf_start, end_idx)
     result.annual_returns = {y: round(v * 100.0, 2) for y, v in annual.items()}
     if result.annual_returns:
         result.worst_year = min(result.annual_returns.values())
         pos_years = sum(1 for v in result.annual_returns.values() if v > 0)
         result.positive_year_ratio = pos_years / len(result.annual_returns)
 
-    mean_nav = float(np.mean(arr[start:])) if (end_idx - start + 1) > 0 else 0.0
+    mean_nav = float(np.mean(arr[perf_start:])) if (end_idx - perf_start + 1) > 0 else 0.0
     result.turnover = (total_traded_value / mean_nav * 100.0) if mean_nav > 0 else 0.0
     result.trade_count = trade_count
     result.cost_pct_of_nav = (cumulative_cost / mean_nav * 100.0) if mean_nav > 0 else 0.0
 
     # Gross metrics (cumulative cost added back to NAV).
-    gt = mt.time_weighted_return(gross_nav_series, deposit_indices, start, end_idx)
+    gt = mt.time_weighted_return(gross_nav_series, deposit_indices, perf_start, end_idx)
     result.gross_twr = gt * 100.0
     gann = mt.annualized_from_total(gt, days)
     result.gross_twr_annualized = (gann * 100.0) if gann is not None else 0.0
     gflows = [(-initial_balance, day0)]
     for dd, amt in zip(deposit_dates, deposit_amounts):
-        gflows.append((-amt, dd.toordinal()))
+        if dd.toordinal() >= day0:
+            gflows.append((-amt, dd.toordinal()))
     gflows.append((float(gross_arr[-1]), dates[end_idx].toordinal()))
     gx = mt.xirr(gflows)
     result.gross_xirr = (gx * 100.0) if gx is not None else 0.0

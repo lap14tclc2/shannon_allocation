@@ -7,7 +7,9 @@ Prices are converted from "thousands of VND" to VND via price_scale.
 from __future__ import annotations
 
 import glob
+import json
 import os
+
 import pandas as pd
 
 from .config import BacktestParams
@@ -51,13 +53,39 @@ def load_symbol(data_dir: str, ticker: str, price_scale: int) -> pd.Series:
     return series
 
 
+def load_universe(name: str, data_dir: str) -> list[str] | None:
+    """Load a named universe (vn30 / vn50 / vn100) from <data_dir>/universe_<name>.json."""
+    if not name or name in ("all", "vn100"):
+        return None
+    path = os.path.join(data_dir, f"universe_{name}.json")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"Universe '{name}' not found at {path}. Run `python -m backtest.universes` to create it."
+        )
+    with open(path, "r", encoding="utf-8") as fh:
+        return [s.strip().upper() for s in json.load(fh) if s.strip()]
+
+
 def load_panel(params: BacktestParams) -> tuple[pd.DataFrame, list[str]]:
     """Load all symbols into a forward-filled DataFrame of close prices (VND).
 
     Returns (prices, symbols). The panel is sorted by date and forward filled so
     holdings can be valued on every trading date (suspensions use last price).
+    When params.universe names an index (vn30/vn50), only those symbols are kept
+    (intersected with the CSVs actually present in the data folder).
     """
-    symbols = params.symbols_file and _read_symbols_file(params.symbols_file) or list_symbols(params.data_dir)
+    if params.symbols_file:
+        symbols = _read_symbols_file(params.symbols_file)
+    else:
+        symbols = list_symbols(params.data_dir)
+        wanted = load_universe(params.universe, params.data_dir)
+        if wanted:
+            available = set(symbols)
+            symbols = [t for t in wanted if t in available]
+            missing = [t for t in wanted if t not in available]
+            if missing:
+                print(f"universe '{params.universe}': {len(missing)} symbols without data skipped "
+                      f"(e.g. {', '.join(missing[:5])})")
     if not symbols:
         raise FileNotFoundError(f"No CSV files found in {params.data_dir}")
     series_list = [load_symbol(params.data_dir, t, params.price_scale) for t in symbols]

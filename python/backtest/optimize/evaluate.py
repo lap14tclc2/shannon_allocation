@@ -17,7 +17,7 @@ import pandas as pd
 
 from ..config import BacktestParams
 from ..simulation import simulate_combination
-from ..candidate import Candidate, schedule_for_window
+from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -108,10 +108,20 @@ def evaluate_candidate(
     window: tuple[str | None, str | None] = (None, None),
     cache: EvaluationCache | None = None,
     cfg: str = "",
+    warmup_days: int | None = None,
+    max_allocation_day: int = 252,
 ) -> dict:
     """Run (or fetch from cache) the backtest for `candidate` over a date window.
 
     Returns the metrics dict. window = (start_date, end_date) strings or None.
+
+    Evaluation convention (walk-forward windows):
+      - ERC gets `warmup_days` (default: params.lookback_days) of price history
+        strictly BEFORE the window start so the first allocation inside the window
+        can calibrate without look-ahead.
+      - Performance is measured from the WINDOW START (cash period included), never
+        from the first allocation inside the window, so a schedule whose first
+        allocation lands late cannot inflate annualized returns.
     """
     start, end = window
     key = f"{start or ''}|{end or ''}"
@@ -127,8 +137,18 @@ def evaluate_candidate(
         prices,
         run_params,
         allocation_dates=alloc_dates,
+        warmup_days=params.lookback_days if warmup_days is None else warmup_days,
+        metrics_from="window_start",
     )
     metrics = result_metrics(result)
+
+    # Day-252 / short-year handling: count how many scheduled trading-day positions
+    # had to be clamped to the last actual trading day of a year.
+    try:
+        _, mapping = resolve_allocation_dates(candidate, all_dates, max_allocation_day)
+        metrics["n_clamped_allocations"] = sum(1 for m in mapping if m.get("clamped"))
+    except Exception:
+        metrics["n_clamped_allocations"] = 0
 
     if cache:
         cache.put(candidate, key, cfg, metrics)

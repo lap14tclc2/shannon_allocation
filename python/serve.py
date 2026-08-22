@@ -26,6 +26,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -34,6 +35,7 @@ import sys
 import threading
 import time
 import urllib.request
+import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse, parse_qsl
@@ -185,21 +187,37 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter
         pass
 
+    def _write_body(self, body):
+        # A browser may abort an in-flight request (e.g. user navigates away or
+        # clicks a different candidate) while we are still writing. Swallow those
+        # connection errors instead of crashing the request thread.
+        try:
+            self.wfile.write(body)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+            return
+
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self._write_body(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+            return
 
     def _send_bytes(self, status, body, content_type):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self._write_body(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+            return
 
     def _send_file(self, path, status=200):
         try:
@@ -346,9 +364,48 @@ class Handler(BaseHTTPRequestHandler):
             if target and os.path.isfile(target):
                 return self._send_file(target)
             return self._send_json(404, {"error": "File not found."})
+        if len(parts) == 2 and parts[1] == "download":
+            return self._handle_optimizer_download(eid)
         if len(parts) == 2 and parts[1] == "candidate":
             return self._handle_optimizer_candidate(eid)
+        if len(parts) == 2 and parts[1] == "recommendation":
+            return self._handle_optimizer_recommendation(eid)
         return self._send_json(404, {"error": "Not found."})
+
+    def _handle_optimizer_download(self, eid):
+        """One-button download: ZIP the entire optimizer experiment directory."""
+        base = self._safe_join(OPTIMIZER_DIR, eid)
+        if not base or not os.path.isdir(base):
+            return self._send_json(404, {"error": f"Optimizer experiment not found: {eid}"})
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _dirs, names in os.walk(base):
+                for name in names:
+                    full = os.path.join(root, name)
+                    zf.write(full, os.path.relpath(full, base))
+        data = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{eid}_all_data.zip"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _handle_optimizer_recommendation(self, eid):
+        base = self._safe_join(OPTIMIZER_DIR, eid)
+        if not base or not os.path.isdir(base):
+            return self._send_json(404, {"error": f"Optimizer experiment not found: {eid}"})
+        exp_path = os.path.join(base, "experiment.json")
+        if not os.path.isfile(exp_path):
+            return self._send_json(404, {"error": "experiment.json not found."})
+        try:
+            from backtest.optimize.recommendation import build_recommendation
+            with open(exp_path, "r", encoding="utf-8") as fh:
+                experiment = json.load(fh)
+            rec = build_recommendation(experiment)
+        except Exception as exc:
+            return self._send_json(500, {"error": str(exc)})
+        return self._send_json(200, rec)
 
     def _handle_optimizer_candidate(self, eid):
         """Backtest one candidate on-demand and return its full allocation history."""
@@ -378,19 +435,35 @@ class Handler(BaseHTTPRequestHandler):
         generations = int(body.get("generations", 15))
         random_n = int(body.get("random", 150))
         finalists = int(body.get("finalists", 5))
+        universe = str(body.get("universe", "all"))
+        mode = str(body.get("mode", "joint"))
+        fixed_symbols = body.get("fixed_symbols") or None
+        if mode not in ("joint", "timing"):
+            return self._send_json(400, {"error": f"Unknown mode '{mode}' (expected joint|timing)."})
+        if universe not in ("all", "vn30", "vn50", "vn100"):
+            return self._send_json(400, {"error": f"Unknown universe '{universe}'."})
+        if mode == "timing":
+            if isinstance(fixed_symbols, str):
+                fixed_symbols = [s.strip().upper() for s in fixed_symbols.split(",") if s.strip()]
+            if not fixed_symbols:
+                return self._send_json(400, {"error": "mode='timing' requires fixed_symbols "
+                                                     "(the portfolio set is frozen; only [T1..T4] is optimized)."})
         run_id = f"run_{int(time.time())}"
         started = datetime.now().isoformat(timespec="seconds")
         with _optimizer_lock:
-            _optimizer_runs[run_id] = {"status": "running", "started_at": started}
+            _optimizer_runs[run_id] = {"status": "running", "started_at": started,
+                                       "universe": universe, "mode": mode,
+                                       "fixed_symbols": fixed_symbols}
 
         def work():
             try:
                 from backtest.optimize import run_optimizer, OptimizerConfig
                 from backtest import BacktestParams
 
-                params = BacktestParams()
+                params = BacktestParams(universe=universe)
                 opt = OptimizerConfig(seed=seed, population_size=population, generations=generations,
-                                      n_random=random_n, n_finalists=finalists)
+                                      n_random=random_n, n_finalists=finalists,
+                                      mode=mode, fixed_symbols=fixed_symbols)
                 res = run_optimizer(params, opt, progress=False)
                 with _optimizer_lock:
                     _optimizer_runs[run_id] = {
@@ -405,7 +478,8 @@ class Handler(BaseHTTPRequestHandler):
                     _optimizer_runs[run_id] = {"status": "failed", "error": str(exc), "started_at": started}
 
         threading.Thread(target=work, daemon=True).start()
-        return self._send_json(202, {"run_id": run_id, "status": "running", "started_at": started})
+        return self._send_json(202, {"run_id": run_id, "status": "running",
+                                     "started_at": started, "universe": universe, "mode": mode})
 
     def _handle_optimizer_status(self):
         with _optimizer_lock:

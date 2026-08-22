@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { formatMoney, formatPercent } from '../lib/format.js';
-import { getCandidateHistory, optimizerFileUrl, deleteOptimizerExperiment } from '../lib/api.js';
+import { getCandidateHistory, optimizerDownloadAllUrl, deleteOptimizerExperiment } from '../lib/api.js';
 import EquityChart from '../components/EquityChart.jsx';
 import AllocationTable from '../components/AllocationTable.jsx';
 import YearlyAllocationTable from '../components/YearlyAllocationTable.jsx';
@@ -35,7 +35,7 @@ function CandidatePanel({ item, title }) {
       </div>
       <div className="expand-grid">
         <div className="sub-card">
-          <h4>Performance (NET)</h4>
+          <h4>TRAIN (optimization window)</h4>
           <MetricRow label="Net TWR annualized" value={m.net_twr_annualized_pct} pct />
           <MetricRow label="Net XIRR" value={m.net_xirr_pct} pct />
           <MetricRow label="Gross TWR annualized" value={m.gross_twr_annualized_pct} pct />
@@ -83,7 +83,7 @@ function CandidatePanel({ item, title }) {
         <div className="sub-card">
           <h4>Test windows (untouched OOS)</h4>
           <MetricRow label="Median net TWR" value={test.median_net_twr} pct />
-          <MetricRow label="Windows" value={test.n_test_windows} digits={0} />
+          <MetricRow label="Windows valid" value={test.valid ? `${test.n_test_windows}/${test.required_test_windows} PASS` : `${test.n_test_windows}/${test.required_test_windows} INVALID`} digits={0} />
         </div>
       </div>
     </div>
@@ -154,15 +154,15 @@ export default function OptimizerDetailPage({ experiment }) {
       setHistory(null);
       return;
     }
-    let cancelled = false;
+    const controller = new AbortController();
     setHistory(null);
     setHistoryError('');
-    getCandidateHistory(experiment.experiment_id, it.symbols, it.allocation_days)
-      .then((h) => !cancelled && setHistory(h))
-      .catch((err) => !cancelled && setHistoryError(err.message));
-    return () => {
-      cancelled = true;
-    };
+    getCandidateHistory(experiment.experiment_id, it.symbols, it.allocation_days, controller.signal)
+      .then((h) => setHistory(h))
+      .catch((err) => {
+        if (err.name !== 'AbortError') setHistoryError(err.message);
+      });
+    return () => controller.abort();
   }, [experiment, selected, lookup]);
 
   const chartData = useMemo(
@@ -204,17 +204,29 @@ export default function OptimizerDetailPage({ experiment }) {
         </button>
       </div>
       <header className="page-head">
-        <h1>Optimizer experiment {experiment.experiment_id}</h1>
+        <h1>
+          Optimizer experiment {experiment.experiment_id}
+          {(() => {
+            const v = experiment.meta?.universe_variant
+              || (experiment.meta?.universe?.length === 30 ? 'vn30'
+                : experiment.meta?.universe?.length === 50 ? 'vn50'
+                : experiment.meta?.universe?.length >= 80 ? 'vn100' : 'all');
+            const label = v === 'all' ? `All data (${experiment.meta?.universe?.length})` : v.toUpperCase();
+            const pill = v === 'all' ? '' : ` pill-${v}`;
+            return <span className={`universe-pill${pill}`}>{label}</span>;
+          })()}
+        </h1>
         <p className="muted">
           seed {experiment.meta?.seed} · {experiment.meta?.universe?.length} symbols ·
-          {experiment.meta?.n_windows} windows · costs{' '}
+          {experiment.meta?.n_windows} windows · {experiment.meta?.mode === 'timing' ? 'timing-only' : 'joint (symbols+timing)'}
+          {experiment.meta?.mode === 'timing' && experiment.meta?.fixed_symbols ? ` · FIXED ${experiment.meta.fixed_symbols.join(' ')}` : ''} ·
+          max-day {experiment.meta?.max_allocation_day} · costs{' '}
           {JSON.stringify(experiment.meta?.cost_config || {})}
         </p>
         <div className="report-links">
-          <a href={optimizerFileUrl(experiment.experiment_id, 'candidate_metrics.csv')} download>candidate_metrics.csv</a>
-          <a href={optimizerFileUrl(experiment.experiment_id, 'pareto_frontier.csv')} download>pareto_frontier.csv</a>
-          <a href={optimizerFileUrl(experiment.experiment_id, 'optimizer_config.json')} download>optimizer_config.json</a>
-          <a href={optimizerFileUrl(experiment.experiment_id, 'optimizer_summary.csv')} download>optimizer_summary.csv</a>
+          <a className="btn-export" href={optimizerDownloadAllUrl(experiment.experiment_id)}>
+            ⬇ Download all data (ZIP)
+          </a>
         </div>
       </header>
 
@@ -241,6 +253,36 @@ export default function OptimizerDetailPage({ experiment }) {
       </div>
 
       {selectedItem && <CandidatePanel item={selectedItem} title="Selected candidate" />}
+
+      {(() => {
+        const br = experiment.winners?.best_robust;
+        if (!experiment.baseline) return null;
+        return (
+          <div className="card">
+            <h3>Quarterly baseline comparison (same symbols)</h3>
+            <p className="muted">
+              Standard four-times-per-year schedule <code>[{(experiment.baseline.allocation_days || []).join(', ')}]</code>{' '}
+              evaluated on the same walk-forward windows as the optimized schedule.
+            </p>
+            <div className="expand-grid">
+              <div className="sub-card">
+                <h4>Optimized (Best Robust)</h4>
+                <MetricRow label="Robust return" value={br?.robust?.robust_return} pct />
+                <MetricRow label="Median OOS TWR" value={br?.robust?.median_net_twr} pct />
+                <MetricRow label="Test median TWR" value={br?.test?.median_net_twr} pct />
+                <MetricRow label="Test valid" value={br?.test?.valid ? 'PASS' : 'INVALID'} digits={0} />
+              </div>
+              <div className="sub-card">
+                <h4>Baseline quarterly</h4>
+                <MetricRow label="Robust return" value={experiment.baseline.robust?.robust_return} pct />
+                <MetricRow label="Median OOS TWR" value={experiment.baseline.robust?.median_net_twr} pct />
+                <MetricRow label="Test median TWR" value={experiment.baseline.test?.median_net_twr} pct />
+                <MetricRow label="Test valid" value={experiment.baseline.test?.valid ? 'PASS' : 'INVALID'} digits={0} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {selectedItem && (
         <div className="card">

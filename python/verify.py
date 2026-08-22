@@ -149,6 +149,11 @@ def main():
             # a report file download
             status, body, _ = get(f"{base}/api/optimizer/{eid}/file?name=candidate_metrics.csv")
             results.append(check("optimizer report file download", status == 200 and len(body) > 0))
+            # one-button download-all ZIP
+            status, body, hdrs = get(f"{base}/api/optimizer/{eid}/download")
+            is_zip = hdrs.get("Content-Type", "").startswith("application/zip")
+            names = zipfile.ZipFile(io.BytesIO(body)).namelist() if status == 200 else []
+            results.append(check("optimizer download-all ZIP", status == 200 and is_zip and "experiment.json" in names))
     except Exception as exc:
         results.append(check("optimizer pages/API", False, str(exc)))
 

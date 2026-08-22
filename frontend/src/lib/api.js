@@ -1,5 +1,5 @@
-async function getJSON(url) {
-  const res = await fetch(url);
+async function getJSON(url, signal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`Request failed: ${res.status} ${url}`);
   return res.json();
 }
@@ -30,6 +30,10 @@ export async function getOptimizerExperiment(experimentId) {
   return getJSON(`/api/optimizer/${encodeURIComponent(experimentId)}`);
 }
 
+export function optimizerDownloadAllUrl(experimentId) {
+  return `/api/optimizer/${encodeURIComponent(experimentId)}/download`;
+}
+
 export function optimizerFileUrl(experimentId, name) {
   return `/api/optimizer/${encodeURIComponent(experimentId)}/file?name=${encodeURIComponent(name)}`;
 }
@@ -53,9 +57,10 @@ export async function deleteOptimizerExperiment(experimentId) {
   return res.json();
 }
 
-export async function getCandidateHistory(experimentId, symbols, allocationDays) {
+export async function getCandidateHistory(experimentId, symbols, allocationDays, signal) {
   const days = allocationDays.join(',');
   return getJSON(
-    `/api/optimizer/${encodeURIComponent(experimentId)}/candidate?symbols=${encodeURIComponent(symbols.join(','))}&days=${encodeURIComponent(days)}`
+    `/api/optimizer/${encodeURIComponent(experimentId)}/candidate?symbols=${encodeURIComponent(symbols.join(','))}&days=${encodeURIComponent(days)}`,
+    signal
   );
 }

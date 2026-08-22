@@ -37,11 +37,13 @@ def _p(vals, p):
     return vals[lo] + (k - lo) * (vals[hi] - vals[lo])
 
 
-def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5) -> dict | None:
+def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5, min_windows: int | None = None) -> dict | None:
     """Evaluate `candidate` on every window and aggregate into robust metrics.
 
     eval_fn(candidate, window) -> metrics dict (or None on failure).
-    Returns None if no window succeeded.
+    Returns None if no window succeeded, or if `min_windows` is set and fewer
+    than that many windows succeeded (100% coverage policy: a candidate that
+    fails ANY validation window is INVALID, not partially robust).
     """
     per = []
     for w in windows:
@@ -50,6 +52,8 @@ def evaluate_robust(candidate, eval_fn, windows: list[dict], lamb: float = 0.5) 
             continue
         per.append(m)
     if not per:
+        return None
+    if min_windows is not None and len(per) < min_windows:
         return None
 
     twrs = [m["net_twr_annualized_pct"] for m in per]

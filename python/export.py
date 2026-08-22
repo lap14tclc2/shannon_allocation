@@ -334,12 +334,21 @@ def collect_markdown(run_id: str, include_all: bool = True) -> dict[str, str]:
 
 
 def build_zip(run_id: str, include_all: bool = True) -> bytes:
-    """Return a ZIP (bytes) containing all Markdown reports for a run."""
+    """One-button export: every Markdown report + all raw JSON artifacts of the run."""
     files = collect_markdown(run_id, include_all=include_all)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, content in files.items():
             zf.writestr(name, content)
+        base = os.path.join(RESULTS_DIR, "runs", run_id)
+        if os.path.isdir(base):
+            for root, _dirs, names in os.walk(base):
+                for f in names:
+                    full = os.path.join(root, f)
+                    zf.write(full, f"data/{os.path.relpath(full, base)}")
+        ranking = os.path.join(RESULTS_DIR, "ranking.csv")
+        if os.path.isfile(ranking):
+            zf.write(ranking, "data/ranking.csv")
     return buf.getvalue()
 
 

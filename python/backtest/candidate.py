@@ -64,6 +64,14 @@ def validate_candidate(
         errors.append("allocation days not ordered")
     if len(days) >= 2 and any(b - a < min_gap for a, b in zip(days, days[1:])):
         errors.append(f"minimum gap {min_gap} between allocation days violated")
+    # Cyclic constraint: allocation repeats every year, so the gap from the last
+    # allocation of year Y to the first allocation of year Y+1 must also be >= min_gap.
+    #   G_4 = YEAR_LENGTH + T1 - T4   (YEAR_LENGTH == max_allocation_day)
+    if len(days) >= 2 and max_allocation_day + days[0] - days[-1] < min_gap:
+        errors.append(
+            f"cyclic minimum gap {min_gap} violated (year-end to next year's T1: "
+            f"{max_allocation_day}+{days[0]}-{days[-1]} = {max_allocation_day + days[0] - days[-1]} < {min_gap})"
+        )
     return errors
 
 
@@ -117,29 +125,53 @@ def schedule_for_window(candidate: Candidate, all_dates) -> list:
 
 # --------------------------------------------------------------------------- generators / repair
 def random_allocation_days(rng: random.Random, min_gap: int, max_day: int) -> list[int]:
-    """Four valid, ordered allocation days with minimum gap."""
-    days = []
-    prev = 0
-    for i in range(NUM_ALLOCATIONS):
-        lo = (prev + min_gap) if i > 0 else 1
-        hi = max_day - (NUM_ALLOCATIONS - 1 - i) * min_gap
-        if hi < lo:
-            hi = lo
-        d = rng.randint(lo, hi)
-        days.append(d)
-        prev = d
+    """Four valid, ordered allocation days with minimum gap, including the cyclic gap.
+
+    Models the year as a ring of length `max_day` split into five gaps:
+      g1 = T1 - 1                     (before the first allocation)
+      g2 = T2 - T1, g3 = T3 - T2, g4 = T4 - T3
+      g5 = max_day - T4               (after the last allocation)
+    The cyclic gap (T4 -> next year's T1) equals g5 + g1 + 1, so the constraint
+    g1 + g5 >= min_gap - 1 keeps every annual cycle valid.
+    """
+    if max_day < 4 * min_gap:
+        raise ValueError(f"max_day {max_day} < 4*min_gap {4*min_gap}: no valid schedule exists")
+    g = [0, min_gap, min_gap, min_gap, min_gap - 1]  # g1, g2, g3, g4, g5
+    remaining = (max_day - 1) - (4 * min_gap - 1)
+    # distribute `remaining` days uniformly across the five gaps (stars-and-bars)
+    cuts = sorted(rng.sample(range(remaining + 4), 4))
+    add = [cuts[0]]
+    for i in range(1, 4):
+        add.append(cuts[i] - cuts[i - 1] - 1)
+    add.append(remaining + 3 - cuts[-1])
+    g = [a + b for a, b in zip(g, add)]
+
+    t1 = g[0] + 1
+    days = [t1]
+    for gap in g[1:4]:
+        days.append(days[-1] + gap)
     return days
 
 
-def random_candidate(rng: random.Random, universe: list[str], min_gap: int, max_day: int) -> Candidate:
-    n = rng.randint(MIN_SYMBOLS, min(MAX_SYMBOLS, len(universe)))
-    symbols = tuple(sorted(rng.sample(universe, n)))
+def random_candidate(
+    rng: random.Random,
+    universe: list[str],
+    min_gap: int,
+    max_day: int,
+    fixed_symbols: list[str] | None = None,
+) -> Candidate:
+    """Random candidate. When `fixed_symbols` is given, only timing is randomised."""
+    if fixed_symbols is not None:
+        symbols = tuple(sorted(fixed_symbols))
+    else:
+        n = rng.randint(MIN_SYMBOLS, min(MAX_SYMBOLS, len(universe)))
+        symbols = tuple(sorted(rng.sample(universe, n)))
     days = tuple(random_allocation_days(rng, min_gap, max_day))
     return Candidate(symbols, days)
 
 
 def repair_allocation_days(days, min_gap: int, max_day: int) -> tuple[int, ...] | None:
-    """Sort + enforce minimum gap. Returns valid days or None if unrecoverable."""
+    """Sort + enforce minimum gap (including cyclic). Returns valid days or None."""
     ds = sorted(set(int(d) for d in days))
     out: list[int] = []
     prev = 0
@@ -154,4 +186,16 @@ def repair_allocation_days(days, min_gap: int, max_day: int) -> tuple[int, ...] 
         return None
     if any(b - a < min_gap for a, b in zip(out, out[1:])):
         return None
+    # Cyclic gap: YEAR_LENGTH + T1 - T4 >= min_gap.
+    shortfall = min_gap - (max_day + out[0] - out[-1])
+    if shortfall > 0:
+        # try lifting the first allocation; if that collides, sink the last one.
+        new_first = out[0] + shortfall
+        if new_first + min_gap <= out[1]:
+            out[0] = new_first
+        else:
+            new_last = out[-1] - shortfall
+            if new_last - out[-2] < min_gap:
+                return None
+            out[-1] = new_last
     return tuple(out)

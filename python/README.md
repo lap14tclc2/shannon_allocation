@@ -188,41 +188,73 @@ cd python && python verify.py        # end-to-end page routes + Export ZIP endpo
 
 ## Joint Portfolio + Allocation-Time Optimizer
 
-Searches the **stock subset (5–10 symbols)** and the **four annual ERC allocation
-times together** (never independently) for the most **robust out-of-sample
-risk-adjusted NET performance**, not the best historical backtest.
+Searches the **four annual ERC allocation times** for the most **robust out-of-sample
+risk-adjusted NET performance**, not the best historical backtest. Two modes:
+
+- `joint` (default): searches the stock subset (5–10 symbols) and the four allocation
+  times **together**.
+- `timing`: the portfolio set is **FIXED** (`--fixed-symbols A,B,C,D,E`) and only
+  `[T1,T2,T3,T4]` is optimized — so symbol selection cannot contaminate the timing
+  result, and every schedule is compared against the **same predefined portfolio**.
 
 ```bash
 cd python
-python optimize_main.py                              # quick run
+python optimize_main.py                              # quick joint run
 python optimize_main.py --population 200 --generations 100 --random 1000   # full spec defaults
+python optimize_main.py --mode timing --fixed-symbols CTG,GVR,HDB,LPB,MWG,STB,VIB --random 1000
 python optimize_main.py --seed 7 --no-surrogate --finalists 10
 ```
+
+Evaluation methodology (audit fixes):
+1. **Walk-forward train/val/test** rolling windows; `val >= 252` and `test >= 252`
+   trading days so every window contains a complete annual allocation cycle.
+2. **ERC warm-up**: each window loads ~`lookback_days` of pre-window history so the
+   first allocation inside the window can calibrate (no look-ahead).
+3. **Full-window performance clock**: metrics are measured from the **window start**
+   (cash period included), never from the first allocation — a 12% gain over 6 months
+   cannot be annualized to 200%.
+4. **100% coverage policy**: a candidate that fails ANY validation or test window is
+   **INVALID** (`evaluate_robust(min_windows=...)`), not "partially robust".
+5. **Cyclic minimum gap**: `YEAR_LENGTH + T1 - T4 >= min_gap` in addition to the three
+   internal gaps (allocation repeats every year).
+6. **Real trading calendar**: the max allocation day is resolved to the minimum number
+   of sessions of a full calendar year in the data (day 252 is not silently skipped).
+7. **Timing robustness from OOS**: neighbourhood stability is computed from the OOS
+   robust scores (same metric that selected the candidate), not a train-window spike.
+8. **Labeled phases**: every report/JSON/CSV separates `TRAIN`, `VALIDATION` and
+   `FINAL TEST` windows; the `best_robust` leaderboard requires 100% of untouched
+   test windows to pass.
+9. **Quarterly baseline**: the standard four-times-per-year schedule is evaluated on
+   the same symbols/windows (`baseline_comparison.csv`) so you can see whether
+   optimization beats the current production schedule.
 
 Pipeline (see `backtest/optimize/`):
 1. **Costs + no look-ahead** (`P0`): configurable buy/sell fee, sell tax, slippage;
    signals computed at close[t], orders execute at close[t+1]; gross vs net
    TWR/XIRR exported; optimizer uses NET.
 2. **Candidate** (`backtest/candidate.py`): `(symbols, allocation_days)` with the
-   four times as trading-day positions (1..252, min gap 40) mapped per year to
-   real market dates.
-3. **Random joint search baseline** → **NSGA-II** (Pareto ranking, crowding
-   distance, elitism, symbol + timing crossover/mutation with repair) →
-   optional sklearn **surrogate** to prioritise evaluations.
-4. **Walk-forward** train/val/test rolling windows; robust fitness =
-   `median(OOS net TWR) - lambda * dispersion`, plus P10/P25/worst/MDD.
-5. **Successive halving** (`halving`), **timing-neighbourhood** (±1..5 day spike
-   detection) and **symbol-neighbourhood** robustness, **concentration** checks.
+   four times as trading-day positions (1..max-day, min gap 40, cyclic-valid) mapped
+   per year to real market dates.
+3. **Random joint-search baseline** → **NSGA-II** (Pareto ranking, crowding
+   distance, elitism, symbol + timing crossover/mutation with repair; timing-only
+   mode freezes the symbol set) → optional sklearn **surrogate**.
+4. **Walk-forward** robust fitness = `median(OOS net TWR) - lambda * dispersion`,
+   plus P10/P25/worst/MDD.
+5. **Timing-neighbourhood** (±1..5 day spike detection on OOS robust scores),
+   **symbol-neighbourhood** (joint mode), **concentration** checks.
 6. **Reports**: leaderboards (best return / risk-adjusted / low-drawdown /
-   robust), Pareto frontier, per-finalist Markdown, and CSVs:
-   `optimizer_summary.csv, pareto_frontier.csv, top_candidates.csv,
-   candidate_metrics.csv, walk_forward_results.csv, timing_robustness.csv,
-   symbol_robustness.csv, optimizer_config.json` under `results/optimizer/<id>/`.
-   Everything is reproducible from the stored seed/config/data.
+   robust), Pareto frontier, per-finalist Markdown with labelled TRAIN/VALIDATION/
+   FINAL TEST, and CSVs: `optimizer_summary.csv, pareto_frontier.csv,
+   top_candidates.csv, candidate_metrics.csv, walk_forward_results.csv,
+   timing_robustness.csv, symbol_robustness.csv, baseline_comparison.csv,
+   optimizer_config.json` under `results/optimizer/<id>/`. Everything is
+   reproducible from the stored seed/config/data.
 
-Tests: `python -m pytest backtest/tests/test_optimizer.py -q` (25 tests: candidate
-validation, generators/repair, NSGA-II ≥ random on a planted problem, no-look-ahead
-execution, costs, robustness, reproducibility).
+Tests: `python -m pytest backtest/tests/test_optimizer.py -q` (33 tests: candidate
+validation incl. cyclic min-gap, generators/repair, NSGA-II ≥ random on a planted
+problem, timing-only mode freezes symbols, 100% window coverage policy, full-window
+annualization invariant, ERC warm-up, no-look-ahead execution, costs, robustness,
+reproducibility).
 
 ## Export combination data for an AI / LLM
 

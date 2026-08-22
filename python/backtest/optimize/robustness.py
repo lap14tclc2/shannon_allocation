@@ -13,11 +13,20 @@ from statistics import median
 from ..candidate import Candidate, MAX_SYMBOLS, MIN_SYMBOLS, random_candidate, repair_allocation_days
 
 
-def timing_neighbourhood(candidate: Candidate, eval_fn, radius: int = 5, min_gap: int = 40, max_day: int = 252):
+def timing_neighbourhood(
+    candidate: Candidate,
+    eval_fn,
+    radius: int = 5,
+    min_gap: int = 40,
+    max_day: int = 252,
+    value_key: str = "net_twr_annualized_pct",
+):
     """Backtest every Ti +/- 1..radius schedule; return stats + spike detection.
 
-    Returns dict with per-neighbour results, mean/variance, and a flag if any
-    neighbour is an isolated spike (huge single-day improvement).
+    `eval_fn` may return a plain metrics dict (value_key = 'net_twr_annualized_pct')
+    or a walk-forward robust dict (value_key = 'robust_return'). The latter measures
+    neighbourhood stability from OOS robust scores, which is what the ranking
+    actually selected on — a single-window spike test cannot.
     """
     results = []
     base = candidate.allocation_days
@@ -36,9 +45,13 @@ def timing_neighbourhood(candidate: Candidate, eval_fn, radius: int = 5, min_gap
                 continue
             seen.add(nb.key())
             m = eval_fn(nb)
-            if m is not None and not m.get("error"):
-                results.append({"candidate": nb, "net_twr_ann": m["net_twr_annualized_pct"], "metrics": m})
-    vals = [r["net_twr_ann"] for r in results]
+            if m is None or m.get("error"):
+                continue
+            val = m.get(value_key)
+            if val is None:
+                continue
+            results.append({"candidate": nb, value_key: val, "metrics": m})
+    vals = [r[value_key] for r in results]
     mean = sum(vals) / len(vals) if vals else 0.0
     var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1) if len(vals) > 1 else 0.0
     spike = bool(results) and max(vals) - median(vals) > max(2.0, 2.0 * (var ** 0.5))

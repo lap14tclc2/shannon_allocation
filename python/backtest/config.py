@@ -58,6 +58,9 @@ class BacktestParams:
     start_date: str | None = None             # YYYY-MM-DD
     end_date: str | None = None               # YYYY-MM-DD
 
+    # Universe filter: all | vn30 | vn50 | vn100 (vn100 == every symbol in data_dir)
+    universe: str = "all"
+
     # Output
     output_dir: str = "F:/workspace/shannon_allocation/python/results"
     top_n: int = 20
