@@ -118,39 +118,49 @@ def _portfolio_volatility(
     weights: dict[str, float],
     annualization_factor: int,
 ) -> tuple[float | None, int]:
-    """Annualized volatility with a DataFrame-local cache.
+    """Annualized volatility with covariance reuse.
 
-    The cache is safe because ``raw_prices`` is a simulation-local immutable view
-    and the key includes snapshot position, symbols, lookback and relative weights.
+    The expensive covariance matrix depends on symbols, snapshot position,
+    lookback and annualization — not on the current ERC weights. Optimizer
+    candidates frequently revisit the same symbol set/date with different timing
+    genes or target weights, so cache the covariance once and only recompute the
+    cheap ``w'Cov w`` multiplication for each call. This is mathematically
+    identical to recomputing ``np.cov`` every time.
     """
-    weight_key = tuple(round(float(weights[s]), 10) for s in symbols)
-    cache_key = (tuple(symbols), int(pos), int(lookback), int(annualization_factor), weight_key)
-    cache = raw_prices.attrs.setdefault("_risk_volatility_cache", {})
-    if cache_key in cache:
-        return cache[cache_key]
+    symbols_key = tuple(symbols)
+    cache_key = (symbols_key, int(pos), int(lookback), int(annualization_factor))
+    cache = raw_prices.attrs.setdefault("_risk_covariance_cache", {})
+    cached = cache.get(cache_key)
 
-    start = max(0, pos - max(2, int(lookback)))
-    window = raw_prices.iloc[start:pos][symbols].dropna()
-    if len(window) < 3:
-        value = (None, len(window))
-        cache[cache_key] = value
-        return value
-    values = window.to_numpy(dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        returns = np.log(values[1:] / values[:-1])
-    returns = returns[np.all(np.isfinite(returns), axis=1)]
-    if returns.shape[0] < 2:
-        value = (None, len(window))
-        cache[cache_key] = value
-        return value
-    cov = np.cov(returns, rowvar=False, ddof=1)
-    cov = np.atleast_2d(np.nan_to_num(cov, nan=0.0, posinf=0.0, neginf=0.0))
-    cov *= annualization_factor
+    if cached is None:
+        start = max(0, pos - max(2, int(lookback)))
+        window = raw_prices.iloc[start:pos][symbols].dropna()
+        observations = len(window)
+        if observations < 3:
+            cached = (None, observations)
+            cache[cache_key] = cached
+        else:
+            values = window.to_numpy(dtype=float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                returns = np.log(values[1:] / values[:-1])
+            returns = returns[np.all(np.isfinite(returns), axis=1)]
+            if returns.shape[0] < 2:
+                cached = (None, observations)
+                cache[cache_key] = cached
+            else:
+                cov = np.cov(returns, rowvar=False, ddof=1)
+                cov = np.atleast_2d(np.nan_to_num(cov, nan=0.0, posinf=0.0, neginf=0.0))
+                cov *= annualization_factor
+                cached = (cov, observations)
+                cache[cache_key] = cached
+
+    cov, observations = cached
+    if cov is None:
+        return None, observations
+
     vec = np.asarray([weights[s] for s in symbols], dtype=float)
     variance = float(vec @ cov @ vec)
-    value = (math.sqrt(max(variance, 0.0)), len(window))
-    cache[cache_key] = value
-    return value
+    return math.sqrt(max(variance, 0.0)), observations
 
 
 def risk_adjusted_targets(
