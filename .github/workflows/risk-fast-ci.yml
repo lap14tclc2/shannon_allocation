@@ -25,8 +25,11 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Compile Python
         run: python -m compileall -q backtest main.py optimize_main.py serve.py
-      - name: Optimizer regression tests
-        run: python -m pytest backtest/tests/test_optimizer.py backtest/tests/test_risk_fast_optimizer.py -q
+      - name: Dataset-independent optimizer regression tests
+        # TestCostsAndLookahead intentionally reads F:/data_finance/data and is
+        # exercised in the real-data/local environment; GitHub runners do not
+        # have that private historical dataset.
+        run: python -m pytest backtest/tests/test_optimizer.py backtest/tests/test_risk_fast_optimizer.py -q -k "not TestCostsAndLookahead"
 
   frontend:
     runs-on: ubuntu-latest
