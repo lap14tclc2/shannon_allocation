@@ -367,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(200, rec)
 
     def _handle_optimizer_candidate(self, eid):
-        """Backtest one candidate with the experiment's risk/cost configuration."""
+        """Backtest one candidate with the experiment's exact live configuration."""
         query = dict(parse_qsl(urlparse(self.path).query))
         symbols = [s.strip().upper() for s in query.get("symbols", "").split(",") if s.strip()]
         days = [int(x) for x in query.get("days", "").split(",") if x.strip()]
@@ -377,8 +377,13 @@ class Handler(BaseHTTPRequestHandler):
         exp_meta = self._read_json(os.path.join(OPTIMIZER_DIR, eid), "optimizer_config.json") or {}
         risk_cfg = exp_meta.get("risk_config") or {}
         cost_cfg = exp_meta.get("cost_config") or {}
+        capital_cfg = exp_meta.get("capital_config") or {}
         allowed = set(bt["params"].as_dict())
-        overrides = {k: v for k, v in {**risk_cfg, **cost_cfg}.items() if k in allowed}
+        overrides = {
+            k: v
+            for k, v in {**risk_cfg, **cost_cfg, **capital_cfg}.items()
+            if k in allowed
+        }
         run_params = replace(bt["params"], **overrides)
         alloc_dates = bt["schedule_for_window"](
             bt["Candidate"](tuple(sorted(symbols)), tuple(days)), bt["dates"]
@@ -394,6 +399,9 @@ class Handler(BaseHTTPRequestHandler):
             "metrics": bt["result_metrics"](result),
             "nav_history": result.nav_history,
             "allocations": result.allocations,
+            "capital_events": result.capital_events,
+            "deployment_events": result.deployment_events,
+            "capital_config": capital_cfg,
         }
         return self._send_json(200, payload)
 
@@ -409,6 +417,9 @@ class Handler(BaseHTTPRequestHandler):
         fixed_symbols = body.get("fixed_symbols") or None
         portfolio_size = int(body.get("portfolio_size", 7)) if mode == "joint" else None
 
+        initial_balance = float(body.get("initial_balance", 200_000_000))
+        annual_deposit = float(body.get("annual_deposit", 20_000_000))
+
         risk_overlay = bool(body.get("risk_overlay", True))
         target_volatility = float(body.get("target_volatility", 0.18))
         max_oos_drawdown_pct = float(body.get("max_oos_drawdown_pct", 35.0))
@@ -420,6 +431,7 @@ class Handler(BaseHTTPRequestHandler):
         surrogate_pool_size = max(0, int(body.get("surrogate_pool_size", 5000)))
         surrogate_proposals = max(0, int(body.get("surrogate_proposals", 40)))
         early_stop_generations = int(body.get("early_stop_generations", 15))
+        parallel_workers = max(0, int(body.get("parallel_workers", 0)))
 
         if mode not in ("joint", "timing"):
             return self._send_json(400, {"error": f"Unknown mode '{mode}' (expected joint|timing)."})
@@ -432,6 +444,10 @@ class Handler(BaseHTTPRequestHandler):
                 fixed_symbols = [s.strip().upper() for s in fixed_symbols.split(",") if s.strip()]
             if not fixed_symbols:
                 return self._send_json(400, {"error": "mode='timing' requires fixed_symbols."})
+        if initial_balance <= 0:
+            return self._send_json(400, {"error": "initial_balance must be > 0."})
+        if annual_deposit < 0:
+            return self._send_json(400, {"error": "annual_deposit must be >= 0."})
         if target_volatility <= 0 or target_volatility > 1:
             return self._send_json(400, {"error": "target_volatility must be in (0, 1]."})
         if not (0 <= min_equity_exposure <= 1):
@@ -450,6 +466,8 @@ class Handler(BaseHTTPRequestHandler):
                 "fixed_symbols": fixed_symbols,
                 "portfolio_size": portfolio_size,
                 "risk_overlay": risk_overlay,
+                "initial_balance": initial_balance,
+                "annual_deposit": annual_deposit,
             }
 
         def work():
@@ -460,6 +478,8 @@ class Handler(BaseHTTPRequestHandler):
                 params = BacktestParams(
                     universe=universe,
                     portfolio_size=portfolio_size,
+                    initial_balance=initial_balance,
+                    annual_deposit=annual_deposit,
                     risk_overlay_enabled=risk_overlay,
                     target_volatility=target_volatility,
                     min_equity_exposure=min_equity_exposure,
@@ -479,6 +499,7 @@ class Handler(BaseHTTPRequestHandler):
                     surrogate_pool_size=surrogate_pool_size,
                     surrogate_proposals=surrogate_proposals,
                     early_stop_generations=early_stop_generations if early_stop_generations > 0 else None,
+                    parallel_workers=parallel_workers,
                     max_oos_drawdown_pct=max_oos_drawdown_pct if max_oos_drawdown_pct > 0 else None,
                 )
                 res = run_optimizer(params, opt, progress=False)
@@ -508,6 +529,8 @@ class Handler(BaseHTTPRequestHandler):
                 "universe": universe,
                 "mode": mode,
                 "portfolio_size": portfolio_size,
+                "initial_balance": initial_balance,
+                "annual_deposit": annual_deposit,
             },
         )
 
