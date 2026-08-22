@@ -1,7 +1,7 @@
 """Multi-process candidate evaluation for expensive optimizer stages.
 
 The optimizer server runs on Windows as well as Linux, so this module keeps all
-worker entry points at module scope (required by multiprocessing spawn).  Price
+worker entry points at module scope (required by multiprocessing spawn). Price
 data and immutable config are sent to each worker once via the initializer; each
 candidate job then sends only a small Candidate/window payload.
 
@@ -88,12 +88,15 @@ class ParallelEvaluator:
     def __init__(self, prices, params, dates, cfg: str, max_day: int, workers: int = 0):
         self.workers = auto_worker_count(workers)
         self._pool = None
+        self._serial_args = (prices, params, dates, cfg, max_day)
         if self.workers > 1:
             self._pool = ProcessPoolExecutor(
                 max_workers=self.workers,
                 initializer=_init_worker,
-                initargs=(prices, params, dates, cfg, max_day),
+                initargs=self._serial_args,
             )
+        else:
+            _init_worker(*self._serial_args)
 
     @property
     def enabled(self) -> bool:
@@ -109,6 +112,7 @@ class ParallelEvaluator:
         if not candidates:
             return []
         if self._pool is None:
+            _init_worker(*self._serial_args)
             return [_candidate_job((c, start, end)) for c in candidates]
         return list(self._pool.map(_candidate_job, [(c, start, end) for c in candidates], chunksize=1))
 
@@ -126,6 +130,7 @@ class ParallelEvaluator:
             for c in candidates
         ]
         if self._pool is None:
+            _init_worker(*self._serial_args)
             return [_robust_job(j) for j in jobs]
         return list(self._pool.map(_robust_job, jobs, chunksize=1))
 
