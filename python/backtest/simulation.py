@@ -57,6 +57,15 @@ class SimulationResult:
     sortino: float = 0.0
     calmar: float = 0.0
     absolute_profit: float = 0.0
+
+    # Measurement-window accounting. These fields are deliberately separate from
+    # total_deposits/final_nav because walk-forward windows include a warm-up
+    # period before the measured TRAIN/VALIDATION/HOLDOUT interval.
+    measurement_start_date: str = ""
+    measurement_start_nav: float = 0.0
+    measurement_external_contributions: float = 0.0
+    measurement_profit: float = 0.0
+
     annual_returns: dict = field(default_factory=dict)
     worst_year: float = 0.0
     positive_year_ratio: float = 0.0
@@ -449,6 +458,9 @@ def _fill_performance(
     deposits = result.total_deposits
     end_idx = len(arr) - 1
 
+    # Legacy whole-simulation capital statistics are retained for backward
+    # compatibility. Walk-forward evaluation uses the measurement-window fields
+    # below for cash-flow-correct profit/XIRR reporting.
     result.total_return_pct = (
         (arr[-1] / deposits - 1.0) * 100.0 if deposits > 0 else 0.0
     )
@@ -464,11 +476,23 @@ def _fill_performance(
     else:
         fa_idx = first_invested_idx
     result.first_allocation_date = dates[fa_idx].strftime("%Y-%m-%d")
+    result.measurement_start_date = dates[perf_start].strftime("%Y-%m-%d")
+    result.measurement_start_nav = float(arr[perf_start])
+
+    start_ordinal = dates[perf_start].toordinal()
+    period_contributions = sum(
+        float(amt)
+        for dd, amt in zip(deposit_dates, deposit_amounts)
+        if dd.toordinal() > start_ordinal
+    )
+    result.measurement_external_contributions = period_contributions
+    result.measurement_profit = float(arr[-1] - arr[perf_start] - period_contributions)
+
     twr = mt.time_weighted_return(net_nav_series, deposit_indices, perf_start, end_idx)
     result.twr = twr * 100.0
     ann_twr = mt.annualized_from_total(twr, days)
     result.twr_annualized = (ann_twr * 100.0) if ann_twr is not None else 0.0
-    result.absolute_profit = arr[-1] - deposits
+    result.absolute_profit = result.measurement_profit
 
     period = arr[perf_start:]
     log_ret = np.diff(np.log(np.maximum(period, 1e-9)))
@@ -495,11 +519,14 @@ def _fill_performance(
         ann_twr / abs(mdd) if (ann_twr is not None and mdd < 0) else 0.0
     )
 
-    flow_anchor = perf_start if metrics_from == "window_start" else 0
-    day0 = dates[flow_anchor].toordinal()
-    flows = [(-initial_balance, day0)]
+    # XIRR must start from the ACTUAL NAV at the measured window boundary, not
+    # from the original initial balance used before the ERC warm-up. Deposits on
+    # the boundary date are already included in that NAV, so only later flows are
+    # added separately. This fixes inflated holdout XIRR without touching TWR.
+    day0 = dates[perf_start].toordinal()
+    flows = [(-float(arr[perf_start]), day0)]
     for dd, amt in zip(deposit_dates, deposit_amounts):
-        if dd.toordinal() >= day0:
+        if dd.toordinal() > day0:
             flows.append((-amt, dd.toordinal()))
     flows.append((arr[-1], dates[end_idx].toordinal()))
     xirr = mt.xirr(flows)
@@ -531,9 +558,9 @@ def _fill_performance(
     result.gross_twr = gt * 100.0
     gann = mt.annualized_from_total(gt, days)
     result.gross_twr_annualized = (gann * 100.0) if gann is not None else 0.0
-    gflows = [(-initial_balance, day0)]
+    gflows = [(-float(gross_arr[perf_start]), day0)]
     for dd, amt in zip(deposit_dates, deposit_amounts):
-        if dd.toordinal() >= day0:
+        if dd.toordinal() > day0:
             gflows.append((-amt, dd.toordinal()))
     gflows.append((float(gross_arr[-1]), dates[end_idx].toordinal()))
     gx = mt.xirr(gflows)
