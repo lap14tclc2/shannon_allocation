@@ -117,7 +117,10 @@ if (existsSync(ssrEntry)) {
   ({ renderPage } = await import(`file://${ssrEntry.replace(/\\/g, '/')}`));
 
   const homeHtml = renderPage('home', { runs: fixtures.runs });
-  check('home SSR renders run links', homeHtml.includes('r1') && homeHtml.includes('/runs/r1'));
+  check('home SSR renders Growth Optimizer landing page', homeHtml.includes('Growth Optimizer') && homeHtml.includes('Optimize combination + allocation'));
+
+  const optimizerHtml = renderPage('optimizer_list', { experiments: [] });
+  check('optimizer SSR renders the same primary workflow', optimizerHtml.includes('Growth Optimizer') && optimizerHtml.includes('Search mode'));
 
   const runHtml = renderPage('run', { meta: fixtures.meta, index: fixtures.index });
   check('run SSR renders ranking row', runHtml.includes('HAG') && runHtml.includes('45.4'));
