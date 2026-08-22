@@ -4,6 +4,7 @@ import {
   getOptimizerStatus,
   deleteOptimizerExperiment,
   listAvailableSymbols,
+  analyzeCombination,
 } from '../lib/api.js';
 
 const SEARCH_PRESETS = {
@@ -53,6 +54,11 @@ function moneyShort(value) {
   return `${n.toLocaleString('en-US')} VND`;
 }
 
+function num(value, digits = 2) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : '-';
+}
+
 function parseImportedSymbols(raw) {
   const text = String(raw || '').trim();
   if (!text) return [];
@@ -73,6 +79,154 @@ function parseImportedSymbols(raw) {
     .filter(Boolean);
 }
 
+function HealthPanel({ health, onApplySuggestion }) {
+  if (!health) return null;
+  const status = health.status || 'invalid';
+  const statusLabel = status === 'healthy' ? 'HEALTHY' : status === 'warning' ? 'WARNING' : 'INVALID';
+  const statusColor = status === 'healthy' ? 'var(--success)' : status === 'warning' ? 'var(--warning)' : 'var(--danger)';
+  const correlation = health.correlation || {};
+  const diversification = health.diversification || {};
+  const erc = health.erc || {};
+  const score = health.score || {};
+  const pairs = (correlation.high_pairs || []).slice(0, 10);
+  const clusters = correlation.clusters || [];
+  const suggestions = health.suggestions || [];
+
+  return (
+    <div className="sub-card" style={{ marginTop: 12, borderColor: statusColor }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div>
+          <h4 style={{ margin: 0 }}>Combination Health</h4>
+          <div className="muted">Research only through {health.research_end}; final {health.reserved_holdout?.trading_days || 252} sessions are reserved and not inspected.</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <b style={{ color: statusColor, fontSize: 16 }}>{statusLabel}</b>
+          <div className="muted">Health score {num(score.overall, 1)} / 100</div>
+        </div>
+      </div>
+
+      <div className="diag-grid" style={{ marginTop: 14, marginBottom: 12 }}>
+        <div><span>Average risk correlation</span><b>{num(correlation.average, 2)}</b></div>
+        <div><span>Maximum risk correlation</span><b>{num(correlation.maximum, 2)}</b></div>
+        <div><span>High-correlation pairs</span><b>{num(Number(correlation.high_pair_ratio || 0) * 100, 0)}%</b></div>
+        <div><span>Largest corr cluster</span><b>{correlation.largest_cluster_size || 1}/{health.symbols?.length || 0}</b></div>
+        <div><span>Diversification ratio</span><b>{num(diversification.ratio, 2)}</b></div>
+        <div><span>ERC feasible</span><b style={{ color: erc.feasible ? 'var(--success)' : 'var(--danger)' }}>{erc.feasible ? 'YES' : 'NO'}</b></div>
+        <div><span>ERC portfolio vol</span><b>{erc.portfolio_volatility_pct == null ? '-' : `${num(erc.portfolio_volatility_pct, 2)}%`}</b></div>
+        <div><span>Aligned observations</span><b>{erc.observations || 0}</b></div>
+      </div>
+
+      <div className="diag-grid" style={{ marginBottom: 12 }}>
+        <div><span>Data quality</span><b>{num(score.data_quality, 0)}/100</b></div>
+        <div><span>Correlation quality</span><b>{num(score.correlation, 0)}/100</b></div>
+        <div><span>Diversification</span><b>{num(score.diversification, 0)}/100</b></div>
+        <div><span>ERC feasibility</span><b>{num(score.erc_feasibility, 0)}/100</b></div>
+      </div>
+
+      {(health.reasons || []).length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <b>{status === 'invalid' ? 'Blocking reasons' : 'Warnings'}</b>
+          <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+            {health.reasons.map((reason, i) => <li key={`${reason}-${i}`}>{reason}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="expand-grid" style={{ marginBottom: 12 }}>
+        <div className="sub-card">
+          <h4>252D research diagnostic</h4>
+          <div className="diag-row"><span>Equal-weight return ann.</span><b>{diversification.equal_weight_return_pct == null ? '-' : `${num(diversification.equal_weight_return_pct, 2)}%`}</b></div>
+          <div className="diag-row"><span>Equal-weight volatility</span><b>{diversification.equal_weight_volatility_pct == null ? '-' : `${num(diversification.equal_weight_volatility_pct, 2)}%`}</b></div>
+          <div className="diag-row"><span>Equal-weight Sharpe</span><b>{num(diversification.equal_weight_sharpe, 3)}</b></div>
+          <div className="diag-row"><span>Equal-weight MDD</span><b>{diversification.equal_weight_mdd_pct == null ? '-' : `${num(diversification.equal_weight_mdd_pct, 2)}%`}</b></div>
+          <div className="muted" style={{ marginTop: 6 }}>Diagnostic only — this is not the ERC/Shannon strategy result and is not a forecast.</div>
+        </div>
+        <div className="sub-card">
+          <h4>Correlation structure</h4>
+          <div className="diag-row"><span>Policy</span><b>{correlation.pair_policy || 'max(63D,252D)'}</b></div>
+          <div className="diag-row"><span>Short / long window</span><b>{correlation.short_window_days || 63}D / {correlation.long_window_days || 252}D</b></div>
+          <div className="diag-row"><span>Clusters</span><b>{clusters.length || 0}</b></div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            {clusters.length ? clusters.map((c) => c.join(' · ')).join(' | ') : 'No high-correlation cluster >= 0.75.'}
+          </div>
+        </div>
+      </div>
+
+      {pairs.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <h4>High-correlation pairs</h4>
+          <table className="ranking">
+            <thead><tr><th>Pair</th><th>63D</th><th>252D</th><th>Risk corr</th></tr></thead>
+            <tbody>
+              {pairs.map((p) => (
+                <tr key={`${p.a}-${p.b}`}>
+                  <td>{p.a} / {p.b}</td>
+                  <td>{num(p.corr_63d, 2)}</td>
+                  <td>{num(p.corr_252d, 2)}</td>
+                  <td><b>{num(p.risk_corr, 2)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12 }}>
+        <h4>Data coverage</h4>
+        <table className="ranking">
+          <thead><tr><th>Symbol</th><th>History</th><th>Research coverage</th><th>Recent 252D</th></tr></thead>
+          <tbody>
+            {(health.data_quality || []).map((row) => (
+              <tr key={row.symbol}>
+                <td><b>{row.symbol}</b></td>
+                <td>{num(row.history_years, 1)}y</td>
+                <td>{num(Number(row.research_coverage || 0) * 100, 0)}%</td>
+                <td>{num(Number(row.recent_252d_coverage || 0) * 100, 0)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {status !== 'invalid' && (
+        <div>
+          <h4>Optional diversification suggestions</h4>
+          {suggestions.length === 0 ? (
+            <div className="muted">No replacement passed the research-only diversification + quality guard.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 9 }}>
+              {suggestions.map((s) => (
+                <div key={`${s.remove}-${s.add}`} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div>
+                      <b>{s.remove} → {s.add}</b>
+                      <div className="muted">{(s.reasons || []).join(' · ')}</div>
+                    </div>
+                    <button className="btn-variant" type="button" onClick={() => onApplySuggestion(s)}>
+                      Apply suggestion
+                    </button>
+                  </div>
+                  <div className="diag-grid" style={{ marginTop: 8, marginBottom: 0 }}>
+                    <div><span>Avg corr</span><b>{num(s.before?.average_correlation, 2)} → {num(s.after?.average_correlation, 2)}</b></div>
+                    <div><span>Max corr</span><b>{num(s.before?.max_correlation, 2)} → {num(s.after?.max_correlation, 2)}</b></div>
+                    <div><span>Diversification</span><b>{num(s.before?.diversification_ratio, 2)} → {num(s.after?.diversification_ratio, 2)}</b></div>
+                    <div><span>Largest cluster</span><b>{s.before?.largest_cluster_size ?? '-'} → {s.after?.largest_cluster_size ?? '-'}</b></div>
+                    <div><span>EW return diag.</span><b>{num(s.before?.equal_weight_return_pct, 1)}% → {num(s.after?.equal_weight_return_pct, 1)}%</b></div>
+                    <div><span>EW Sharpe diag.</span><b>{num(s.before?.equal_weight_sharpe, 2)} → {num(s.after?.equal_weight_sharpe, 2)}</b></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="muted" style={{ marginTop: 8 }}>
+            Suggestions only reduce research-period concentration subject to a quality guard. Nothing is replaced automatically; applying one requires a fresh health check.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OptimizerListPage({ experiments }) {
   const [items, setItems] = useState(experiments || []);
   const [availableSymbols, setAvailableSymbols] = useState([]);
@@ -83,6 +237,11 @@ export default function OptimizerListPage({ experiments }) {
   const [selectedSymbols, setSelectedSymbols] = useState([]);
   const [symbolQuery, setSymbolQuery] = useState('');
   const [migrateInput, setMigrateInput] = useState('');
+
+  const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState('');
+  const [analyzedKey, setAnalyzedKey] = useState('');
 
   const [initialBalance, setInitialBalance] = useState(1_000_000_000);
   const [annualDeposit, setAnnualDeposit] = useState(20_000_000);
@@ -114,11 +273,14 @@ export default function OptimizerListPage({ experiments }) {
 
   const availableSet = useMemo(() => new Set(availableSymbols), [availableSymbols]);
   const selectedSet = useMemo(() => new Set(selectedSymbols), [selectedSymbols]);
+  const selectionKey = useMemo(() => [...selectedSymbols].sort().join('|'), [selectedSymbols]);
   const filteredSymbols = useMemo(() => {
     const q = symbolQuery.trim().toUpperCase();
     return q ? availableSymbols.filter((s) => s.includes(q)) : availableSymbols;
   }, [availableSymbols, symbolQuery]);
   const minFeasiblePositionPct = selectedSymbols.length > 0 ? 100 / selectedSymbols.length : 100;
+  const healthCurrent = Boolean(health && analyzedKey && analyzedKey === selectionKey);
+  const optimizationAllowed = healthCurrent && health?.status !== 'invalid';
 
   useEffect(() => {
     let active = true;
@@ -158,6 +320,12 @@ export default function OptimizerListPage({ experiments }) {
       // Local persistence is convenience only.
     }
   }, [selectedSymbols, symbolsLoading]);
+
+  useEffect(() => {
+    setHealth(null);
+    setHealthError('');
+    setAnalyzedKey('');
+  }, [selectionKey]);
 
   useEffect(() => () => {
     clearInterval(pollRef.current);
@@ -212,13 +380,49 @@ export default function OptimizerListPage({ experiments }) {
     setSymbolQuery('');
   }
 
-  function validate() {
+  function validateSelection() {
     if (selectedSymbols.length < minSelected || selectedSymbols.length > maxSelected) {
-      return `Select ${minSelected}–${maxSelected} symbols. The optimizer will never replace them.`;
+      return `Select ${minSelected}–${maxSelected} symbols.`;
     }
     if (new Set(selectedSymbols).size !== selectedSymbols.length) return 'Combination contains duplicate symbols.';
     const unknown = selectedSymbols.filter((s) => !availableSet.has(s));
     if (unknown.length) return `Unknown symbols: ${unknown.join(', ')}`;
+    return '';
+  }
+
+  async function runHealthCheck() {
+    const error = validateSelection();
+    if (error) {
+      window.alert(error);
+      return;
+    }
+    setHealthLoading(true);
+    setHealthError('');
+    setHealth(null);
+    try {
+      const result = await analyzeCombination([...selectedSymbols].sort(), true);
+      setHealth(result);
+      setAnalyzedKey([...selectedSymbols].sort().join('|'));
+    } catch (err) {
+      setHealthError(err.message);
+      setAnalyzedKey('');
+    } finally {
+      setHealthLoading(false);
+    }
+  }
+
+  function applyHealthSuggestion(suggestion) {
+    const next = [...(suggestion.symbols || [])].sort();
+    if (next.length < minSelected || next.length > maxSelected) return;
+    setSelectedSymbols(next);
+    setSymbolQuery('');
+  }
+
+  function validate() {
+    const selectionError = validateSelection();
+    if (selectionError) return selectionError;
+    if (!healthCurrent) return 'Analyze the current combination before running allocation optimization.';
+    if (health?.status === 'invalid') return 'Combination health is INVALID. Fix the data/combination before optimization.';
     if (!Number.isFinite(Number(initialBalance)) || Number(initialBalance) <= 0) return 'Initial capital must be greater than 0 VND.';
     if (!Number.isFinite(Number(annualDeposit)) || Number(annualDeposit) < 0) return 'Annual contribution cannot be negative.';
     if (riskOverlay && (Number(targetVolPct) <= 0 || Number(targetVolPct) > 100)) return 'Target volatility must be between 0% and 100%.';
@@ -243,7 +447,7 @@ export default function OptimizerListPage({ experiments }) {
     setRunning(true);
     setElapsed(0);
     const riskDesc = riskOverlay ? `risk target ${targetVolPct}% · OOS MDD gate ${maxOosDrawdownPct}%` : 'baseline 100% equity';
-    setMessage(`${selectedSymbols.join(' ')} · ${moneyShort(initialBalance)} initial · ${moneyShort(annualDeposit)}/year · ${riskDesc}`);
+    setMessage(`${selectedSymbols.join(' ')} · health ${health?.status || '-'} ${num(health?.score?.overall, 0)}/100 · ${moneyShort(initialBalance)} initial · ${moneyShort(annualDeposit)}/year · ${riskDesc}`);
 
     try {
       const res = await startOptimizerRun({
@@ -326,7 +530,7 @@ export default function OptimizerListPage({ experiments }) {
       <header className="page-head">
         <h1>Allocation Optimizer</h1>
         <p className="muted">
-          You own the stock combination. The system keeps those symbols fixed and optimizes only the four annual allocation times, then evaluates ERC, Shannon drift, risk exposure, costs and OOS robustness.
+          You own the stock combination. First validate data/correlation/diversification, optionally review suggestions, then the system keeps the approved symbols fixed and optimizes only the four annual allocation times.
         </p>
       </header>
 
@@ -395,7 +599,7 @@ export default function OptimizerListPage({ experiments }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 7, maxHeight: 310, overflowY: 'auto', padding: 8, border: '1px solid var(--border)', borderRadius: 8 }}>
             {filteredSymbols.map((symbol) => {
               const checked = selectedSet.has(symbol);
-              const disabled = running || (!checked && selectedSymbols.length >= maxSelected);
+              const disabled = running || healthLoading || (!checked && selectedSymbols.length >= maxSelected);
               return (
                 <label
                   key={symbol}
@@ -411,7 +615,25 @@ export default function OptimizerListPage({ experiments }) {
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>2. Capital plan</h3>
+        <h3 style={{ marginBottom: 4 }}>2. Combination validation</h3>
+        <div className="muted" style={{ marginBottom: 10 }}>
+          Fast research-only check: data coverage, 63D/252D correlation, high-correlation clusters, diversification and ERC feasibility. Suggestions never inspect the reserved final holdout.
+        </div>
+        <button
+          className="btn-variant"
+          type="button"
+          disabled={running || healthLoading || symbolsLoading || selectedSymbols.length < minSelected || selectedSymbols.length > maxSelected}
+          onClick={runHealthCheck}
+          style={{ borderColor: 'var(--accent)' }}
+        >
+          {healthLoading ? 'Analyzing combination…' : 'Analyze combination'}
+        </button>
+        {healthError && <div className="error" style={{ marginTop: 10 }}>{healthError}</div>}
+        {healthCurrent && <HealthPanel health={health} onApplySuggestion={applyHealthSuggestion} />}
+
+        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
+
+        <h3 style={{ marginBottom: 4 }}>3. Capital plan</h3>
         <div className="muted" style={{ marginBottom: 12 }}>
           These values are part of every backtest. Annual money is added on the first trading session of each new year; the result records when cash is actually deployed.
         </div>
@@ -422,7 +644,7 @@ export default function OptimizerListPage({ experiments }) {
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>3. Risk policy</h3>
+        <h3 style={{ marginBottom: 4 }}>4. Risk policy</h3>
         <div className="muted" style={{ marginBottom: 12 }}>
           ERC still determines relative stock weights. Risk-aware mode may scale total equity exposure; Shannon handles drift between allocation events.
         </div>
@@ -441,7 +663,7 @@ export default function OptimizerListPage({ experiments }) {
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>4. Allocation search quality</h3>
+        <h3 style={{ marginBottom: 4 }}>5. Allocation search quality</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
           Only four annual allocation positions are searched. Symbols remain fixed, so this is much cheaper than the retired joint symbol search.
         </div>
@@ -483,6 +705,7 @@ export default function OptimizerListPage({ experiments }) {
         <div className="sub-card" style={{ marginBottom: 14 }}>
           <div className="diag-grid" style={{ marginBottom: 0 }}>
             <div><span>Fixed combination</span><b>{selectedSymbols.length ? selectedSymbols.join(' ') : 'Select symbols'}</b></div>
+            <div><span>Combination health</span><b>{healthCurrent ? `${String(health?.status || '').toUpperCase()} · ${num(health?.score?.overall, 0)}/100` : 'Analyze first'}</b></div>
             <div><span>Initial balance</span><b>{moneyShort(initialBalance)}</b></div>
             <div><span>Annual money</span><b>{moneyShort(annualDeposit)}</b></div>
             <div><span>Search target</span><b>4 allocation times / year</b></div>
@@ -495,13 +718,13 @@ export default function OptimizerListPage({ experiments }) {
         <button
           className="btn-export"
           type="submit"
-          disabled={running || symbolsLoading}
-          style={{ border: 0, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.55 : 1, fontSize: 14, padding: '11px 20px' }}
+          disabled={running || symbolsLoading || healthLoading || !optimizationAllowed}
+          style={{ border: 0, cursor: optimizationAllowed && !running ? 'pointer' : 'not-allowed', opacity: optimizationAllowed && !running ? 1 : 0.55, fontSize: 14, padding: '11px 20px' }}
         >
-          {running ? 'Allocation optimizer running…' : '▶ Optimize allocation'}
+          {running ? 'Allocation optimizer running…' : !healthCurrent ? 'Analyze combination first' : health?.status === 'invalid' ? 'Combination invalid' : '▶ Optimize allocation'}
         </button>
         <div className="muted" style={{ marginTop: 10 }}>
-          Fixed symbols → timing search → ERC → risk overlay → Shannon drift → rolling OOS validation → recent validation → untouched final holdout.
+          User symbols → health check → optional user-approved suggestion → fixed symbols → timing search → ERC → risk overlay → Shannon drift → rolling OOS validation → recent validation → untouched final holdout.
         </div>
       </form>
 
