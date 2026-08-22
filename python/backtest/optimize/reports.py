@@ -1,4 +1,4 @@
-"""Leaderboards, Pareto frontier, and CSV/JSON exports per the spec."""
+"""Leaderboards, Pareto frontier, and CSV/JSON exports."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from .nsga2 import dominates
 
 
 def pareto_frontier(items: list[dict]) -> list[dict]:
-    """Non-dominated items (maximised objectives)."""
     out = []
     for i, item in enumerate(items):
         dom = False
@@ -27,30 +26,40 @@ def pareto_frontier(items: list[dict]) -> list[dict]:
 
 
 def leaderboards(results: list[dict]) -> dict:
-    """Best return / best risk-adjusted / best low-drawdown / best robust.
-
-    The first three use TRAIN-window metrics and are labelled as such. `best_robust`
-    is the candidate with the highest OOS robust score that ALSO passed 100% of its
-    final TEST windows — a candidate that failed part of its untouched test set is
-    not trusted (audit rule: valid_test_windows < required_test_windows => INVALID).
-    """
+    """Best return / risk-adjusted / low-drawdown / robust candidates."""
     valid = [r for r in results if r.get("metrics") and not r["metrics"].get("error")]
     if not valid:
         return {}
 
     def test_ok(r: dict) -> bool:
-        t = r.get("test")
-        if t is None:
-            return False
-        return bool(t.get("valid"))
+        return bool((r.get("test") or {}).get("valid"))
 
-    best_return = max(valid, key=lambda r: r["metrics"]["net_twr_annualized_pct"])
-    best_risk = max(valid, key=lambda r: 0.4 * r["metrics"]["sharpe"] + 0.3 * r["metrics"]["sortino"]
-                    + 0.3 * r["metrics"]["calmar"])
-    best_mdd = max(valid, key=lambda r: r["metrics"]["max_drawdown_pct"])
-    tested = [r for r in valid if test_ok(r)]
-    pool_robust = tested if tested else [r for r in valid if r.get("robust")]
-    best_robust = max(pool_robust, key=lambda r: (r.get("robust") or {}).get("robust_return", -1e9))
+    best_return = max(valid, key=lambda r: r["metrics"].get("net_twr_annualized_pct", -1e9))
+    best_risk = max(
+        valid,
+        key=lambda r: (
+            0.35 * r["metrics"].get("sharpe", 0.0)
+            + 0.25 * r["metrics"].get("sortino", 0.0)
+            + 0.25 * r["metrics"].get("calmar", 0.0)
+            + 0.15 * (1.0 + r["metrics"].get("cdar95_pct", 0.0) / 100.0)
+        ),
+    )
+    best_mdd = max(
+        valid,
+        key=lambda r: (
+            r["metrics"].get("max_drawdown_pct", -1e9)
+            + 0.35 * r["metrics"].get("cdar95_pct", -1e9)
+        ),
+    )
+    tested = [r for r in valid if test_ok(r) and r.get("robust")]
+    robust_pool = tested or [r for r in valid if r.get("robust")]
+    if robust_pool:
+        best_robust = max(
+            robust_pool,
+            key=lambda r: (r.get("robust") or {}).get("robust_return", -1e9),
+        )
+    else:
+        best_robust = best_mdd
     return {
         "best_return": best_return,
         "best_risk_adjusted": best_risk,
@@ -71,18 +80,23 @@ def _row(item: dict) -> dict:
     }
     for k in [
         "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "sortino", "calmar",
-        "max_drawdown_pct", "turnover_pct", "cost_pct_of_nav", "transaction_cost",
-        "trade_count", "gross_twr_annualized_pct", "gross_xirr_pct", "worst_year",
-        "positive_year_ratio", "final_nav", "first_allocation_date",
+        "max_drawdown_pct", "cdar95_pct", "underwater_ratio", "max_underwater_days",
+        "min_equity_exposure", "avg_equity_exposure", "turnover_pct", "cost_pct_of_nav",
+        "transaction_cost", "trade_count", "gross_twr_annualized_pct", "gross_xirr_pct",
+        "worst_year", "positive_year_ratio", "score", "final_nav", "first_allocation_date",
     ]:
         row[f"train_{k}"] = m.get(k)
-    for k in ["median_net_twr", "p10_net_twr", "worst_net_twr", "return_std",
-              "median_sharpe", "worst_mdd", "positive_window_ratio", "robust_return", "n_windows"]:
+    for k in [
+        "median_net_twr", "p10_net_twr", "p25_net_twr", "worst_net_twr", "return_std",
+        "median_sharpe", "worst_mdd", "median_cdar95", "worst_cdar95",
+        "positive_window_ratio", "robust_return", "n_windows", "drawdown_gate_pct",
+    ]:
         row[f"val_{k}"] = r.get(k)
-    row["test_median_net_twr"] = t.get("median_net_twr")
-    row["test_n_windows"] = t.get("n_test_windows")
-    row["test_required_windows"] = t.get("required_test_windows")
-    row["test_valid"] = t.get("valid")
+    for k in [
+        "median_net_twr", "median_sharpe", "worst_mdd", "worst_cdar95",
+        "n_test_windows", "required_test_windows", "coverage_valid", "drawdown_valid", "valid",
+    ]:
+        row[f"test_{k}"] = t.get(k)
     row["timing_spike"] = item.get("timing_robust", {}).get("isolated_spike")
     row["timing_median"] = item.get("timing_robust", {}).get("median")
     row["symbol_mean"] = item.get("symbol_robust", {}).get("mean")
@@ -94,16 +108,21 @@ def _write_csv(path: str, rows: list[dict]):
     if not rows:
         open(path, "w", encoding="utf-8").close()
         return
-    keys = list(rows[0].keys())
+    keys = []
+    seen = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                seen.add(key)
+                keys.append(key)
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=keys)
+        writer = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
 
 def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_items: dict, baseline_days,
                               winners: dict | None = None) -> None:
-    """Compare each finalist's schedule against the quarterly baseline on the SAME symbols."""
     rows = []
     for item in finalists:
         c: Candidate = item["candidate"]
@@ -125,8 +144,14 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
             "base_median_oos_twr": br.get("median_net_twr"),
             "opt_p10_oos_twr": r.get("p10_net_twr"),
             "base_p10_oos_twr": br.get("p10_net_twr"),
+            "opt_worst_oos_mdd": r.get("worst_mdd"),
+            "base_worst_oos_mdd": br.get("worst_mdd"),
+            "opt_worst_oos_cdar95": r.get("worst_cdar95"),
+            "base_worst_oos_cdar95": br.get("worst_cdar95"),
             "opt_test_median_twr": t.get("median_net_twr"),
             "base_test_median_twr": bt.get("median_net_twr"),
+            "opt_test_worst_mdd": t.get("worst_mdd"),
+            "base_test_worst_mdd": bt.get("worst_mdd"),
             "opt_test_valid": t.get("valid"),
             "base_test_valid": bt.get("valid"),
             "opt_train_net_twr_ann": m.get("net_twr_annualized_pct"),
@@ -152,17 +177,13 @@ def write_exports(
     symbol_rows: list[dict],
 ) -> None:
     os.makedirs(out_dir, exist_ok=True)
-
     with open(os.path.join(out_dir, "optimizer_config.json"), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=2, ensure_ascii=False)
 
-    _write_csv(os.path.join(out_dir, "candidate_metrics.csv"),
-               [_row(i) for i in all_items if i.get("metrics") and not i["metrics"].get("error")])
+    _write_csv(os.path.join(out_dir, "candidate_metrics.csv"), [_row(i) for i in all_items if i.get("metrics") and not i["metrics"].get("error")])
     _write_csv(os.path.join(out_dir, "pareto_frontier.csv"), [_row(i) for i in pareto])
-    _write_csv(os.path.join(out_dir, "top_candidates.csv"),
-               [_row(i) for i in sorted(all_items, key=lambda i: -(i.get("robust") or {}).get("robust_return", -1e9))][:50])
-    _write_csv(os.path.join(out_dir, "walk_forward_results.csv"),
-               [dict(r) for r in window_results])
+    _write_csv(os.path.join(out_dir, "top_candidates.csv"), [_row(i) for i in sorted(all_items, key=lambda i: -(i.get("robust") or {}).get("robust_return", -1e9))][:50])
+    _write_csv(os.path.join(out_dir, "walk_forward_results.csv"), [dict(r) for r in window_results])
     _write_csv(os.path.join(out_dir, "timing_robustness.csv"), timing_rows)
     _write_csv(os.path.join(out_dir, "symbol_robustness.csv"), symbol_rows)
 
@@ -174,19 +195,7 @@ def write_exports(
     _write_csv(os.path.join(out_dir, "optimizer_summary.csv"), summary_rows)
 
 
-def _write_csv(path: str, rows: list[dict]):
-    if not rows:
-        open(path, "w", encoding="utf-8").close()
-        return
-    keys = list(rows[0].keys())
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def item_to_json(item: dict) -> dict:
-    """Structured JSON view of one candidate item (for the web UI)."""
     c: Candidate = item["candidate"]
     test = item.get("test") or {}
     return {
@@ -208,19 +217,15 @@ def item_to_json(item: dict) -> dict:
 def write_experiment_json(out_dir: str, meta: dict, winners: dict, pareto: list,
                           top_candidates: list, finalists: list,
                           baseline_items: dict | None = None, baseline_days=None) -> str:
-    """Write a structured experiment.json consumed by the web UI."""
     baseline_block = None
     if baseline_items and baseline_days:
-        best = None
-        for item in winners.values():
-            if item.get("test", {}).get("valid"):
-                best = item
-                break
+        best = winners.get("best_robust") or next(iter(winners.values()), None)
         b = (baseline_items.get(best["candidate"].key()) if best else None) or {}
         baseline_block = {
             "allocation_days": [int(d) for d in baseline_days],
             "robust": b.get("robust"),
             "test": b.get("test"),
+            "train": b.get("train"),
         }
     payload = {
         "experiment_id": meta["experiment_id"],
@@ -239,11 +244,10 @@ def write_experiment_json(out_dir: str, meta: dict, winners: dict, pareto: list,
 
 
 def final_report(item: dict, out_dir: str, name: str) -> str:
-    """Markdown report for one finalist, with clearly-labelled evaluation phases."""
     c: Candidate = item["candidate"]
-    m = item.get("metrics") or {}          # TRAIN window
-    r = item.get("robust") or {}           # VALIDATION (walk-forward robust)
-    t = item.get("test") or {}             # FINAL TEST (untouched OOS)
+    m = item.get("metrics") or {}
+    r = item.get("robust") or {}
+    t = item.get("test") or {}
     tr = item.get("timing_robust") or {}
     sr = item.get("symbol_robust") or {}
     conc = item.get("concentration") or {}
@@ -254,42 +258,38 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Symbols: {' '.join(c.symbols)}",
         f"- N: {len(c.symbols)}",
         "",
-        "## Allocation times (trading-day positions)",
+        "## Allocation times",
         *[f"- T{i+1}: {d}" for i, d in enumerate(c.allocation_days)],
         "",
-        "## TRAIN window (optimization) — metrics computed from the window START, full window counted",
+        "## TRAIN",
         f"- Net TWR annualized: {m.get('net_twr_annualized_pct', '-')}%",
-        f"- Net XIRR: {m.get('net_xirr_pct', '-')}%",
-        f"- Gross TWR annualized: {m.get('gross_twr_annualized_pct', '-')}%",
-        f"- Gross XIRR: {m.get('gross_xirr_pct', '-')}%",
-        f"- Sharpe: {m.get('sharpe', '-')} | Sortino: {m.get('sortino', '-')} | Calmar: {m.get('calmar', '-')}",
+        f"- Sharpe / Sortino / Calmar: {m.get('sharpe', '-')} / {m.get('sortino', '-')} / {m.get('calmar', '-')}",
         f"- Max drawdown: {m.get('max_drawdown_pct', '-')}%",
-        f"- Worst year: {m.get('worst_year', '-')}% | Positive-year ratio: {m.get('positive_year_ratio', '-')}",
-        f"- Turnover: {m.get('turnover_pct', '-')}% | Trade count: {m.get('trade_count', '-')}",
-        f"- Total transaction cost: {m.get('transaction_cost', '-')} VND ({m.get('cost_pct_of_nav', '-')}% of NAV)",
-        f"- First allocation date: {m.get('first_allocation_date', '-')}",
+        f"- CDaR95: {m.get('cdar95_pct', '-')}%",
+        f"- Underwater ratio: {m.get('underwater_ratio', '-')}",
+        f"- Max underwater trading days: {m.get('max_underwater_days', '-')}",
+        f"- Min / avg equity exposure: {m.get('min_equity_exposure', '-')} / {m.get('avg_equity_exposure', '-')}",
+        f"- Turnover: {m.get('turnover_pct', '-')}% | Cost: {m.get('cost_pct_of_nav', '-')}% of NAV",
         "",
-        "## VALIDATION (walk-forward robust fitness across all validation windows)",
+        "## VALIDATION",
         f"- Median OOS net TWR: {r.get('median_net_twr', '-')}%",
         f"- P10 OOS net TWR: {r.get('p10_net_twr', '-')}%",
-        f"- P25 OOS net TWR: {r.get('p25_net_twr', '-')}%",
-        f"- Worst OOS net TWR: {r.get('worst_net_twr', '-')}%",
-        f"- Return std: {r.get('return_std', '-')}",
-        f"- Median OOS Sharpe: {r.get('median_sharpe', '-')}",
         f"- Worst OOS MDD: {r.get('worst_mdd', '-')}%",
-        f"- Positive-window ratio: {r.get('positive_window_ratio', '-')}",
-        f"- Valid windows: {r.get('n_windows', '-')} / {r.get('n_windows', '-')} (100% coverage policy)",
-        f"- Robust return (median - lambda*std): {r.get('robust_return', '-')}",
+        f"- Worst OOS CDaR95: {r.get('worst_cdar95', '-')}%",
+        f"- Drawdown gate: {r.get('drawdown_gate_pct', '-')}%",
+        f"- Robust return: {r.get('robust_return', '-')}",
         "",
-        "## FINAL TEST (untouched out-of-sample windows)",
-        f"- Valid test windows: {t.get('n_test_windows', '-')} / {t.get('required_test_windows', '-')} "
-        f"({'PASS' if t.get('valid') else 'INVALID'})",
-        f"- Median test net TWR: {t.get('median_net_twr', '-')}%",
+        "## FINAL TEST",
+        f"- Windows: {t.get('n_test_windows', '-')} / {t.get('required_test_windows', '-')} ({'PASS' if t.get('valid') else 'INVALID'})",
+        f"- Median net TWR: {t.get('median_net_twr', '-')}%",
+        f"- Median Sharpe: {t.get('median_sharpe', '-')}",
+        f"- Worst MDD: {t.get('worst_mdd', '-')}%",
+        f"- Worst CDaR95: {t.get('worst_cdar95', '-')}%",
         "",
-        "## Timing robustness (neighbourhood stability from OOS robust scores)",
-        f"- Neighbour mean: {tr.get('mean', '-')} | median: {tr.get('median', '-')} | std: {tr.get('std', '-')}",
-        f"- Neighbour max: {tr.get('max', '-')} | min: {tr.get('min', '-')} | isolated spike: {tr.get('isolated_spike', '-')}",
-        f"- Symbol neighbourhood mean: {sr.get('mean', '-')}",
+        "## Robustness",
+        f"- Timing mean / median / std: {tr.get('mean', '-')} / {tr.get('median', '-')} / {tr.get('std', '-')}",
+        f"- Timing isolated spike: {tr.get('isolated_spike', '-')}",
+        f"- Symbol-neighbour mean: {sr.get('mean', '-')}",
         f"- Concentration single-stock: {conc.get('single_stock', '-')}, single-year: {conc.get('single_year', '-')}",
         "",
         "## Diagnostics",
