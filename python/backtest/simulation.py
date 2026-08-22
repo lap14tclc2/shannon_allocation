@@ -9,6 +9,10 @@ Look-ahead free by construction:
 The raw price panel is never forward-filled for risk estimation. A separate
 forward-filled valuation panel is used only to mark existing holdings to their
 last known close on dates where a symbol has no print.
+
+Performance measurement is also window-safe: warm-up trading and external cash
+contributions are excluded/neutralized from TRAIN/VALIDATION/HOLDOUT risk and
+return metrics. This changes reporting accuracy, not strategy decisions.
 """
 
 from __future__ import annotations
@@ -33,8 +37,6 @@ class SimulationResult:
     allocations: list[dict] = field(default_factory=list)
     allocation_schedule: list = field(default_factory=list)
 
-    # Cash-flow audit trail. Contributions show when money entered the portfolio;
-    # deployment events show when cash was actually converted into/out of equities.
     capital_events: list[dict] = field(default_factory=list)
     deployment_events: list[dict] = field(default_factory=list)
 
@@ -58,9 +60,6 @@ class SimulationResult:
     calmar: float = 0.0
     absolute_profit: float = 0.0
 
-    # Measurement-window accounting. These fields are deliberately separate from
-    # total_deposits/final_nav because walk-forward windows include a warm-up
-    # period before the measured TRAIN/VALIDATION/HOLDOUT interval.
     measurement_start_date: str = ""
     measurement_start_nav: float = 0.0
     measurement_external_contributions: float = 0.0
@@ -177,7 +176,10 @@ def simulate_combination(
     gross_nav_series: list[float] = []
     nav_history: list[tuple[str, float]] = []
     gross_nav_history: list[tuple[str, float]] = []
-    exposure_history: list[float] = []
+    actual_equity_exposure_series: list[float] = []
+    cumulative_cost_series: list[float] = []
+    cumulative_traded_value_series: list[float] = []
+    cumulative_trade_count_series: list[int] = []
     rebalances_since_allocation = 0
     pending = None
     allocation_indices: list[int] = []
@@ -332,7 +334,6 @@ def simulate_combination(
                     raw, symbols, pos, new_relative_targets, params
                 )
                 relative_targets = new_relative_targets
-                exposure_history.append(float(risk_info.get("equity_exposure", 1.0)))
                 nav_before = total_nav(shares, cash, prices_now)
                 holdings_before = snapshot_holdings(shares, prices_now, nav_before)
                 recs, funding = compute_recommendations(
@@ -373,10 +374,9 @@ def simulate_combination(
                     "signal_pos": pos,
                 }
         elif allocated and relative_targets is not None and pos % params.rebalance_every_days == 0:
-            live_targets, risk_info = risk_adjusted_targets(
+            live_targets, _risk_info = risk_adjusted_targets(
                 raw, symbols, pos, relative_targets, params
             )
-            exposure_history.append(float(risk_info.get("equity_exposure", 1.0)))
             recs, _ = compute_recommendations(
                 shares, cash, prices_now, live_targets, params
             )
@@ -391,10 +391,17 @@ def simulate_combination(
 
         nav = total_nav(shares, cash, prices_now)
         gross = nav + cumulative_cost
+        equity_value = sum(shares.get(s, 0.0) * prices_now.get(s, 0.0) for s in symbols)
+        actual_exposure = equity_value / nav if nav > 0 else 0.0
+
         net_nav_series.append(nav)
         gross_nav_series.append(gross)
         nav_history.append((d.strftime("%Y-%m-%d"), float(nav)))
         gross_nav_history.append((d.strftime("%Y-%m-%d"), float(gross)))
+        actual_equity_exposure_series.append(float(actual_exposure))
+        cumulative_cost_series.append(float(cumulative_cost))
+        cumulative_traded_value_series.append(float(total_traded_value))
+        cumulative_trade_count_series.append(int(trade_count))
 
     if not allocated or first_invested_idx is None:
         result.error = "ERC never calibrated (insufficient aligned history)."
@@ -403,7 +410,6 @@ def simulate_combination(
     result.final_nav = net_nav_series[-1]
     result.nav_history = nav_history
     result.gross_nav_history = gross_nav_history
-    result.transaction_cost = cumulative_cost
     result.stock_contributions = {
         s: round(
             shares.get(s, 0.0) * prices_now.get(s, 0.0) - net_invested.get(s, 0.0),
@@ -411,9 +417,6 @@ def simulate_combination(
         )
         for s in symbols
     }
-    if exposure_history:
-        result.min_equity_exposure = min(exposure_history)
-        result.avg_equity_exposure = sum(exposure_history) / len(exposure_history)
 
     perf_start = perf_start_idx if metrics_from == "window_start" else first_invested_idx
     _fill_performance(
@@ -425,15 +428,39 @@ def simulate_combination(
         perf_start,
         first_invested_idx,
         allocation_indices,
-        total_traded_value,
-        trade_count,
         deposit_dates,
         deposit_amounts,
         params.initial_balance,
-        cumulative_cost,
+        cumulative_cost_series,
+        cumulative_traded_value_series,
+        cumulative_trade_count_series,
+        actual_equity_exposure_series,
         metrics_from,
     )
     return result
+
+
+def _flow_adjusted_curve(values, dates, perf_start, deposit_dates, deposit_amounts):
+    """Build a unitized wealth curve with external deposits removed."""
+    flow_by_day = {}
+    for dd, amt in zip(deposit_dates, deposit_amounts):
+        flow_by_day[dd.toordinal()] = flow_by_day.get(dd.toordinal(), 0.0) + float(amt)
+
+    curve = [1.0]
+    for i in range(perf_start + 1, len(values)):
+        prev = float(values[i - 1])
+        flow = flow_by_day.get(dates[i].toordinal(), 0.0)
+        adjusted_end = float(values[i]) - flow
+        growth = adjusted_end / prev if prev > 0 else 1.0
+        curve.append(curve[-1] * growth)
+    return curve
+
+
+def _counter_delta(series, perf_start):
+    if not series:
+        return 0.0
+    base = series[perf_start] if 0 <= perf_start < len(series) else 0.0
+    return series[-1] - base
 
 
 def _fill_performance(
@@ -445,12 +472,13 @@ def _fill_performance(
     perf_start: int,
     first_invested_idx: int,
     allocation_indices: list[int],
-    total_traded_value: float,
-    trade_count: int,
     deposit_dates,
     deposit_amounts,
     initial_balance: float,
-    cumulative_cost: float,
+    cumulative_cost_series,
+    cumulative_traded_value_series,
+    cumulative_trade_count_series,
+    actual_equity_exposure_series,
     metrics_from: str = "first_allocation",
 ) -> None:
     arr = np.asarray(net_nav_series, dtype=float)
@@ -458,9 +486,7 @@ def _fill_performance(
     deposits = result.total_deposits
     end_idx = len(arr) - 1
 
-    # Legacy whole-simulation capital statistics are retained for backward
-    # compatibility. Walk-forward evaluation uses the measurement-window fields
-    # below for cash-flow-correct profit/XIRR reporting.
+    # Keep whole-simulation capital statistics for backward compatibility only.
     result.total_return_pct = (
         (arr[-1] / deposits - 1.0) * 100.0 if deposits > 0 else 0.0
     )
@@ -487,15 +513,19 @@ def _fill_performance(
     )
     result.measurement_external_contributions = period_contributions
     result.measurement_profit = float(arr[-1] - arr[perf_start] - period_contributions)
+    result.absolute_profit = result.measurement_profit
 
-    twr = mt.time_weighted_return(net_nav_series, deposit_indices, perf_start, end_idx)
+    # Returns/risk use a unitized curve with external contributions removed.
+    adjusted = _flow_adjusted_curve(
+        net_nav_series, dates, perf_start, deposit_dates, deposit_amounts
+    )
+    twr = adjusted[-1] - 1.0 if adjusted else 0.0
     result.twr = twr * 100.0
     ann_twr = mt.annualized_from_total(twr, days)
     result.twr_annualized = (ann_twr * 100.0) if ann_twr is not None else 0.0
-    result.absolute_profit = result.measurement_profit
 
-    period = arr[perf_start:]
-    log_ret = np.diff(np.log(np.maximum(period, 1e-9)))
+    adjusted_arr = np.asarray(adjusted, dtype=float)
+    log_ret = np.diff(np.log(np.maximum(adjusted_arr, 1e-9)))
     if len(log_ret) > 1:
         result.annualized_volatility_pct = float(
             np.std(log_ret, ddof=1) * np.sqrt(252) * 100.0
@@ -504,12 +534,11 @@ def _fill_performance(
         result.sharpe = sharpe if sharpe is not None else 0.0
         result.sortino = sortino if sortino is not None else 0.0
 
-    mdd = mt.max_drawdown(net_nav_series, perf_start, end_idx)
-    cdar95 = mt.conditional_drawdown_at_risk(
-        net_nav_series, perf_start, end_idx, 0.95
-    )
+    period_dates = dates[perf_start:]
+    mdd = mt.max_drawdown(adjusted, 0, len(adjusted) - 1)
+    cdar95 = mt.conditional_drawdown_at_risk(adjusted, 0, len(adjusted) - 1, 0.95)
     underwater_ratio, max_underwater_days = mt.underwater_stats(
-        net_nav_series, dates, perf_start, end_idx
+        adjusted, period_dates, 0, len(adjusted) - 1
     )
     result.max_drawdown_pct = mdd * 100.0
     result.cdar95_pct = cdar95 * 100.0
@@ -519,10 +548,8 @@ def _fill_performance(
         ann_twr / abs(mdd) if (ann_twr is not None and mdd < 0) else 0.0
     )
 
-    # XIRR must start from the ACTUAL NAV at the measured window boundary, not
-    # from the original initial balance used before the ERC warm-up. Deposits on
-    # the boundary date are already included in that NAV, so only later flows are
-    # added separately. This fixes inflated holdout XIRR without touching TWR.
+    # XIRR starts from actual NAV at the measurement boundary, not the original
+    # pre-warm-up initial balance. Same-day deposits are already inside start NAV.
     day0 = dates[perf_start].toordinal()
     flows = [(-float(arr[perf_start]), day0)]
     for dd, amt in zip(deposit_dates, deposit_amounts):
@@ -533,7 +560,7 @@ def _fill_performance(
     result.xirr = (xirr * 100.0) if xirr is not None else 0.0
 
     annual = mt.annual_returns(
-        net_nav_series, dates, deposit_indices, perf_start, end_idx
+        adjusted, period_dates, set(), 0, len(adjusted) - 1
     )
     result.annual_returns = {y: round(v * 100.0, 2) for y, v in annual.items()}
     if result.annual_returns:
@@ -541,20 +568,24 @@ def _fill_performance(
         pos_years = sum(1 for v in result.annual_returns.values() if v > 0)
         result.positive_year_ratio = pos_years / len(result.annual_returns)
 
-    mean_nav = (
-        float(np.mean(arr[perf_start:])) if (end_idx - perf_start + 1) > 0 else 0.0
-    )
-    result.turnover = (
-        total_traded_value / mean_nav * 100.0 if mean_nav > 0 else 0.0
-    )
-    result.trade_count = trade_count
-    result.cost_pct_of_nav = (
-        cumulative_cost / mean_nav * 100.0 if mean_nav > 0 else 0.0
-    )
+    mean_nav = float(np.mean(arr[perf_start:])) if end_idx >= perf_start else 0.0
+    measured_traded_value = _counter_delta(cumulative_traded_value_series, perf_start)
+    measured_cost = _counter_delta(cumulative_cost_series, perf_start)
+    measured_trade_count = int(_counter_delta(cumulative_trade_count_series, perf_start))
+    result.turnover = measured_traded_value / mean_nav * 100.0 if mean_nav > 0 else 0.0
+    result.transaction_cost = measured_cost
+    result.trade_count = measured_trade_count
+    result.cost_pct_of_nav = measured_cost / mean_nav * 100.0 if mean_nav > 0 else 0.0
 
-    gt = mt.time_weighted_return(
-        gross_nav_series, deposit_indices, perf_start, end_idx
+    period_exposure = actual_equity_exposure_series[perf_start:]
+    if period_exposure:
+        result.min_equity_exposure = min(period_exposure)
+        result.avg_equity_exposure = sum(period_exposure) / len(period_exposure)
+
+    gross_adjusted = _flow_adjusted_curve(
+        gross_nav_series, dates, perf_start, deposit_dates, deposit_amounts
     )
+    gt = gross_adjusted[-1] - 1.0 if gross_adjusted else 0.0
     result.gross_twr = gt * 100.0
     gann = mt.annualized_from_total(gt, days)
     result.gross_twr_annualized = (gann * 100.0) if gann is not None else 0.0
