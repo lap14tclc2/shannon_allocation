@@ -75,6 +75,8 @@ def ranking_rows(results: list[SimulationResult]) -> list[dict]:
                 "worst_year": round(r.worst_year, 2),
                 "positive_year_ratio": round(r.positive_year_ratio, 3),
                 "turnover_pct": round(r.turnover, 1),
+                "cost_pct_of_nav": round(r.cost_pct_of_nav, 3),
+                "transaction_cost": round(r.transaction_cost, 0),
                 "trade_count": r.trade_count,
                 "first_allocation_date": r.first_allocation_date,
                 "error": r.error,
