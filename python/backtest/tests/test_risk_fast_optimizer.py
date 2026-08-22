@@ -12,13 +12,14 @@ import pandas as pd
 
 from backtest.candidate import Candidate, random_candidate, validate_candidate, schedule_for_window
 from backtest.config import BacktestParams
+from backtest.optimize.eligibility import assess_live_eligibility
 from backtest.optimize.evaluate import config_fingerprint, evaluate_candidate
 from backtest.optimize.parallel import ParallelEvaluator
 from backtest.optimize.screening import screen_universe
 from backtest.optimize.walkforward import make_train_val_windows, split_research_holdout, evaluate_robust
-from backtest.recommendation import _improvement_verdict
+from backtest.recommendation import _improvement_verdict, build_recommendation
 from backtest.risk import apply_position_cap, risk_adjusted_targets
-from backtest.simulation import simulate_combination
+from backtest.simulation import SimulationResult, _fill_performance, simulate_combination
 from backtest.strategy import compute_recommendations
 
 
@@ -135,6 +136,81 @@ def test_deployment_verdict_requires_final_holdout_non_degradation():
     assert _improvement_verdict(5.0, -0.1, True, -20.0, -25.0) == "keep_baseline"
     assert _improvement_verdict(5.0, 1.5, False, -20.0, -25.0) == "keep_baseline"
     assert _improvement_verdict(5.0, 1.5, True, -20.0, -25.0) == "materially_better"
+
+
+def test_live_eligibility_is_post_research_gate():
+    robust = {"p10_net_twr": 5.0, "robust_return": 10.0}
+    recent = {"net_twr_annualized_pct": 4.0, "max_drawdown_pct": -8.0}
+
+    ok, reasons = assess_live_eligibility(
+        {"net_twr_annualized_pct": 3.0}, robust, recent
+    )
+    assert ok is True
+    assert reasons == []
+
+    ok, reasons = assess_live_eligibility(
+        {"net_twr_annualized_pct": -0.1}, robust, recent
+    )
+    assert ok is False
+    assert any(r.startswith("train_twr_below") for r in reasons)
+
+    ok, reasons = assess_live_eligibility(
+        {"net_twr_annualized_pct": 3.0}, robust, {"net_twr_annualized_pct": -0.1}
+    )
+    assert ok is False
+    assert any(r.startswith("recent_validation_twr_below") for r in reasons)
+
+
+def test_window_xirr_anchors_to_actual_window_start_nav():
+    result = SimulationResult(symbols=("A", "B", "C", "D", "E"))
+    dates = [pd.Timestamp("2025-01-01"), pd.Timestamp("2026-01-01")]
+    _fill_performance(
+        result,
+        net_nav_series=[120.0, 130.0],
+        gross_nav_series=[120.0, 130.0],
+        dates=dates,
+        deposit_indices=set(),
+        perf_start=0,
+        first_invested_idx=0,
+        allocation_indices=[0],
+        total_traded_value=0.0,
+        trade_count=0,
+        deposit_dates=[],
+        deposit_amounts=[],
+        initial_balance=100.0,
+        cumulative_cost=0.0,
+        metrics_from="window_start",
+    )
+    expected = (130.0 / 120.0 - 1.0) * 100.0
+    assert abs(result.xirr - expected) < 0.05
+    assert result.measurement_start_nav == 120.0
+    assert result.measurement_external_contributions == 0.0
+    assert result.measurement_profit == 10.0
+
+
+def test_recommendation_blocks_when_no_live_eligible_candidate_exists():
+    experiment = {
+        "experiment_id": "x",
+        "meta": {},
+        "winners": {
+            "best_robust": {
+                "symbols": ["A", "B", "C", "D", "E"],
+                "allocation_days": [1, 61, 122, 183],
+                "metrics": {"net_twr_annualized_pct": -1.0},
+                "robust": {"robust_return": 10.0, "median_net_twr": 10.0},
+                "test": {"valid": True, "median_net_twr": 2.0, "worst_mdd": -10.0},
+                "live_eligible": False,
+                "eligibility_reasons": ["train_twr_below_0%"],
+            }
+        },
+        "baseline": {
+            "robust": {"robust_return": 9.0},
+            "test": {"median_net_twr": 1.0, "worst_mdd": -11.0},
+        },
+    }
+    rec = build_recommendation(experiment)
+    assert rec["deployment_eligible"] is False
+    assert rec["improvement_vs_baseline"]["verdict"] == "no_live_eligible_candidate"
 
 
 def test_capital_contributions_and_actual_deployment_are_separate_events():
