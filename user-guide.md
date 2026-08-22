@@ -2,72 +2,80 @@
 
 This is the operating guide for the current product workflow.
 
-> **The user owns the stock combination.** The application does not search for or replace symbols. The normal workflow is: select/import 5–10 symbols, enter the capital plan, configure risk constraints, and let the system optimize the four annual allocation times.
+The default product mode is now **Joint Growth Search**: the machine searches the stock combination together with the annual ERC/risk recalibration frequency and timing. A manual fixed-combination mode remains available when the user wants to own the symbol-selection decision.
 
-The quantitative core remains ERC + risk overlay + Shannon drift management. Arbitrary portfolio weights are not optimized: ERC determines relative weights from historical covariance at each allocation event.
+The quantitative execution core remains:
+
+```text
+ERC relative risk weights
+→ optional absolute-volatility exposure overlay
+→ Shannon drift bands
+→ transaction costs / execution lag
+```
+
+The optimizer does **not** optimize arbitrary stock weights. ERC still determines relative weights from covariance using only information available before each signal.
 
 ---
 
 ## 1. Product workflow
 
+### Default: Joint Growth Search
+
 ```text
-User selects/imports symbols
+Universe (All / VN100 / VN50 / VN30)
         ↓
-Fixed combination (5–10 symbols)
+Machine searches exact-N stock combination
         ↓
-Initial balance + annual contribution
+Machine searches 1–6 allocation/recalibration events per year
         ↓
-Optimize 4 allocation times/year
+Machine searches the trading-session positions of those events
         ↓
 ERC relative weights
         ↓
-Optional absolute-risk overlay
+Risk overlay
         ↓
-Shannon drift bands
+Shannon daily drift management
         ↓
-Rolling OOS validation
+Rolling OOS validation + hard MDD gate
         ↓
-Recent validation
+Recent pre-holdout validation
         ↓
 Untouched final holdout
 ```
 
-The optimizer is **not allowed** to add, remove or replace a symbol selected by the user.
+Search/ranking is **growth-first**. Drawdown is not removed; it is enforced as a hard OOS/final validation constraint instead of being rewarded so strongly during TRAIN that the search collapses toward ultra-defensive low-return portfolios.
+
+### Optional: Use my own combination
+
+```text
+User selects/imports 5–10 symbols
+        ↓
+Combination health check
+        ↓
+Optional user-approved diversification suggestions
+        ↓
+Symbols frozen
+        ↓
+Machine searches 1–6 allocation/recalibration events + timing
+        ↓
+Same ERC / risk / Shannon / OOS pipeline
+```
 
 ---
 
 ## 2. Start the application
 
-From the repository root, get the current `main` branch:
-
 ```bash
 git checkout main
 git pull origin main
-```
 
-Install Python dependencies:
-
-```bash
-cd python
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-cd ..
-```
-
-Install and build the frontend:
-
-```bash
 cd frontend
 npm ci
 npm run build
 npm run build:ssr
-cd ..
-```
 
-Start the integrated SSR application:
-
-```bash
-cd python
+cd ../python
+pip install -r requirements.txt
 python serve.py
 ```
 
@@ -77,163 +85,190 @@ Default address:
 http://127.0.0.1:8080
 ```
 
-If port 8080 is busy the server tries subsequent ports and prints the actual URL.
-
----
-
-## 3. Allocation Optimizer UI
-
-Open:
+Open the optimizer:
 
 ```text
 http://127.0.0.1:8080/optimizer
 ```
 
-### 3.1 Choose your combination
+---
 
-There are two supported methods.
+## 3. Search mode
 
-**Checkbox selection**
+### 3.1 Optimize combination + allocation
 
-- The UI loads every ticker that has price data.
-- Search for a ticker and click its checkbox.
-- Current model constraint: 5–10 symbols.
-- Once the run starts, the selected set is frozen.
+This is the default.
 
-**Migrate an existing combination**
+Choose:
 
-Paste the ticker list into **Migrate an existing combination** and click **Import combination**.
+- search universe: All data, VN100, VN50 or VN30;
+- exact portfolio size: 5–10 stocks.
 
-Accepted examples:
+The machine is allowed to change symbols during research search.
+
+It also searches the annual allocation frequency. The candidate genome may contain **1–6 allocation events per year**. With the current 40-session cyclic minimum gap, six is approximately the natural maximum for a normal Vietnamese trading year.
+
+The system then searches the actual trading-session positions of those events.
+
+Quarterly allocation is retained only as a **benchmark**, not as a constraint.
+
+### 3.2 Use my own combination
+
+Select checkboxes or paste an existing composition, for example:
 
 ```text
 ACB, FPT, REE, VCB, VNM
 ```
 
-```text
-ACB FPT REE VCB VNM
-```
+or:
 
 ```json
 ["ACB", "FPT", "REE", "VCB", "VNM"]
 ```
 
-Migration at this stage imports the **combination composition**. Holdings, historical cost basis and broker transactions are a separate live-portfolio migration concern.
+The health check evaluates research-only data coverage, 63D/252D correlation, correlation clusters, diversification and ERC feasibility. Suggestions never auto-replace a ticker; the user must explicitly apply them.
 
-### 3.2 Capital plan
+After approval, symbols remain fixed while frequency/timing are optimized.
+
+---
+
+## 4. Capital plan
 
 Enter:
 
-- **Initial balance (VND)** — cash available at the beginning of the simulation.
-- **Money added each year (VND)** — external contribution added on the first trading session of each new calendar year.
+- **Initial balance (VND)**;
+- **Money added each year (VND)**.
 
-The result distinguishes:
+Annual contributions are external cash flows. Reports distinguish:
 
-- when money was contributed;
-- when money was actually deployed into equities;
-- cash released by sells;
-- remaining cash after execution.
+- contribution date;
+- actual deployment date;
+- BUY cash deployed;
+- SELL cash released;
+- remaining cash.
 
-### 3.3 Risk policy
+Performance metrics neutralize external contributions so deposits do not create fake investment returns.
 
-The existing quantitative theory is unchanged:
+---
 
-- ERC controls relative stock risk weights.
-- The volatility overlay may scale total equity exposure and leave the remainder in cash.
-- Shannon bands manage drift between allocation events.
+## 5. Risk policy
 
 Configurable controls include:
 
 - target volatility;
-- maximum OOS drawdown gate;
+- maximum OOS drawdown;
 - maximum single-stock weight;
 - minimum equity exposure.
 
-### 3.4 Allocation search quality
+The growth-first change does **not** remove these controls.
 
-The search now changes **only four annual allocation positions**.
-
-Presets:
-
-- **Fast** — quick timing exploration.
-- **Balanced** — recommended default for a fixed combination.
-- **Thorough** — more timing candidates and validation work.
-
-Advanced settings expose seed, population, generations, random timing samples, validation shortlist, surrogate pool and early-stop patience.
-
-### 3.5 Run
-
-Click:
+The intended philosophy is:
 
 ```text
-Optimize allocation
+SEARCH / RANKING: growth first
+RISK: hard validation gate
 ```
 
-The application then evaluates schedules using the fixed symbols and capital plan.
-
-The normal flow is:
-
-```text
-Fixed symbols
-→ timing search
-→ ERC
-→ risk overlay
-→ Shannon drift
-→ rolling OOS validation
-→ recent validation
-→ untouched final holdout
-```
+A candidate that breaches the configured OOS drawdown ceiling is rejected even when its TRAIN return is high.
 
 ---
 
-## 4. Important invariants
+## 6. Allocation frequency and timing
 
-### User-selected symbols are immutable during a run
+An allocation event means **ERC/risk targets are recalibrated**. It does not mean the portfolio is ignored between events.
 
-The HTTP optimizer endpoint accepts only timing mode. Requests for the retired joint symbol-search mode are rejected.
+Shannon drift checks continue between allocation events according to the strategy rules.
 
-### Exactly four allocation events per year
+The optimizer currently searches:
 
-The optimizer searches the timing of the four annual allocation events subject to the existing minimum-gap/cyclic-gap rules.
+```text
+1, 2, 3, 4, 5 or 6 allocation/recalibration events per year
+```
 
-### ERC remains deterministic
+and the valid trading-session positions for each count, respecting the cyclic minimum-gap rule.
 
-The system does not optimize arbitrary stock weights to chase historical return. ERC continues to derive relative risk weights from data available before each signal date.
+Examples of valid candidate schedules may look like:
 
-### Recommendation is not execution
+```text
+[121]
+[35, 163]
+[28, 112, 201]
+[1, 61, 122, 183]
+[15, 63, 111, 159, 207]
+[1, 41, 81, 121, 161, 201]
+```
 
-Research output is a recommendation. Live portfolio state must ultimately come from actual TradeExecution records.
-
-### Final holdout is not a tuning target
-
-The final holdout is reserved for assessment and must not be repeatedly tuned against to manufacture a better backtest.
+The number of events is selected by research performance; four is no longer privileged except as the simple quarterly benchmark.
 
 ---
 
-## 5. Results and exports
+## 7. Search quality
 
-After a run completes, the browser opens:
+For Joint Growth Search:
+
+- **Fast** — quick combination/frequency/timing exploration;
+- **Balanced** — recommended default;
+- **Thorough** — larger real + surrogate search.
+
+Large-universe standard presets are automatically adapted by the backend to reduce expensive real simulations while increasing cheap surrogate coverage.
+
+Multi-core candidate evaluation remains enabled automatically.
+
+---
+
+## 8. Research integrity
+
+The global final holdout is reserved before symbol screening or candidate generation.
+
+```text
+TRAIN / screening / NSGA / surrogate
+        ↓
+rolling validation
+        ↓
+recent pre-holdout validation
+        ↓
+════════════════════════════
+UNTOUCHED FINAL HOLDOUT
+════════════════════════════
+```
+
+Do not repeatedly modify the algorithm to fit the same observed holdout return. The holdout is an assessment layer, not a feature generator.
+
+---
+
+## 9. Results
+
+After completion:
 
 ```text
 /optimizer/<experiment_id>
 ```
 
-The result includes research winners, allocation schedules, validation/holdout metrics, capital deployment history, risk diagnostics and the quarterly baseline comparison.
+The report contains:
+
+- selected symbols;
+- optimized allocation count and trading-session positions;
+- TRAIN metrics;
+- rolling OOS metrics;
+- recent validation;
+- final holdout;
+- capital/deployment history;
+- transaction costs;
+- risk exposure;
+- timing and symbol robustness diagnostics;
+- comparison against the simple quarterly schedule for the same symbol set.
 
 Use **Download all data (ZIP)** for audit/review.
 
-Historical experiments generated before the fixed-combination refactor remain readable.
-
 ---
 
-## 6. Developer/research note
+## 10. Core invariants
 
-Some older Python modules still contain joint-symbol search machinery for historical research and reproducibility. It is not part of the normal product contract and is not reachable through the allocation optimizer UI/API.
+The refactor changes the research search space, not the portfolio mechanics:
 
-The production-facing contract is:
-
-```text
-fixed symbols + capital plan + risk policy
-        ↓
-allocation timing optimization only
-```
+- ERC remains deterministic and covariance-driven;
+- risk overlay remains explicit;
+- Shannon drift logic remains rule based;
+- transaction costs and execution lag remain modeled;
+- recommendation is not execution;
+- final holdout is never used to generate a candidate.
