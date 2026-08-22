@@ -26,7 +26,9 @@ Universe (All / VN100 / VN50 / VN30)
         ↓
 Machine searches exact-N stock combination
         ↓
-Machine searches 1–6 allocation/recalibration events per year
+Initial deployment as soon as calibration is ready
+        ↓
+Machine searches 1–6 ERC/risk recalibration events per year
         ↓
 Machine searches the trading-session positions of those events
         ↓
@@ -56,7 +58,9 @@ Optional user-approved diversification suggestions
         ↓
 Symbols frozen
         ↓
-Machine searches 1–6 allocation/recalibration events + timing
+Initial deployment as soon as calibration is ready
+        ↓
+Machine searches 1–6 recalibration events + timing
         ↓
 Same ERC / risk / Shannon / OOS pipeline
 ```
@@ -106,7 +110,7 @@ Choose:
 
 The machine is allowed to change symbols during research search.
 
-It also searches the annual allocation frequency. The candidate genome may contain **1–6 allocation events per year**. With the current 40-session cyclic minimum gap, six is approximately the natural maximum for a normal Vietnamese trading year.
+It also searches the annual recalibration frequency. The candidate genome may contain **1–6 recalibration events per year**. With the current 40-session cyclic minimum gap, six is approximately the natural maximum for a normal Vietnamese trading year.
 
 The system then searches the actual trading-session positions of those events.
 
@@ -153,16 +157,31 @@ Performance metrics neutralize external contributions so deposits do not create 
 
 ## 5. Risk policy
 
-Configurable controls include:
+Normal user controls are:
 
 - target volatility;
 - maximum OOS drawdown;
-- maximum single-stock weight;
-- minimum equity exposure.
+- maximum single-stock weight.
 
-The growth-first change does **not** remove these controls.
+The default strategic minimum market exposure is **0%**. That means a valid volatility estimate is allowed to reduce equity exposure all the way to cash when risk becomes high.
 
-The intended philosophy is:
+The strategic floor is available only in **Advanced Risk Settings**. A non-zero value means: even when volatility targeting would prefer less equity, keep at least that configured market exposure.
+
+Missing/invalid risk data is a separate state and always uses the fail-closed policy:
+
+```text
+valid risk estimate
+→ volatility target decides exposure
+→ optional advanced strategic floor may apply
+
+risk estimate unavailable
+→ strategic floor does NOT apply
+→ fail closed to 0% equity / cash
+```
+
+This distinction is important: **volatility de-risking** and **risk-data failure** are not the same thing and are reported separately in allocation diagnostics.
+
+The intended philosophy remains:
 
 ```text
 SEARCH / RANKING: growth first
@@ -173,16 +192,34 @@ A candidate that breaches the configured OOS drawdown ceiling is rejected even w
 
 ---
 
-## 6. Allocation frequency and timing
+## 6. Initial deployment vs recalibration frequency
 
-An allocation event means **ERC/risk targets are recalibrated**. It does not mean the portfolio is ignored between events.
+A new research portfolio no longer waits for the optimizer's first annual timing event before investing.
 
-Shannon drift checks continue between allocation events according to the strategy rules.
+The system first finds the earliest look-ahead-free date where strictly-past aligned history is sufficient to calibrate ERC. That date is treated as **INITIAL DEPLOYMENT**.
+
+```text
+historical warm-up
+        ↓
+ERC/risk calibration becomes valid
+        ↓
+INITIAL DEPLOYMENT
+        ↓
+measurement / ongoing portfolio
+        ↓
+1–6 optimized RECALIBRATION events per year
+```
+
+This prevents a late schedule such as `[221]` from receiving artificially low TRAIN drawdown simply because the portfolio sat in cash waiting for session 221.
+
+The 1–6 candidate events therefore mean **ERC/risk target recalibrations**, not the initial act of putting a new portfolio to work.
+
+Shannon drift checks continue between recalibration events according to the strategy rules.
 
 The optimizer currently searches:
 
 ```text
-1, 2, 3, 4, 5 or 6 allocation/recalibration events per year
+1, 2, 3, 4, 5 or 6 recalibration events per year
 ```
 
 and the valid trading-session positions for each count, respecting the cyclic minimum-gap rule.
@@ -247,14 +284,15 @@ After completion:
 The report contains:
 
 - selected symbols;
-- optimized allocation count and trading-session positions;
+- optimized recalibration count and trading-session positions;
+- initial-deployment date;
 - TRAIN metrics;
 - rolling OOS metrics;
 - recent validation;
 - final holdout;
 - capital/deployment history;
 - transaction costs;
-- risk exposure;
+- risk exposure and explicit risk state;
 - timing and symbol robustness diagnostics;
 - comparison against the simple quarterly schedule for the same symbol set.
 
@@ -268,6 +306,9 @@ The refactor changes the research search space, not the portfolio mechanics:
 
 - ERC remains deterministic and covariance-driven;
 - risk overlay remains explicit;
+- strategic minimum exposure defaults to 0%;
+- missing risk data fails closed independently of the strategic floor;
+- initial deployment is separate from optimized annual recalibration frequency;
 - Shannon drift logic remains rule based;
 - transaction costs and execution lag remain modeled;
 - recommendation is not execution;
