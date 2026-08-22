@@ -7,6 +7,7 @@ import pandas as pd
 
 from backtest.alpha import alpha_score_table, select_alpha_symbols
 from backtest.config import BacktestParams
+from backtest.dynamic_simulation import simulate_dynamic_alpha
 from backtest.optimize.eligibility import assess_live_eligibility, live_risk_reward_score
 
 
@@ -14,7 +15,6 @@ class TestDynamicAlpha(unittest.TestCase):
     def _panel(self, n=420):
         dates = pd.bdate_range("2023-01-02", periods=n)
         t = np.arange(n, dtype=float)
-        # Three persistent leaders, two correlated clones, and slower diversifiers.
         data = {
             "AAA": 100 * np.exp(0.0015 * t),
             "AAB": 100 * np.exp(0.00148 * t) * (1 + 0.001 * np.sin(t / 7)),
@@ -45,8 +45,6 @@ class TestDynamicAlpha(unittest.TestCase):
         before = select_alpha_symbols(panel, list(panel.columns), pos, params)
 
         mutated = panel.copy()
-        # Change only rows at/after the signal position. A look-ahead bug would
-        # allow these absurd future prices to alter the historical selection.
         mutated.iloc[pos:, mutated.columns.get_loc("FFF")] *= 1000.0
         after = select_alpha_symbols(mutated, list(mutated.columns), pos, params)
         self.assertEqual(before.symbols, after.symbols)
@@ -67,13 +65,63 @@ class TestDynamicAlpha(unittest.TestCase):
         params.alpha_max_pair_correlation = 0.70
         selected = select_alpha_symbols(panel, list(panel.columns), 350, params, portfolio_size=5)
         self.assertEqual(len(selected.symbols), 5)
-        # AAA/AAB are almost identical. At least one should require a relaxed
-        # threshold or be displaced by a more diversifying name.
         accepted = selected.diagnostics.get("accepted_at_threshold", {})
         if "AAA" in selected.symbols and "AAB" in selected.symbols:
             self.assertTrue(
                 accepted.get("AAA", 0) > 0.70 or accepted.get("AAB", 0) > 0.70
             )
+
+    def test_dynamic_simulation_runs_initial_deployment_and_recalibration(self):
+        rng = np.random.default_rng(7)
+        n = 460
+        dates = pd.bdate_range("2022-01-03", periods=n)
+        symbols = [f"S{i}" for i in range(8)]
+        common = rng.normal(0.0, 0.003, size=n)
+        panel = {}
+        for i, symbol in enumerate(symbols):
+            drift = 0.00025 + i * 0.00012
+            idio = rng.normal(0.0, 0.006 + i * 0.0002, size=n)
+            log_returns = drift + 0.35 * common + idio
+            panel[symbol] = 100.0 * np.exp(np.cumsum(log_returns))
+        prices = pd.DataFrame(panel, index=dates)
+
+        params = BacktestParams(
+            initial_balance=100_000_000,
+            annual_deposit=0,
+            lookback_days=126,
+            minimum_observations=60,
+            dynamic_alpha_enabled=True,
+            dynamic_alpha_portfolio_size=5,
+            alpha_min_observations=60,
+            alpha_short_lookback=21,
+            alpha_medium_lookback=63,
+            alpha_long_lookback=126,
+            alpha_correlation_lookback=63,
+            alpha_max_pair_correlation=0.80,
+            risk_overlay_enabled=False,
+            max_position_weight=0.35,
+        )
+        allocation_dates = [dates[170], dates[280], dates[390]]
+        result = simulate_dynamic_alpha(
+            prices,
+            params,
+            allocation_dates=allocation_dates,
+            warmup_days=126,
+            metrics_from="first_allocation",
+        )
+
+        self.assertIsNone(result.error)
+        self.assertGreater(result.final_nav, 0)
+        self.assertGreater(result.trade_count, 0)
+        self.assertGreaterEqual(len(result.alpha_selection_history), 2)
+        self.assertEqual(
+            result.alpha_selection_history[0]["role"],
+            "INITIAL_DEPLOYMENT",
+        )
+        self.assertTrue(
+            all(len(x["selected_symbols"]) == 5 for x in result.alpha_selection_history)
+        )
+        self.assertGreaterEqual(len(result.alpha_unique_symbols), 5)
 
 
 class TestSoftLivePolicy(unittest.TestCase):
