@@ -26,7 +26,12 @@ def pareto_frontier(items: list[dict]) -> list[dict]:
 
 
 def leaderboards(results: list[dict]) -> dict:
-    """Best return / risk-adjusted / low-drawdown / robust candidates."""
+    """Research leaderboards plus a separate live-eligible robust winner.
+
+    The original research leaderboards are intentionally preserved. The
+    best_live_eligible entry is an additional post-research deployment view and
+    does not alter ERC/Shannon/NSGA-II scoring.
+    """
     valid = [r for r in results if r.get("metrics") and not r["metrics"].get("error")]
     if not valid:
         return {}
@@ -60,23 +65,38 @@ def leaderboards(results: list[dict]) -> dict:
         )
     else:
         best_robust = best_mdd
-    return {
+
+    winners = {
         "best_return": best_return,
         "best_risk_adjusted": best_risk,
         "best_low_drawdown": best_mdd,
         "best_robust": best_robust,
     }
 
+    live = [r for r in valid if r.get("live_eligible") and r.get("robust")]
+    tested_live = [r for r in live if test_ok(r)]
+    live_pool = tested_live or live
+    if live_pool:
+        winners["best_live_eligible"] = max(
+            live_pool,
+            key=lambda r: (r.get("robust") or {}).get("robust_return", -1e9),
+        )
+    return winners
+
 
 def _row(item: dict) -> dict:
     c: Candidate = item["candidate"]
     m = item.get("metrics") or {}
     r = item.get("robust") or {}
+    recent = item.get("recent_validation") or {}
     t = item.get("test") or {}
+    test_period = ((t.get("per_window") or [{}])[0] or {}) if t else {}
     row = {
         "symbols": " ".join(c.symbols),
         "n_symbols": len(c.symbols),
         "allocation_days": "[" + ",".join(str(d) for d in c.allocation_days) + "]",
+        "live_eligible": item.get("live_eligible"),
+        "eligibility_reasons": ";".join(item.get("eligibility_reasons") or []),
     }
     for k in [
         "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "sortino", "calmar",
@@ -84,6 +104,8 @@ def _row(item: dict) -> dict:
         "min_equity_exposure", "avg_equity_exposure", "turnover_pct", "cost_pct_of_nav",
         "transaction_cost", "trade_count", "gross_twr_annualized_pct", "gross_xirr_pct",
         "worst_year", "positive_year_ratio", "score", "final_nav", "first_allocation_date",
+        "measurement_start_date", "measurement_start_nav",
+        "measurement_external_contributions", "measurement_profit",
     ]:
         row[f"train_{k}"] = m.get(k)
     for k in [
@@ -93,10 +115,22 @@ def _row(item: dict) -> dict:
     ]:
         row[f"val_{k}"] = r.get(k)
     for k in [
+        "net_twr_annualized_pct", "net_xirr_pct", "sharpe", "max_drawdown_pct",
+        "cdar95_pct", "measurement_start_nav", "measurement_external_contributions",
+        "measurement_profit", "final_nav",
+    ]:
+        row[f"recent_{k}"] = recent.get(k)
+    for k in [
         "median_net_twr", "median_sharpe", "worst_mdd", "worst_cdar95",
         "n_test_windows", "required_test_windows", "coverage_valid", "drawdown_valid", "valid",
     ]:
         row[f"test_{k}"] = t.get(k)
+    for k in [
+        "net_twr_annualized_pct", "net_xirr_pct", "measurement_start_date",
+        "measurement_start_nav", "measurement_external_contributions",
+        "measurement_profit", "final_nav", "avg_equity_exposure",
+    ]:
+        row[f"test_period_{k}"] = test_period.get(k)
     row["timing_spike"] = item.get("timing_robust", {}).get("isolated_spike")
     row["timing_median"] = item.get("timing_robust", {}).get("median")
     row["symbol_mean"] = item.get("symbol_robust", {}).get("mean")
@@ -137,6 +171,9 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
             "symbols": " ".join(c.symbols),
             "optimized_allocation_days": "[" + ",".join(str(d) for d in c.allocation_days) + "]",
             "baseline_allocation_days": "[" + ",".join(str(d) for d in baseline_days) + "]",
+            "live_eligible": item.get("live_eligible"),
+            "eligibility_reasons": ";".join(item.get("eligibility_reasons") or []),
+            "opt_recent_twr": (item.get("recent_validation") or {}).get("net_twr_annualized_pct"),
             "opt_robust_return": r.get("robust_return"),
             "base_robust_return": br.get("robust_return"),
             "delta_robust_return": (r.get("robust_return") or 0) - (br.get("robust_return") or 0),
@@ -159,6 +196,8 @@ def write_baseline_comparison(out_dir: str, finalists: list[dict], baseline_item
         })
     if winners:
         for name, item in winners.items():
+            if item is None:
+                continue
             for rw in rows:
                 if rw["symbols"] == " ".join(item["candidate"].symbols) and \
                    rw["optimized_allocation_days"] == "[" + ",".join(str(d) for d in item["candidate"].allocation_days) + "]":
@@ -189,6 +228,8 @@ def write_exports(
 
     summary_rows = []
     for name, item in winners.items():
+        if item is None:
+            continue
         r = _row(item)
         r["leaderboard"] = name
         summary_rows.append(r)
@@ -205,6 +246,9 @@ def item_to_json(item: dict) -> dict:
         "metrics": item.get("metrics"),
         "train_metrics": item.get("train_metrics") or item.get("metrics"),
         "validation_metrics": item.get("validation_metrics") or item.get("robust"),
+        "recent_validation": item.get("recent_validation"),
+        "live_eligible": bool(item.get("live_eligible")),
+        "eligibility_reasons": list(item.get("eligibility_reasons") or []),
         "test_metrics": item.get("test_metrics") or test,
         "robust": item.get("robust"),
         "timing_robust": {k: v for k, v in (item.get("timing_robust") or {}).items() if k != "neighbours"},
@@ -219,7 +263,11 @@ def write_experiment_json(out_dir: str, meta: dict, winners: dict, pareto: list,
                           baseline_items: dict | None = None, baseline_days=None) -> str:
     baseline_block = None
     if baseline_items and baseline_days:
-        best = winners.get("best_robust") or next(iter(winners.values()), None)
+        best = (
+            winners.get("best_live_eligible")
+            or winners.get("best_robust")
+            or next((v for v in winners.values() if v is not None), None)
+        )
         b = (baseline_items.get(best["candidate"].key()) if best else None) or {}
         baseline_block = {
             "allocation_days": [int(d) for d in baseline_days],
@@ -231,7 +279,7 @@ def write_experiment_json(out_dir: str, meta: dict, winners: dict, pareto: list,
         "experiment_id": meta["experiment_id"],
         "generated_at": meta.get("generated_at"),
         "meta": meta,
-        "winners": {name: item_to_json(item) for name, item in winners.items()},
+        "winners": {name: item_to_json(item) for name, item in winners.items() if item is not None},
         "pareto": [item_to_json(i) for i in pareto],
         "top_candidates": [item_to_json(i) for i in top_candidates],
         "finalists": [item_to_json(i) for i in finalists],
@@ -247,7 +295,9 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
     c: Candidate = item["candidate"]
     m = item.get("metrics") or {}
     r = item.get("robust") or {}
+    recent = item.get("recent_validation") or {}
     t = item.get("test") or {}
+    tp = ((t.get("per_window") or [{}])[0] or {}) if t else {}
     tr = item.get("timing_robust") or {}
     sr = item.get("symbol_robust") or {}
     conc = item.get("concentration") or {}
@@ -257,12 +307,15 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         "## Portfolio",
         f"- Symbols: {' '.join(c.symbols)}",
         f"- N: {len(c.symbols)}",
+        f"- Live eligibility: {'PASS' if item.get('live_eligible') else 'FAIL'}",
+        f"- Eligibility reasons: {item.get('eligibility_reasons') or []}",
         "",
         "## Allocation times",
         *[f"- T{i+1}: {d}" for i, d in enumerate(c.allocation_days)],
         "",
         "## TRAIN",
         f"- Net TWR annualized: {m.get('net_twr_annualized_pct', '-')}%",
+        f"- Net XIRR (measurement-window anchored): {m.get('net_xirr_pct', '-')}%",
         f"- Sharpe / Sortino / Calmar: {m.get('sharpe', '-')} / {m.get('sortino', '-')} / {m.get('calmar', '-')}",
         f"- Max drawdown: {m.get('max_drawdown_pct', '-')}%",
         f"- CDaR95: {m.get('cdar95_pct', '-')}%",
@@ -271,7 +324,7 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Min / avg equity exposure: {m.get('min_equity_exposure', '-')} / {m.get('avg_equity_exposure', '-')}",
         f"- Turnover: {m.get('turnover_pct', '-')}% | Cost: {m.get('cost_pct_of_nav', '-')}% of NAV",
         "",
-        "## VALIDATION",
+        "## ROLLING VALIDATION",
         f"- Median OOS net TWR: {r.get('median_net_twr', '-')}%",
         f"- P10 OOS net TWR: {r.get('p10_net_twr', '-')}%",
         f"- Worst OOS MDD: {r.get('worst_mdd', '-')}%",
@@ -279,10 +332,19 @@ def final_report(item: dict, out_dir: str, name: str) -> str:
         f"- Drawdown gate: {r.get('drawdown_gate_pct', '-')}%",
         f"- Robust return: {r.get('robust_return', '-')}",
         "",
-        "## FINAL TEST",
+        "## RECENT PRE-HOLDOUT VALIDATION (eligibility only)",
+        f"- Net TWR annualized: {recent.get('net_twr_annualized_pct', '-')}%",
+        f"- Net XIRR: {recent.get('net_xirr_pct', '-')}%",
+        f"- MDD: {recent.get('max_drawdown_pct', '-')}%",
+        "",
+        "## FINAL HOLDOUT",
         f"- Windows: {t.get('n_test_windows', '-')} / {t.get('required_test_windows', '-')} ({'PASS' if t.get('valid') else 'INVALID'})",
-        f"- Median net TWR: {t.get('median_net_twr', '-')}%",
-        f"- Median Sharpe: {t.get('median_sharpe', '-')}",
+        f"- Net TWR annualized: {t.get('median_net_twr', '-')}%",
+        f"- Net XIRR (window anchored): {tp.get('net_xirr_pct', '-')}%",
+        f"- Measurement start NAV: {tp.get('measurement_start_nav', '-')}",
+        f"- External contributions during holdout: {tp.get('measurement_external_contributions', '-')}",
+        f"- Measurement profit: {tp.get('measurement_profit', '-')}",
+        f"- Final NAV: {tp.get('final_nav', '-')}",
         f"- Worst MDD: {t.get('worst_mdd', '-')}%",
         f"- Worst CDaR95: {t.get('worst_cdar95', '-')}%",
         "",
