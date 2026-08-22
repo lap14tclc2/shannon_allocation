@@ -34,6 +34,7 @@ export default function HomePage() {
   const loaded = experiments !== null;
   return (
     <div className="optimizer-start-page">
+      <style>{`.optimizer-start-page > .page > .breadcrumb { display: none; }`}</style>
       <OptimizerListPage
         key={loaded ? 'optimizer-loaded' : 'optimizer-bootstrap'}
         experiments={experiments || []}
