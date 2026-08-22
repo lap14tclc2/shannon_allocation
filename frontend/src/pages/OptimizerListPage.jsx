@@ -6,10 +6,24 @@ export default function OptimizerListPage({ experiments }) {
   const [seed, setSeed] = useState(42);
   const [population, setPopulation] = useState(60);
   const [generations, setGenerations] = useState(30);
-  const [random, setRandom] = useState(400);
+  const [random, setRandom] = useState(250);
   const [universe, setUniverse] = useState('all');
   const [mode, setMode] = useState('joint');
   const [fixedSymbols, setFixedSymbols] = useState('');
+  const [portfolioSize, setPortfolioSize] = useState(7);
+
+  const [riskOverlay, setRiskOverlay] = useState(true);
+  const [targetVolPct, setTargetVolPct] = useState(18);
+  const [maxOosDrawdownPct, setMaxOosDrawdownPct] = useState(35);
+  const [maxPositionPct, setMaxPositionPct] = useState(30);
+  const [minEquityPct, setMinEquityPct] = useState(25);
+
+  const [preselectTop, setPreselectTop] = useState(45);
+  const [robustPool, setRobustPool] = useState(180);
+  const [surrogatePool, setSurrogatePool] = useState(5000);
+  const [surrogateProposals, setSurrogateProposals] = useState(40);
+  const [earlyStop, setEarlyStop] = useState(15);
+
   const [running, setRunning] = useState(false);
   const [activeRun, setActiveRun] = useState(null);
   const [elapsed, setElapsed] = useState(0);
@@ -26,17 +40,30 @@ export default function OptimizerListPage({ experiments }) {
   async function runOptimizer(e, overrideUniverse) {
     if (e) e.preventDefault();
     const activeUniverse = overrideUniverse || universe;
-    const effectiveMode = overrideUniverse ? mode : mode;
+    const effectiveMode = mode;
     const symbols = fixedSymbols.trim().split(/[\s,]+/).filter(Boolean).map((s) => s.toUpperCase());
+
     if (effectiveMode === 'timing' && symbols.length < 5) {
-      window.alert('Timing-only mode needs a fixed portfolio set: at least 5 tickers in "Fixed symbols".');
+      window.alert('Timing-only mode needs at least 5 fixed tickers.');
       return;
     }
+    if (effectiveMode === 'joint' && (Number(portfolioSize) < 5 || Number(portfolioSize) > 10)) {
+      window.alert('Portfolio size must be between 5 and 10 symbols.');
+      return;
+    }
+    if (riskOverlay && Number(targetVolPct) <= 0) {
+      window.alert('Target volatility must be greater than 0%.');
+      return;
+    }
+
     setUniverse(activeUniverse);
     setRunning(true);
     setElapsed(0);
-    const modeDesc = effectiveMode === 'timing' ? `timing-only on FIXED ${symbols.join(' ')}` : 'symbols + timing';
-    setMessage(`Starting optimizer run on ${activeUniverse.toUpperCase()} (${modeDesc}, ${population} pop, ${generations} gen, ${random} random, seed ${seed})…`);
+    const sizeDesc = effectiveMode === 'timing' ? `${symbols.length} fixed symbols` : `${portfolioSize} symbols`;
+    const modeDesc = effectiveMode === 'timing' ? `timing-only on ${symbols.join(' ')}` : `joint ${sizeDesc}`;
+    const riskDesc = riskOverlay ? `risk target ${targetVolPct}% / MDD gate ${maxOosDrawdownPct}%` : 'risk overlay OFF';
+    setMessage(`Starting ${activeUniverse.toUpperCase()} optimizer (${modeDesc}, ${riskDesc})…`);
+
     try {
       const res = await startOptimizerRun({
         seed: Number(seed),
@@ -46,7 +73,21 @@ export default function OptimizerListPage({ experiments }) {
         universe: activeUniverse,
         mode: effectiveMode,
         fixed_symbols: effectiveMode === 'timing' ? symbols : undefined,
+        portfolio_size: effectiveMode === 'joint' ? Number(portfolioSize) : undefined,
+
+        risk_overlay: Boolean(riskOverlay),
+        target_volatility: Number(targetVolPct) / 100,
+        max_oos_drawdown_pct: Number(maxOosDrawdownPct),
+        max_position_weight: Number(maxPositionPct) / 100,
+        min_equity_exposure: Number(minEquityPct) / 100,
+
+        preselect_top: Number(preselectTop),
+        robust_pool_size: Number(robustPool),
+        surrogate_pool_size: Number(surrogatePool),
+        surrogate_proposals: Number(surrogateProposals),
+        early_stop_generations: Number(earlyStop),
       });
+      if (!res.run_id) throw new Error(res.error || 'Optimizer did not start.');
       const runId = res.run_id;
       setActiveRun(runId);
       timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
@@ -60,7 +101,7 @@ export default function OptimizerListPage({ experiments }) {
             clearInterval(timerRef.current);
             setRunning(false);
             setActiveRun(null);
-            setMessage(`Done in ${elapsed}s — opening experiment…`);
+            setMessage('Done — opening experiment…');
             window.location.href = `/optimizer/${run.experiment_id}`;
           } else if (run.status === 'failed') {
             clearInterval(pollRef.current);
@@ -68,8 +109,6 @@ export default function OptimizerListPage({ experiments }) {
             setRunning(false);
             setActiveRun(null);
             setMessage(`Run failed: ${run.error || 'unknown error'}`);
-          } else {
-            setMessage(`Optimizer running… ${elapsed}s elapsed (${modeDesc}).`);
           }
         } catch (err) {
           clearInterval(pollRef.current);
@@ -105,11 +144,11 @@ export default function OptimizerListPage({ experiments }) {
         <a href="/">All runs</a> <span>/</span> Optimizer
       </div>
       <header className="page-head">
-        <h1>Joint Portfolio + Allocation-Time Optimizer</h1>
+        <h1>Risk-Aware Portfolio + Allocation Optimizer</h1>
         <p className="muted">
-          Searches the four annual ERC allocation times for the most robust out-of-sample
-          risk-adjusted NET performance — either jointly with the stock subset, or against a
-          FIXED portfolio (timing-only mode) so symbol selection cannot contaminate the timing result.
+          Choose the exact portfolio size, search a large universe efficiently, and rank only candidates
+          that survive walk-forward drawdown controls. ERC still determines relative allocation; the risk
+          overlay can reduce total equity exposure and keep the remainder in cash.
         </p>
       </header>
 
@@ -120,7 +159,7 @@ export default function OptimizerListPage({ experiments }) {
             <div>
               <b>Running optimizer… {elapsed}s elapsed</b>
               <div className="muted">{message}</div>
-              <div className="muted">Running in the background — you can keep browsing. This page will open the result when done.</div>
+              <div className="muted">You can keep browsing; this page opens the result when finished.</div>
             </div>
           </div>
         </div>
@@ -129,39 +168,12 @@ export default function OptimizerListPage({ experiments }) {
       <div className="card">
         <h3>Run a new optimizer experiment</h3>
         <div className="universe-buttons">
-          <button
-            className="btn-variant btn-vn30"
-            disabled={running}
-            type="button"
-            onClick={() => runOptimizer(null, 'vn30')}
-          >
-            ▶ Run on VN30
-          </button>
-          <button
-            className="btn-variant btn-vn50"
-            disabled={running}
-            type="button"
-            onClick={() => runOptimizer(null, 'vn50')}
-          >
-            ▶ Run on VN50
-          </button>
-          <button
-            className="btn-variant btn-vn100"
-            disabled={running}
-            type="button"
-            onClick={() => runOptimizer(null, 'vn100')}
-          >
-            ▶ Run on VN100
-          </button>
-          <button
-            className="btn-variant btn-all"
-            disabled={running}
-            type="button"
-            onClick={() => runOptimizer(null, 'all')}
-          >
-            All data symbols
-          </button>
+          <button className="btn-variant btn-vn30" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn30')}>▶ Run on VN30</button>
+          <button className="btn-variant btn-vn50" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn50')}>▶ Run on VN50</button>
+          <button className="btn-variant btn-vn100" disabled={running} type="button" onClick={() => runOptimizer(null, 'vn100')}>▶ Run on VN100</button>
+          <button className="btn-variant btn-all" disabled={running} type="button" onClick={() => runOptimizer(null, 'all')}>All data symbols</button>
         </div>
+
         <div className="run-form" style={{ marginTop: 14 }}>
           <label>Mode
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -169,30 +181,56 @@ export default function OptimizerListPage({ experiments }) {
               <option value="timing">Timing-only (fixed portfolio)</option>
             </select>
           </label>
+          {mode === 'joint' && (
+            <label>Portfolio size
+              <input type="number" min="5" max="10" value={portfolioSize} onChange={(e) => setPortfolioSize(e.target.value)} />
+            </label>
+          )}
           {mode === 'timing' && (
-            <label className="fixed-symbols">
-              Fixed portfolio (tickers, comma/space separated)
-              <input
-                type="text"
-                value={fixedSymbols}
-                onChange={(e) => setFixedSymbols(e.target.value)}
-                placeholder="CTG GVR HDB LPB MWG STB VIB"
-              />
+            <label className="fixed-symbols">Fixed portfolio
+              <input type="text" value={fixedSymbols} onChange={(e) => setFixedSymbols(e.target.value)} placeholder="CTG GVR HDB LPB MWG STB VIB" />
             </label>
           )}
           <label>Seed <input type="number" value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
-          <label>Population <input type="number" value={population} onChange={(e) => setPopulation(e.target.value)} /></label>
-          <label>Generations <input type="number" value={generations} onChange={(e) => setGenerations(e.target.value)} /></label>
-          <label>Random search <input type="number" value={random} onChange={(e) => setRandom(e.target.value)} /></label>
+          <label>Population <input type="number" min="10" value={population} onChange={(e) => setPopulation(e.target.value)} /></label>
+          <label>Generations <input type="number" min="1" value={generations} onChange={(e) => setGenerations(e.target.value)} /></label>
+          <label>Random real backtests <input type="number" min="20" value={random} onChange={(e) => setRandom(e.target.value)} /></label>
         </div>
+
+        <h4 style={{ marginTop: 18 }}>Drawdown / exposure controls</h4>
+        <div className="run-form">
+          <label>Risk overlay
+            <select value={riskOverlay ? 'on' : 'off'} onChange={(e) => setRiskOverlay(e.target.value === 'on')}>
+              <option value="on">ON — volatility target + cash</option>
+              <option value="off">OFF — 100% equity baseline</option>
+            </select>
+          </label>
+          <label>Target volatility % <input type="number" min="5" max="50" step="1" value={targetVolPct} onChange={(e) => setTargetVolPct(e.target.value)} /></label>
+          <label>Max OOS drawdown % <input type="number" min="10" max="80" step="1" value={maxOosDrawdownPct} onChange={(e) => setMaxOosDrawdownPct(e.target.value)} /></label>
+          <label>Max single stock % <input type="number" min="10" max="100" step="1" value={maxPositionPct} onChange={(e) => setMaxPositionPct(e.target.value)} /></label>
+          <label>Min equity exposure % <input type="number" min="0" max="100" step="5" value={minEquityPct} onChange={(e) => setMinEquityPct(e.target.value)} /></label>
+        </div>
+
+        <h4 style={{ marginTop: 18 }}>Fast search for large universes</h4>
+        <div className="run-form">
+          <label>TRAIN preselect top <input type="number" min="0" value={preselectTop} onChange={(e) => setPreselectTop(e.target.value)} /></label>
+          <label>Validation shortlist <input type="number" min="20" value={robustPool} onChange={(e) => setRobustPool(e.target.value)} /></label>
+          <label>Surrogate cheap pool <input type="number" min="0" value={surrogatePool} onChange={(e) => setSurrogatePool(e.target.value)} /></label>
+          <label>Surrogate real proposals <input type="number" min="0" value={surrogateProposals} onChange={(e) => setSurrogateProposals(e.target.value)} /></label>
+          <label>NSGA early-stop patience <input type="number" min="0" value={earlyStop} onChange={(e) => setEarlyStop(e.target.value)} /></label>
+        </div>
+
         {!running && message && <div className="run-message">{message}</div>}
-        <div className="muted">Runs on the server (costs + no look-ahead, net performance). Walk-forward windows are ≥ 1 year, ERC is warmed up before each window, and 100% window coverage is required. A run of 60/30/400 takes a few minutes.</div>
+        <div className="muted">
+          Large-universe speed path: TRAIN-only screening → random baseline → NSGA-II → surrogate ranking → diverse shortlist → full validation → finalists/test.
+          Validation/test data never participates in screening or surrogate training.
+        </div>
       </div>
 
       <div className="card">
         <h3>Experiments ({items.length})</h3>
         {items.length === 0 ? (
-          <div className="muted">No optimizer experiments yet — click “Run optimizer”.</div>
+          <div className="muted">No optimizer experiments yet.</div>
         ) : (
           <ul className="run-list">
             {items.map((e) => (
@@ -201,12 +239,7 @@ export default function OptimizerListPage({ experiments }) {
                   <a href={`/optimizer/${e.experiment_id}`}>{e.experiment_id}</a>
                   <span className="muted">{e.generated_at}</span>
                 </div>
-                <button
-                  className="btn-remove"
-                  disabled={removing === e.experiment_id}
-                  onClick={() => removeExperiment(e.experiment_id)}
-                  title={`Delete experiment ${e.experiment_id}`}
-                >
+                <button className="btn-remove" disabled={removing === e.experiment_id} onClick={() => removeExperiment(e.experiment_id)} title={`Delete experiment ${e.experiment_id}`}>
                   {removing === e.experiment_id ? '…' : '✕ Remove'}
                 </button>
               </li>
