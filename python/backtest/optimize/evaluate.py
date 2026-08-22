@@ -7,8 +7,9 @@ ERC, Shannon, transaction costs and risk-overlay mechanics are unchanged.
 A candidate's 1–6 annual allocation events are recalibration events, not a reason
 to keep a new portfolio in cash until the first scheduled date. Every evaluation
 therefore adds one INITIAL DEPLOYMENT event at the earliest date where strictly-
-past aligned history satisfies ERC's minimum-observation requirement. If warm-up
-history exists, this deployment can occur before the measurement boundary.
+past data can actually solve ERC and, when the risk overlay is enabled, produce a
+non-zero deployable risk target. If warm-up history exists, this deployment can
+occur before the measurement boundary.
 """
 
 from __future__ import annotations
@@ -21,10 +22,12 @@ import os
 import pandas as pd
 
 from ..config import BacktestParams
+from ..erc import ERCError, log_returns_from_window, solve_erc
+from ..risk import risk_adjusted_targets
 from ..simulation import simulate_combination
 from ..candidate import Candidate, resolve_allocation_dates, schedule_for_window
 
-OPTIMIZER_METRIC_SCHEMA = "growth-v8-initial-deployment-risk-state"
+OPTIMIZER_METRIC_SCHEMA = "growth-v9-deployable-initialization-risk-state"
 
 
 def config_fingerprint(params: BacktestParams, data_version: str = "v1") -> str:
@@ -138,13 +141,12 @@ def initial_deployment_date(
     window: tuple[str | None, str | None] = (None, None),
     warmup_days: int | None = None,
 ):
-    """Earliest look-ahead-free date at which a new portfolio can initialize.
+    """Earliest look-ahead-free date at which the portfolio can truly deploy.
 
-    This depends only on data availability, never on future returns. A valid day
-    requires ``minimum_observations`` aligned closes strictly BEFORE the signal
-    day inside the configured ERC lookback. Risk estimation is less restrictive
-    than ERC here; if it still cannot estimate risk, the normal fail-closed policy
-    remains authoritative inside ``risk_adjusted_targets``.
+    A date is accepted only when strictly-past aligned closes satisfy ERC's
+    observation requirement, the ERC solver succeeds, and the risk overlay (when
+    enabled) yields positive target equity exposure. This prevents an artificial
+    INITIAL DEPLOYMENT marker on a day that would still fail closed to 100% cash.
     """
     if prices.empty:
         return None
@@ -152,23 +154,53 @@ def initial_deployment_date(
     if any(s not in prices.columns for s in symbols):
         return None
 
+    # Match simulate_combination's candidate-specific raw calendar. Positions used
+    # below must therefore be positions in this frame, not in the wider panel.
+    raw = prices[symbols].dropna(how="all")
+    if raw.empty:
+        return None
+
     warmup = params.lookback_days if warmup_days is None else max(0, int(warmup_days))
     start, end = window
-    lo, hi = _simulation_bounds(prices, start, end, warmup)
+    lo, hi = _simulation_bounds(raw, start, end, warmup)
     if hi <= lo:
         return None
 
-    aligned = prices[symbols].notna().all(axis=1).astype(int)
+    aligned = raw[symbols].notna().all(axis=1).astype(int)
     past_counts = (
         aligned.shift(1, fill_value=0)
         .rolling(window=max(1, int(params.lookback_days)), min_periods=1)
         .sum()
     )
     required = max(2, int(params.minimum_observations))
-    eligible = past_counts.iloc[lo : hi + 1] >= required
-    if not bool(eligible.any()):
-        return None
-    return eligible[eligible].index[0]
+    eligible_positions = [
+        pos
+        for pos in range(lo, hi + 1)
+        if float(past_counts.iloc[pos]) >= required
+    ]
+
+    for pos in eligible_positions:
+        hist_start = max(0, pos - int(params.lookback_days))
+        hist = raw.iloc[hist_start:pos][symbols].dropna()
+        if len(hist) < required:
+            continue
+        try:
+            returns = log_returns_from_window(hist.to_numpy(dtype=float))
+            erc = solve_erc(returns, params)
+        except ERCError:
+            continue
+
+        relative = dict(zip(symbols, erc.weights.tolist()))
+        if not params.risk_overlay_enabled:
+            return raw.index[pos]
+
+        live_targets, _risk_info = risk_adjusted_targets(
+            raw, symbols, pos, relative, params
+        )
+        if sum(float(v) for v in live_targets.values()) > 1e-12:
+            return raw.index[pos]
+
+    return None
 
 
 def allocation_dates_with_initialization(
