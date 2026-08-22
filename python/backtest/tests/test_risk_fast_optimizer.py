@@ -173,12 +173,13 @@ def test_window_xirr_anchors_to_actual_window_start_nav():
         perf_start=0,
         first_invested_idx=0,
         allocation_indices=[0],
-        total_traded_value=0.0,
-        trade_count=0,
         deposit_dates=[],
         deposit_amounts=[],
         initial_balance=100.0,
-        cumulative_cost=0.0,
+        cumulative_cost_series=[0.0, 0.0],
+        cumulative_traded_value_series=[0.0, 0.0],
+        cumulative_trade_count_series=[0, 0],
+        actual_equity_exposure_series=[1.0, 1.0],
         metrics_from="window_start",
     )
     expected = (130.0 / 120.0 - 1.0) * 100.0
