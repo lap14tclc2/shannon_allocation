@@ -1,33 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { startOptimizerRun, getOptimizerStatus, deleteOptimizerExperiment } from '../lib/api.js';
+import {
+  startOptimizerRun,
+  getOptimizerStatus,
+  deleteOptimizerExperiment,
+  listAvailableSymbols,
+} from '../lib/api.js';
 
 const SEARCH_PRESETS = {
   fast: {
-    label: 'Fast', note: 'Quick exploration for a large universe',
-    population: 40, generations: 18, random: 150,
-    preselectTop: 40, robustPool: 100, surrogatePool: 3000,
-    surrogateProposals: 25, earlyStop: 10,
+    label: 'Fast', note: 'Quick allocation-timing exploration',
+    population: 24, generations: 10, random: 40,
+    robustPool: 25, surrogatePool: 500,
+    surrogateProposals: 8, earlyStop: 6,
   },
   balanced: {
-    label: 'Balanced', note: 'Recommended for normal research',
-    population: 60, generations: 30, random: 250,
-    preselectTop: 45, robustPool: 180, surrogatePool: 5000,
-    surrogateProposals: 40, earlyStop: 15,
+    label: 'Balanced', note: 'Recommended for a fixed combination',
+    population: 36, generations: 18, random: 80,
+    robustPool: 50, surrogatePool: 1500,
+    surrogateProposals: 16, earlyStop: 8,
   },
   thorough: {
-    label: 'Thorough', note: 'More coverage and more real backtests',
-    population: 90, generations: 45, random: 500,
-    preselectTop: 60, robustPool: 300, surrogatePool: 10000,
-    surrogateProposals: 80, earlyStop: 20,
+    label: 'Thorough', note: 'More timing coverage and validation',
+    population: 50, generations: 28, random: 140,
+    robustPool: 80, surrogatePool: 3000,
+    surrogateProposals: 24, earlyStop: 12,
   },
 };
-
-const UNIVERSES = [
-  { value: 'all', label: 'All data symbols', note: 'Full dataset; intended for the ~90-symbol search.' },
-  { value: 'vn100', label: 'VN100', note: 'VN100 universe available in the dataset.' },
-  { value: 'vn50', label: 'VN50', note: 'Smaller search universe.' },
-  { value: 'vn30', label: 'VN30', note: 'Smallest predefined universe.' },
-];
 
 function NumberField({ label, value, onChange, min, max, step = 1, disabled = false, hint }) {
   return (
@@ -55,14 +53,38 @@ function moneyShort(value) {
   return `${n.toLocaleString('en-US')} VND`;
 }
 
+function parseImportedSymbols(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return [];
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+      }
+    } catch (_err) {
+      // Fall through to the permissive ticker parser below.
+    }
+  }
+  return text
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export default function OptimizerListPage({ experiments }) {
   const [items, setItems] = useState(experiments || []);
-  const [universe, setUniverse] = useState('all');
-  const [mode, setMode] = useState('joint');
-  const [fixedSymbols, setFixedSymbols] = useState('');
-  const [portfolioSize, setPortfolioSize] = useState(7);
+  const [availableSymbols, setAvailableSymbols] = useState([]);
+  const [symbolsLoading, setSymbolsLoading] = useState(true);
+  const [symbolsError, setSymbolsError] = useState('');
+  const [minSelected, setMinSelected] = useState(5);
+  const [maxSelected, setMaxSelected] = useState(10);
+  const [selectedSymbols, setSelectedSymbols] = useState([]);
+  const [symbolQuery, setSymbolQuery] = useState('');
+  const [migrateInput, setMigrateInput] = useState('');
 
-  const [initialBalance, setInitialBalance] = useState(200_000_000);
+  const [initialBalance, setInitialBalance] = useState(1_000_000_000);
   const [annualDeposit, setAnnualDeposit] = useState(20_000_000);
 
   const [riskOverlay, setRiskOverlay] = useState(true);
@@ -73,14 +95,13 @@ export default function OptimizerListPage({ experiments }) {
 
   const [preset, setPreset] = useState('balanced');
   const [seed, setSeed] = useState(42);
-  const [population, setPopulation] = useState(60);
-  const [generations, setGenerations] = useState(30);
-  const [random, setRandom] = useState(250);
-  const [preselectTop, setPreselectTop] = useState(45);
-  const [robustPool, setRobustPool] = useState(180);
-  const [surrogatePool, setSurrogatePool] = useState(5000);
-  const [surrogateProposals, setSurrogateProposals] = useState(40);
-  const [earlyStop, setEarlyStop] = useState(15);
+  const [population, setPopulation] = useState(36);
+  const [generations, setGenerations] = useState(18);
+  const [random, setRandom] = useState(80);
+  const [robustPool, setRobustPool] = useState(50);
+  const [surrogatePool, setSurrogatePool] = useState(1500);
+  const [surrogateProposals, setSurrogateProposals] = useState(16);
+  const [earlyStop, setEarlyStop] = useState(8);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [running, setRunning] = useState(false);
@@ -91,13 +112,52 @@ export default function OptimizerListPage({ experiments }) {
   const pollRef = useRef(null);
   const timerRef = useRef(null);
 
-  const fixedList = useMemo(
-    () => fixedSymbols.trim().split(/[\s,]+/).filter(Boolean).map((s) => s.toUpperCase()),
-    [fixedSymbols]
-  );
-  const effectiveSize = mode === 'timing' ? fixedList.length : Number(portfolioSize);
-  const minFeasiblePositionPct = effectiveSize > 0 ? 100 / effectiveSize : 100;
-  const selectedUniverse = UNIVERSES.find((u) => u.value === universe) || UNIVERSES[0];
+  const availableSet = useMemo(() => new Set(availableSymbols), [availableSymbols]);
+  const selectedSet = useMemo(() => new Set(selectedSymbols), [selectedSymbols]);
+  const filteredSymbols = useMemo(() => {
+    const q = symbolQuery.trim().toUpperCase();
+    return q ? availableSymbols.filter((s) => s.includes(q)) : availableSymbols;
+  }, [availableSymbols, symbolQuery]);
+  const minFeasiblePositionPct = selectedSymbols.length > 0 ? 100 / selectedSymbols.length : 100;
+
+  useEffect(() => {
+    let active = true;
+    listAvailableSymbols()
+      .then((data) => {
+        if (!active) return;
+        setAvailableSymbols(data.symbols);
+        setMinSelected(data.minSelected);
+        setMaxSelected(data.maxSelected);
+        setSymbolsLoading(false);
+        try {
+          const saved = JSON.parse(window.localStorage.getItem('shannon.fixedCombination') || '[]');
+          if (Array.isArray(saved)) {
+            const restored = saved
+              .map((s) => String(s).toUpperCase())
+              .filter((s) => data.symbols.includes(s))
+              .slice(0, data.maxSelected);
+            setSelectedSymbols([...new Set(restored)]);
+          }
+        } catch (_err) {
+          // Ignore malformed local state.
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setSymbolsLoading(false);
+        setSymbolsError(err.message);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (symbolsLoading) return;
+    try {
+      window.localStorage.setItem('shannon.fixedCombination', JSON.stringify(selectedSymbols));
+    } catch (_err) {
+      // Local persistence is convenience only.
+    }
+  }, [selectedSymbols, symbolsLoading]);
 
   useEffect(() => () => {
     clearInterval(pollRef.current);
@@ -111,7 +171,6 @@ export default function OptimizerListPage({ experiments }) {
     setPopulation(p.population);
     setGenerations(p.generations);
     setRandom(p.random);
-    setPreselectTop(p.preselectTop);
     setRobustPool(p.robustPool);
     setSurrogatePool(p.surrogatePool);
     setSurrogateProposals(p.surrogateProposals);
@@ -125,14 +184,41 @@ export default function OptimizerListPage({ experiments }) {
     };
   }
 
+  function toggleSymbol(symbol) {
+    if (running) return;
+    setSelectedSymbols((current) => {
+      if (current.includes(symbol)) return current.filter((s) => s !== symbol);
+      if (current.length >= maxSelected) return current;
+      return [...current, symbol].sort();
+    });
+  }
+
+  function importCombination() {
+    const parsed = [...new Set(parseImportedSymbols(migrateInput))];
+    if (!parsed.length) {
+      window.alert('Enter ticker symbols to migrate, for example: ACB, FPT, REE, VCB, VNM');
+      return;
+    }
+    const unknown = parsed.filter((s) => !availableSet.has(s));
+    if (unknown.length) {
+      window.alert(`These symbols do not exist in the loaded dataset: ${unknown.join(', ')}`);
+      return;
+    }
+    if (parsed.length > maxSelected) {
+      window.alert(`A combination can currently contain at most ${maxSelected} symbols.`);
+      return;
+    }
+    setSelectedSymbols(parsed.sort());
+    setSymbolQuery('');
+  }
+
   function validate() {
-    if (mode === 'joint' && (!Number.isInteger(Number(portfolioSize)) || Number(portfolioSize) < 5 || Number(portfolioSize) > 10)) {
-      return 'Portfolio size must be an integer between 5 and 10.';
+    if (selectedSymbols.length < minSelected || selectedSymbols.length > maxSelected) {
+      return `Select ${minSelected}–${maxSelected} symbols. The optimizer will never replace them.`;
     }
-    if (mode === 'timing' && (fixedList.length < 5 || fixedList.length > 10)) {
-      return 'Timing-only mode needs 5–10 fixed tickers.';
-    }
-    if (new Set(fixedList).size !== fixedList.length) return 'Fixed portfolio contains duplicate tickers.';
+    if (new Set(selectedSymbols).size !== selectedSymbols.length) return 'Combination contains duplicate symbols.';
+    const unknown = selectedSymbols.filter((s) => !availableSet.has(s));
+    if (unknown.length) return `Unknown symbols: ${unknown.join(', ')}`;
     if (!Number.isFinite(Number(initialBalance)) || Number(initialBalance) <= 0) return 'Initial capital must be greater than 0 VND.';
     if (!Number.isFinite(Number(annualDeposit)) || Number(annualDeposit) < 0) return 'Annual contribution cannot be negative.';
     if (riskOverlay && (Number(targetVolPct) <= 0 || Number(targetVolPct) > 100)) return 'Target volatility must be between 0% and 100%.';
@@ -140,10 +226,9 @@ export default function OptimizerListPage({ experiments }) {
     if (riskOverlay && (Number(minEquityPct) < 0 || Number(minEquityPct) > 100)) return 'Minimum equity exposure must be between 0% and 100%.';
     if (riskOverlay && (Number(maxPositionPct) <= 0 || Number(maxPositionPct) > 100)) return 'Maximum single-stock weight must be between 0% and 100%.';
     if (riskOverlay && Number(maxPositionPct) + 1e-9 < minFeasiblePositionPct) {
-      return `With ${effectiveSize} symbols, max single-stock weight cannot be below ${minFeasiblePositionPct.toFixed(1)}%.`;
+      return `With ${selectedSymbols.length} symbols, max single-stock weight cannot be below ${minFeasiblePositionPct.toFixed(1)}%.`;
     }
-    if (Number(preselectTop) > 0 && mode === 'joint' && Number(preselectTop) < Number(portfolioSize)) return 'TRAIN preselect must be at least the portfolio size.';
-    if (Number(robustPool) < 5) return 'Validation shortlist must contain at least 5 candidates.';
+    if (Number(robustPool) < 5) return 'Validation shortlist must contain at least 5 timing candidates.';
     return '';
   }
 
@@ -157,20 +242,19 @@ export default function OptimizerListPage({ experiments }) {
 
     setRunning(true);
     setElapsed(0);
-    const sizeDesc = mode === 'timing' ? `${fixedList.length} fixed symbols` : `exactly ${portfolioSize} symbols`;
-    const riskDesc = riskOverlay ? `risk target ${targetVolPct}% · OOS MDD gate ${maxOosDrawdownPct}%` : 'legacy 100% equity baseline';
-    setMessage(`${selectedUniverse.label} · ${sizeDesc} · ${moneyShort(initialBalance)} initial · ${riskDesc}`);
+    const riskDesc = riskOverlay ? `risk target ${targetVolPct}% · OOS MDD gate ${maxOosDrawdownPct}%` : 'baseline 100% equity';
+    setMessage(`${selectedSymbols.join(' ')} · ${moneyShort(initialBalance)} initial · ${moneyShort(annualDeposit)}/year · ${riskDesc}`);
 
     try {
       const res = await startOptimizerRun({
+        mode: 'timing',
+        fixed_symbols: selectedSymbols,
+        universe: 'all',
         seed: Number(seed),
         population: Number(population),
         generations: Number(generations),
         random: Number(random),
-        universe,
-        mode,
-        fixed_symbols: mode === 'timing' ? fixedList : undefined,
-        portfolio_size: mode === 'joint' ? Number(portfolioSize) : undefined,
+        finalists: 5,
         initial_balance: Number(initialBalance),
         annual_deposit: Number(annualDeposit),
         risk_overlay: Boolean(riskOverlay),
@@ -178,14 +262,14 @@ export default function OptimizerListPage({ experiments }) {
         max_oos_drawdown_pct: Number(maxOosDrawdownPct),
         max_position_weight: Number(maxPositionPct) / 100,
         min_equity_exposure: Number(minEquityPct) / 100,
-        preselect_top: Number(preselectTop),
+        preselect_top: 0,
         robust_pool_size: Number(robustPool),
         surrogate_pool_size: Number(surrogatePool),
         surrogate_proposals: Number(surrogateProposals),
         early_stop_generations: Number(earlyStop),
         parallel_workers: 0,
       });
-      if (!res.run_id) throw new Error(res.error || 'Optimizer did not start.');
+      if (!res.run_id) throw new Error(res.error || 'Allocation optimizer did not start.');
       const runId = res.run_id;
       setActiveRun(runId);
       timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
@@ -199,7 +283,7 @@ export default function OptimizerListPage({ experiments }) {
             clearInterval(timerRef.current);
             setRunning(false);
             setActiveRun(null);
-            setMessage('Done — opening experiment…');
+            setMessage('Done — opening allocation experiment…');
             window.location.href = `/optimizer/${run.experiment_id}`;
           } else if (run.status === 'failed') {
             clearInterval(pollRef.current);
@@ -238,11 +322,11 @@ export default function OptimizerListPage({ experiments }) {
 
   return (
     <div className="page">
-      <div className="breadcrumb"><a href="/">All runs</a> <span>/</span> Optimizer</div>
+      <div className="breadcrumb"><a href="/">All runs</a> <span>/</span> Allocation Optimizer</div>
       <header className="page-head">
-        <h1>Portfolio Optimizer</h1>
+        <h1>Allocation Optimizer</h1>
         <p className="muted">
-          Configure universe, exact portfolio size, capital plan, risk policy, and search budget. No command line is required.
+          You own the stock combination. The system keeps those symbols fixed and optimizes only the four annual allocation times, then evaluates ERC, Shannon drift, risk exposure, costs and OOS robustness.
         </p>
       </header>
 
@@ -251,90 +335,96 @@ export default function OptimizerListPage({ experiments }) {
           <div className="run-loading-inner">
             <span className="spinner" aria-hidden="true" />
             <div>
-              <b>Optimizer is running · {elapsed}s</b>
+              <b>Allocation optimizer is running · {elapsed}s</b>
               <div className="muted">{message}</div>
-              <div className="muted">Multi-core evaluation is automatic · Run ID: {activeRun || '-'}</div>
+              <div className="muted">Selected symbols are frozen · Multi-core evaluation automatic · Run ID: {activeRun || '-'}</div>
             </div>
           </div>
         </div>
       )}
 
       <form className="card" onSubmit={runOptimizer}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <h3 style={{ marginBottom: 4 }}>1. Portfolio search</h3>
-            <div className="muted">Define what the optimizer may build.</div>
-          </div>
-          <span className="universe-pill pill-vn100">Recommended: All data + 7 symbols</span>
+        <h3 style={{ marginBottom: 4 }}>1. Your combination</h3>
+        <div className="muted" style={{ marginBottom: 12 }}>
+          Choose {minSelected}–{maxSelected} symbols. The optimizer is not allowed to add, remove or replace a ticker.
         </div>
 
-        <div className="run-form" style={{ marginTop: 14 }}>
-          <label>Universe
-            <select value={universe} onChange={(e) => setUniverse(e.target.value)} style={{ width: 190 }} disabled={running}>
-              {UNIVERSES.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-            </select>
-            <span style={{ textTransform: 'none', letterSpacing: 0, fontSize: 10, maxWidth: 220 }}>{selectedUniverse.note}</span>
-          </label>
-          <label>Optimization mode
-            <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ width: 220 }} disabled={running}>
-              <option value="joint">Build portfolio + optimize timing</option>
-              <option value="timing">Optimize timing for fixed portfolio</option>
-            </select>
-          </label>
-          {mode === 'joint' ? (
-            <label>Portfolio size
-              <select value={portfolioSize} onChange={(e) => setPortfolioSize(Number(e.target.value))} style={{ width: 150 }} disabled={running}>
-                {[5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n} symbols</option>)}
-              </select>
-            </label>
-          ) : (
-            <label className="fixed-symbols">Fixed portfolio (5–10)
-              <input
-                type="text"
-                value={fixedSymbols}
-                onChange={(e) => setFixedSymbols(e.target.value)}
-                placeholder="ACB FPT HPG MBB MWG VCB VNM"
-                disabled={running}
-                style={{ width: 360 }}
-              />
-              <span style={{ textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>{fixedList.length} ticker(s)</span>
-            </label>
-          )}
+        <div className="sub-card" style={{ marginBottom: 14 }}>
+          <h4 style={{ marginTop: 0 }}>Migrate an existing combination</h4>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Paste tickers from an existing portfolio. Commas, spaces, new lines and JSON arrays are accepted.
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <textarea
+              value={migrateInput}
+              onChange={(e) => setMigrateInput(e.target.value)}
+              disabled={running}
+              placeholder={'ACB, FPT, REE, VCB, VNM\n\nor ["ACB", "FPT", "REE", "VCB", "VNM"]'}
+              style={{ minWidth: 420, minHeight: 72, flex: '1 1 420px' }}
+            />
+            <button className="btn-variant" type="button" disabled={running || symbolsLoading} onClick={importCombination}>
+              Import combination
+            </button>
+          </div>
         </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          <div>
+            <b>Selected: {selectedSymbols.length}/{maxSelected}</b>
+            <div className="muted">{selectedSymbols.length ? selectedSymbols.join(' · ') : 'No symbols selected yet.'}</div>
+          </div>
+          <button className="btn-variant" type="button" disabled={running || selectedSymbols.length === 0} onClick={() => setSelectedSymbols([])}>
+            Clear selection
+          </button>
+        </div>
+
+        <input
+          type="text"
+          value={symbolQuery}
+          onChange={(e) => setSymbolQuery(e.target.value)}
+          disabled={running || symbolsLoading}
+          placeholder="Search ticker, e.g. FPT"
+          style={{ width: '100%', maxWidth: 360, marginBottom: 10 }}
+        />
+
+        {symbolsLoading ? (
+          <div className="muted">Loading available symbols…</div>
+        ) : symbolsError ? (
+          <div className="error">Could not load symbol list: {symbolsError}</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 7, maxHeight: 310, overflowY: 'auto', padding: 8, border: '1px solid var(--border)', borderRadius: 8 }}>
+            {filteredSymbols.map((symbol) => {
+              const checked = selectedSet.has(symbol);
+              const disabled = running || (!checked && selectedSymbols.length >= maxSelected);
+              return (
+                <label
+                  key={symbol}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 8px', border: '1px solid var(--border)', borderRadius: 7, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1, textTransform: 'none', letterSpacing: 0 }}
+                >
+                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleSymbol(symbol)} />
+                  <b>{symbol}</b>
+                </label>
+              );
+            })}
+          </div>
+        )}
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
         <h3 style={{ marginBottom: 4 }}>2. Capital plan</h3>
         <div className="muted" style={{ marginBottom: 12 }}>
-          Initial capital is available from the beginning of the simulation. The annual contribution is added on the first trading session of each new year; the result page separately shows when that cash is actually deployed into equities.
+          These values are part of every backtest. Annual money is added on the first trading session of each new year; the result records when cash is actually deployed.
         </div>
         <div className="run-form">
-          <NumberField
-            label="Initial capital (VND)"
-            min={1_000_000}
-            step={1_000_000}
-            value={initialBalance}
-            onChange={setInitialBalance}
-            disabled={running}
-            hint={moneyShort(initialBalance)}
-          />
-          <NumberField
-            label="Annual contribution (VND)"
-            min={0}
-            step={1_000_000}
-            value={annualDeposit}
-            onChange={setAnnualDeposit}
-            disabled={running}
-            hint={`${moneyShort(annualDeposit)} · first trading session each year`}
-          />
+          <NumberField label="Initial balance (VND)" min={1_000_000} step={1_000_000} value={initialBalance} onChange={setInitialBalance} disabled={running} hint={moneyShort(initialBalance)} />
+          <NumberField label="Money added each year (VND)" min={0} step={1_000_000} value={annualDeposit} onChange={setAnnualDeposit} disabled={running} hint={moneyShort(annualDeposit)} />
         </div>
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>3. Drawdown / exposure policy</h3>
+        <h3 style={{ marginBottom: 4 }}>3. Risk policy</h3>
         <div className="muted" style={{ marginBottom: 12 }}>
-          ERC controls relative stock weights. Risk-aware mode can reduce total equity exposure and keep the balance in cash.
-          Risk exposure is refreshed weekly while Shannon drift checks remain daily.
+          ERC still determines relative stock weights. Risk-aware mode may scale total equity exposure; Shannon handles drift between allocation events.
         </div>
         <div className="run-form">
           <label>Risk policy
@@ -343,17 +433,17 @@ export default function OptimizerListPage({ experiments }) {
               <option value="off">Baseline · 100% equity</option>
             </select>
           </label>
-          <NumberField label="Target volatility %" min={5} max={50} value={targetVolPct} onChange={setTargetVolPct} disabled={!riskOverlay || running} hint="Default 18%" />
-          <NumberField label="Max OOS drawdown %" min={10} max={80} value={maxOosDrawdownPct} onChange={setMaxOosDrawdownPct} disabled={running} hint="Hard validation gate" />
-          <NumberField label="Max stock weight %" min={Math.ceil(minFeasiblePositionPct)} max={100} value={maxPositionPct} onChange={setMaxPositionPct} disabled={!riskOverlay || running} />
+          <NumberField label="Target volatility %" min={5} max={50} value={targetVolPct} onChange={setTargetVolPct} disabled={!riskOverlay || running} />
+          <NumberField label="Max OOS drawdown %" min={10} max={80} value={maxOosDrawdownPct} onChange={setMaxOosDrawdownPct} disabled={running} />
+          <NumberField label="Max stock weight %" min={selectedSymbols.length ? Math.ceil(minFeasiblePositionPct) : 10} max={100} value={maxPositionPct} onChange={setMaxPositionPct} disabled={!riskOverlay || running} />
           <NumberField label="Min equity exposure %" min={0} max={100} step={5} value={minEquityPct} onChange={setMinEquityPct} disabled={!riskOverlay || running} />
         </div>
 
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '18px 0' }} />
 
-        <h3 style={{ marginBottom: 4 }}>4. Search budget</h3>
+        <h3 style={{ marginBottom: 4 }}>4. Allocation search quality</h3>
         <div className="muted" style={{ marginBottom: 10 }}>
-          Candidate simulations now use multiple CPU processes automatically. Balanced remains the default; Fast is useful for exploration and Thorough spends more real evaluations.
+          Only four annual allocation positions are searched. Symbols remain fixed, so this is much cheaper than the retired joint symbol search.
         </div>
         <div className="universe-buttons" style={{ marginBottom: 12 }}>
           {Object.entries(SEARCH_PRESETS).map(([key, p]) => (
@@ -363,7 +453,7 @@ export default function OptimizerListPage({ experiments }) {
               type="button"
               disabled={running}
               onClick={() => applyPreset(key)}
-              style={{ borderColor: preset === key ? 'var(--accent)' : 'var(--border)', minWidth: 160, textAlign: 'left' }}
+              style={{ borderColor: preset === key ? 'var(--accent)' : 'var(--border)', minWidth: 170, textAlign: 'left' }}
             >
               <div>{preset === key ? '✓ ' : ''}{p.label}</div>
               <div className="muted" style={{ fontWeight: 400, fontSize: 11 }}>{p.note}</div>
@@ -372,7 +462,7 @@ export default function OptimizerListPage({ experiments }) {
         </div>
 
         <button type="button" className="btn-variant btn-all" disabled={running} onClick={() => setShowAdvanced((v) => !v)} style={{ marginBottom: 12 }}>
-          {showAdvanced ? 'Hide advanced search settings' : 'Show advanced search settings'}
+          {showAdvanced ? 'Hide advanced allocation settings' : 'Show advanced allocation settings'}
         </button>
 
         {showAdvanced && (
@@ -381,10 +471,9 @@ export default function OptimizerListPage({ experiments }) {
               <NumberField label="Seed" min={0} value={seed} onChange={setSeed} disabled={running} />
               <NumberField label="Population" min={10} value={population} onChange={setCustom(setPopulation)} disabled={running} />
               <NumberField label="Generations" min={1} value={generations} onChange={setCustom(setGenerations)} disabled={running} />
-              <NumberField label="Random real backtests" min={20} value={random} onChange={setCustom(setRandom)} disabled={running} />
-              <NumberField label="TRAIN preselect" min={0} value={preselectTop} onChange={setCustom(setPreselectTop)} disabled={running} />
+              <NumberField label="Random timing backtests" min={20} value={random} onChange={setCustom(setRandom)} disabled={running} />
               <NumberField label="Validation shortlist" min={5} value={robustPool} onChange={setCustom(setRobustPool)} disabled={running} />
-              <NumberField label="Surrogate pool" min={0} value={surrogatePool} onChange={setCustom(setSurrogatePool)} disabled={running} />
+              <NumberField label="Surrogate timing pool" min={0} value={surrogatePool} onChange={setCustom(setSurrogatePool)} disabled={running} />
               <NumberField label="Real surrogate proposals" min={0} value={surrogateProposals} onChange={setCustom(setSurrogateProposals)} disabled={running} />
               <NumberField label="Early-stop patience" min={0} value={earlyStop} onChange={setCustom(setEarlyStop)} disabled={running} />
             </div>
@@ -393,14 +482,12 @@ export default function OptimizerListPage({ experiments }) {
 
         <div className="sub-card" style={{ marginBottom: 14 }}>
           <div className="diag-grid" style={{ marginBottom: 0 }}>
-            <div><span>Universe</span><b>{selectedUniverse.label}</b></div>
-            <div><span>Portfolio</span><b>{mode === 'joint' ? `${portfolioSize} symbols` : `${fixedList.length} fixed symbols`}</b></div>
-            <div><span>Initial capital</span><b>{moneyShort(initialBalance)}</b></div>
-            <div><span>Annual contribution</span><b>{moneyShort(annualDeposit)}</b></div>
-            <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD` : 'Baseline 100% equity'}</b></div>
-            <div><span>Search</span><b>{SEARCH_PRESETS[preset]?.label || 'Custom'}</b></div>
-            <div><span>TRAIN preselect</span><b>{preselectTop || 'OFF'}</b></div>
-            <div><span>Validation shortlist</span><b>{robustPool}</b></div>
+            <div><span>Fixed combination</span><b>{selectedSymbols.length ? selectedSymbols.join(' ') : 'Select symbols'}</b></div>
+            <div><span>Initial balance</span><b>{moneyShort(initialBalance)}</b></div>
+            <div><span>Annual money</span><b>{moneyShort(annualDeposit)}</b></div>
+            <div><span>Search target</span><b>4 allocation times / year</b></div>
+            <div><span>Risk</span><b>{riskOverlay ? `${targetVolPct}% vol / ${maxOosDrawdownPct}% MDD` : '100% equity baseline'}</b></div>
+            <div><span>Search quality</span><b>{SEARCH_PRESETS[preset]?.label || 'Custom'}</b></div>
           </div>
         </div>
 
@@ -408,19 +495,19 @@ export default function OptimizerListPage({ experiments }) {
         <button
           className="btn-export"
           type="submit"
-          disabled={running}
+          disabled={running || symbolsLoading}
           style={{ border: 0, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.55 : 1, fontSize: 14, padding: '11px 20px' }}
         >
-          {running ? 'Optimizer running…' : '▶ Run optimizer'}
+          {running ? 'Allocation optimizer running…' : '▶ Optimize allocation'}
         </button>
         <div className="muted" style={{ marginTop: 10 }}>
-          TRAIN-only screening → parallel real search → NSGA-II → surrogate ranking → parallel OOS validation → robustness → untouched final holdout.
+          Fixed symbols → timing search → ERC → risk overlay → Shannon drift → rolling OOS validation → recent validation → untouched final holdout.
         </div>
       </form>
 
       <div className="card">
-        <h3>Experiments ({items.length})</h3>
-        {items.length === 0 ? <div className="muted">No optimizer experiments yet.</div> : (
+        <h3>Allocation experiments ({items.length})</h3>
+        {items.length === 0 ? <div className="muted">No allocation experiments yet.</div> : (
           <ul className="run-list">
             {items.map((e) => (
               <li key={e.experiment_id} className={removing === e.experiment_id ? 'run-removing' : ''}>
