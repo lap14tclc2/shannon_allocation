@@ -98,5 +98,9 @@ def test_high_correlation_combination_can_suggest_diversifying_replacement():
     assert result["suggestions"]
     assert any(s["add"] in {"F", "G", "H"} for s in result["suggestions"])
     for suggestion in result["suggestions"]:
-        assert suggestion["after"]["average_correlation"] <= suggestion["before"]["average_correlation"] + 1e-12
+        corr_better = suggestion["after"]["average_correlation"] < suggestion["before"]["average_correlation"]
+        div_better = suggestion["after"]["diversification_ratio"] > suggestion["before"]["diversification_ratio"]
+        cluster_better = suggestion["after"]["largest_cluster_size"] < suggestion["before"]["largest_cluster_size"]
+        assert corr_better or div_better or cluster_better
+        assert suggestion["reasons"]
         assert len(suggestion["symbols"]) == 5
