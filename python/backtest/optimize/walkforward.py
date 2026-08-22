@@ -81,17 +81,40 @@ def evaluate_robust(
     min_windows: int | None = None,
     max_drawdown_abs_pct: float | None = None,
 ) -> dict | None:
-    """Evaluate a candidate on every validation window and aggregate robustness.
+    """Evaluate validation windows and aggregate robustness.
 
     ``max_drawdown_abs_pct`` is positive, e.g. 35 means every validation window
-    must have MDD >= -35%.  A violation makes the candidate ineligible.
+    must have MDD >= -35%. A violation makes the candidate ineligible.
+
+    Validation fails fast when the result is already impossible to accept. This
+    preserves the exact eligibility semantics while avoiding unnecessary later
+    window backtests for candidates that already breached the hard risk gate.
     """
     per = []
-    for w in windows:
+    required = len(windows) if min_windows is not None and min_windows >= len(windows) else min_windows
+
+    for idx, w in enumerate(windows):
         m = eval_fn(candidate, w)
         if m is None or m.get("error"):
+            # With full-coverage validation, one failed window is sufficient to
+            # reject the candidate; later windows cannot make it valid again.
+            if required is not None and required >= len(windows):
+                return None
+            remaining = len(windows) - idx - 1
+            if required is not None and len(per) + remaining < required:
+                return None
             continue
+
+        # A hard drawdown breach is terminal for this candidate because the rule
+        # requires every accepted validation window to respect the ceiling.
+        if (
+            max_drawdown_abs_pct is not None
+            and m.get("max_drawdown_pct", 0.0) < -abs(max_drawdown_abs_pct)
+        ):
+            return None
+
         per.append(m)
+
     if not per:
         return None
     if min_windows is not None and len(per) < min_windows:
@@ -101,8 +124,6 @@ def evaluate_robust(
     sharpes = [m["sharpe"] for m in per]
     mdds = [m["max_drawdown_pct"] for m in per]
     cdars = [m.get("cdar95_pct", 0.0) for m in per]
-    if max_drawdown_abs_pct is not None and any(mdd < -abs(max_drawdown_abs_pct) for mdd in mdds):
-        return None
 
     mean = sum(twrs) / len(twrs)
     var = sum((t - mean) ** 2 for t in twrs) / (len(twrs) - 1) if len(twrs) > 1 else 0.0
