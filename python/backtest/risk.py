@@ -6,6 +6,11 @@ controls total equity exposure:
     live_weight_i = equity_exposure * bounded_erc_weight_i
     cash_target   = 1 - equity_exposure
 
+Risk can be refreshed less frequently than Shannon drift checks. With the default
+``risk_refresh_days=5``, daily calls inside a simulation reuse the same strictly-
+past weekly risk snapshot, greatly reducing rolling covariance work during large
+optimizer searches.
+
 When disabled, ERC targets are returned unchanged (apart from numerical
 normalisation) so old backtests remain a valid A/B baseline.
 """
@@ -96,6 +101,15 @@ def apply_position_cap(weights: dict[str, float], max_weight: float | None) -> d
     return out
 
 
+def _risk_snapshot_pos(pos: int, refresh_days: int) -> int:
+    """Return a strictly non-future position shared by one refresh bucket."""
+    refresh = max(1, int(refresh_days))
+    if refresh == 1:
+        return pos
+    snap = pos - (pos % refresh)
+    return snap if snap >= 3 else pos
+
+
 def _portfolio_volatility(
     raw_prices: pd.DataFrame,
     symbols: list[str],
@@ -104,22 +118,39 @@ def _portfolio_volatility(
     weights: dict[str, float],
     annualization_factor: int,
 ) -> tuple[float | None, int]:
+    """Annualized volatility with a DataFrame-local cache.
+
+    The cache is safe because ``raw_prices`` is a simulation-local immutable view
+    and the key includes snapshot position, symbols, lookback and relative weights.
+    """
+    weight_key = tuple(round(float(weights[s]), 10) for s in symbols)
+    cache_key = (tuple(symbols), int(pos), int(lookback), int(annualization_factor), weight_key)
+    cache = raw_prices.attrs.setdefault("_risk_volatility_cache", {})
+    if cache_key in cache:
+        return cache[cache_key]
+
     start = max(0, pos - max(2, int(lookback)))
     window = raw_prices.iloc[start:pos][symbols].dropna()
     if len(window) < 3:
-        return None, len(window)
+        value = (None, len(window))
+        cache[cache_key] = value
+        return value
     values = window.to_numpy(dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         returns = np.log(values[1:] / values[:-1])
     returns = returns[np.all(np.isfinite(returns), axis=1)]
     if returns.shape[0] < 2:
-        return None, len(window)
+        value = (None, len(window))
+        cache[cache_key] = value
+        return value
     cov = np.cov(returns, rowvar=False, ddof=1)
     cov = np.atleast_2d(np.nan_to_num(cov, nan=0.0, posinf=0.0, neginf=0.0))
     cov *= annualization_factor
     vec = np.asarray([weights[s] for s in symbols], dtype=float)
     variance = float(vec @ cov @ vec)
-    return math.sqrt(max(variance, 0.0)), len(window)
+    value = (math.sqrt(max(variance, 0.0)), len(window))
+    cache[cache_key] = value
+    return value
 
 
 def risk_adjusted_targets(
@@ -132,7 +163,6 @@ def risk_adjusted_targets(
     """Scale ERC weights by an absolute volatility target using only past data."""
     original = _normalise(erc_targets)
 
-    # True legacy baseline: no cap and no cash scaling when overlay is disabled.
     if not params.risk_overlay_enabled:
         return original, {
             "enabled": False,
@@ -142,15 +172,18 @@ def risk_adjusted_targets(
             "slow_volatility": None,
             "risk_volatility": None,
             "target_volatility": params.target_volatility,
+            "risk_refresh_days": params.risk_refresh_days,
+            "risk_snapshot_position": pos,
             "relative_targets": {k: round(v, 6) for k, v in original.items()},
             "targets": {k: round(v, 6) for k, v in original.items()},
         }
 
     bounded = apply_position_cap(original, params.max_position_weight)
+    risk_pos = _risk_snapshot_pos(pos, params.risk_refresh_days)
     fast, n_fast = _portfolio_volatility(
         raw_prices,
         symbols,
-        pos,
+        risk_pos,
         params.risk_fast_lookback,
         bounded,
         params.annualization_factor,
@@ -158,7 +191,7 @@ def risk_adjusted_targets(
     slow, n_slow = _portfolio_volatility(
         raw_prices,
         symbols,
-        pos,
+        risk_pos,
         params.risk_slow_lookback,
         bounded,
         params.annualization_factor,
@@ -188,4 +221,7 @@ def risk_adjusted_targets(
         observations_fast=n_fast,
         observations_slow=n_slow,
     )
-    return targets, result.as_dict()
+    info = result.as_dict()
+    info["risk_refresh_days"] = max(1, int(params.risk_refresh_days))
+    info["risk_snapshot_position"] = int(risk_pos)
+    return targets, info
