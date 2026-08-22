@@ -1,8 +1,8 @@
 """Deterministic search-budget adaptation for standard UI presets.
 
-The expensive portfolio simulation/validation math is unchanged.  We only reduce
-how many candidates are explored when a standard preset designed for the full
-~90-name universe is used on a much smaller universe such as VN30 or VN50.
+The expensive portfolio simulation/validation math is unchanged. We scale how
+many *real* candidates are explored for each standard preset and shift more of
+the large-universe coverage to the cheap surrogate stage.
 
 Advanced/custom budgets are never modified: adaptation only triggers when every
 budget field exactly matches one of the shipped Fast/Balanced/Thorough presets.
@@ -22,9 +22,10 @@ _STANDARD_PRESETS = {
     "thorough": (90, 45, 500, 60, 300, 10000, 80, 20),
 }
 
-# Smaller universes do not need the same number of expensive real backtests.
-# Finalists still go through the identical walk-forward robustness and untouched
-# holdout methodology.
+# Standard UI presets resolve to a deterministic workload for each universe.
+# For the full ~90-name universe we spend fewer expensive real simulations than
+# the old preset and compensate with a larger cheap surrogate pool. Finalists
+# still go through the same walk-forward robustness and untouched final holdout.
 _RESOLVED = {
     "vn30": {
         "fast": (24, 10, 50, 30, 35, 1000, 10, 6),
@@ -35,6 +36,19 @@ _RESOLVED = {
         "fast": (30, 12, 80, 40, 60, 1500, 12, 7),
         "balanced": (40, 18, 120, 45, 90, 2500, 20, 10),
         "thorough": (55, 28, 220, 50, 140, 5000, 35, 14),
+    },
+    # VN100 and "all" are both large-universe modes in the current app. The
+    # surrogate pool is intentionally larger here because ranking a generated
+    # candidate is orders of magnitude cheaper than a full path simulation.
+    "vn100": {
+        "fast": (32, 10, 80, 45, 60, 5000, 20, 6),
+        "balanced": (40, 15, 120, 45, 90, 10000, 30, 8),
+        "thorough": (60, 25, 240, 60, 160, 20000, 60, 12),
+    },
+    "all": {
+        "fast": (32, 10, 80, 45, 60, 5000, 20, 6),
+        "balanced": (40, 15, 120, 45, 90, 10000, 30, 8),
+        "thorough": (60, 25, 240, 60, 160, 20000, 60, 12),
     },
 }
 
@@ -61,7 +75,7 @@ def _preset_name(opt) -> str | None:
 
 
 def adapt_optimizer_budget(params, opt) -> dict | None:
-    """Mutate ``opt`` to the smaller standard budget when safe.
+    """Mutate ``opt`` to the resolved standard budget when safe.
 
     Returns a small audit dictionary when adaptation occurred, otherwise ``None``.
     Custom advanced settings are preserved exactly.
