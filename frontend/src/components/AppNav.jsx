@@ -47,8 +47,13 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   }, []);
 
   async function logout() {
-    try { await logoutUser(); } catch { /* cookie is cleared server-side when possible */ }
-    window.location.assign('/');
+    setOpen(false);
+    try {
+      await logoutUser();
+    } catch {
+      // Navigation still proceeds so an expired/broken session can recover on the sign-in route.
+    }
+    window.location.replace('/login?logged_out=1');
   }
 
   return (
