@@ -249,6 +249,30 @@ class PortfolioService:
         stale = [s for s in symbols if prices[s].get("trading_date") != target]
         return (DataQuality.STALE.value if stale else DataQuality.VALID.value), target, stale
 
+    def _market_history_status(self, symbols: list[str]) -> dict:
+        required_bars = 260
+        rows = []
+        for symbol in symbols:
+            count = int(self.store.market_price_count(symbol) or 0)
+            latest = self.store.latest_price(symbol)
+            rows.append({
+                "symbol": symbol,
+                "bars": count,
+                "required_bars": required_bars,
+                "risk_ready": count >= required_bars,
+                "latest": latest.get("trading_date") if latest else None,
+                "source": latest.get("source") if latest else None,
+            })
+        ready = sum(1 for row in rows if row["risk_ready"])
+        total = len(rows)
+        return {
+            "state": "NO_HOLDINGS" if total == 0 else ("READY" if ready == total else "BUILDING"),
+            "required_bars": required_bars,
+            "ready_symbols": ready,
+            "total_symbols": total,
+            "symbols": rows,
+        }
+
     def _market_metadata(self, symbols: list[str], prices: dict[str, dict]) -> dict:
         status, market_date, stale_symbols = self._price_quality(symbols, prices)
         age = None
@@ -262,6 +286,7 @@ class PortfolioService:
             "aligned": status == DataQuality.VALID.value,
             "stale_or_missing_symbols": stale_symbols,
             "calendar_age_days": age,
+            "history": self._market_history_status(symbols),
             "freshness_semantics": "VALID means all current holdings are aligned on the same latest stored trading date; calendar age alone does not imply exchange-session staleness.",
         }
 
@@ -327,22 +352,28 @@ class PortfolioService:
 
     def _sync_symbol(self, symbol: str, today: date) -> dict:
         latest = self.store.latest_price(symbol)
+        count_before = int(self.store.market_price_count(symbol) or 0)
         symbol_events = [e for e in self.store.list_events() if e.symbol and e.symbol.upper() == symbol.upper()]
         earliest_event = min((date.fromisoformat(e.event_date) for e in symbol_events), default=None)
-        if latest and self.store.market_price_count(symbol) >= 260:
+        if latest and count_before >= 260:
             start_date = date.fromisoformat(latest["trading_date"]) - timedelta(days=10)
-        elif earliest_event:
-            start_date = earliest_event - timedelta(days=10)
         else:
-            start_date = today - timedelta(days=550)
+            risk_lookback_start = today - timedelta(days=550)
+            event_start = (earliest_event - timedelta(days=10)) if earliest_event else risk_lookback_start
+            start_date = min(risk_lookback_start, event_start)
         df, source = self.market.daily_history_with_source(symbol, start_date.isoformat(), today.isoformat())
         rows = frame_to_price_rows(symbol, df, source=source)
         self.store.upsert_market_prices(rows)
+        count_after = int(self.store.market_price_count(symbol) or 0)
         return {
             "symbol": symbol,
             "source": source,
             "bars": len(rows),
-            "latest": rows[-1]["trading_date"] if rows else None,
+            "stored_bars": count_after,
+            "required_bars": 260,
+            "latest": rows[-1]["trading_date"] if rows else (latest.get("trading_date") if latest else None),
+            "history_start": rows[0]["trading_date"] if rows else None,
+            "risk_ready": count_after >= 260,
         }
 
     def _rebuild_snapshot_history(self) -> dict:
@@ -468,10 +499,12 @@ class PortfolioService:
         prices = self.store.latest_prices(current_symbols)
         quality, snapshot_date, stale_symbols = self._price_quality(current_symbols, prices)
         latest = self.store.latest_snapshot()
+        history_status = self._market_history_status(current_symbols)
         return {
             "ok": not errors,
             "snapshot": latest,
             "history": rebuilt,
+            "history_status": history_status,
             "sync": sync_rows,
             "errors": errors,
             "stale_symbols": stale_symbols,
