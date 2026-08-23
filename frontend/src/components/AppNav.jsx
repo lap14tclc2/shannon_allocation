@@ -114,6 +114,13 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
           </div>
         </div>
       </div>
+
+      {open && <button
+        type="button"
+        className="mobile-nav-backdrop"
+        aria-label={text('Close account and appearance menu', 'Đóng menu tài khoản và giao diện')}
+        onClick={() => setOpen(false)}
+      />}
     </nav>
   );
 }
