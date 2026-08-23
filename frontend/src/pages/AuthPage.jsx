@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { loginUser, registerUser } from '../lib/api.js';
 
 function safeNextPath() {
@@ -16,9 +16,19 @@ export default function AuthPage({ locale = 'en' }) {
   const [missingUser, setMissingUser] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [nextPath, setNextPath] = useState('/');
+  const [sessionExpired, setSessionExpired] = useState(false);
   const isAdmin = username.trim().toLowerCase() === 'admin';
-  const nextPath = useMemo(safeNextPath, []);
-  const sessionExpired = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reason') === 'session_expired';
+
+  // Keep the first browser render identical to SSR. URL-derived state is
+  // applied only after hydration, which avoids React hydration mismatches on
+  // /login?reason=session_expired&next=...
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setNextPath(safeNextPath());
+    setSessionExpired(params.get('reason') === 'session_expired');
+  }, []);
 
   async function login(event) {
     event.preventDefault();
