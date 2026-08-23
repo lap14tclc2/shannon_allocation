@@ -40,6 +40,8 @@ export const logClientActivity = (action, details = {}) => sendJSON('/api/portfo
 export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
 export const reconcileBroker = (payload) => sendJSON('/api/portfolio/reconciliation', 'POST', payload);
 export const syncCorporateActions = (payload = {}) => sendJSON('/api/portfolio/corporate-actions/sync', 'POST', payload);
+export const getLatestDividend = (symbol) => getJSON(`/api/portfolio/dividends/latest/${encodeURIComponent(String(symbol || '').toUpperCase())}`);
+export const getDividendProviderHealth = () => getJSON('/api/portfolio/dividends/health');
 export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
 export const recordCorporateActionReceipt = (id, payload) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/receipt`, 'POST', payload);
 export const postCorporateActionReceipt = (id) => sendJSON('/api/portfolio/corporate-actions/post', 'POST', { action_id: Number(id) });
