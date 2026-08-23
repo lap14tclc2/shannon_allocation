@@ -1,74 +1,41 @@
 # QPort — Hướng dẫn sử dụng đầy đủ (Tiếng Việt)
 
-Tài liệu này bắt đầu từ máy/database trống và đi đến routine vận hành hằng ngày.
+QPort là **hệ thống thông tin danh mục Buy & Hold cho cổ phiếu cơ sở Việt Nam**.
+Hệ thống theo dõi những gì bạn thực sự sở hữu; không tự chọn cổ phiếu, không tự
+phân bổ và không tự đặt lệnh.
 
-QPort là **hệ thống thông tin Buy & Hold cho danh mục cổ phiếu cơ sở Việt Nam**. Đây không phải hệ thống giao dịch tự động.
-
-> Nguyên tắc cốt lõi: **chỉ các sự kiện được ghi rõ trong ledger mới thay đổi số cổ phiếu hoặc tiền mặt**. Giá thị trường, risk metrics, kết quả research, thời gian hoặc mốc cuối năm không bao giờ tự tạo giao dịch danh mục.
+> Nguyên tắc cốt lõi: **chỉ sự kiện sổ cái được ghi rõ mới thay đổi cổ phiếu hoặc tiền mặt**.
 
 ---
 
-## 1. QPort làm gì
+## 1. QPort theo dõi những gì?
 
-Operational QPort theo dõi:
+QPort lưu và tính:
 
-- cổ phiếu thực tế đang sở hữu và tiền mặt;
-- giá vốn trung bình và cost basis;
-- giá thị trường hằng ngày;
-- market value và NAV;
-- lãi/lỗ đã thực hiện và chưa thực hiện;
-- cổ tức, phí, thuế được ghi vào ledger;
+- số cổ phiếu thực tế đang sở hữu;
+- giá vốn và tổng cost basis;
+- tiền mặt khả dụng của danh mục;
+- giá thị trường D1;
+- giá trị thị trường và NAV;
+- lãi/lỗ chưa thực hiện và đã thực hiện;
+- cổ tức, phí và thuế;
+- snapshot danh mục từng ngày;
 - TWR và XIRR;
-- drawdown và volatility;
-- concentration và risk contribution;
-- optional strategic reference weights dài hạn;
-- gợi ý chỉ MUA để dùng tiền mặt hiện có;
-- daily snapshots bất biến theo ngày.
+- drawdown hiện tại/lớn nhất;
+- biến động 63 ngày/252 ngày;
+- concentration, HHI và số vị thế hiệu dụng;
+- tương quan và diversification ratio;
+- đóng góp rủi ro và tham chiếu ERC;
+- VaR/CVaR lịch sử và downside risk;
+- tỷ trọng tham chiếu tùy chọn.
 
-QPort **không tự động**:
-
-- mua hoặc bán cổ phiếu;
-- xoay vòng mã;
-- rebalance hằng năm;
-- giảm equity vì volatility tăng;
-- áp kết quả optimizer vào live portfolio.
-
-Các công cụ nghiên cứu được cô lập dưới `/research`.
+QPort không thay đổi danh mục chỉ vì một chỉ số, cảnh báo hoặc ngày trên lịch thay đổi.
 
 ---
 
-## 2. Yêu cầu môi trường
+## 2. Cài đặt và khởi động
 
-Khuyến nghị:
-
-- Python 3.11+
-- Node.js 22+
-- npm
-- Internet để đồng bộ dữ liệu thị trường
-
-Database operational mặc định được lưu local.
-
-Đường dẫn mặc định:
-
-```text
-python/data/portfolio.sqlite3
-```
-
-Thư mục runtime này không được commit vào Git.
-
----
-
-## 3. Cài đặt từ đầu
-
-Lấy code và checkout nhánh Buy & Hold:
-
-```bash
-git fetch origin
-git checkout refactor-buy-hold
-git pull origin refactor-buy-hold
-```
-
-Build frontend:
+### 2.1 Frontend
 
 ```bash
 cd frontend
@@ -77,37 +44,22 @@ npm run build
 npm run build:ssr
 ```
 
-Cài Python dependencies:
+### 2.2 Python
 
 ```bash
 cd ../python
-python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Optional: bật Vnstock
+Bản cơ bản có thể dùng VNDIRECT.
 
-Base system có thể chạy với VNDIRECT fallback. Nếu muốn dùng thêm Vnstock:
+Nếu muốn bật thêm Vnstock:
 
 ```bash
 pip install -r requirements-vnstock.txt
 ```
 
-Chính sách market data mặc định:
-
-```text
-Vnstock nếu cài được và truy cập được
-        ↓ lỗi
-VNDIRECT daily history
-        ↓ lỗi
-last stored price + trạng thái stale/missing rõ ràng
-```
-
----
-
-## 4. Khởi động QPort
-
-Từ thư mục `python`:
+### 2.3 Chạy server
 
 ```bash
 python serve.py
@@ -119,163 +71,120 @@ Mở:
 http://127.0.0.1:8080/
 ```
 
-Navigation operational:
+Menu:
 
 ```text
-Danh mục | Giao dịch | Hiệu suất | Rủi ro | Ảnh chụp | Cài đặt | Hướng dẫn | Nghiên cứu
+Danh mục | Giao dịch | Hiệu suất | Rủi ro | Snapshot | Cài đặt | Hướng dẫn
+```
+
+Dùng nút `EN / VI` để đổi ngôn ngữ.
+
+---
+
+## 3. Database và dữ liệu quan trọng
+
+Database mặc định:
+
+```text
+python/data/portfolio.sqlite3
+```
+
+Dữ liệu quan trọng nhất là **ledger/sổ cái**. Giá thị trường và snapshot là dữ
+liệu dẫn xuất, có thể dựng lại.
+
+Hãy backup database trước khi import hàng loạt hoặc thay đổi lớn.
+
+Muốn dùng database khác:
+
+```text
+PORTFOLIO_DB=/duong-dan/portfolio.sqlite3
 ```
 
 ---
 
-## 5. Chuyển English / Vietnamese
+## 4. Nhập một danh mục đang có từ đầu
 
-Dùng nút `EN` / `VI` trên thanh navigation.
-
-Ngôn ngữ đã chọn được lưu trong browser cookie `qport_lang` và được dùng lại ở lần mở app sau.
-
-Nếu chưa từng chọn ngôn ngữ, QPort dùng `Accept-Language` của browser làm mặc định ban đầu và fallback về English nếu không nhận diện được.
-
-Các màn hình operational QPort hỗ trợ English và Vietnamese. Các màn hình optimizer/detail cũ trong Research Lab là legacy tooling nên có thể vẫn còn label tiếng Anh.
-
----
-
-# PHẦN A — TẠO DANH MỤC BAN ĐẦU
-
-## 6. Bắt đầu với database trống
-
-Database mới phải hiển thị không có holdings. Đây là behavior đúng.
-
-QPort không tự tạo sample portfolio và không suy ra số cổ phiếu từ market data.
-
-Nguồn sự thật là ledger.
-
----
-
-## 7. Nhập các vị thế đang sở hữu
-
-Vào:
+Giả sử broker đang hiển thị:
 
 ```text
-Giao dịch → Ghi nhận sự kiện danh mục
+ACB   19.210 CP   giá vốn TB 19.780 VND
+DGC   10.000 CP   giá vốn TB 52.340 VND
+FPT    3.000 CP   giá vốn TB 74.025 VND
+Tiền mặt 50.000.000 VND
 ```
 
-Với mỗi cổ phiếu đã sở hữu trước khi bắt đầu dùng QPort, chọn:
+### Bước 1 — Nhập từng vị thế hiện có
+
+Vào **Giao dịch**.
+
+Chọn:
 
 ```text
 Nhập vị thế ban đầu
 ```
 
-Các field bắt buộc:
+Với mỗi mã, nhập:
 
-- Ngày
-- Mã
-- Số cổ phiếu
-- Giá / cổ phiếu (VND)
-
-Trong `Nhập vị thế ban đầu`, **Price là giá vốn trung bình/cổ phiếu mà bạn muốn QPort theo dõi**, không phải giá thị trường hôm nay.
+- ngày;
+- mã cổ phiếu;
+- số cổ phiếu hiện có;
+- giá vốn trung bình tại broker theo **VND đầy đủ**.
 
 Ví dụ:
 
 ```text
 Mã: FPT
-Số CP: 3,000
-Giá vốn TB: 74,025 VND
-```
-
-Nhập:
-
-```text
-Loại sự kiện: Nhập vị thế ban đầu
-Mã: FPT
 Số CP: 3000
-Giá/CP: 74025
+Giá / CP: 74025
 ```
 
-QPort tạo:
+`POSITION_IMPORT` tạo số cổ phiếu và cost basis nhưng không trừ tiền mặt trong QPort.
+
+Nên dùng ngày mua/chuyển dữ liệu trung thực. Lịch sử Hiệu suất bắt đầu từ các ngày
+được đại diện trong ledger; không nên bịa ngày cũ chỉ để có chart dài hơn.
+
+### Bước 2 — Ghi tiền mặt khả dụng
+
+Có hai cách:
+
+- Danh mục → **Quản lý tiền mặt → Nạp tiền**; hoặc
+- Giao dịch → **Nạp tiền**.
+
+Ví dụ:
 
 ```text
-cost basis = 3,000 × 74,025
-           = 222,075,000 VND
+50.000.000 VND
 ```
 
-Opening import được xem như external portfolio contribution cho mục đích đo hiệu suất. Nó không giả vờ rằng QPort từng có cash rồi thực hiện một lệnh BUY trong quá khứ.
+Số dư tiền mặt trong ledger là nguồn sự thật cho tiền mặt khả dụng.
 
-### Quan trọng
+### Bước 3 — Chạy đồng bộ lần đầu
 
-Luôn nhập giá theo **VND đầy đủ**:
-
-```text
-Đúng:  72,000
-Sai:   72
-```
-
-Một số provider dữ liệu Việt Nam có thể trả dạng exchange-style như `72.0`; QPort chuẩn hóa giá provider về full VND trước khi định giá.
-
----
-
-## 8. Nhập tiền mặt ban đầu
-
-Nếu danh mục đang theo dõi có cash, nhập riêng:
-
-```text
-Loại sự kiện: Nạp tiền
-Số tiền: 50,000,000 VND
-```
-
-Không đưa vào QPort phần tiền broker nằm ngoài phạm vi danh mục bạn muốn theo dõi.
-
-Phạm vi portfolio phải nhất quán theo thời gian.
-
----
-
-## 9. Kiểm tra trạng thái ban đầu trước khi tiếp tục
-
-Sau khi nhập hết holdings và cash, quay về Danh mục.
-
-Trước khi tin P/L, kiểm tra:
-
-1. đủ tất cả ticker;
-2. số cổ phiếu khớp broker;
-3. giá vốn trung bình khớp cost basis bạn muốn theo dõi;
-4. cash khớp số dư tiền thuộc phạm vi portfolio.
-
-Ứng dụng cố ý không cung cấp update/delete API thông thường cho ledger history. Hãy kiểm tra dữ liệu kỹ trước khi submit.
-
-Nếu nhập sai một historical event làm ledger sai đáng kể, ưu tiên restore database backup đúng thay vì tạo một giao dịch giả để che lỗi.
-
----
-
-# PHẦN B — MARKET DATA VÀ DAILY SNAPSHOT
-
-## 10. Đồng bộ market data lần đầu
-
-Tại Danh mục bấm:
+Quay lại **Danh mục** và bấm:
 
 ```text
 Đồng bộ giá ngày
 ```
 
-Hoặc command line:
+Lần sync đầu rất quan trọng. QPort sẽ:
 
-```bash
-cd python
-python -m portfolio.cli sync
-```
+1. lấy lịch sử D1 cho mọi mã từng xuất hiện trong ledger;
+2. chuẩn hóa giá cổ phiếu Việt Nam về VND đầy đủ;
+3. lưu market prices;
+4. replay ledger theo các ngày lịch sử;
+5. dựng lại snapshot từng ngày;
+6. tạo TWR và lịch sử drawdown;
+7. làm đầy trang Hiệu suất và Rủi ro.
 
-Với mỗi ticker đang nắm giữ, QPort cố gắng:
-
-1. tải đủ D1 history cho analytics;
-2. normalize OHLC về canonical VND;
-3. lưu market prices local;
-4. tính portfolio risk diagnostics;
-5. mark-to-market danh mục;
-6. tạo/cập nhật daily snapshot.
+Bạn **không cần tự tạo snapshot**.
 
 ---
 
-## 11. Kiểm tra bảng Holdings
+## 5. Đối chiếu accounting trước khi tin analytics
 
-Với mỗi position, kiểm tra các cột:
+Trước khi dùng Hiệu suất hoặc Rủi ro, hãy so bảng Danh mục với broker.
+
+Với từng mã, kiểm tra:
 
 ```text
 Số CP
@@ -285,699 +194,519 @@ Giá trị vốn
 Giá trị thị trường
 Lãi/lỗ chưa thực hiện
 Tỷ suất
-Tỷ trọng
-Đóng góp rủi ro
-Trạng thái
 ```
 
-Các identity kế toán:
+Công thức:
 
 ```text
-Giá trị vốn
-= Số CP × Giá vốn TB
-
-Giá trị thị trường
-= Số CP × Giá thị trường hiện tại
-
-Lãi/lỗ chưa thực hiện
-= Giá trị thị trường − Giá trị vốn
-
-Tỷ suất chưa thực hiện
-= Lãi/lỗ chưa thực hiện / Giá trị vốn
+Giá trị vốn          = Số CP × Giá vốn TB
+Giá trị thị trường   = Số CP × Giá hiện tại
+Lãi/lỗ chưa thực hiện= Giá trị thị trường - Giá trị vốn
+Tỷ suất chưa thực hiện = Lãi/lỗ chưa thực hiện / Giá trị vốn
 ```
 
 Ví dụ:
 
 ```text
 FPT
-Số CP             3,000
-Giá vốn TB       74,025 VND
-Giá thị trường   72,000 VND
+Số CP        = 3.000
+Giá vốn TB   = 74.025 VND
+Giá hiện tại = 72.000 VND
 
-Giá trị vốn      222,075,000 VND
-Giá trị TT       216,000,000 VND
-Lãi/lỗ            -6,075,000 VND
-Tỷ suất                -2.74%
+Giá trị vốn          = 222.075.000 VND
+Giá trị thị trường   = 216.000.000 VND
+Lãi/lỗ chưa thực hiện=  -6.075.000 VND
+Tỷ suất              ≈ -2,74%
 ```
 
-Nếu giá hiển thị là `72 VND` thay vì khoảng `72,000 VND`, dừng lại và kiểm tra normalization trước khi tin NAV hoặc P/L.
-
----
-
-## 12. Hiểu trạng thái dữ liệu
-
-### VALID / HỢP LỆ
-
-Tất cả ticker đang nắm giữ có cùng latest trading date và snapshot có thể được đánh dấu official.
-
-### STALE / CŨ
-
-Ít nhất một ticker có stored price cũ hơn ticker mới nhất.
-
-QPort vẫn có thể hiển thị estimated portfolio state để chẩn đoán, nhưng không nên coi dữ liệu stale là official performance evidence.
-
-### MISSING / THIẾU
-
-Ít nhất một ticker không có usable stored market price.
-
-Cần kiểm tra provider/symbol trước khi tin valuation.
-
----
-
-## 13. Official snapshot và non-official snapshot
-
-Một daily snapshot kết hợp:
+Công thức toàn danh mục:
 
 ```text
-immutable ledger state
-+
-stored market prices
-+
-derived portfolio analytics
+NAV        = Tiền mặt + Σ Giá trị thị trường
+Lãi/lỗ tổng= NAV - Dòng tiền ròng bên ngoài
 ```
 
-Chỉ snapshot có dữ liệu tươi/đầy đủ mới được đánh dấu official.
+Lãi/lỗ tổng là giá trị accounting **live**, không cần phải có snapshot mới tính được.
 
-Performance chart chỉ sử dụng official snapshots.
-
-Mục tiêu là không để một lỗi provider tạm thời biến thành một điểm NAV chính thức giả.
+Nếu Giá, Giá trị vốn, Giá trị thị trường hoặc P/L không khớp broker, hãy dừng lại
+và sửa ledger/data trước khi đọc Risk hoặc Performance.
 
 ---
 
-# PHẦN C — GHI NHẬN HOẠT ĐỘNG DANH MỤC THỰC TẾ
+## 6. Đơn vị giá và dữ liệu thị trường
 
-## 14. Tham chiếu các loại event
+QPort lưu giá cổ phiếu Việt Nam theo **VND đầy đủ trên mỗi cổ phiếu**.
 
-### POSITION_IMPORT — Nhập vị thế ban đầu
-
-Chỉ dùng khi thiết lập/migrate một vị thế đã sở hữu trước khi QPort theo dõi.
-
-Tác động:
+Đúng:
 
 ```text
-shares += quantity
-cost basis += quantity × price
-external contributions += cùng cost basis
+FPT = 72.000 VND
 ```
 
-Không tiêu thụ cash.
-
----
-
-### CASH_DEPOSIT — Nạp tiền
-
-Dùng khi tiền mới thực sự đi vào tracked portfolio.
-
-Tác động:
+Sai:
 
 ```text
-cash += amount
-external contributions += amount
+FPT = 72 VND
 ```
 
-External deposits được neutralize trong TWR.
-
----
-
-### BUY — Khớp lệnh mua
-
-Chỉ ghi sau khi broker thực sự khớp lệnh MUA.
-
-Cần:
-
-- ticker;
-- quantity;
-- execution price;
-- optional fee;
-- optional tax.
-
-Tác động gần đúng:
+Chính sách provider:
 
 ```text
-position cost basis += gross purchase + buy fee
-shares += quantity
-cash -= gross purchase + fee + tax
+Vnstock nếu đã cài
+       ↓ fallback
+VNDIRECT
+       ↓ lỗi
+Giá đã lưu gần nhất + trạng thái CŨ/THIẾU
 ```
 
-QPort từ chối BUY nếu tracked cash bị âm. Hãy ghi funding trước.
+### Trạng thái dữ liệu
+
+**HỢP LỆ** — các mã đang nắm giữ có dữ liệu mới nhất nhất quán.
+
+**CŨ** — ít nhất một mã đang dùng giá đã biết của ngày trước.
+
+**THIẾU** — không có giá cần thiết.
+
+Không nên dùng giá stale để đối chiếu broker như thể đó là dữ liệu hiện tại đầy đủ.
 
 ---
 
-### SELL — Khớp lệnh bán
+## 7. Trang Danh mục
 
-Chỉ ghi sau khi broker thực sự khớp lệnh BÁN.
+Các card phía trên gồm:
 
-QPort từ chối SELL lớn hơn số cổ phiếu ledger đang sở hữu.
+### NAV
 
-Realized P/L dùng average cost hiện tại và execution costs.
-
----
-
-### CASH_WITHDRAW — Rút tiền
-
-Dùng khi tiền rời khỏi tracked portfolio.
-
-Tác động:
+Giá trị hiện tại:
 
 ```text
-cash -= amount
-external withdrawals += amount
+Tiền mặt + giá trị thị trường của tất cả vị thế
 ```
 
-Đây là external flow, không phải investment loss.
+### Giá trị cổ phiếu
+
+Tổng market value của cổ phiếu đang sở hữu.
+
+### Tiền mặt
+
+Tiền khả dụng từ ledger.
+
+### Lãi/lỗ tổng
+
+Mức thay đổi tài sản hiện tại so với dòng vốn ròng của nhà đầu tư.
+
+Nó phản ánh tác động kinh tế của:
+
+- P/L chưa thực hiện;
+- P/L đã thực hiện;
+- cổ tức;
+- phí/thuế;
+- tiền mặt còn lại trong danh mục.
+
+### Drawdown hiện tại
+
+Mức giảm từ đỉnh của đường TWR. Sau khi lịch sử được dựng, luôn phải có số — kể
+cả `0,00%` khi danh mục đang ở đỉnh mới.
+
+### Biến động 252 ngày
+
+Realized volatility năm hóa từ lịch sử giá đang lưu.
 
 ---
 
-### CASH_DIVIDEND — Cổ tức tiền mặt
+## 8. Quản lý tiền mặt
 
-Ghi số tiền thực tế đã được credit vào tracked portfolio.
+Trang Danh mục có card **Quản lý tiền mặt**.
 
-Khuyến nghị: nhập **số tiền net thực nhận từ broker account** để QPort không phải tự đoán tax treatment.
+### Nạp tiền
 
-Tác động:
+Chỉ dùng khi tiền thực sự có trong tài khoản/danh mục đang theo dõi. Thao tác tạo
+sự kiện `CASH_DEPOSIT`.
+
+### Rút tiền
+
+Chỉ dùng khi tiền thực sự rời danh mục. Thao tác tạo `CASH_WITHDRAW` và không được
+làm tiền mặt âm.
+
+### MUA cần tiền đã được ghi nhận
+
+Một sự kiện `BUY` sẽ bị từ chối nếu ledger không đủ tiền.
+
+Đây là behavior có chủ ý: ghi funding trước, sau đó mới ghi giao dịch MUA.
+
+---
+
+## 9. Ghi các sự kiện danh mục thông thường
+
+Dùng **Giao dịch** mỗi khi có sự kiện thật.
+
+### MUA
+
+Nhập số lượng khớp thực tế, giá khớp, phí và thuế.
+
+### BÁN
+
+Nhập execution thực tế. QPort không cho bán nhiều hơn số cổ phiếu đang sở hữu.
+
+### Cổ tức tiền mặt
+
+Dùng `CASH_DIVIDEND` cho số tiền thực tế nhận được. Khoản này tăng cash và là lợi
+nhuận đầu tư, không phải vốn nạp thêm.
+
+### Cổ tức cổ phiếu
+
+Dùng `STOCK_DIVIDEND` với số cổ phiếu thực tế được ghi có. Cost basis không đổi,
+nên giá vốn trung bình giảm tương ứng.
+
+### Tách/gộp cổ phiếu
+
+Dùng `SPLIT` với tỷ lệ cổ phiếu. Ví dụ tách 2:1 dùng ratio `2`.
+
+### Phí độc lập
+
+Dùng `FEE` cho phí danh mục không nằm trong BUY/SELL.
+
+---
+
+## 10. Sức khỏe danh mục
+
+Portfolio Health là bản tổng hợp chẩn đoán, **không phải lệnh giao dịch**.
+
+Bao gồm:
+
+- tỷ suất tổng;
+- drawdown hiện tại/lớn nhất;
+- volatility 63D/252D;
+- vị thế lớn nhất;
+- số vị thế hiệu dụng;
+- tương quan trung bình/lớn nhất;
+- diversification ratio;
+- mã đóng góp rủi ro lớn nhất;
+- VaR/CVaR ngày lịch sử 95%;
+- độ phủ dữ liệu rủi ro;
+- số snapshot chính thức;
+- tỷ trọng tiền mặt.
+
+Các cảnh báo có thể gồm:
+
+- dữ liệu stale;
+- một mã >= 40% NAV;
+- HHI cao;
+- tương quan trung bình cao;
+- drawdown >= 20%;
+- volatility >= 35%;
+- lịch sử rủi ro chưa đủ.
+
+Cảnh báo nghĩa là **kiểm tra**, không có nghĩa là **bán**.
+
+---
+
+## 11. Trang Hiệu suất
+
+Sau lần sync lịch sử đầu tiên thành công, trang Hiệu suất không nên còn trống.
+
+### Lãi/lỗ tổng
+
+P/L live từ NAV hiện tại và dòng vốn ròng bên ngoài.
+
+### TWR
+
+Time-weighted return loại ảnh hưởng của nạp/rút tiền.
+
+Dùng TWR để trả lời:
+
+> Bản thân danh mục đã hoạt động thế nào?
+
+### XIRR
+
+Lợi suất năm hóa có trọng số dòng tiền, dùng đúng ngày phát sinh tiền của bạn và
+NAV hiện tại.
+
+Dùng XIRR để trả lời:
+
+> Tiền thực tế của tôi đã đạt lợi suất năm hóa bao nhiêu?
+
+### Drawdown
+
+Tính từ TWR wealth index:
 
 ```text
-cash += amount
-dividend income += amount
+Drawdown = TWR hiện tại / đỉnh TWR - 1
 ```
+
+Do đó nạp/rút tiền không tạo đỉnh hay khoản lỗ giả.
+
+### Các metric khác
+
+- Daily / MTD / YTD;
+- TWR năm hóa;
+- ngày tốt nhất/xấu nhất;
+- tỷ lệ ngày tăng;
+- ngày bắt đầu/ngày mới nhất;
+- số snapshot chính thức;
+- P/L đã/chưa thực hiện;
+- cổ tức và phí.
+
+Nếu chart trống, bấm **Dựng lại lịch sử hiệu suất**. Nếu vẫn trống, kiểm tra ngày
+trong ledger có nằm trong vùng lịch sử giá khả dụng hay không.
 
 ---
 
-### STOCK_DIVIDEND — Cổ tức cổ phiếu
+## 12. Trang Rủi ro
 
-Ghi đúng số cổ phiếu mới thực tế được credit.
+Toàn bộ Risk chỉ mang tính thông tin.
 
-Tác động:
+### Volatility 63D / 252D
+
+Hai khung realized volatility ngắn và dài. Tỷ lệ 63D/252D cho biết rủi ro gần đây
+có tăng so với baseline dài hơn hay không.
+
+### HHI và số vị thế hiệu dụng
 
 ```text
-shares += credited shares
-cost basis không đổi
-average cost giảm cơ học
+HHI = Σ weight²
+Số vị thế hiệu dụng = 1 / HHI
 ```
 
-Ví dụ:
+Danh mục có nhiều ticker vẫn có thể chỉ tương đương vài vị thế nếu vốn quá tập trung.
+
+### Tương quan
+
+QPort hiển thị tương quan trung bình và lớn nhất giữa các cặp mã. Tương quan cao
+cho thấy số lượng ticker có thể đánh giá quá cao mức đa dạng hóa thật.
+
+### Diversification ratio
+
+So weighted individual volatility với portfolio volatility. Giá trị >1 thể hiện
+lợi ích đa dạng hóa trong mẫu dữ liệu đo được.
+
+### Đóng góp rủi ro
+
+Cho biết từng mã đóng góp bao nhiêu vào variance ước tính của danh mục.
+
+### Tham chiếu ERC
+
+Chỉ là tỷ trọng tham khảo nếu muốn cân bằng đóng góp rủi ro. Đây không phải target
+bắt buộc và không tạo giao dịch.
+
+### VaR lịch sử 95%
+
+Phân vị 5% của lợi suất danh mục ngày trong mẫu.
+
+### CVaR lịch sử 95%
+
+Lợi suất trung bình của các ngày nằm trong tail dưới ngưỡng VaR.
+
+VaR/CVaR lịch sử không phải dự báo và không phải mức thua lỗ tối đa được đảm bảo.
+
+### Độ phủ dữ liệu
+
+Luôn xem coverage/missing symbols trước khi tin covariance và risk contribution.
+
+---
+
+## 13. Trang Snapshot
+
+Snapshot là checkpoint tự động mỗi ngày gồm:
 
 ```text
-Trước: 3,000 shares
-Cổ tức CP được credit: 450 shares
-Sau:   3,450 shares
+ngày
+holdings từ ledger
+tiền mặt
+giá đóng cửa
+NAV
+P/L ngày
+lợi suất ngày
+TWR index
+drawdown
+một số trường risk
+chất lượng dữ liệu
 ```
 
----
+### CHÍNH THỨC
 
-### SPLIT — Tách/gộp cổ phiếu
+Mọi mã đang active có giá chính xác cùng ngày giao dịch. Các dòng này được dùng
+cho Performance chính thức.
 
-Nhập multiplicative ratio `new shares / old shares`.
+### CŨ
 
-Ví dụ tách 2-for-1:
+Ít nhất một mã dùng giá đã biết của ngày trước. Dòng vẫn hiển thị để chẩn đoán
+nhưng bị loại khỏi Performance chính thức.
+
+### Tạo snapshot như thế nào?
+
+Không nhập thủ công. Dùng:
 
 ```text
-ratio = 2
+Danh mục → Đồng bộ giá ngày
 ```
 
-Tác động:
+hoặc:
 
 ```text
-shares *= ratio
-cost basis không đổi
-average cost thay đổi ngược với ratio
+Snapshot → Đồng bộ & dựng lại snapshot
 ```
+
+QPort tự dựng các checkpoint lịch sử khả dụng từ ngày trong ledger.
 
 ---
 
-### FEE — Phí độc lập
+## 14. Trang Cài đặt
 
-Dùng cho phí portfolio-level không nằm trong BUY/SELL.
+QPort cố ý có rất ít setting.
 
-Tác động:
+### Chính sách cố định
+
+Đây không phải tham số để tune:
 
 ```text
-cash -= amount
-fees_and_taxes += amount
+Chế độ đầu tư       BUY & HOLD
+Giao dịch tự động   TẮT
+Thay đổi danh mục   Chỉ từ ledger event
+Theo dõi hằng ngày  BẬT
 ```
 
----
+### Chính sách dữ liệu
 
-## 15. Kỷ luật ledger
+Chỉ để bạn hiểu nguồn dữ liệu; bình thường không cần chỉnh.
 
-Hãy xem ledger như lịch sử kế toán, không phải scratchpad.
+### Tham chiếu tỷ trọng tùy chọn
 
-Quy tắc:
-
-- không nhập một suggested trade trước khi thực sự khớp;
-- dùng quantity/price đã được broker xác nhận;
-- ghi fee/tax nhất quán;
-- ghi corporate action khi cash/shares thực sự được credit;
-- không tạo BUY/SELL giả để ép dashboard về con số mong muốn.
-
----
-
-# PHẦN D — ĐỌC DASHBOARD
-
-## 16. NAV
-
-NAV hiện tại:
+Mặc định có thể để:
 
 ```text
-NAV = cash + Σ(position shares × current market price)
+Tắt — Buy & Hold thuần
 ```
 
-Biến động giá thay đổi NAV và market value, nhưng **không** thay đổi số cổ phiếu.
+Chỉ bật nếu muốn:
+
+- nhãn MUA THÊM / GIỮ / XEM XÉT;
+- gợi ý chỉ MUA để dùng tiền mặt khả dụng.
+
+Khi bật, nhập tỷ trọng cho tất cả mã active và tổng phải đúng 100%.
+
+Tỷ trọng tham chiếu:
+
+- không hết hạn theo năm;
+- không tự tính lại;
+- không tạo giao dịch.
 
 ---
 
-## 17. Total P/L
+## 15. Routine hằng ngày
 
-Current system so sánh NAV với net external contributions cho field total P/L trong snapshot.
-
-Dùng Position Unrealized P/L để xem open P/L theo từng mã và dùng Performance cho return time series.
-
-Không nhầm lẫn:
-
-```text
-P/L amount
-với
-TWR percentage return
-với
-XIRR investor return
-```
-
-Ba metric trả lời ba câu hỏi khác nhau.
-
----
-
-## 18. HOLD / ADD / REVIEW
-
-Các label này chỉ mang tính thông tin.
-
-Nếu chưa đặt strategic reference weights, positions thường giữ trạng thái HOLD trừ khi một informational policy khác đánh dấu.
-
-Khi có reference weights:
-
-```text
-thấp đáng kể hơn reference → ADD / MUA THÊM
-gần reference              → HOLD / GIỮ
-cao đáng kể hơn reference  → REVIEW / XEM XÉT
-```
-
-Không label nào tự tạo transaction.
-
----
-
-## 19. Deploy existing cash
-
-QPort có thể hiển thị BUY-only cash-deployment suggestions.
-
-Mục đích:
-
-```text
-cash hiện có
-→ ưu tiên held positions đang underweight
-→ gợi ý số tiền
-```
-
-Suggestion không phải execution.
-
-Sau khi broker thực sự khớp lệnh, user tự ghi BUY event.
-
----
-
-# PHẦN E — HIỆU SUẤT
-
-## 20. TWR
-
-Time-Weighted Return đo investment performance của portfolio trong khi neutralize external flows như deposit, withdrawal và opening import.
-
-Dùng TWR khi hỏi:
-
-> Danh mục tự thân hoạt động như thế nào, không phụ thuộc lúc tôi nạp thêm tiền?
-
----
-
-## 21. XIRR
-
-XIRR dùng dated investor cash flows và latest official NAV.
-
-Dùng XIRR khi hỏi:
-
-> Với thời điểm tiền thật của tôi đi vào/ra khỏi danh mục, tôi thực tế đạt mức return nào?
-
-TWR và XIRR có thể khác nhau hoàn toàn hợp lý.
-
----
-
-## 22. Official NAV history
-
-Performance chart chỉ dùng official daily snapshots.
-
-Nếu chưa có đủ official snapshots, một số period metrics sẽ chưa có. Điều đó tốt hơn việc fabricate history.
-
----
-
-# PHẦN F — RỦI RO
-
-## 23. Risk là thông tin, không phải execution
-
-Trang Rủi ro có thể hiển thị:
-
-- 63D volatility;
-- 252D volatility;
-- largest position;
-- HHI concentration;
-- risk contribution theo ticker;
-- ERC equal-risk reference;
-- data coverage.
-
-Operational QPort không phản ứng bằng cách tự SELL hoặc giảm equity.
-
----
-
-## 24. Risk contribution
-
-Capital weight và risk contribution là hai khái niệm khác nhau.
-
-Ví dụ:
-
-```text
-DGC capital weight       40%
-DGC risk contribution    58%
-```
-
-Điều đó cho biết DGC đóng góp không cân xứng vào volatility/covariance risk của portfolio.
-
-Đây là lý do để **xem xét thông tin**, không phải lệnh bán tự động.
-
----
-
-## 25. ERC reference
-
-ERC hỏi: với covariance estimate hiện tại, relative weights nào sẽ xấp xỉ cân bằng risk contribution giữa các mã.
-
-Trong operational QPort ERC chỉ là diagnostic reference.
-
-ERC không:
-
-- hết hạn theo năm;
-- thay thế holdings của user;
-- tạo rebalance schedule;
-- tạo order.
-
----
-
-# PHẦN G — STRATEGIC REFERENCE WEIGHTS
-
-## 26. Cấu hình reference
-
-Vào Cài đặt.
-
-Reference weights là optional.
-
-Nếu dùng, tổng phải bằng:
-
-```text
-100%
-```
-
-Ví dụ:
-
-```text
-ACB  30%
-DGC  20%
-FPT  30%
-REE  20%
-```
-
-References tồn tại dài hạn cho tới khi user tự đổi.
-
-Không tự recalculate mỗi năm.
-
----
-
-## 27. Reference weights làm gì
-
-Chúng có thể ảnh hưởng:
-
-- HOLD / ADD / REVIEW labels;
-- BUY-only suggestions cho cash đang có.
-
-Chúng không mutate ledger.
-
----
-
-# PHẦN H — ROUTINE VẬN HÀNH HẰNG NGÀY
-
-## 28. EOD routine khuyến nghị
-
-Sau khi thị trường Việt Nam đóng cửa:
+Sau khi thị trường đóng cửa:
 
 1. Mở Danh mục.
-2. Chạy/xác nhận `Đồng bộ giá ngày`.
-3. Kiểm tra Data status là VALID/HỢP LỆ.
-4. Xem NAV và daily/total P/L.
-5. Kiểm tra nhanh giá hoặc số lượng bất thường.
-6. Xử lý ticker stale/missing nếu có.
-7. Mở Rủi ro khi cần context về concentration/risk.
-8. Chỉ ghi ledger event mới nếu thực sự có portfolio event.
+2. Đồng bộ giá ngày hoặc để scheduler 15:30 chạy.
+3. Kiểm tra dữ liệu HỢP LỆ/CŨ/THIẾU.
+4. Đối chiếu NAV/P&L khi cần.
+5. Xem cảnh báo Sức khỏe danh mục.
+6. Dùng Hiệu suất để hiểu return/drawdown.
+7. Dùng Rủi ro để hiểu tập trung/đa dạng hóa.
+8. Chỉ ghi transaction khi có sự kiện danh mục thực tế.
 
-Routine này bình thường chỉ mất vài phút.
+Ngày bình thường QPort chủ yếu là hệ thống **quan sát**.
 
 ---
 
-## 29. Automatic EOD scheduler
+## 16. Scheduler
 
-Khi server chạy liên tục, QPort khởi động scheduler idempotent lúc:
+Mặc định:
 
 ```text
-15:30 Asia/Ho_Chi_Minh
+15:30 Asia/Ho_Chi_Minh vào ngày làm việc
 ```
 
-vào ngày làm việc.
-
-Đổi giờ trên Windows:
-
-```bash
-set PORTFOLIO_SYNC_TIME=16:00
-python serve.py
-```
-
-Linux:
-
-```bash
-PORTFOLIO_SYNC_TIME=16:00 python serve.py
-```
-
-Tắt in-process scheduler:
+Tắt scheduler khi chạy server:
 
 ```bash
 python serve.py --no-daily-sync
 ```
 
-Sau đó có thể schedule:
+Windows Task Scheduler / cron:
 
 ```bash
 python -m portfolio.cli sync
 ```
 
-bằng Windows Task Scheduler hoặc cron.
-
 ---
 
-# PHẦN I — BACKUP VÀ PHỤC HỒI
+## 17. Backup và phục hồi
 
-## 30. File quan trọng nhất cần backup
+Backup định kỳ:
 
 ```text
 python/data/portfolio.sqlite3
 ```
 
-Ledger trong database này là operational source of truth.
+Nếu market price/snapshot bị hỏng nhưng ledger còn đúng, dữ liệu dẫn xuất có thể
+được dựng lại bằng sync.
 
-Khuyến nghị backup:
-
-- trước bulk migration/import;
-- sau portfolio change quan trọng;
-- định kỳ, ví dụ mỗi ngày hoặc mỗi tuần.
+Không nên sửa trực tiếp ledger rows trong SQLite.
 
 ---
 
-## 31. Đổi vị trí database
+## 18. Troubleshooting
 
-Dùng `PORTFOLIO_DB`.
-
-Windows:
-
-```bash
-set PORTFOLIO_DB=D:\qport-data\portfolio.sqlite3
-python serve.py
-```
-
-Linux:
-
-```bash
-PORTFOLIO_DB=/srv/qport/portfolio.sqlite3 python serve.py
-```
-
----
-
-## 32. Dữ liệu nguồn sự thật và dữ liệu dẫn xuất
-
-Về mặt khái niệm:
-
-```text
-Ledger events              SOURCE OF TRUTH
-Reference weights          User configuration
-Market prices              External/re-fetchable data
-Portfolio snapshots        Derived
-Risk metrics               Derived
-Performance metrics        Derived
-Research results           Isolated evidence
-```
-
-Bảo vệ ledger cẩn thận nhất.
-
----
-
-# PHẦN J — TROUBLESHOOTING
-
-## 33. Giá hiển thị 72 thay vì 72,000
-
-Canonical unit phải là full VND/share.
-
-QPort có normalization/migration cho exchange-style price units của VNDIRECT/Vnstock.
-
-Cách xử lý:
-
-1. cập nhật code mới nhất trên branch;
-2. restart QPort để database migration chạy;
-3. Sync daily prices lại;
-4. kiểm tra Price, Market value và Unrealized P/L.
-
-Không tin các old P/L snapshots được tạo từ wrong price unit.
-
----
-
-## 34. Data status là STALE
-
-Nguyên nhân có thể:
-
-- provider lỗi;
-- một ticker không có giá ở freshest date;
-- symbol/provider issue;
-- network problem.
+### Lãi/lỗ tổng luôn bằng 0
 
 Kiểm tra:
 
-- provider connectivity;
-- latest trading date từng holding;
-- hôm đó thị trường có mở không;
-- retry Sync daily prices.
+- holdings/cost basis đã nhập;
+- đã có giá hiện tại;
+- cash deposit/withdraw khớp tài khoản đang theo dõi;
+- NAV khớp broker.
 
-Provider failure không làm thay đổi holdings.
-
----
-
-## 35. Risk hiển thị UNAVAILABLE
-
-Risk analytics cần đủ overlapping price history.
-
-Nguyên nhân thường gặp:
-
-- ticker mới import chưa có đủ stored history;
-- provider gaps;
-- quá ít usable covariance observations.
-
-Trạng thái này không thay đổi shares.
-
----
-
-## 36. BUY bị từ chối vì cash âm
-
-Nếu funding thực sự thuộc tracked portfolio, ghi cash trước:
+Công thức live:
 
 ```text
-Nạp tiền
-→ broker BUY thật
-→ BUY event
+Lãi/lỗ tổng = NAV - dòng vốn ròng bên ngoài
 ```
 
-Không bypass accounting invariant này.
+### Drawdown không có lịch sử
+
+Chạy sync/rebuild và kiểm tra ngày trong ledger có overlap với lịch sử giá D1.
+
+### Performance chart trống
+
+Bấm **Dựng lại lịch sử hiệu suất**, sau đó xem trang Snapshot có dòng CHÍNH THỨC không.
+
+### Tiền mặt bằng 0
+
+Ghi tiền thật ở Danh mục → Quản lý tiền mặt hoặc bằng sự kiện Nạp tiền.
+
+### P/L sai xấp xỉ 1.000 lần
+
+Kiểm tra đơn vị giá: phải là `72.000 VND`, không phải `72`.
+
+### Risk CHƯA CÓ/MỘT PHẦN
+
+Xem Rủi ro → Chất lượng dữ liệu. Một số mã có thể chưa đủ lịch sử return.
+
+### Snapshot CŨ
+
+Ít nhất một mã active không có giá chính xác ở ngày đó. Snapshot này cố ý không
+được dùng trong Performance chính thức.
 
 ---
 
-## 37. SELL bị từ chối
-
-QPort ngăn bán nhiều hơn số shares ledger cho rằng đang sở hữu.
-
-Kiểm tra:
-
-- opening imports;
-- stock dividends;
-- splits;
-- prior SELL events.
-
-Sửa underlying ledger history thay vì ép lệnh SELL mới.
-
----
-
-## 38. Snapshot không thành official
-
-Kiểm tra:
-
-- data quality là VALID;
-- không còn provider error trong lần sync;
-- mọi held symbol có fresh price cùng latest trading date.
-
-Estimated/stale snapshots vẫn hữu ích để chẩn đoán nhưng bị loại khỏi official performance evidence.
-
----
-
-# PHẦN K — RESEARCH BOUNDARY
-
-## 39. Research Lab
-
-`/research` chứa các tooling nghiên cứu cũ/systematic như:
-
-- backtests;
-- Dynamic Alpha experiments;
-- optimizer experiments;
-- validation/holdout reports.
-
-Boundary mong muốn:
+## 19. Checklist trước khi tin QPort
 
 ```text
-Research
-   ↓
-evidence / proposal
-   ↓
-human decision
-   ↓
-real broker action
-   ↓
-explicit ledger event
-   ↓
-operational portfolio
+[ ] Số cổ phiếu khớp broker
+[ ] Giá vốn TB khớp broker
+[ ] Giá dùng VND đầy đủ
+[ ] Giá trị vốn = shares × cost
+[ ] Market value = shares × price
+[ ] Tiền mặt khớp tài khoản theo dõi
+[ ] NAV khớp broker ở mức hợp lý
+[ ] P/L chưa thực hiện khớp methodology broker ở mức hợp lý
+[ ] Hiểu rõ trạng thái dữ liệu
+[ ] Có snapshot chính thức sau sync
+[ ] Risk coverage đủ trước khi đọc risk metrics
+[ ] Có backup database
 ```
 
-Cố ý không có direct automatic Research → BUY/SELL path.
-
----
-
-# PHẦN L — CHECKLIST NGÀY ĐẦU TIÊN
-
-Trước khi coi setup QPort mới là sẵn sàng, xác nhận:
-
-- [ ] Đã nhập toàn bộ opening holdings.
-- [ ] Share counts khớp broker.
-- [ ] Average costs khớp intended broker cost basis.
-- [ ] Opening cash khớp portfolio scope đã chọn.
-- [ ] Daily price sync chạy được.
-- [ ] Giá hiển thị theo full VND/share.
-- [ ] Cost value khớp `shares × average cost`.
-- [ ] Market value khớp `shares × market price`.
-- [ ] Unrealized P/L khớp broker trong sai số hợp lý do fee/cost-basis policy.
-- [ ] Data status VALID để tạo official snapshot.
-- [ ] Đã có database backup.
-- [ ] Optional strategic reference weights cộng đủ 100% nếu cấu hình.
-- [ ] Hiểu rằng HOLD/ADD/REVIEW và Research outputs không tự thực hiện giao dịch.
-
-Khi checklist này pass, QPort đã sẵn sàng cho routine Buy & Hold monitoring hằng ngày.
+Khi accounting đã reconcile, Hiệu suất, Drawdown và Rủi ro mới thực sự trở thành
+thông tin hữu ích thay vì chỉ là những con số trang trí.
