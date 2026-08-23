@@ -10,6 +10,7 @@ from .corrections import (
     effective_events,
     ensure_schema,
     latest_corrections,
+    raw_events,
 )
 from .domain import EventType, LedgerEvent, PortfolioState
 from .service import PortfolioService
@@ -64,9 +65,59 @@ class CorrectablePortfolioService(PortfolioService):
             apply_event(state, event)
             if event.event_type in {EventType.BUY, EventType.CASH_WITHDRAW, EventType.FEE} and state.cash < -1e-6:
                 raise AccountingError(
-                    f"Correction would make cash negative after transaction #{event.id}. "
+                    f"Ledger would make cash negative after transaction #{event.id}. "
                     "Correct the funding/cash event first."
                 )
+
+    @staticmethod
+    def _event_from_clean(clean: dict, *, event_id: int | None, created_by: str, created_at=None) -> LedgerEvent:
+        return LedgerEvent(
+            id=event_id,
+            event_type=clean["event_type"],
+            event_date=clean["event_date"],
+            symbol=clean["symbol"],
+            quantity=clean["quantity"],
+            price=clean["price"],
+            fee=clean["fee"],
+            tax=clean["tax"],
+            amount=clean["amount"],
+            ratio=clean["ratio"],
+            note=clean["note"],
+            created_by=created_by,
+            created_at=created_at,
+            metadata=clean["metadata"],
+        )
+
+    def append_event(self, payload: dict, created_by: str = "local") -> dict:
+        clean = normalize_event_payload(payload, today=self.today_vn())
+        source = raw_events(self.store)
+        next_id = max((int(e.id or 0) for e in source), default=0) + 1
+        event = self._event_from_clean(
+            clean,
+            event_id=next_id,
+            created_by=str(payload.get("created_by") or created_by or "local")[:100],
+        )
+        candidate = effective_events(self.store) + [event]
+        self._validate_ledger(candidate)
+        # SQLite owns the real ID. next_id is used only to validate same-day
+        # ordering before insertion and should equal the next autoincrement ID.
+        stored = LedgerEvent(
+            id=None,
+            event_type=event.event_type,
+            event_date=event.event_date,
+            symbol=event.symbol,
+            quantity=event.quantity,
+            price=event.price,
+            fee=event.fee,
+            tax=event.tax,
+            amount=event.amount,
+            ratio=event.ratio,
+            note=event.note,
+            created_by=event.created_by,
+            metadata=event.metadata,
+        )
+        eid = self.store.append_event(stored)
+        return {"ok": True, "event_id": eid, "event": self._serialize_event(stored)}
 
     def _replacement_event(self, event_id: int, payload: dict) -> LedgerEvent:
         current = effective_event(self.store, event_id)
@@ -80,21 +131,11 @@ class CorrectablePortfolioService(PortfolioService):
             if key in payload:
                 merged[key] = payload[key]
         clean = normalize_event_payload(merged, today=self.today_vn())
-        return LedgerEvent(
-            id=int(event_id),
-            event_type=clean["event_type"],
-            event_date=clean["event_date"],
-            symbol=clean["symbol"],
-            quantity=clean["quantity"],
-            price=clean["price"],
-            fee=clean["fee"],
-            tax=clean["tax"],
-            amount=clean["amount"],
-            ratio=clean["ratio"],
-            note=clean["note"],
+        return self._event_from_clean(
+            clean,
+            event_id=int(event_id),
             created_by=current.created_by,
             created_at=current.created_at,
-            metadata=clean["metadata"],
         )
 
     def _refresh_derived_history(self) -> dict:
