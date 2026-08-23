@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from typing import Any, Protocol
 
-from .vnstock_isolated import run_vnstock_task, vnstock_available
+from .vnstock_isolated import run_vnstock_task, vnstock_runtime_health
 
 
 @dataclass
@@ -49,15 +48,11 @@ def _value(row: dict, aliases: tuple[str, ...]):
 
 
 def _date_value(value) -> str | None:
-    if value is None or value == "":
-        return None
+    if value is None or value == "": return None
     text = str(value).strip()
-    if "T" in text:
-        text = text.split("T", 1)[0]
-    try:
-        return date.fromisoformat(text[:10]).isoformat()
-    except Exception:
-        return None
+    if "T" in text: text = text.split("T", 1)[0]
+    try: return date.fromisoformat(text[:10]).isoformat()
+    except Exception: return None
 
 
 def _classify(text: str) -> str:
@@ -78,8 +73,7 @@ def _parse_stock_ratio(text: str) -> float | None:
         return received / existing if existing > 0 else None
     match = re.search(r"(?:tỷ lệ|ty le|ratio)?\s*(\d+(?:\.\d+)?)\s*%", low)
     if match:
-        pct = float(match.group(1))
-        return pct / 100.0 if 0 < pct <= 1000 else None
+        pct = float(match.group(1)); return pct / 100.0 if 0 < pct <= 1000 else None
     return None
 
 
@@ -116,12 +110,6 @@ def _stable_event_key(*, source: str, symbol: str, action_type: str, event_name:
 
 
 def normalize_event_row(row: dict, default_symbol: str | None = None, source: str = "vnstock") -> CorporateAction | None:
-    """Normalize one provider row while preserving multiple dividend installments.
-
-    Identity is based on provider event id when available, otherwise stable business
-    fields (type/name/dates/rate). Raw payload changes therefore do not create a new
-    installment by accident. Different record/payment dates remain distinct rows.
-    """
     raw = {str(k): (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     symbol = str(_value(raw, ("symbol", "ticker", "code", "stock_code")) or default_symbol or "").upper().strip()
     if not symbol: return None
@@ -140,8 +128,7 @@ def normalize_event_row(row: dict, default_symbol: str | None = None, source: st
     try:
         stock_ratio = float(ratio) if ratio not in (None, "") else _parse_stock_ratio(text)
         if stock_ratio is not None and stock_ratio > 10: stock_ratio /= 100.0
-    except Exception:
-        stock_ratio = _parse_stock_ratio(text)
+    except Exception: stock_ratio = _parse_stock_ratio(text)
     source_url = _value(raw, ("url", "source_url", "link"))
     external_key = _stable_event_key(
         source=source, symbol=symbol, action_type=action_type, event_name=event_name,
@@ -168,24 +155,36 @@ def _records(frame) -> list[dict]:
 
 
 class VnstockCorporateActionProvider:
-    """Vnstock corporate-action discovery, isolated in a child process by default."""
+    """Vnstock corporate-action discovery through an isolated worker runtime."""
 
     def __init__(self, reference_factory=None, provider_name: str | None = None) -> None:
         self._Reference = reference_factory
         self.name = provider_name or "vnstock"
         self._error: str | None = None
-        self._api_variant = "injected" if reference_factory is not None else "isolated_spawn"
+        self._api_variant = "injected" if reference_factory is not None else "external_worker"
         self._isolated = reference_factory is None
-        if self._isolated and not vnstock_available():
-            self._error = "Vnstock is not installed."
 
     def health(self) -> dict:
+        if self._isolated:
+            probe = vnstock_runtime_health("reference")
+            self.name = str(probe.get("provider") or self.name)
+            self._api_variant = str(probe.get("api_variant") or self._api_variant)
+            self._error = probe.get("error")
+            return {
+                "provider": self.name,
+                "available": bool(probe.get("available")),
+                "error": self._error,
+                "api_variant": self._api_variant,
+                "isolation": "EXTERNAL_PYTHON_SUBPROCESS",
+                "worker_python": probe.get("worker_python"),
+                "python_version": probe.get("python_version"),
+                "capability": "REFERENCE_EVENTS",
+                "mode": "raw-first stable-event normalization",
+            }
         return {
-            "provider": self.name,
-            "available": self._Reference is not None or (self._isolated and vnstock_available()),
-            "error": self._error,
-            "api_variant": self._api_variant,
-            "isolation": "CHILD_PROCESS" if self._isolated else "INJECTED_DIRECT",
+            "provider": self.name, "available": self._Reference is not None,
+            "error": self._error, "api_variant": self._api_variant,
+            "isolation": "INJECTED_DIRECT", "capability": "REFERENCE_EVENTS",
             "mode": "raw-first stable-event normalization",
         }
 
