@@ -17,15 +17,10 @@ function eventDate(event) {
   return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || '-';
 }
 
-function groupBrokerSources(lots, position) {
+function groupBrokerSources(lots, dividendReceipts, position) {
   const groups = new Map();
   const symbol = String(position?.symbol || '').toUpperCase();
-  for (const lot of lots || []) {
-    if (String(lot?.symbol || '').toUpperCase() !== symbol) continue;
-    const quantity = Number(lot?.remaining_quantity || 0);
-    if (!(quantity > 0)) continue;
-    const broker = String(lot?.broker_code || 'UNASSIGNED').toUpperCase();
-    const account = String(lot?.account_id || 'PRIMARY').toUpperCase();
+  const sourceFor = (broker, account) => {
     const key = `${broker}::${account}`;
     const current = groups.get(key) || {
       broker,
@@ -33,11 +28,38 @@ function groupBrokerSources(lots, position) {
       shares: 0,
       cost_value: 0,
       lot_count: 0,
+      stock_dividend_shares_received: 0,
+      cash_dividend_gross: 0,
+      cash_dividend_tax: 0,
+      cash_dividend_net: 0,
+      dividend_event_ids: [],
     };
+    groups.set(key, current);
+    return current;
+  };
+
+  for (const lot of lots || []) {
+    if (String(lot?.symbol || '').toUpperCase() !== symbol) continue;
+    const quantity = Number(lot?.remaining_quantity || 0);
+    if (!(quantity > 0)) continue;
+    const broker = String(lot?.broker_code || 'UNASSIGNED').toUpperCase();
+    const account = String(lot?.account_id || 'PRIMARY').toUpperCase();
+    const current = sourceFor(broker, account);
     current.shares += quantity;
     current.cost_value += Number(lot?.cost_basis || 0);
     current.lot_count += 1;
-    groups.set(key, current);
+  }
+
+  for (const receipt of dividendReceipts || []) {
+    if (String(receipt?.symbol || '').toUpperCase() !== symbol) continue;
+    const broker = String(receipt?.broker_code || 'UNASSIGNED').toUpperCase();
+    const account = String(receipt?.account_id || 'PRIMARY').toUpperCase();
+    const current = sourceFor(broker, account);
+    current.stock_dividend_shares_received += Number(receipt?.stock_dividend_shares_received || 0);
+    current.cash_dividend_gross += Number(receipt?.cash_dividend_gross || 0);
+    current.cash_dividend_tax += Number(receipt?.cash_dividend_tax || 0);
+    current.cash_dividend_net += Number(receipt?.cash_dividend_net || 0);
+    current.dividend_event_ids.push(...(receipt?.event_ids || []));
   }
 
   const price = position?.price == null ? null : Number(position.price);
@@ -54,7 +76,7 @@ function groupBrokerSources(lots, position) {
         symbol_weight: totalShares > 0 ? source.shares / totalShares : 0,
       };
     })
-    .sort((a, b) => b.shares - a.shares || a.broker.localeCompare(b.broker) || a.account.localeCompare(b.account));
+    .sort((a, b) => b.shares - a.shares || b.stock_dividend_shares_received - a.stock_dividend_shares_received || a.broker.localeCompare(b.broker) || a.account.localeCompare(b.account));
 }
 
 function Metric({ label, value, note, tone = '' }) {
@@ -77,6 +99,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const [positionQuery, setPositionQuery] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState({});
   const [brokerLots, setBrokerLots] = useState(null);
+  const [brokerDividendReceipts, setBrokerDividendReceipts] = useState([]);
   const [brokerLotsLoading, setBrokerLotsLoading] = useState(false);
   const [brokerLotsError, setBrokerLotsError] = useState('');
   const [dividendLoading, setDividendLoading] = useState(false);
@@ -92,11 +115,11 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const warningFlags = healthFlags.filter(flag => flag.level === 'WARNING');
   const infoFlags = healthFlags.filter(flag => flag.level !== 'WARNING');
   const riskCoverage = health.risk_coverage ?? risk.quality?.coverage_weight;
-  const positionSymbolsKey = positions.map(p => p.symbol).sort().join('|');
+  const positionSymbolsKey = positions.map(p => String(p.symbol || '').toUpperCase()).sort().join('|');
 
   const visiblePositions = useMemo(() => {
     const q = positionQuery.trim().toUpperCase();
-    return q ? positions.filter(p => String(p.symbol || '').includes(q)) : positions;
+    return q ? positions.filter(p => String(p.symbol || '').toUpperCase().includes(q)) : positions;
   }, [positions, positionQuery]);
 
   async function sync() {
@@ -132,17 +155,20 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
     try {
       const operations = await getPortfolioOperations();
       setBrokerLots(Array.isArray(operations?.tax_lots) ? operations.tax_lots : []);
+      setBrokerDividendReceipts(Array.isArray(operations?.dividend_receipts_by_broker) ? operations.dividend_receipts_by_broker : []);
     } catch (err) {
       setBrokerLotsError(err.message);
       setBrokerLots([]);
+      setBrokerDividendReceipts([]);
     } finally {
       setBrokerLotsLoading(false);
     }
   }
 
   async function toggleHolding(symbol) {
-    const opening = !expandedHoldings[symbol];
-    setExpandedHoldings(current => ({ ...current, [symbol]: opening }));
+    const key = String(symbol || '').toUpperCase();
+    const opening = !expandedHoldings[key];
+    setExpandedHoldings(current => ({ ...current, [key]: opening }));
     if (opening) await loadBrokerLots();
   }
 
@@ -220,26 +246,10 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
       {message && <div className="run-message banner-message">{message}</div>}
 
       <div className="metric-grid portfolio-metrics overview-metrics">
-        <Metric
-          label={t('portfolio.equity')}
-          value={money(portfolio.equity_value || 0)}
-          note={t('portfolio.holdings_count', { count: positions.length, suffix: positions.length === 1 ? '' : 's' })}
-        />
-        <Metric
-          label={t('portfolio.cash')}
-          value={money(portfolio.cash || 0)}
-          note={portfolio.nav ? t('portfolio.of_nav', { value: pct((portfolio.cash || 0) / portfolio.nav) }) : '—'}
-        />
-        <Metric
-          label={text('Cost basis', 'Tổng giá vốn')}
-          value={money(portfolio.cost_value || 0)}
-          note={text('Recorded position cost', 'Giá vốn vị thế đã ghi nhận')}
-        />
-        <Metric
-          label={text('Dividend income', 'Thu nhập cổ tức')}
-          value={money(perf.dividend_income || 0)}
-          note={text('Cash dividends recorded in the ledger', 'Cổ tức tiền mặt đã ghi vào sổ')}
-        />
+        <Metric label={t('portfolio.equity')} value={money(portfolio.equity_value || 0)} note={t('portfolio.holdings_count', { count: positions.length, suffix: positions.length === 1 ? '' : 's' })} />
+        <Metric label={t('portfolio.cash')} value={money(portfolio.cash || 0)} note={portfolio.nav ? t('portfolio.of_nav', { value: pct((portfolio.cash || 0) / portfolio.nav) }) : '—'} />
+        <Metric label={text('Cost basis', 'Tổng giá vốn')} value={money(portfolio.cost_value || 0)} note={text('Recorded position cost', 'Giá vốn vị thế đã ghi nhận')} />
+        <Metric label={text('Dividend income', 'Thu nhập cổ tức')} value={money(perf.dividend_income || 0)} note={text('Gross cash dividends recorded in the ledger', 'Cổ tức tiền mặt gross đã ghi vào ledger')} />
       </div>
 
       <section className="card portfolio-assessment-card">
@@ -286,16 +296,10 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           <div>
             <div className="eyebrow">{text('Investments', 'Khoản đầu tư')}</div>
             <h2>{t('portfolio.holdings')}</h2>
-            <p className="muted">{text('Each ticker is consolidated across brokers. Expand a holding to see the current shares and cost basis by broker/account.', 'Mỗi mã được tổng hợp từ tất cả broker. Mở rộng một mã để xem số lượng và giá vốn hiện tại theo từng broker/account.')}</p>
+            <p className="muted">{text('Each ticker is consolidated across brokers. Expand a holding to see current shares, cost basis and dividends received by broker/account.', 'Mỗi mã được tổng hợp từ tất cả broker. Mở rộng một mã để xem số lượng hiện tại, giá vốn và cổ tức đã nhận theo từng broker/account.')}</p>
           </div>
           <div className="table-tools">
-            <input
-              className="search-input"
-              value={positionQuery}
-              onChange={e => setPositionQuery(e.target.value)}
-              placeholder={text('Search ticker…', 'Tìm mã…')}
-              aria-label={text('Search holdings', 'Tìm mã đang nắm giữ')}
-            />
+            <input className="search-input" value={positionQuery} onChange={e => setPositionQuery(e.target.value)} placeholder={text('Search ticker…', 'Tìm mã…')} aria-label={text('Search holdings', 'Tìm mã đang nắm giữ')} />
             <span className={`status-pill status-${String(market.status || 'MISSING').toLowerCase()}`}>{status(market.status || 'MISSING')}</span>
           </div>
         </div>
@@ -322,24 +326,23 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                 <th className="num">{t('portfolio.weight')}</th>
               </tr></thead>
               <tbody>{visiblePositions.map(p => {
-                const expanded = Boolean(expandedHoldings[p.symbol]);
-                const sources = brokerLots === null ? [] : groupBrokerSources(brokerLots, p);
-                return <React.Fragment key={p.symbol}>
+                const symbol = String(p.symbol || '').toUpperCase();
+                const expanded = Boolean(expandedHoldings[symbol]);
+                const sources = brokerLots === null ? [] : groupBrokerSources(brokerLots, brokerDividendReceipts, p);
+                const infoTitle = text('Fundamental-analysis overlay is reserved for a future update.', 'Overlay phân tích cơ bản sẽ được triển khai ở bản cập nhật sau.');
+                return <React.Fragment key={symbol}>
                   <tr className={`holding-parent-row ${expanded ? 'is-expanded' : ''}`}>
                     <td className="symbols-cell">
-                      <button
-                        className="holding-expand-button"
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-controls={`holding-sources-${p.symbol}`}
-                        onClick={() => toggleHolding(p.symbol)}
-                      >
-                        <span className="holding-expand-icon" aria-hidden="true">{expanded ? '−' : '+'}</span>
-                        <span className="holding-symbol-copy">
-                          <b>{p.symbol}</b>
-                          <span className="muted">{p.price_date || '-'} · {p.price_source || '-'}</span>
-                        </span>
-                      </button>
+                      <div className="holding-symbol-actions">
+                        <button className="holding-expand-button" type="button" aria-expanded={expanded} aria-controls={`holding-sources-${symbol}`} onClick={() => toggleHolding(symbol)}>
+                          <span className="holding-expand-icon" aria-hidden="true">{expanded ? '−' : '+'}</span>
+                          <span className="holding-symbol-copy">
+                            <b className="holding-symbol">{symbol}</b>
+                            <span className="muted">{p.price_date || '-'} · {p.price_source || '-'}</span>
+                          </span>
+                        </button>
+                        <button className="holding-info-button" type="button" aria-label={`${symbol}: ${infoTitle}`} aria-disabled="true" title={infoTitle} onClick={event => event.preventDefault()}>i</button>
+                      </div>
                     </td>
                     <td className="num">{shares(p.shares)}</td>
                     <td className="num">{money(p.average_cost)}</td>
@@ -349,13 +352,13 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                     <td className={`num ${Number(p.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}`}>{pct(p.unrealized_return)}</td>
                     <td className="num">{formatWeight(p.weight)}</td>
                   </tr>
-                  {expanded && <tr className="holding-source-row" id={`holding-sources-${p.symbol}`}>
+                  {expanded && <tr className="holding-source-row" id={`holding-sources-${symbol}`}>
                     <td colSpan="8">
                       <div className="holding-source-panel">
                         <div className="holding-source-head">
                           <div>
-                            <b>{p.symbol} · {text('broker sources', 'nguồn theo broker')}</b>
-                            <span className="muted">{text('Open tax lots grouped by broker and account. Totals reconcile to the consolidated row above.', 'Các tax lot còn mở được nhóm theo broker và account. Tổng số liệu khớp với dòng tổng hợp phía trên.')}</span>
+                            <b>{symbol} · {text('broker sources & received dividends', 'broker và cổ tức đã nhận')}</b>
+                            <span className="muted">{text('Current open tax lots reconcile to the consolidated holding. Dividend columns come from automatic corporate-action ledger allocations at the entitlement date.', 'Tax lot đang mở khớp với holding tổng hợp. Các cột cổ tức lấy từ allocation của transaction corporate action tự động tại ngày hưởng quyền.')}</span>
                           </div>
                           {brokerLots !== null && <span className="source-count-badge">{sources.length} {text(sources.length === 1 ? 'source' : 'sources', 'nguồn')}</span>}
                         </div>
@@ -365,14 +368,16 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                         ) : brokerLotsError ? (
                           <div className="holding-source-state error">{brokerLotsError}</div>
                         ) : sources.length === 0 ? (
-                          <div className="holding-source-state">{text('No open broker/account lots were found for this holding.', 'Không tìm thấy tax lot broker/account đang mở cho mã này.')}</div>
+                          <div className="holding-source-state">{text('No broker/account source was found for this holding.', 'Không tìm thấy nguồn broker/account cho mã này.')}</div>
                         ) : (
                           <div className="holding-source-scroll">
                             <table className="ranking holding-source-table">
                               <thead><tr>
                                 <th>{text('Broker', 'Broker')}</th>
                                 <th>{text('Account', 'Tài khoản')}</th>
-                                <th className="num">{text('Shares', 'Số lượng')}</th>
+                                <th className="num">{text('Current shares', 'CP hiện tại')}</th>
+                                <th className="num">{text('Stock dividends received', 'CP cổ tức đã nhận')}</th>
+                                <th className="num">{text('Net cash dividends', 'Cổ tức tiền net')}</th>
                                 <th className="num">{text('Avg cost', 'Giá vốn TB')}</th>
                                 <th className="num">{text('Cost value', 'Tổng giá vốn')}</th>
                                 <th className="num">{text('Market value', 'Giá trị hiện tại')}</th>
@@ -380,11 +385,13 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                                 <th className="num">{text('% of symbol', '% của mã')}</th>
                               </tr></thead>
                               <tbody>{sources.map(source => (
-                                <tr key={`${p.symbol}-${source.broker}-${source.account}`}>
+                                <tr key={`${symbol}-${source.broker}-${source.account}`}>
                                   <td><b>{source.broker}</b></td>
                                   <td>{source.account}</td>
                                   <td className="num">{shares(source.shares)}</td>
-                                  <td className="num">{money(source.average_cost)}</td>
+                                  <td className="num dividend-received-cell">{shares(source.stock_dividend_shares_received)}</td>
+                                  <td className="num dividend-received-cell">{money(source.cash_dividend_net)}</td>
+                                  <td className="num">{source.shares > 0 ? money(source.average_cost) : '-'}</td>
                                   <td className="num">{money(source.cost_value)}</td>
                                   <td className="num">{money(source.market_value)}</td>
                                   <td className={`num ${Number(source.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}`}>{money(source.unrealized_pnl)}</td>
@@ -409,10 +416,10 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           <div>
             <div className="eyebrow">{text('Income', 'Thu nhập')}</div>
             <h2>{text('Dividends', 'Cổ tức')}</h2>
-            <p className="muted">{text('Latest event is shown by default. Expand a ticker to see its full stored history. QPort reads SQLite first and calls providers only when the database has no cached result.', 'Mặc định hiển thị sự kiện mới nhất. Mở rộng từng mã để xem toàn bộ lịch sử đã lưu. QPort đọc SQLite trước và chỉ gọi provider khi cơ sở dữ liệu chưa có kết quả cache.')}</p>
+            <p className="muted">{text('Dividend history is canonicalized to one provider per refresh to avoid duplicate VPS/CafeF/other-provider records. Expand a ticker to inspect the stored history.', 'Lịch sử cổ tức được chuẩn hóa về một provider cho mỗi lần refresh để tránh trùng dữ liệu VPS/CafeF/provider khác. Mở rộng từng mã để xem lịch sử đã lưu.')}</p>
           </div>
           <button className="btn-secondary" type="button" disabled={dividendLoading || positions.length === 0} onClick={() => loadPositionDividends(true)}>
-            {dividendLoading ? text('Refreshing…', 'Đang cập nhật…') : text('Refresh from providers', 'Cập nhật từ provider')}
+            {dividendLoading ? text('Refreshing…', 'Đang cập nhật…') : text('Refresh canonical source', 'Cập nhật nguồn chuẩn')}
           </button>
         </div>
 
@@ -435,7 +442,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
               const cash = components.find(x => x.dividend_type === 'CASH_DIVIDEND');
               const stock = components.find(x => x.dividend_type === 'STOCK_DIVIDEND');
               const first = components[0];
-              const sources = [...new Set(components.map(x => x.source).filter(Boolean))].join(', ');
+              const source = result.canonical_source || components.find(x => x.source)?.source || '-';
               const origin = result.data_origin === 'SQLITE_CACHE'
                 ? text('database', 'database')
                 : result.data_origin === 'PROVIDER_REFRESH'
@@ -445,14 +452,14 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                 <details className="dividend-symbol-node" key={row.symbol}>
                   <summary>
                     <div className="dividend-node-symbol">
-                      <b>{row.symbol}</b>
-                      <span className="muted">{history.length} {text('events', 'sự kiện')} · {origin}</span>
+                      <b>{String(row.symbol || '').toUpperCase()}</b>
+                      <span className="muted">{history.length} {text('canonical events', 'sự kiện chuẩn')} · {origin}</span>
                     </div>
                     <div className="dividend-node-stat"><span>{text('Latest', 'Mới nhất')}</span><b>{result.latest_event_date || eventDate(first)}</b></div>
                     <div className="dividend-node-stat"><span>{text('Cash/share', 'Tiền/CP')}</span><b>{cash?.cash_per_share != null ? money(cash.cash_per_share) : '-'}</b></div>
                     <div className="dividend-node-stat"><span>{text('Stock ratio', 'Tỷ lệ CP')}</span><b>{stock?.stock_ratio_percent != null ? `${Number(stock.stock_ratio_percent).toFixed(2)}%` : '-'}</b></div>
                     <div className="dividend-node-stat"><span>{text('Payment', 'Thanh toán')}</span><b>{first?.payment_date || '-'}</b></div>
-                    <div className="dividend-node-stat"><span>{text('Source', 'Nguồn')}</span><b>{sources || '-'}</b></div>
+                    <div className="dividend-node-stat"><span>{text('Canonical source', 'Nguồn chuẩn')}</span><b>{source}</b></div>
                   </summary>
 
                   <div className="dividend-history-body">
@@ -483,7 +490,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                               <td>{event.payment_date || '-'}</td>
                               <td className="num">{event.cash_per_share != null ? money(event.cash_per_share) : '-'}</td>
                               <td className="num">{event.stock_ratio_percent != null ? `${Number(event.stock_ratio_percent).toFixed(2)}%` : '-'}</td>
-                              <td>{event.source || '-'}</td>
+                              <td>{event.source || source}</td>
                             </tr>
                           ))}</tbody>
                         </table>
