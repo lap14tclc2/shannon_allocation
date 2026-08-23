@@ -176,6 +176,8 @@ class MultiUserDailySyncScheduler:
         now = now or datetime.now(VN_TZ)
         results = []
         for user in _auth().list_users():
+            if user.get("role") == "ADMIN":
+                continue
             db_path = _auth().portfolio_db_path(user["id"])
             if not db_path.exists():
                 continue
@@ -236,6 +238,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self._write(body)
 
+    def _redirect(self, location: str):
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
     def _body(self):
         n = int(self.headers.get("Content-Length", 0) or 0)
         raw = self.rfile.read(n) if n else b"{}"
@@ -272,6 +281,15 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return user
 
+    def _require_portfolio_user(self) -> dict | None:
+        user = self._require_user()
+        if user is None:
+            return None
+        if user.get("role") == "ADMIN":
+            self._json(403, {"error":"Admin accounts do not access portfolio data.", "code":"ADMIN_PORTFOLIO_FORBIDDEN", "field":None})
+            return None
+        return user
+
     def _require_admin(self) -> dict | None:
         user = self._require_user()
         if user is None:
@@ -288,8 +306,16 @@ class Handler(BaseHTTPRequestHandler):
         return self._bytes(200, _build_document("auth", props, title), "text/html; charset=utf-8")
 
     def _page(self, page, user: dict):
-        svc = _portfolio(user)
         locale = self._locale()
+        if user.get("role") == "ADMIN":
+            if page != "admin":
+                return self._redirect("/admin")
+            props = {"locale":locale, "currentUser":user}
+            return self._bytes(200, _build_document("admin", props, "Admin · QPort"), "text/html; charset=utf-8")
+        if page == "admin":
+            return self._json(403, {"error":"Admin access is required.", "code":"ADMIN_REQUIRED"})
+
+        svc = _portfolio(user)
         data = {
             "portfolio":({"dashboard":svc.dashboard()},"Portfolio · QPort","Danh mục · QPort"),
             "transactions":({"transactions":svc.transactions(),"corrections":svc.transaction_audit(),"today":svc.today_vn()},"Transactions · QPort","Giao dịch · QPort"),
@@ -300,12 +326,9 @@ class Handler(BaseHTTPRequestHandler):
             "logs":({"activity":svc.activity_log(limit=1000)},"Activity Log · QPort","Nhật ký hoạt động · QPort"),
             "settings":({"dashboard":svc.dashboard()},"Settings · QPort","Cài đặt · QPort"),
             "guide":({},"Guide · QPort","Hướng dẫn · QPort"),
-            "admin":({},"Admin · QPort","Admin · QPort"),
         }
         if page not in data:
             return self._json(404, {"error":"Page not found."})
-        if page == "admin" and user.get("role") != "ADMIN":
-            return self._json(403, {"error":"Admin access is required.", "code":"ADMIN_REQUIRED"})
         props, en, vi = data[page]
         props = {**props, "locale":locale, "currentUser":user}
         return self._bytes(200, _build_document(page, props, vi if locale == "vi" else en), "text/html; charset=utf-8")
@@ -421,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/auth"):
             return self._api_auth_get(self._parts(path)[2:])
         if path.startswith("/api/portfolio"):
-            user = self._require_user()
+            user = self._require_portfolio_user()
             if user is None:
                 return
             return self._api_get(self._parts(path)[2:], parsed.query, user)
@@ -429,6 +452,8 @@ class Handler(BaseHTTPRequestHandler):
         user = self._current_user()
         if user is None:
             return self._auth_page()
+        if user.get("role") == "ADMIN":
+            return self._page("admin", user) if path == "/admin" else self._redirect("/admin")
         if path in {"", "/", "/login"}:
             return self._page("portfolio", user)
         routes = {f"/{p}":p for p in ("transactions","performance","risk","snapshots","operations","logs","settings","guide","admin")}
@@ -449,7 +474,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/auth"):
             return self._api_auth_post(path, parts[2:], body)
 
-        user = self._require_user()
+        user = self._require_portfolio_user()
         if user is None:
             return
         svc = _portfolio(user)
@@ -503,7 +528,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         path = urlparse(self.path).path
-        user = self._require_user()
+        user = self._require_portfolio_user()
         if user is None:
             return
         eid = self._tx_id(path)
@@ -519,7 +544,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/api/auth"):
             return self._api_auth_delete(self._parts(path)[2:])
-        user = self._require_user()
+        user = self._require_portfolio_user()
         if user is None:
             return
         eid = self._tx_id(path)
@@ -553,7 +578,6 @@ def main():
     if removed:
         print(f"Legacy DB    : removed {len(removed)} file(s); fresh authenticated storage active", flush=True)
     print(f"Daily sync   : {'disabled' if args.no_daily_sync else scheduler.hhmm+' Asia/Ho_Chi_Minh'}", flush=True)
-    print("Default admin: admin / abc123", flush=True)
     port, server = _bind_with_fallback(args.host, args.port, Handler)
     print(f"Open http://{args.host}:{port}\nMode: AUTHENTICATED BUY & HOLD portfolio book", flush=True)
     try:
