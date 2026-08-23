@@ -6,6 +6,7 @@ const LINKS = [
   ['/performance', 'Performance'],
   ['/risk', 'Risk'],
   ['/snapshots', 'Snapshots'],
+  ['/settings', 'Settings'],
   ['/research', 'Research'],
 ];
 
