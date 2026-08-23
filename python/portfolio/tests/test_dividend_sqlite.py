@@ -99,6 +99,122 @@ def test_force_refresh_calls_provider_and_does_not_duplicate_history(tmp_path):
     assert provider.calls == 2
 
 
+def test_cross_provider_rows_merge_into_one_canonical_event_family(tmp_path):
+    vps = StaticProvider(
+        "vps_events",
+        [
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="CASH_DIVIDEND",
+                source="vps_events",
+                source_event_id="vps-cash",
+                announcement_date="2026-06-05",
+                ex_date="2026-06-15",
+                record_date="2026-06-16",
+                cash_per_share=700,
+            ),
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="STOCK_DIVIDEND",
+                source="vps_events",
+                source_event_id="vps-stock",
+                announcement_date="2026-06-05",
+                ex_date="2026-06-15",
+                record_date="2026-06-16",
+                stock_ratio=0.13,
+            ),
+        ],
+    )
+    cafef = StaticProvider(
+        "cafef_public",
+        [
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="CASH_DIVIDEND",
+                source="cafef_public",
+                source_event_id="cafef-cash",
+                ex_date="2026-06-15",
+                cash_per_share=700,
+            ),
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="STOCK_DIVIDEND",
+                source="cafef_public",
+                source_event_id="cafef-stock",
+                ex_date="2026-06-15",
+                stock_ratio=0.13,
+            ),
+        ],
+    )
+    service = SqliteDividendService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        [vps, cafef],
+        stop_on_first_data=False,
+    )
+
+    result = service.history("ACB")
+
+    assert result["event_count"] == 2
+    assert {row["dividend_type"] for row in result["events"]} == {
+        "CASH_DIVIDEND",
+        "STOCK_DIVIDEND",
+    }
+    assert {row["source"] for row in result["events"]} == {"vps_events"}
+    assert all(row["cross_source_match"] is True for row in result["events"])
+    assert all(set(row["duplicate_sources"]) == {"vps_events", "cafef_public"} for row in result["events"])
+
+
+def test_cash_percent_is_not_misreported_as_second_stock_dividend(tmp_path):
+    title = "ACB 7% cash and 13% stock dividend"
+    provider = StaticProvider(
+        "vps_events",
+        [
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="CASH_DIVIDEND",
+                source="vps_events",
+                source_event_id="combined",
+                title=title,
+                ex_date="2026-06-15",
+                record_date="2026-06-16",
+                cash_per_share=700,
+            ),
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="STOCK_DIVIDEND",
+                source="vps_events",
+                source_event_id="combined",
+                title=title,
+                ex_date="2026-06-15",
+                record_date="2026-06-16",
+                stock_ratio=0.07,
+            ),
+            DividendEvent(
+                symbol="ACB",
+                dividend_type="STOCK_DIVIDEND",
+                source="vps_events",
+                source_event_id="real-stock",
+                title=title,
+                ex_date="2026-06-15",
+                record_date="2026-06-16",
+                stock_ratio=0.13,
+            ),
+        ],
+    )
+    service = SqliteDividendService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        [provider],
+        stop_on_first_data=True,
+    )
+
+    result = service.history("ACB")
+    stock_rows = [row for row in result["events"] if row["dividend_type"] == "STOCK_DIVIDEND"]
+
+    assert result["event_count"] == 2
+    assert len(stock_rows) == 1
+    assert stock_rows[0]["stock_ratio"] == 0.13
+
+
 def test_empty_provider_result_is_negative_cached(tmp_path):
     provider = StaticProvider("empty_provider", [])
     service = SqliteDividendService(
