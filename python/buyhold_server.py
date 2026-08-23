@@ -9,6 +9,7 @@ import os
 from urllib.parse import unquote, urlparse
 
 import research_legacy_server as legacy
+from portfolio.locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
 from portfolio.service import PortfolioService
 
@@ -24,6 +25,20 @@ def _portfolio() -> PortfolioService:
 
 class Handler(legacy.Handler):
     """Operational handler with an explicit research-only legacy boundary."""
+
+    def _locale(self) -> str:
+        return resolve_locale(
+            cookie_header=self.headers.get("Cookie"),
+            accept_language=self.headers.get("Accept-Language"),
+        )
+
+    def _title(self, en: str, vi: str) -> str:
+        return vi if self._locale() == "vi" else en
+
+    def _send_page(self, page, props, title):
+        localized = dict(props or {})
+        localized["locale"] = self._locale()
+        return super()._send_page(page, localized, title)
 
     def _portfolio_api(self, parts):
         svc = _portfolio()
@@ -56,7 +71,7 @@ class Handler(legacy.Handler):
             return self._send_page(
                 "research",
                 {"experiments": self._list_optimizer_experiments(), "runs": self._runs()},
-                "Research Lab · QPort",
+                self._title("Research Lab · QPort", "Phòng nghiên cứu · QPort"),
             )
         if parts[0] == "optimizer":
             if len(parts) == 1:
@@ -81,21 +96,23 @@ class Handler(legacy.Handler):
     def _operational_page(self, page: str):
         svc = _portfolio()
         if page == "portfolio":
-            return self._send_page("portfolio", {"dashboard": svc.dashboard()}, "Portfolio · QPort")
+            return self._send_page("portfolio", {"dashboard": svc.dashboard()}, self._title("Portfolio · QPort", "Danh mục · QPort"))
         if page == "transactions":
             return self._send_page(
                 "transactions",
                 {"transactions": svc.transactions(), "today": svc.today_vn()},
-                "Transactions · QPort",
+                self._title("Transactions · QPort", "Giao dịch · QPort"),
             )
         if page == "performance":
-            return self._send_page("performance", {"performance": svc.performance()}, "Performance · QPort")
+            return self._send_page("performance", {"performance": svc.performance()}, self._title("Performance · QPort", "Hiệu suất · QPort"))
         if page == "risk":
-            return self._send_page("risk", {"risk": svc.risk()}, "Risk · QPort")
+            return self._send_page("risk", {"risk": svc.risk()}, self._title("Risk · QPort", "Rủi ro · QPort"))
         if page == "snapshots":
-            return self._send_page("snapshots", {"snapshots": svc.snapshots()}, "Snapshots · QPort")
+            return self._send_page("snapshots", {"snapshots": svc.snapshots()}, self._title("Snapshots · QPort", "Ảnh chụp · QPort"))
         if page == "settings":
-            return self._send_page("settings", {"dashboard": svc.dashboard()}, "Settings · QPort")
+            return self._send_page("settings", {"dashboard": svc.dashboard()}, self._title("Settings · QPort", "Cài đặt · QPort"))
+        if page == "guide":
+            return self._send_page("guide", {}, self._title("Guide · QPort", "Hướng dẫn · QPort"))
         return self._send_json(404, {"error": "Page not found."})
 
     def do_GET(self):
@@ -116,6 +133,7 @@ class Handler(legacy.Handler):
             "/risk": "risk",
             "/snapshots": "snapshots",
             "/settings": "settings",
+            "/guide": "guide",
         }
         if path in operational:
             return self._operational_page(operational[path])
