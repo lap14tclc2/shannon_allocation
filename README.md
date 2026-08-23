@@ -30,10 +30,11 @@ information for the user
 QPort uses a deliberately small local authentication model:
 
 - Normal users register a **unique username** and sign in with username only.
-- The built-in admin account is `admin` with default password `abc123`.
+- The built-in admin account requires a password; QPort never displays that credential in the UI, docs or startup output.
 - Admin can update the password from `/admin`.
 - Admin can remove a normal user; removal also deletes that user's sessions and entire portfolio database.
-- Every user gets a separate SQLite portfolio file. Transactions, prices, snapshots, dividends, operations, logs and settings are therefore isolated by authenticated user.
+- Every normal user gets a separate SQLite portfolio file. Transactions, prices, snapshots, dividends, operations, logs and settings are therefore isolated by authenticated user.
+- Admin is an administration-only identity. It is always routed to `/admin`, cannot open portfolio pages, and cannot call `/api/portfolio/**`.
 
 Default runtime storage:
 
@@ -52,7 +53,7 @@ The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the aut
 - Only explicit ledger events change shares or cash.
 - Market-data failures are visible as `STALE` / `MISSING` rather than fabricated fresh values.
 - Vietnamese equity prices are stored as canonical **full VND per share**.
-- A portfolio API request must have an authenticated session before any user portfolio database is opened.
+- A portfolio API request must have an authenticated normal-user session before any user portfolio database is opened.
 
 ## What the system provides
 
@@ -64,6 +65,7 @@ The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the aut
 - Position weights.
 - Concise portfolio-level risk/health assessment.
 - Dividend latest event with expandable stored history for every current holding.
+- Expandable holding rows with broker/account source breakdown from open tax lots.
 
 ### Performance
 
@@ -164,17 +166,17 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-The start page asks for username. If the username is unknown, QPort shows the registration field. Normal users need no password. Entering `admin` reveals the admin password field.
+The start page asks for username. If the username is unknown, QPort shows the registration field. Normal users need no password. Entering the admin username reveals the admin password field, but QPort never prints or renders the password value.
 
-Primary navigation:
+Normal-user primary navigation:
 
 ```text
 Portfolio | Transactions | Performance | Guide
 ```
 
-Advanced routes remain available for operational diagnostics. Admin gets an additional **Admin** link after login.
+Advanced routes remain available for normal-user operational diagnostics. Admin has an administration-only page and is always routed to `/admin`.
 
-The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for every user database that exists. You can also sync manually from the portfolio UI.
+The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for normal-user databases that exist. You can also sync manually from the portfolio UI.
 
 ## CLI
 
@@ -187,13 +189,7 @@ python -m portfolio.cli --username alice sync
 python -m portfolio.cli --username alice status
 ```
 
-Admin:
-
-```bash
-python -m portfolio.cli --username admin --password abc123 status
-```
-
-The CLI does not keep a browser session alive after credential verification.
+Do not put admin passwords in documentation, scripts or shell examples.
 
 ## First-use workflow
 
@@ -203,7 +199,7 @@ The CLI does not keep a browser session alive after credential verification.
 4. Return to **Portfolio** and refresh market data once.
 5. Verify Cost Value, Market Value, P/L and NAV against your broker.
 6. Review the Portfolio assessment and Performance only after accounting values match.
-7. Admin should sign in as `admin / abc123` and change the default password from `/admin`.
+7. Admin signs in separately and remains on `/admin` for user management and password changes only.
 
 ## Languages
 
