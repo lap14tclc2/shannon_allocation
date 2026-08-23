@@ -1,0 +1,59 @@
+/* Holding row INFO action. Keep the symbol cell focused on expand + ticker. */
+.holdings-expand-table .holding-parent-row {
+  position: relative;
+}
+
+.holdings-expand-table .holding-parent-row > td:last-child {
+  padding-right: 72px;
+}
+
+.holding-info-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 2;
+  min-width: 48px;
+  min-height: 28px;
+  padding: 4px 9px;
+  transform: translateY(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--text-secondary);
+  font-size: 0;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  cursor: default;
+}
+
+.holding-info-button::after {
+  content: "INFO";
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.holding-info-button:hover,
+.holding-info-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.holding-info-button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 719px) {
+  .holdings-expand-table .holding-parent-row > td:last-child {
+    padding-right: 66px;
+  }
+
+  .holding-info-button {
+    right: 7px;
+    min-width: 44px;
+    min-height: 26px;
+    padding-inline: 7px;
+  }
+}
