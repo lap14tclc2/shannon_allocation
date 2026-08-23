@@ -104,7 +104,8 @@
   border-style: dashed;
 }
 
-.form-grid {
+.form-grid,
+.reference-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
@@ -112,10 +113,33 @@
 }
 
 .form-grid label,
-.ledger-layout form > label {
+.ledger-layout form > label,
+.reference-grid label {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.reference-grid label {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.reference-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.reference-input input { width: 100%; }
+.reference-input span { color: var(--muted); font-weight: 700; }
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 
 .ledger-layout textarea {
