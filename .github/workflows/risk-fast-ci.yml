@@ -20,11 +20,16 @@ on:
       - '.github/workflows/risk-fast-ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
