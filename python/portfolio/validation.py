@@ -194,3 +194,7 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
             "weights",
         )
     return normalized
+
+
+def validate_cash_reserve(value) -> float:
+    return _finite_number(value, "cash_reserve", minimum=0, maximum=MAX_MONEY_VND)
