@@ -3,7 +3,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
-import PortfolioDashboardPage from './pages/PortfolioDashboardPage.jsx';
+import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
 import RiskPage from './pages/RiskPage.jsx';
@@ -16,7 +16,7 @@ import GuidePage from './pages/GuidePage.jsx';
 const PAGES = {
   auth: AuthPage,
   admin: AdminPage,
-  portfolio: PortfolioDashboardPage,
+  portfolio: PortfolioPage,
   transactions: TransactionsPage,
   performance: PerformancePage,
   risk: RiskPage,
