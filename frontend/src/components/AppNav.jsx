@@ -24,6 +24,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const [theme, setTheme] = useState('dark');
   const [currentUser, setCurrentUser] = useState(null);
   const text = (en, vi) => locale === 'vi' ? vi : en;
+  const adminMode = active === 'admin' || currentUser?.role === 'ADMIN';
 
   useEffect(() => {
     const current = preferredTheme();
@@ -50,11 +51,11 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     <nav className={`app-nav ${open ? 'nav-open' : ''}`} aria-label={t('nav.primary')}>
       <div className="nav-shell">
         <div className="app-nav-head">
-          <a className="brand" href="/" aria-label="QPort portfolio home">
+          <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'QPort admin home' : 'QPort portfolio home'}>
             <span className="brand-prompt" aria-hidden="true">$</span>
             <span className="brand-copy">
               <strong>qport</strong>
-              <small>/ portfolio</small>
+              <small>{adminMode ? '/ admin' : '/ portfolio'}</small>
             </span>
             <span className="live-badge"><span className="status-dot" />{text('live', 'live')}</span>
           </a>
@@ -73,7 +74,12 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
         </div>
 
         <div className="app-nav-links">
-          {LINKS.map(([href, key, labelKey]) => (
+          {adminMode ? (
+            <a href="/admin" className="active" aria-current="page">
+              <span className="nav-prefix" aria-hidden="true">›</span>
+              <span>{text('Admin', 'Admin')}</span>
+            </a>
+          ) : LINKS.map(([href, key, labelKey]) => (
             <a
               key={href}
               href={href}
@@ -84,12 +90,6 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
               <span>{t(labelKey)}</span>
             </a>
           ))}
-          {currentUser?.role === 'ADMIN' && (
-            <a href="/admin" className={active === 'admin' ? 'active' : ''} aria-current={active === 'admin' ? 'page' : undefined}>
-              <span className="nav-prefix" aria-hidden="true">{active === 'admin' ? '›' : '·'}</span>
-              <span>{text('Admin', 'Admin')}</span>
-            </a>
-          )}
         </div>
 
         <div className="app-nav-footer">
