@@ -12,9 +12,9 @@ VIETNAM_PAR_VALUE_VND = 10_000.0
 def _stock_dividend_taxable_pool(events: list[LedgerEvent], *, symbol: str, event_date: str) -> float:
     """Return remaining stock-dividend shares that still carry deferred 5% tax.
 
-    QPort uses a transparent pool convention: a later SELL consumes the taxable
-    stock-dividend pool first. This avoids losing the tax obligation after stock
-    dividends have been merged into the consolidated holding view.
+    QPort uses a transparent pool convention consistent with the tax rule for
+    transfers of same-type shares: a later SELL consumes the outstanding taxable
+    stock-dividend quantity until the dividend-share pool has been exhausted.
     """
     pool = 0.0
     for event in sorted(events, key=lambda e: (e.event_date, int(e.id or 0))):
@@ -35,8 +35,10 @@ def apply_dividend_tax_policy(event: LedgerEvent, prior_events: list[LedgerEvent
     """Attach deterministic dividend-related taxes to a ledger event.
 
     * Cash dividend: 5% withholding on gross dividend amount.
-    * Stock dividend: no tax when shares are received; when those deferred-tax
-      shares are sold, 5% of VND 10,000 par value per taxable share is added.
+    * Stock dividend: no investment-income PIT when shares are received. When
+      taxable dividend shares are sold, 5% is applied to par value per share;
+      if the transfer price is below par, the lower transfer/market price is the
+      investment-income tax basis for that sale.
 
     User-entered SELL tax remains additive (for example ordinary securities
     transfer tax). Existing automatic tax metadata is removed before a corrected
@@ -57,6 +59,8 @@ def apply_dividend_tax_policy(event: LedgerEvent, prior_events: list[LedgerEvent
         "stock_dividend_sale_tax",
         "stock_dividend_taxable_quantity",
         "stock_dividend_tax_par_value",
+        "stock_dividend_tax_basis_per_share",
+        "stock_dividend_tax_basis_source",
     ):
         metadata.pop(key, None)
 
@@ -79,13 +83,18 @@ def apply_dividend_tax_policy(event: LedgerEvent, prior_events: list[LedgerEvent
             event_date=event.event_date,
         )
         taxable_quantity = min(float(event.quantity or 0), pool)
-        deferred_tax = taxable_quantity * VIETNAM_PAR_VALUE_VND * STOCK_DIVIDEND_SALE_TAX_RATE
+        sale_price = float(event.price or 0)
+        basis_per_share = min(VIETNAM_PAR_VALUE_VND, sale_price) if sale_price > 0 else VIETNAM_PAR_VALUE_VND
+        basis_source = "TRANSFER_PRICE_BELOW_PAR" if 0 < sale_price < VIETNAM_PAR_VALUE_VND else "PAR_VALUE"
+        deferred_tax = taxable_quantity * basis_per_share * STOCK_DIVIDEND_SALE_TAX_RATE
         tax += deferred_tax
         metadata.update({
             "stock_dividend_sale_tax_rate": STOCK_DIVIDEND_SALE_TAX_RATE,
             "stock_dividend_sale_tax": deferred_tax,
             "stock_dividend_taxable_quantity": taxable_quantity,
             "stock_dividend_tax_par_value": VIETNAM_PAR_VALUE_VND,
+            "stock_dividend_tax_basis_per_share": basis_per_share,
+            "stock_dividend_tax_basis_source": basis_source,
         })
 
     return replace(event, tax=tax, metadata=metadata)
