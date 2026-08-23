@@ -1,6 +1,7 @@
 import {
   FormValidationError,
   parseVndMoneyInput,
+  validateBrokerAccount,
   validateCashAmount,
   validateCashReserveInput,
   validateReferenceWeightInputs,
@@ -10,10 +11,13 @@ import {
 function check(name, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) process.exitCode = 1; }
 function rejects(field, fn) { try { fn(); return false; } catch (err) { return err instanceof FormValidationError && err.field === field; } }
 
-const base = { event_date:'2026-08-21', symbol:'FPT', quantity:'100', price:'72000', amount:'', ratio:'', fee:'', tax:'', note:'', settlement_date:'2026-08-25', account_id:'dnse-01' };
+const base = { event_date:'2026-08-21', symbol:'FPT', quantity:'100', price:'72000', amount:'', ratio:'', fee:'', tax:'', note:'', settlement_date:'2026-08-25', broker_code:'DNSE', account_id:'dnse-01' };
 const trade = validateTransactionForm('BUY', base, '2026-08-23', 'en');
 check('valid trade is normalized', trade.price === 72000);
-check('trade carries settlement and account metadata', trade.metadata.settlement_date === '2026-08-25' && trade.metadata.account_id === 'DNSE-01');
+check('trade carries settlement broker and account metadata', trade.metadata.settlement_date === '2026-08-25' && trade.metadata.broker_code === 'DNSE' && trade.metadata.account_id === 'DNSE-01');
+check('TCBS broker is accepted', validateBrokerAccount('tcbs', 'main', 'en').broker_code === 'TCBS');
+check('SSI broker is accepted', validateBrokerAccount('ssi', 'main', 'en').broker_code === 'SSI');
+check('reject unknown broker', rejects('broker_code', () => validateBrokerAccount('RANDOM', 'PRIMARY', 'en')));
 check('reject settlement before trade', rejects('settlement_date', () => validateTransactionForm('BUY', { ...base, settlement_date:'2026-08-20' }, '2026-08-23', 'en')));
 check('reject invalid account', rejects('account_id', () => validateTransactionForm('BUY', { ...base, account_id:'bad account!' }, '2026-08-23', 'en')));
 check('reject future date', rejects('event_date', () => validateTransactionForm('BUY', { ...base, event_date:'2026-08-24' }, '2026-08-23', 'en')));
