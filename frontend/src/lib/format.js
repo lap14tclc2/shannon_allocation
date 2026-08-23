@@ -1,4 +1,8 @@
-export function formatMoney(value, compact = false) {
+function intlLocale(locale) {
+  return String(locale || '').toLowerCase().startsWith('vi') ? 'vi-VN' : 'en-US';
+}
+
+export function formatMoney(value, compact = false, locale = 'en') {
   if (value == null || Number.isNaN(Number(value))) return '-';
   const n = Number(value);
   if (compact) {
@@ -7,7 +11,7 @@ export function formatMoney(value, compact = false) {
     if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
     return n.toFixed(0);
   }
-  return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return n.toLocaleString(intlLocale(locale), { maximumFractionDigits: 0 });
 }
 
 export function formatPercent(value, digits = 2) {
@@ -25,7 +29,7 @@ export function formatNumber(value, digits = 2) {
   return Number(value).toFixed(digits);
 }
 
-export function formatShares(value) {
+export function formatShares(value, locale = 'en') {
   if (value == null || Number.isNaN(Number(value))) return '-';
-  return Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return Number(value).toLocaleString(intlLocale(locale), { maximumFractionDigits: 4 });
 }
