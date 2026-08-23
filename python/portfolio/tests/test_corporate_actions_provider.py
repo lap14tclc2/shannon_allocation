@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from portfolio.corporate_actions import VnstockCorporateActionProvider, normalize_event_row
+from portfolio.dividends import DividendEvent
 
 
 class CommunityCompany:
@@ -85,3 +86,49 @@ def test_provider_payload_noise_does_not_change_event_identity():
     second = normalize_event_row({**base, "fetched_at": "2026-05-02T10:00:00", "temporary_vendor_field": "x"})
     assert first is not None and second is not None
     assert first.external_key == second.external_key
+
+
+class StaticDividendProvider:
+    def __init__(self, name, rows=None, error=None):
+        self.name = name
+        self.rows = rows or []
+        self.error = error
+        self.calls = []
+
+    def health(self):
+        return {"provider": self.name, "available": self.error is None}
+
+    def events(self, symbol, start, end):
+        self.calls.append(symbol)
+        if self.error:
+            raise self.error
+        return [row for row in self.rows if row.symbol == symbol]
+
+
+def test_runtime_corporate_action_sync_falls_back_and_keeps_all_installments():
+    blocked = StaticDividendProvider("vps_events", error=RuntimeError("temporary failure"))
+    public = StaticDividendProvider("cafef_public", [
+        DividendEvent(symbol="ACB", dividend_type="CASH_DIVIDEND", source="cafef_public", source_event_id="a1", ex_date="2026-06-15", record_date="2026-06-16", cash_per_share=700),
+        DividendEvent(symbol="ACB", dividend_type="STOCK_DIVIDEND", source="cafef_public", source_event_id="a2", ex_date="2026-06-15", record_date="2026-06-16", stock_ratio=0.15),
+    ])
+    never = StaticDividendProvider("vci_iq", error=RuntimeError("should not be called"))
+    provider = VnstockCorporateActionProvider(dividend_providers=[blocked, public, never])
+
+    actions = provider.events(["ACB"], "2026-01-01", "2026-12-31")
+
+    assert len(actions) == 2
+    assert {a.action_type for a in actions} == {"CASH_DIVIDEND", "STOCK_DIVIDEND"}
+    assert all(a.verification_status == "UNVERIFIED" for a in actions)
+    assert blocked.calls == ["ACB"]
+    assert public.calls == ["ACB"]
+    assert never.calls == []
+    health = provider.health()
+    assert health["available"] is True
+    assert health["last_success_source"] == "cafef_public"
+
+
+def test_runtime_provider_status_is_not_probed_before_first_sync():
+    provider = VnstockCorporateActionProvider(dividend_providers=[])
+    health = provider.health()
+    assert health["available"] is None
+    assert health["status"] == "NOT_PROBED"
