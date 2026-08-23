@@ -257,6 +257,7 @@ button,
   min-height: 44px;
 }
 
+/* Keep form text at 16px through tablet widths so iOS Safari does not zoom focused inputs. */
 input,
 select,
 textarea {
@@ -468,12 +469,6 @@ details > summary {
     width: 180px;
   }
 
-  input,
-  select,
-  textarea {
-    font-size: 12px;
-  }
-
   .row-actions,
   .cash-entry,
   .run-form,
@@ -555,6 +550,12 @@ details > summary {
   .form-grid,
   .reference-grid {
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 12px;
   }
 }
 
