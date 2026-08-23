@@ -1,0 +1,115 @@
+/* Deeper risk/performance evidence. Loaded after the existing responsive layers. */
+
+.assessment-depth {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-strong);
+}
+
+.assessment-depth-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.assessment-depth-head h3,
+.assessment-depth-block h4,
+.performance-history-depth h2,
+.performance-monthly-block h3 {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+}
+
+.assessment-depth-head h3,
+.performance-history-depth h2 {
+  font-size: 14px;
+}
+
+.assessment-depth-block h4 {
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.assessment-readiness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assessment-depth-grid,
+.performance-history-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.assessment-depth-block {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.assessment-depth-block .diag-row {
+  gap: 12px;
+  min-height: 28px;
+}
+
+.assessment-depth-block .diag-row span {
+  color: var(--muted);
+}
+
+.assessment-depth-block .diag-row b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.assessment-depth-note {
+  margin: 9px 0 0;
+  line-height: 1.55;
+}
+
+.performance-history-supplement {
+  padding-top: 0;
+}
+
+.performance-history-depth {
+  margin-top: 0;
+}
+
+.performance-monthly-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.compact-section-head {
+  margin-bottom: 8px;
+}
+
+.performance-monthly-table {
+  min-width: 520px;
+}
+
+@media (min-width: 720px) {
+  .assessment-depth-head {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .assessment-depth-grid,
+  .performance-history-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1180px) {
+  .assessment-depth-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
