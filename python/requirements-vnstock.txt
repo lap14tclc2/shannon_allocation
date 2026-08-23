@@ -2,4 +2,4 @@
 # Vnstock Community v4 provides Market + Reference via the Unified UI.
 # Corporate-action discovery uses `from vnstock import Reference` first.
 # Sponsor `vnstock_data` remains an optional runtime fallback when separately installed.
-vnstock>=4.0
+vnstock>=4.0.6
