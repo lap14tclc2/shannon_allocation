@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
 import { createPortfolioTransaction, syncPortfolio } from '../lib/api.js';
+import { downloadAIExport } from '../lib/aiExport.js';
 import { useI18n } from '../i18n.js';
 
 function pct(v, digits = 2) { return v == null ? '-' : `${(Number(v) * 100).toFixed(digits)}%`; }
@@ -18,6 +19,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const shares = (v) => formatShares(v, locale);
   const [dashboard] = useState(initialDashboard || {});
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [cashSaving, setCashSaving] = useState(false);
   const [cashAmount, setCashAmount] = useState('');
   const [message, setMessage] = useState('');
@@ -33,6 +35,18 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
     setSyncing(true); setMessage('');
     try { const result = await syncPortfolio(); setMessage(result.message || t('portfolio.sync_done')); window.location.reload(); }
     catch (err) { setMessage(t('portfolio.sync_failed', { error: err.message })); setSyncing(false); }
+  }
+
+  async function exportAI() {
+    setExporting(true); setMessage('');
+    try {
+      const filename = await downloadAIExport();
+      setMessage(text(`Exported ${filename}. Upload this Markdown file directly to your AI.`, `Đã xuất ${filename}. Bạn có thể tải trực tiếp file Markdown này lên AI.`));
+    } catch (err) {
+      setMessage(text(`AI export failed: ${err.message}`, `Xuất dữ liệu cho AI thất bại: ${err.message}`));
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function changeCash(eventType) {
@@ -61,7 +75,10 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
       <AppNav active="portfolio" locale={locale} />
       <header className="page-head portfolio-head">
         <div><h1>{t('portfolio.title')}</h1><p className="muted">{t('portfolio.subtitle')}</p></div>
-        <button className="btn-export" type="button" onClick={sync} disabled={syncing}>{syncing ? t('portfolio.syncing') : t('portfolio.sync')}</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button className="btn-variant" type="button" onClick={exportAI} disabled={exporting}>{exporting ? text('Exporting…', 'Đang xuất…') : text('⇩ Export for AI', '⇩ Xuất dữ liệu cho AI')}</button>
+          <button className="btn-export" type="button" onClick={sync} disabled={syncing}>{syncing ? t('portfolio.syncing') : t('portfolio.sync')}</button>
+        </div>
       </header>
       {message && <div className="run-message">{message}</div>}
 
