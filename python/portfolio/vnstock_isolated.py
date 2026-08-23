@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import multiprocessing as mp
+import os
 import re
+import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 
@@ -12,8 +14,19 @@ class VnstockIsolatedError(RuntimeError):
     pass
 
 
-def vnstock_available() -> bool:
-    return importlib.util.find_spec("vnstock") is not None or importlib.util.find_spec("vnstock_data") is not None
+_WORKER_PATH = Path(__file__).resolve()
+_HEALTH_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def configured_python() -> str:
+    """Python interpreter used exclusively for Vnstock calls.
+
+    QPort itself may run on another Python version. Set QPORT_VNSTOCK_PYTHON to
+    the python.exe inside the environment where Vnstock is known to work, e.g.
+    a Python 3.12 venv. When unset, QPort falls back to its own interpreter.
+    """
+    configured = str(os.environ.get("QPORT_VNSTOCK_PYTHON") or "").strip().strip('"')
+    return str(Path(configured).expanduser()) if configured else sys.executable
 
 
 def _records(frame) -> list[dict]:
@@ -127,38 +140,103 @@ def _ohlcv(market, symbol: str, start: str, end: str):
     raise RuntimeError("Unsupported Vnstock Market.equity interface")
 
 
-def _worker(task: str, payload: dict[str, Any], queue) -> None:
-    try:
-        if task == "ohlcv":
-            Market, variant = _market_factory()
-            rows = _records(_ohlcv(Market(), payload["symbol"], payload["start"], payload["end"]))
-            queue.put({"status": "success", "data": rows, "provider": "vnstock", "api_variant": variant})
-            return
+def _execute_task(task: str, payload: dict[str, Any]) -> dict:
+    if task == "probe_reference":
+        _, provider, variant = _reference_factory()
+        return {
+            "status": "success", "data": [], "provider": provider,
+            "api_variant": variant, "python": sys.executable,
+            "python_version": sys.version.split()[0], "capability": "reference",
+        }
+    if task == "probe_market":
+        _, variant = _market_factory()
+        return {
+            "status": "success", "data": [], "provider": "vnstock",
+            "api_variant": variant, "python": sys.executable,
+            "python_version": sys.version.split()[0], "capability": "market",
+        }
+    if task == "ohlcv":
+        Market, variant = _market_factory()
+        rows = _records(_ohlcv(Market(), payload["symbol"], payload["start"], payload["end"]))
+        return {"status": "success", "data": rows, "provider": "vnstock", "api_variant": variant}
 
-        Reference, provider, variant = _reference_factory()
-        ref = Reference()
-        if task == "events":
-            symbols = [str(s).upper() for s in payload.get("symbols") or []]
-            rows = _calendar_events(ref, payload["start"], payload["end"])
-            if not rows:
-                rows = []
-                for symbol in symbols:
-                    for row in _company_events(ref, symbol):
-                        item = dict(row)
-                        item.setdefault("symbol", symbol)
-                        rows.append(item)
-            queue.put({"status": "success", "data": rows, "provider": provider, "api_variant": variant})
-            return
-        if task == "company_info":
-            rows = _company_info(ref, str(payload["symbol"]).upper())
-            queue.put({"status": "success", "data": rows, "provider": provider, "api_variant": variant})
-            return
-        raise RuntimeError(f"Unknown Vnstock task: {task}")
-    except BaseException as exc:  # child isolation deliberately contains SystemExit too
+    Reference, provider, variant = _reference_factory()
+    ref = Reference()
+    if task == "events":
+        symbols = [str(s).upper() for s in payload.get("symbols") or []]
+        rows = _calendar_events(ref, payload["start"], payload["end"])
+        if not rows:
+            rows = []
+            for symbol in symbols:
+                for row in _company_events(ref, symbol):
+                    item = dict(row)
+                    item.setdefault("symbol", symbol)
+                    rows.append(item)
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    if task == "company_info":
+        rows = _company_info(ref, str(payload["symbol"]).upper())
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    raise RuntimeError(f"Unknown Vnstock task: {task}")
+
+
+def _worker_main() -> int:
+    """JSON stdin/stdout worker so QPort can use a different Python runtime."""
+    try:
+        request = json.loads(sys.stdin.read() or "{}")
+        result = _execute_task(str(request.get("task") or ""), dict(request.get("payload") or {}))
+    except BaseException as exc:  # contains SystemExit from third-party code too
+        result = {"status": "error", "error": f"{type(exc).__name__}: {exc}", "python": sys.executable}
+    sys.stdout.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
+    sys.stdout.flush()
+    return 0
+
+
+def _decode_worker_output(stdout: str) -> dict | None:
+    # Some Vnstock builds print banners/notices. The worker result is the last
+    # JSON object line, so inspect output from the bottom instead of assuming a
+    # clean stdout stream.
+    for line in reversed(str(stdout or "").splitlines()):
+        line = line.strip()
+        if not line:
+            continue
         try:
-            queue.put({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+            value = json.loads(line)
+            if isinstance(value, dict) and value.get("status") in {"success", "error"}:
+                return value
         except Exception:
-            pass
+            continue
+    return None
+
+
+def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
+    python_exe = configured_python()
+    if not Path(python_exe).exists() and python_exe != sys.executable:
+        raise VnstockIsolatedError(f"QPORT_VNSTOCK_PYTHON does not exist: {python_exe}")
+    try:
+        proc = subprocess.run(
+            [python_exe, str(_WORKER_PATH), "--worker"],
+            input=json.dumps({"task": task, "payload": payload}, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise VnstockIsolatedError(f"Vnstock {task} timed out after {timeout:g}s") from exc
+    except OSError as exc:
+        raise VnstockIsolatedError(f"Cannot start Vnstock Python interpreter {python_exe}: {exc}") from exc
+
+    result = _decode_worker_output(proc.stdout)
+    if result is None:
+        stderr = str(proc.stderr or "").strip()
+        raise VnstockIsolatedError(
+            f"Vnstock {task} worker returned no JSON result (exit={proc.returncode})"
+            + (f": {stderr[-800:]}" if stderr else "")
+        )
+    if result.get("status") != "success":
+        raise VnstockIsolatedError(str(result.get("error") or f"Vnstock {task} failed"))
+    result.setdefault("worker_python", python_exe)
+    return result
 
 
 def _is_rate_limit(text: str) -> bool:
@@ -175,37 +253,68 @@ def _wait_seconds(text: str) -> int:
 
 
 def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120.0, max_attempts: int = 3) -> dict:
-    """Run one Vnstock call in an isolated spawned child process.
+    """Run Vnstock in a crash-isolated, optionally separate Python environment.
 
-    This mirrors the proven pattern used by the user's dnse_bot: the parent QPort
-    server survives Vnstock SystemExit/crashes/timeouts and handles rate limits
-    as temporary provider failures instead of process-wide failures.
+    Set ``QPORT_VNSTOCK_PYTHON`` to the Python 3.12 interpreter/venv where
+    Vnstock works. This is intentionally stronger than multiprocessing.spawn:
+    the QPort web server may remain on another Python runtime while all Vnstock
+    calls execute in the known-good data environment.
     """
-    if not vnstock_available():
-        raise VnstockIsolatedError("Vnstock is not installed. Install python/requirements-vnstock.txt.")
     last_error = "unknown Vnstock failure"
-    ctx = mp.get_context("spawn")
     for attempt in range(1, max(1, int(max_attempts)) + 1):
-        queue = ctx.Queue()
-        process = ctx.Process(target=_worker, args=(task, dict(payload), queue), daemon=True)
-        process.start()
-        process.join(timeout=timeout)
-        if process.is_alive():
-            process.terminate(); process.join(timeout=5)
-            last_error = f"Vnstock {task} timed out after {timeout:g}s"
-        else:
-            result = None
-            try:
-                if not queue.empty():
-                    result = queue.get_nowait()
-            except Exception:
-                result = None
-            if result and result.get("status") == "success":
-                return result
-            if result:
-                last_error = str(result.get("error") or last_error)
-            else:
-                last_error = f"Vnstock {task} child exited without result (exitcode={process.exitcode})"
+        try:
+            return _run_once(task, dict(payload), timeout=timeout)
+        except Exception as exc:
+            last_error = str(exc)
         if attempt < max_attempts:
             time.sleep(_wait_seconds(last_error) if _is_rate_limit(last_error) else min(10, 2 * attempt))
     raise VnstockIsolatedError(last_error)
+
+
+def vnstock_runtime_health(capability: str = "reference", *, cache_seconds: float = 60.0) -> dict:
+    """Probe actual capability in the configured worker interpreter.
+
+    This prevents the previous false-positive state where the parent Python had
+    a package named ``vnstock`` but that version did not expose ``Reference``.
+    """
+    capability = "market" if capability == "market" else "reference"
+    cache_key = f"{configured_python()}::{capability}"
+    cached = _HEALTH_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] <= cache_seconds:
+        return dict(cached[1])
+    task = "probe_market" if capability == "market" else "probe_reference"
+    try:
+        result = _run_once(task, {}, timeout=15.0)
+        health = {
+            "available": True,
+            "provider": result.get("provider") or "vnstock",
+            "api_variant": result.get("api_variant"),
+            "worker_python": result.get("worker_python") or configured_python(),
+            "python_version": result.get("python_version"),
+            "capability": capability,
+            "error": None,
+        }
+    except Exception as exc:
+        health = {
+            "available": False,
+            "provider": "vnstock",
+            "api_variant": "unavailable",
+            "worker_python": configured_python(),
+            "python_version": None,
+            "capability": capability,
+            "error": str(exc),
+        }
+    _HEALTH_CACHE[cache_key] = (now, health)
+    return dict(health)
+
+
+def vnstock_available() -> bool:
+    # Compatibility helper used by existing adapters. It now means the actual
+    # Reference capability is executable, not merely that a package is importable.
+    return bool(vnstock_runtime_health("reference").get("available"))
+
+
+if __name__ == "__main__":
+    if "--worker" in sys.argv:
+        raise SystemExit(_worker_main())
