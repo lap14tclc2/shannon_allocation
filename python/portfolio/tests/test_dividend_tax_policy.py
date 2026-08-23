@@ -45,9 +45,21 @@ def test_stock_dividend_tax_is_deferred_until_sell_and_uses_par_value_pool():
 
     assert taxed.metadata["stock_dividend_taxable_quantity"] == pytest.approx(500)
     assert taxed.metadata["stock_dividend_tax_par_value"] == pytest.approx(10_000)
+    assert taxed.metadata["stock_dividend_tax_basis_per_share"] == pytest.approx(10_000)
+    assert taxed.metadata["stock_dividend_tax_basis_source"] == "PAR_VALUE"
     assert taxed.metadata["stock_dividend_sale_tax_rate"] == pytest.approx(0.05)
     assert taxed.metadata["stock_dividend_sale_tax"] == pytest.approx(250_000)
     assert taxed.tax == pytest.approx(250_000)
+
+
+def test_stock_dividend_tax_uses_transfer_price_when_sale_is_below_par():
+    prior = [event("STOCK_DIVIDEND", id=1, event_date="2026-08-01", symbol="ABC", quantity=1_000)]
+    sell = event("SELL", id=2, event_date="2026-09-01", symbol="ABC", quantity=500, price=8_000)
+    taxed = apply_dividend_tax_policy(sell, prior)
+
+    assert taxed.metadata["stock_dividend_tax_basis_per_share"] == pytest.approx(8_000)
+    assert taxed.metadata["stock_dividend_tax_basis_source"] == "TRANSFER_PRICE_BELOW_PAR"
+    assert taxed.metadata["stock_dividend_sale_tax"] == pytest.approx(200_000)
 
 
 def test_prior_sell_reduces_remaining_stock_dividend_taxable_pool():
