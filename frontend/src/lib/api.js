@@ -1,3 +1,5 @@
+let authRedirectInProgress = false;
+
 function apiError(data, fallback) {
   const err = new Error(data?.error || fallback);
   err.code = data?.code || 'REQUEST_FAILED';
@@ -6,18 +8,37 @@ function apiError(data, fallback) {
   return err;
 }
 
+function redirectExpiredSession(res, data) {
+  if (res.status !== 401 || data?.code !== 'AUTH_REQUIRED') return false;
+  if (typeof window === 'undefined') return false;
+  if (window.location.pathname === '/login') return false;
+  if (authRedirectInProgress) return true;
+
+  authRedirectInProgress = true;
+  const next = `${window.location.pathname}${window.location.search || ''}`;
+  const params = new URLSearchParams({ reason: 'session_expired' });
+  if (next && next !== '/' && !next.startsWith('/login')) params.set('next', next);
+  window.location.replace(`/login?${params.toString()}`);
+  return true;
+}
+
+async function handleResponse(res, url) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    redirectExpiredSession(res, data);
+    throw apiError(data, `Request failed: ${res.status} ${url}`);
+  }
+  return data;
+}
+
 async function getJSON(url, signal) {
   const res = await fetch(url, { signal });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
-  return data;
+  return handleResponse(res, url);
 }
 
 async function sendJSON(url, method, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
-  return data;
+  return handleResponse(res, url);
 }
 
 // Authentication
