@@ -1,3 +1,5 @@
+import { BROKER_CODES } from './brokers.js';
+
 const SYMBOL_RE = /^[A-Z0-9]{2,10}$/;
 const ACCOUNT_RE = /^[A-Z0-9_.-]{1,32}$/;
 const MAX_NOTE = 500;
@@ -30,9 +32,7 @@ export function parseVndMoneyInput(value, field = 'amount', locale = 'en') {
   let text = original.toLowerCase().replace(/\s+/g, '');
   let multiplier = 1;
   let hasSuffix = false;
-  if (/(triệu|tr|m)$/.test(text)) {
-    text = text.replace(/(triệu|tr|m)$/, ''); multiplier = 1_000_000; hasSuffix = true;
-  }
+  if (/(triệu|tr|m)$/.test(text)) { text = text.replace(/(triệu|tr|m)$/, ''); multiplier = 1_000_000; hasSuffix = true; }
   if (!text) throw new FormValidationError(field, 'Enter a valid VND amount.', 'Nhập số tiền VND hợp lệ.', locale);
   let normalized;
   if (hasSuffix) {
@@ -57,6 +57,14 @@ export function validateCashAmount(value, locale = 'en') {
 export function validateCashReserveInput(value, locale = 'en') {
   if (String(value ?? '').trim() === '') throw new FormValidationError('cash_reserve', 'Enter a cash reserve. Use 0 if you intentionally want no reserve.', 'Nhập mức tiền mặt dự trữ. Dùng 0 nếu bạn chủ động không giữ dự trữ.', locale);
   return parseVndMoneyInput(value, 'cash_reserve', locale);
+}
+
+export function validateBrokerAccount(brokerValue, accountValue, locale = 'en') {
+  const brokerCode = String(brokerValue || 'UNASSIGNED').trim().toUpperCase();
+  if (!BROKER_CODES.has(brokerCode)) throw new FormValidationError('broker_code', 'Select a supported broker.', 'Chọn công ty chứng khoán hợp lệ.', locale);
+  const accountId = String(accountValue || 'PRIMARY').trim().toUpperCase();
+  if (!ACCOUNT_RE.test(accountId)) throw new FormValidationError('account_id', 'Invalid account ID.', 'Mã tài khoản không hợp lệ.', locale);
+  return { broker_code: brokerCode, account_id: accountId };
 }
 
 export function validateTransactionForm(type, form, today, locale = 'en') {
@@ -84,14 +92,12 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
   const note = String(form.note || '').trim();
   if (note.length > MAX_NOTE) throw new FormValidationError('note', `Note must be at most ${MAX_NOTE} characters.`, `Ghi chú tối đa ${MAX_NOTE} ký tự.`, locale);
 
-  const metadata = {};
+  const brokerAccount = validateBrokerAccount(form.broker_code, form.account_id, locale);
+  const metadata = { ...brokerAccount };
   if (isTrade) {
     const settlement = String(form.settlement_date || '').trim();
     if (settlement && settlement < form.event_date) throw new FormValidationError('settlement_date', 'Settlement date cannot be before trade date.', 'Ngày thanh toán không được trước ngày giao dịch.', locale);
     if (settlement) metadata.settlement_date = settlement;
-    const accountId = String(form.account_id || 'PRIMARY').trim().toUpperCase();
-    if (!ACCOUNT_RE.test(accountId)) throw new FormValidationError('account_id', 'Invalid account ID.', 'Mã tài khoản không hợp lệ.', locale);
-    metadata.account_id = accountId;
   }
 
   return {
@@ -99,6 +105,8 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
     event_date: form.event_date,
     symbol: requiredSymbol ? symbol : undefined,
     quantity, price, amount, ratio, fee, tax, note,
+    broker_code: brokerAccount.broker_code,
+    account_id: brokerAccount.account_id,
     metadata,
   };
 }
