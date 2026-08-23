@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n.js';
 import { getCurrentUser, logoutUser } from '../lib/api.js';
 import AppearanceControls from './AppearanceControls.jsx';
@@ -38,13 +39,21 @@ function MobileTabIcon({ name }) {
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const { t, setLanguage } = useI18n(locale);
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const adminMode = active === 'admin' || currentUser?.role === 'ADMIN';
 
   useEffect(() => {
+    setMounted(true);
     getCurrentUser().then(result => setCurrentUser(result.user || null)).catch(() => setCurrentUser(null));
   }, []);
+
+  useEffect(() => {
+    if (!mounted || typeof document === 'undefined') return undefined;
+    document.body.classList.toggle('mobile-sheet-open', open);
+    return () => document.body.classList.remove('mobile-sheet-open');
+  }, [mounted, open]);
 
   async function logout() {
     setOpen(false);
@@ -56,69 +65,21 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     window.location.replace('/login?logged_out=1');
   }
 
-  return (
-    <nav className={`app-nav ${open ? 'nav-open' : ''}`} aria-label={t('nav.primary')}>
-      <div className="nav-shell">
-        <div className="app-nav-head">
-          <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'QPort admin home' : 'QPort portfolio home'}>
-            <span className="brand-prompt" aria-hidden="true">$</span>
-            <span className="brand-copy">
-              <strong>qport</strong>
-              <small>{adminMode ? '/ admin' : '/ portfolio'}</small>
-            </span>
-            <span className="live-badge"><span className="status-dot" />{text('live', 'live')}</span>
-          </a>
-
-          <button
-            type="button"
-            className="nav-toggle"
-            aria-expanded={open}
-            aria-label={text('Open account and appearance menu', 'Mở menu tài khoản và giao diện')}
-            onClick={() => setOpen(value => !value)}
+  const mobileChrome = mounted && typeof document !== 'undefined' ? createPortal(
+    <>
+      {!adminMode && <nav className="mobile-tab-bar" aria-label={text('Main app tabs', 'Tab chính của ứng dụng')}>
+        {LINKS.map(([href, key, labelKey]) => (
+          <a
+            key={href}
+            href={href}
+            className={active === key ? 'active' : ''}
+            aria-current={active === key ? 'page' : undefined}
           >
-            <span />
-            <span />
-            <span />
-          </button>
-        </div>
-
-        <div className={`app-nav-links ${adminMode ? 'admin-nav-links' : 'user-nav-links'}`}>
-          {adminMode ? (
-            <a href="/admin" className="active" aria-current="page">
-              <span className="nav-prefix" aria-hidden="true">›</span>
-              <span>{text('Admin', 'Admin')}</span>
-            </a>
-          ) : LINKS.map(([href, key, labelKey]) => (
-            <a
-              key={href}
-              href={href}
-              className={active === key ? 'active' : ''}
-              aria-current={active === key ? 'page' : undefined}
-            >
-              <span className="mobile-tab-icon"><MobileTabIcon name={key} /></span>
-              <span className="nav-prefix" aria-hidden="true">{active === key ? '›' : '·'}</span>
-              <span className="nav-label">{t(labelKey)}</span>
-            </a>
-          ))}
-        </div>
-
-        <div className="app-nav-footer">
-          {currentUser && (
-            <div className="nav-user">
-              <span className="nav-user-name">@{currentUser.username}</span>
-              <button type="button" className="nav-logout" onClick={logout}>{text('logout', 'đăng xuất')}</button>
-            </div>
-          )}
-
-          <AppearanceControls locale={locale} />
-
-          <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
-            <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
-            <span>/</span>
-            <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>vi</button>
-          </div>
-        </div>
-      </div>
+            <span className="mobile-tab-icon"><MobileTabIcon name={key} /></span>
+            <span className="mobile-tab-label">{t(labelKey)}</span>
+          </a>
+        ))}
+      </nav>}
 
       {open && <button
         type="button"
@@ -126,6 +87,100 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
         aria-label={text('Close account and appearance menu', 'Đóng menu tài khoản và giao diện')}
         onClick={() => setOpen(false)}
       />}
-    </nav>
+
+      {open && <aside className="mobile-account-sheet" aria-label={text('Account and appearance', 'Tài khoản và giao diện')}>
+        <div className="mobile-sheet-grabber" aria-hidden="true" />
+        {currentUser && (
+          <div className="mobile-sheet-user">
+            <div>
+              <span className="mobile-sheet-caption">{text('Signed in as', 'Đang đăng nhập')}</span>
+              <strong>@{currentUser.username}</strong>
+            </div>
+            <button type="button" className="mobile-sheet-logout" onClick={logout}>{text('Log out', 'Đăng xuất')}</button>
+          </div>
+        )}
+        <div className="mobile-sheet-setting">
+          <span>{text('Appearance', 'Giao diện')}</span>
+          <AppearanceControls locale={locale} />
+        </div>
+        <div className="mobile-sheet-setting">
+          <span>{text('Language', 'Ngôn ngữ')}</span>
+          <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
+            <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
+            <span>/</span>
+            <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>vi</button>
+          </div>
+        </div>
+      </aside>}
+    </>,
+    document.body,
+  ) : null;
+
+  return (
+    <>
+      <nav className={`app-nav ${open ? 'nav-open' : ''}`} aria-label={t('nav.primary')}>
+        <div className="nav-shell">
+          <div className="app-nav-head">
+            <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'QPort admin home' : 'QPort portfolio home'}>
+              <span className="brand-prompt" aria-hidden="true">$</span>
+              <span className="brand-copy">
+                <strong>qport</strong>
+                <small>{adminMode ? '/ admin' : '/ portfolio'}</small>
+              </span>
+              <span className="live-badge"><span className="status-dot" />{text('live', 'live')}</span>
+            </a>
+
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-expanded={open}
+              aria-label={text('Open account and appearance menu', 'Mở menu tài khoản và giao diện')}
+              onClick={() => setOpen(value => !value)}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+          </div>
+
+          <div className="app-nav-links desktop-nav-links">
+            {adminMode ? (
+              <a href="/admin" className="active" aria-current="page">
+                <span className="nav-prefix" aria-hidden="true">›</span>
+                <span>{text('Admin', 'Admin')}</span>
+              </a>
+            ) : LINKS.map(([href, key, labelKey]) => (
+              <a
+                key={href}
+                href={href}
+                className={active === key ? 'active' : ''}
+                aria-current={active === key ? 'page' : undefined}
+              >
+                <span className="nav-prefix" aria-hidden="true">{active === key ? '›' : '·'}</span>
+                <span>{t(labelKey)}</span>
+              </a>
+            ))}
+          </div>
+
+          <div className="app-nav-footer desktop-nav-footer">
+            {currentUser && (
+              <div className="nav-user">
+                <span className="nav-user-name">@{currentUser.username}</span>
+                <button type="button" className="nav-logout" onClick={logout}>{text('logout', 'đăng xuất')}</button>
+              </div>
+            )}
+
+            <AppearanceControls locale={locale} />
+
+            <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
+              <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
+              <span>/</span>
+              <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>vi</button>
+            </div>
+          </div>
+        </div>
+      </nav>
+      {mobileChrome}
+    </>
   );
 }
