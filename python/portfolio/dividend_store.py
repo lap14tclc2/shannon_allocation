@@ -35,14 +35,78 @@ def _event_key(event: DividendEvent) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def ensure_dividend_schema(store) -> None:
-    """Create the provider-cache schema inside the existing QPort SQLite DB.
+def _row_dates(row: dict) -> set[str]:
+    return {
+        str(value)
+        for value in (
+            row.get("effective_event_date"),
+            row.get("announcement_date"),
+            row.get("ex_date"),
+            row.get("record_date"),
+            row.get("payment_date"),
+        )
+        if value
+    }
 
-    QPort already stores ledger, prices, snapshots and operational controls in
-    SQLite. These tables close the remaining persistence gap for provider-backed
-    dividend information. A fetch-state row is kept even when a provider returns
-    zero events so normal dashboard reads do not repeatedly call the network.
+
+def _economic_value_matches(a: dict, b: dict) -> bool:
+    if a.get("dividend_type") == "CASH_DIVIDEND":
+        av, bv = a.get("cash_per_share"), b.get("cash_per_share")
+        if av not in (None, "") and bv not in (None, ""):
+            return abs(float(av) - float(bv)) <= max(1.0, abs(float(av)) * 0.001)
+    if a.get("dividend_type") == "STOCK_DIVIDEND":
+        av, bv = a.get("stock_ratio"), b.get("stock_ratio")
+        if av not in (None, "") and bv not in (None, ""):
+            return abs(float(av) - float(bv)) <= 1e-6
+    return True
+
+
+def _same_economic_event(a: dict, b: dict) -> bool:
+    """Best-effort duplicate detector for stale multi-provider cache rows.
+
+    Providers often describe the same dividend with different native IDs and may
+    omit one of record/ex/payment dates. QPort therefore compares the economic
+    component and overlapping dates instead of source IDs.
     """
+    if a.get("symbol") != b.get("symbol") or a.get("dividend_type") != b.get("dividend_type"):
+        return False
+    if not _economic_value_matches(a, b):
+        return False
+    dates_a, dates_b = _row_dates(a), _row_dates(b)
+    if dates_a & dates_b:
+        return True
+    effective_a = a.get("effective_event_date")
+    effective_b = b.get("effective_event_date")
+    if effective_a and effective_b:
+        try:
+            delta = abs((date.fromisoformat(effective_a) - date.fromisoformat(effective_b)).days)
+            return delta <= 7
+        except ValueError:
+            pass
+    return False
+
+
+def _merge_cached_row(primary: dict, other: dict) -> dict:
+    merged = dict(primary)
+    for key in (
+        "title", "announcement_date", "ex_date", "record_date", "payment_date",
+        "cash_per_share", "stock_ratio", "stock_ratio_percent", "source_url",
+    ):
+        if merged.get(key) in (None, "", 0) and other.get(key) not in (None, ""):
+            merged[key] = other[key]
+    evidence = list(merged.get("evidence") or [])
+    evidence.extend(item for item in (other.get("evidence") or []) if item not in evidence)
+    merged["evidence"] = evidence
+    merged["cross_source_match"] = bool(
+        merged.get("cross_source_match")
+        or other.get("cross_source_match")
+        or primary.get("source") != other.get("source")
+    )
+    return merged
+
+
+def ensure_dividend_schema(store) -> None:
+    """Create the provider-cache schema inside the existing QPort SQLite DB."""
     with store.connect() as db:
         db.executescript(
             """
@@ -81,20 +145,17 @@ def ensure_dividend_schema(store) -> None:
             );
             """
         )
-        # Defensive cleanup for any partially-written legacy/cache rows. The
-        # unique event_key prevents duplicate canonical events going forward.
         db.execute(
             "DELETE FROM dividend_events WHERE symbol = '' OR dividend_type NOT IN ('CASH_DIVIDEND','STOCK_DIVIDEND')"
         )
 
 
 class SqliteDividendService:
-    """DB-first dividend history with provider fallback.
+    """DB-first dividend history with a single canonical runtime provider.
 
-    Normal reads are SQLite-only once a symbol has a fetch-state row. Providers
-    are contacted only on a cache miss or when ``force_refresh=True``. Manual
-    refresh therefore remains available without making every dashboard render a
-    network operation.
+    Production/default providers are tried in priority order and the first one
+    returning usable dividend data becomes the source for that refresh. Custom
+    provider lists may still opt into aggregate evidence for tests/research.
     """
 
     def __init__(
@@ -107,7 +168,12 @@ class SqliteDividendService:
         using_defaults = providers is None
         self.store = store
         self.providers = providers or default_dividend_providers()
-        self.stop_on_first_data = using_defaults if stop_on_first_data is None else bool(stop_on_first_data)
+        # The normal QPort runtime always uses one canonical provider. This also
+        # neutralizes the legacy server argument stop_on_first_data=False.
+        self.stop_on_first_data = True if using_defaults else (
+            False if stop_on_first_data is None else bool(stop_on_first_data)
+        )
+        self.single_source_runtime = using_defaults
         ensure_dividend_schema(store)
 
     @property
@@ -116,10 +182,11 @@ class SqliteDividendService:
 
     def health(self) -> dict:
         return {
-            "provider": "sqlite_cached_multi_source_dividend",
+            "provider": "sqlite_cached_canonical_dividend",
             "strategy": "SQLITE_FIRST_PROVIDER_ON_CACHE_MISS",
             "provider_strategy": self.provider_strategy,
             "provider_order": [p.name for p in self.providers],
+            "deduplication": "SINGLE_CANONICAL_SOURCE_PLUS_ECONOMIC_EVENT_DEDUPE",
             "providers": [p.health() for p in self.providers],
             "persistence": "SQLITE",
         }
@@ -132,10 +199,7 @@ class SqliteDividendService:
 
     def _fetch_state(self, symbol: str) -> dict | None:
         with self.store.connect() as db:
-            row = db.execute(
-                "SELECT * FROM dividend_fetch_state WHERE symbol = ?",
-                (symbol,),
-            ).fetchone()
+            row = db.execute("SELECT * FROM dividend_fetch_state WHERE symbol = ?", (symbol,)).fetchone()
         if not row:
             return None
         item = dict(row)
@@ -165,7 +229,40 @@ class SqliteDividendService:
                 float(item["stock_ratio"]) * 100.0 if item.get("stock_ratio") is not None else None
             )
             out.append(item)
-        return out
+
+        if not out:
+            return out
+
+        priority = {p.name: i for i, p in enumerate(self.providers)}
+        if self.single_source_runtime:
+            available_sources = {row.get("source") for row in out if row.get("source")}
+            preferred = min(available_sources, key=lambda source: priority.get(source, 999)) if available_sources else None
+            if preferred:
+                out = [row for row in out if row.get("source") == preferred]
+
+        canonical: list[dict] = []
+        for row in out:
+            duplicate_index = next((i for i, current in enumerate(canonical) if _same_economic_event(current, row)), None)
+            if duplicate_index is None:
+                canonical.append(row)
+            else:
+                current = canonical[duplicate_index]
+                current_priority = priority.get(current.get("source"), 999)
+                row_priority = priority.get(row.get("source"), 999)
+                if row_priority < current_priority:
+                    canonical[duplicate_index] = _merge_cached_row(row, current)
+                else:
+                    canonical[duplicate_index] = _merge_cached_row(current, row)
+
+        canonical.sort(
+            key=lambda row: (
+                row.get("effective_event_date") or "0000-00-00",
+                1 if row.get("dividend_type") == "CASH_DIVIDEND" else 0,
+                row.get("source_event_id") or "",
+            ),
+            reverse=True,
+        )
+        return canonical
 
     def _write_fetch_state(
         self,
@@ -195,14 +292,8 @@ class SqliteDividendService:
                     provider_attempts_json=excluded.provider_attempts_json
                 """,
                 (
-                    symbol,
-                    fetched_at,
-                    start,
-                    end,
-                    self.provider_strategy,
-                    _json(counts),
-                    _json(errors),
-                    _json(attempts),
+                    symbol, fetched_at, start, end, self.provider_strategy,
+                    _json(counts), _json(errors), _json(attempts),
                 ),
             )
         return fetched_at
@@ -239,24 +330,12 @@ class SqliteDividendService:
                         last_seen_at=excluded.last_seen_at
                     """,
                     (
-                        _event_key(event),
-                        event.symbol,
-                        event.dividend_type,
-                        effective,
-                        event.source,
-                        event.source_event_id,
-                        event.title,
-                        event.announcement_date,
-                        event.ex_date,
-                        event.record_date,
-                        event.payment_date,
-                        event.cash_per_share,
-                        event.stock_ratio,
-                        event.source_url,
-                        _json(evidence_rows),
+                        _event_key(event), event.symbol, event.dividend_type, effective,
+                        event.source, event.source_event_id, event.title, event.announcement_date,
+                        event.ex_date, event.record_date, event.payment_date, event.cash_per_share,
+                        event.stock_ratio, event.source_url, _json(evidence_rows),
                         1 if len({item.source for item in evidence.get(sig, [])}) > 1 else 0,
-                        now,
-                        now,
+                        now, now,
                     ),
                 )
 
@@ -270,11 +349,7 @@ class SqliteDividendService:
                 rows = provider.events(symbol, start, end)
                 counts[provider.name] = len(rows)
                 events.extend(rows)
-                attempts.append({
-                    "provider": provider.name,
-                    "status": "SUCCESS" if rows else "EMPTY",
-                    "count": len(rows),
-                })
+                attempts.append({"provider": provider.name, "status": "SUCCESS" if rows else "EMPTY", "count": len(rows)})
                 if rows and self.stop_on_first_data:
                     break
             except Exception as exc:
@@ -291,14 +366,15 @@ class SqliteDividendService:
             current = canonical.get(sig)
             if current is None or priority.get(event.source, 999) < priority.get(current.source, 999):
                 canonical[sig] = event
+
+        # A successful canonical refresh replaces stale multi-provider cache rows
+        # for that symbol. Provider failures do not destroy the last good cache.
+        if canonical and self.single_source_runtime:
+            with self.store.connect() as db:
+                db.execute("DELETE FROM dividend_events WHERE symbol = ?", (symbol,))
         self._persist_events(canonical, evidence)
         fetched_at = self._write_fetch_state(
-            symbol,
-            start=start,
-            end=end,
-            counts=counts,
-            errors=errors,
-            attempts=attempts,
+            symbol, start=start, end=end, counts=counts, errors=errors, attempts=attempts,
         )
         return {
             "source_counts": counts,
@@ -314,6 +390,7 @@ class SqliteDividendService:
         attempts = (state or {}).get("provider_attempts") or []
         latest_date = events[0]["effective_event_date"] if events else None
         latest_components = [row for row in events if row["effective_event_date"] == latest_date] if latest_date else []
+        canonical_source = events[0].get("source") if events else None
         return {
             "ok": True,
             "symbol": symbol,
@@ -323,10 +400,12 @@ class SqliteDividendService:
             "latest_event_date": latest_date,
             "events": events,
             "event_count": len(events),
+            "canonical_source": canonical_source,
+            "deduplication_policy": "SINGLE_CANONICAL_SOURCE_PLUS_ECONOMIC_EVENT_DEDUPE",
             "source_counts": source_counts,
             "errors": errors,
             "provider_attempts": attempts,
-            "provider_strategy": (state or {}).get("provider_strategy") or self.provider_strategy,
+            "provider_strategy": self.provider_strategy,
             "lookback_start": (state or {}).get("lookback_start") or start,
             "lookahead_end": (state or {}).get("lookahead_end") or end,
             "retrieved_at": _now(),
