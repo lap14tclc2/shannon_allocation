@@ -101,12 +101,13 @@ def _parse_cash_per_share(text: str) -> float | None:
     return None
 
 
-def normalize_event_row(row: dict, default_symbol: str | None = None, source: str = "vnstock_data") -> CorporateAction | None:
+def normalize_event_row(row: dict, default_symbol: str | None = None, source: str = "vnstock") -> CorporateAction | None:
     """Normalize an unknown provider row without assuming a fixed vendor schema.
 
-    Vnstock explicitly recommends inspecting the runtime schema. We therefore
-    preserve the complete raw row, use aliases only for common fields, and mark
-    the result PROVISIONAL unless authoritative verification is later attached.
+    Vnstock's reference interfaces can evolve between Community/Sponsor releases.
+    QPort therefore preserves the complete raw row, uses aliases only for common
+    fields, and marks every discovered event PROVISIONAL until an authoritative
+    VSDC/HOSE/HNX URL is attached by the user.
     """
     raw = {str(k): (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     symbol = str(_value(raw, ("symbol", "ticker", "code", "stock_code")) or default_symbol or "").upper().strip()
@@ -151,52 +152,139 @@ def normalize_event_row(row: dict, default_symbol: str | None = None, source: st
     )
 
 
-class VnstockCorporateActionProvider:
-    name = "vnstock_data"
+def _records(frame) -> list[dict]:
+    if frame is None:
+        return []
+    if hasattr(frame, "to_dict"):
+        try:
+            return [dict(row) for row in frame.to_dict("records")]
+        except Exception:
+            return []
+    if isinstance(frame, list):
+        return [dict(row) for row in frame if isinstance(row, dict)]
+    return []
 
-    def __init__(self) -> None:
+
+class VnstockCorporateActionProvider:
+    """Corporate-action discovery using the installed Vnstock Reference layer.
+
+    Resolution order:
+      1. Community Vnstock v4+: ``from vnstock import Reference``
+      2. Optional Sponsor package: ``from vnstock_data import Reference``
+
+    The adapter supports both the Unified v4 ``ref.company.events(symbol=...)``
+    shape and the older ``ref.company(symbol).events()`` shape. Discovery is
+    intentionally PROVISIONAL; authoritative verification remains VSDC/HOSE/HNX.
+    """
+
+    def __init__(self, reference_factory=None, provider_name: str | None = None) -> None:
+        self._Reference = reference_factory
         self._error: str | None = None
+        self.name = provider_name or "vnstock"
+        self._api_variant = "injected" if reference_factory is not None else None
+
+        if reference_factory is not None:
+            return
+
+        community_error = None
+        try:
+            from vnstock import Reference  # type: ignore
+
+            self._Reference = Reference
+            self.name = "vnstock"
+            self._api_variant = "community_v4"
+            return
+        except Exception as exc:
+            community_error = str(exc)
+
         try:
             from vnstock_data import Reference  # type: ignore
+
             self._Reference = Reference
+            self.name = "vnstock_data"
+            self._api_variant = "sponsor"
+            return
         except Exception as exc:
             self._Reference = None
-            self._error = str(exc)
+            self._error = f"vnstock: {community_error}; vnstock_data: {exc}"
+            self._api_variant = "unavailable"
 
     def health(self) -> dict:
         return {
             "provider": self.name,
             "available": self._Reference is not None,
             "error": self._error,
+            "api_variant": self._api_variant,
             "mode": "raw-first runtime-schema normalization",
         }
 
+    @staticmethod
+    def _calendar_events(ref, start: str, end: str) -> list[dict]:
+        events_obj = getattr(ref, "events", None)
+        calendar = getattr(events_obj, "calendar", None) if events_obj is not None else None
+        if not callable(calendar):
+            return []
+        try:
+            return _records(calendar(start=start, end=end, event_type="dividend"))
+        except Exception:
+            return []
+
+    @staticmethod
+    def _company_events(ref, symbol: str) -> list[dict]:
+        company = getattr(ref, "company", None)
+        if company is None:
+            return []
+
+        # Vnstock v4 Unified UI: ref.company.events(symbol="FPT")
+        events_method = getattr(company, "events", None)
+        if callable(events_method):
+            for call in (
+                lambda: events_method(symbol=symbol),
+                lambda: events_method(symbol),
+            ):
+                try:
+                    rows = _records(call())
+                    if rows:
+                        return rows
+                except Exception:
+                    pass
+
+        # Legacy/Sponsor shape: ref.company("FPT").events()
+        if callable(company):
+            try:
+                company_obj = company(symbol)
+                legacy_events = getattr(company_obj, "events", None)
+                if callable(legacy_events):
+                    return _records(legacy_events())
+            except Exception:
+                pass
+        return []
+
     def events(self, symbols: list[str], start: str, end: str) -> list[CorporateAction]:
         if self._Reference is None:
-            raise RuntimeError("vnstock_data is not installed. Install python/requirements-vnstock.txt.")
+            raise RuntimeError(
+                "Corporate-action provider is unavailable. Install/upgrade Vnstock Community: pip install -U vnstock"
+            )
+
         ref = self._Reference()
-        rows: list[dict] = []
-        # Prefer the market calendar because it fetches all dividend/share-issue
-        # events in one call. Fall back to per-company events when unavailable.
-        try:
-            frame = ref.events.calendar(start=start, end=end, event_type="dividend")
-            rows = frame.to_dict("records") if hasattr(frame, "to_dict") else []
-        except Exception:
+        rows = self._calendar_events(ref, start, end)
+        if not rows:
+            rows = []
             for symbol in symbols:
-                try:
-                    frame = ref.company(symbol).events()
-                    for row in (frame.to_dict("records") if hasattr(frame, "to_dict") else []):
-                        row = dict(row)
-                        row.setdefault("symbol", symbol)
-                        rows.append(row)
-                except Exception:
-                    continue
-        wanted = {s.upper() for s in symbols}
-        out = []
+                for row in self._company_events(ref, symbol):
+                    row = dict(row)
+                    row.setdefault("symbol", symbol)
+                    rows.append(row)
+
+        wanted = {str(s).upper() for s in symbols}
+        out: list[CorporateAction] = []
+        seen: set[str] = set()
         for row in rows:
-            action = normalize_event_row(dict(row), source=self.name)
-            if action and action.symbol in wanted:
+            default_symbol = str(row.get("symbol") or "").upper() or None
+            action = normalize_event_row(dict(row), default_symbol=default_symbol, source=self.name)
+            if action and action.symbol in wanted and action.external_key not in seen:
                 out.append(action)
+                seen.add(action.external_key)
         return out
 
 
