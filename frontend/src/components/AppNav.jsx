@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n.js';
+import { getCurrentUser, logoutUser } from '../lib/api.js';
 
 const LINKS = [
   ['/', 'portfolio', 'nav.portfolio'],
@@ -21,6 +22,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const { t, setLanguage } = useI18n(locale);
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState('dark');
+  const [currentUser, setCurrentUser] = useState(null);
   const text = (en, vi) => locale === 'vi' ? vi : en;
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     setTheme(current);
     document.documentElement.dataset.theme = current;
     document.documentElement.style.colorScheme = current;
+    getCurrentUser().then(result => setCurrentUser(result.user || null)).catch(() => setCurrentUser(null));
   }, []);
 
   function toggleTheme() {
@@ -36,6 +39,11 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     document.documentElement.dataset.theme = next;
     document.documentElement.style.colorScheme = next;
     try { window.localStorage.setItem('qport-theme', next); } catch { /* storage may be disabled */ }
+  }
+
+  async function logout() {
+    try { await logoutUser(); } catch { /* cookie is cleared server-side when possible */ }
+    window.location.assign('/');
   }
 
   return (
@@ -76,9 +84,22 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
               <span>{t(labelKey)}</span>
             </a>
           ))}
+          {currentUser?.role === 'ADMIN' && (
+            <a href="/admin" className={active === 'admin' ? 'active' : ''} aria-current={active === 'admin' ? 'page' : undefined}>
+              <span className="nav-prefix" aria-hidden="true">{active === 'admin' ? '›' : '·'}</span>
+              <span>{text('Admin', 'Admin')}</span>
+            </a>
+          )}
         </div>
 
         <div className="app-nav-footer">
+          {currentUser && (
+            <div className="nav-user">
+              <span className="nav-user-name">@{currentUser.username}</span>
+              <button type="button" className="nav-logout" onClick={logout}>{text('logout', 'đăng xuất')}</button>
+            </div>
+          )}
+
           <button
             type="button"
             className="theme-toggle"
