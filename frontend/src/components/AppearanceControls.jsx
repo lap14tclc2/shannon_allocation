@@ -26,11 +26,14 @@ export default function AppearanceControls({ locale = 'en' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useState({ ...DEFAULT_APPEARANCE });
+  const [drafts, setDrafts] = useState({ ...DEFAULT_APPEARANCE });
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
 
   useEffect(() => {
-    setPalette(getStoredAppearance() || { ...DEFAULT_APPEARANCE });
+    const current = getStoredAppearance() || { ...DEFAULT_APPEARANCE };
+    setPalette(current);
+    setDrafts(current);
   }, []);
 
   useEffect(() => {
@@ -52,14 +55,17 @@ export default function AppearanceControls({ locale = 'en' }) {
 
   function updateColor(field, value) {
     if (!isHex(value)) return;
-    const next = { ...palette, [field]: value.toLowerCase() };
+    const normalized = value.toLowerCase();
+    const next = { ...palette, [field]: normalized };
     setPalette(next);
+    setDrafts(current => ({ ...current, [field]: normalized }));
     saveAppearance(next);
   }
 
   function reset() {
     const next = resetAppearance();
     setPalette(next);
+    setDrafts(next);
   }
 
   return <div className="appearance-control">
@@ -102,16 +108,16 @@ export default function AppearanceControls({ locale = 'en' }) {
             />
             <input
               className="appearance-hex"
-              value={palette[field]}
+              value={drafts[field]}
               maxLength={7}
               spellCheck="false"
               onChange={event => {
                 const value = event.target.value;
-                setPalette(current => ({ ...current, [field]: value }));
+                setDrafts(current => ({ ...current, [field]: value }));
                 if (isHex(value)) updateColor(field, value);
               }}
               onBlur={() => {
-                if (!isHex(palette[field])) setPalette(getStoredAppearance() || { ...DEFAULT_APPEARANCE });
+                if (!isHex(drafts[field])) setDrafts(current => ({ ...current, [field]: palette[field] }));
               }}
               aria-label={text(`${en} hex value`, `Mã hex ${vi}`)}
             />
