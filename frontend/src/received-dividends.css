@@ -1,0 +1,79 @@
+.portfolio-received-supplement {
+  padding-top: 0;
+}
+
+.received-dividends-card {
+  margin-top: 0;
+}
+
+.received-dividend-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  font-size: 0.86rem;
+}
+
+.received-dividend-totals span {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.received-dividend-list {
+  display: grid;
+  gap: 8px;
+}
+
+.received-dividend-node {
+  border: 1px solid var(--border, #2a2f35);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.received-dividend-node > summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.received-dividend-node > summary::-webkit-details-marker {
+  display: none;
+}
+
+.received-dividend-node > summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.received-dividend-node > summary span {
+  font-size: 0.76rem;
+}
+
+.received-dividend-node[open] > summary {
+  border-bottom: 1px solid var(--border, #2a2f35);
+}
+
+.received-dividend-table-wrap {
+  margin: 0;
+}
+
+.received-dividend-table {
+  min-width: 880px;
+}
+
+@media (max-width: 720px) {
+  .received-dividend-node > summary {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .received-dividend-node > summary {
+    grid-template-columns: 1fr;
+  }
+}
