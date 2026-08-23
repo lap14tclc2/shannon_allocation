@@ -40,11 +40,20 @@ def test_start_page_and_admin_management_ui_are_wired_to_ssr_and_client():
         assert "admin:" in source
     assert "Sign in with your username" in auth_page
     assert "Register username" in auth_page
+    assert "isAdmin" in auth_page
     assert "admin / abc123" in auth_page
     assert "Remove user + data" in admin_page
     assert "Update admin password" in admin_page
     assert "logoutUser" in nav
     assert "currentUser?.role === 'ADMIN'" in nav
+
+
+def test_cli_cannot_bypass_authenticated_user_database_routing():
+    source = (PORTFOLIO_DIR / "cli.py").read_text(encoding="utf-8")
+    assert 'parser.add_argument("--username", required=True' in source
+    assert "AuthStore()" in source
+    assert 'PortfolioStore(auth.portfolio_db_path(user["id"]))' in source
+    assert "PortfolioService()" not in source
 
 
 def test_legacy_single_user_database_is_removed_on_authenticated_server_start():
