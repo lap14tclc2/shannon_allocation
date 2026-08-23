@@ -17,10 +17,10 @@ const dashboard = {
     reference_weights: { FPT: 1 },
     positions: [{
       symbol: 'FPT', shares: 200, average_cost: 65000, price: 70000,
-      price_date: '2026-08-21', price_source: 'vnstock', market_value: 14000000,
-      weight: 14000000 / 24000000, unrealized_pnl: 1000000,
-      unrealized_return: 1000000 / 13000000, risk_contribution: 1,
-      status: 'HOLD',
+      price_date: '2026-08-21', price_source: 'vnstock', cost_value: 13000000,
+      market_value: 14000000, weight: 14000000 / 24000000,
+      unrealized_pnl: 1000000, unrealized_return: 1000000 / 13000000,
+      risk_contribution: 1, status: 'HOLD',
     }],
   },
   latest_snapshot: {
@@ -64,6 +64,8 @@ if (existsSync(ssrEntry)) {
   const portfolioHtml = renderPage('portfolio', { dashboard });
   check('portfolio SSR is product landing', portfolioHtml.includes('Portfolio') && portfolioHtml.includes('BUY &amp; HOLD'));
   check('portfolio SSR renders holdings', portfolioHtml.includes('FPT') && portfolioHtml.includes('Holdings'));
+  check('portfolio SSR renders explicit valuation columns', portfolioHtml.includes('Cost value') && portfolioHtml.includes('Market value') && portfolioHtml.includes('Unrealized P/L'));
+  check('portfolio SSR renders canonical VND values', portfolioHtml.includes('65,000 VND') && portfolioHtml.includes('70,000 VND') && portfolioHtml.includes('14,000,000 VND'));
 
   const txHtml = renderPage('transactions', { transactions: fixtures.transactions, today: '2026-08-23' });
   check('transactions SSR renders immutable ledger', txHtml.includes('Immutable event history') && txHtml.includes('POSITION_IMPORT'));
