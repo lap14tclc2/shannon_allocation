@@ -24,57 +24,27 @@ async function sendJSON(url, method, body) {
   return data;
 }
 
-export async function getPortfolioDashboard() {
-  return getJSON('/api/portfolio');
-}
+export const getPortfolioDashboard = () => getJSON('/api/portfolio');
+export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
+export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
+export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
+export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
+export const deletePortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
+export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');
+export const getPortfolioRisk = () => getJSON('/api/portfolio/risk');
+export async function listPortfolioSnapshots() { const d = await getJSON('/api/portfolio/snapshots'); return d.snapshots || []; }
+export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
+export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
+export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
 
-export async function listPortfolioTransactions() {
-  const data = await getJSON('/api/portfolio/transactions');
-  return data.transactions || [];
-}
-
-export async function listPortfolioTransactionAudit() {
-  const data = await getJSON('/api/portfolio/transaction-audit');
-  return data.corrections || [];
-}
-
-export async function createPortfolioTransaction(payload) {
-  return sendJSON('/api/portfolio/transactions', 'POST', payload);
-}
-
-export async function updatePortfolioTransaction(eventId, payload) {
-  return sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
-}
-
-export async function deletePortfolioTransaction(eventId, reason) {
-  return sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
-}
-
-export async function syncPortfolio() {
-  return sendJSON('/api/portfolio/sync', 'POST', {});
-}
-
-export async function getPortfolioPerformance() {
-  return getJSON('/api/portfolio/performance');
-}
-
-export async function getPortfolioRisk() {
-  return getJSON('/api/portfolio/risk');
-}
-
-export async function listPortfolioSnapshots() {
-  const data = await getJSON('/api/portfolio/snapshots');
-  return data.snapshots || [];
-}
-
-export async function getPortfolioPreferences() {
-  return getJSON('/api/portfolio/preferences');
-}
-
-export async function setReferenceWeights(weights) {
-  return sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
-}
-
-export async function setCashReserve(amount) {
-  return sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
-}
+// Institutional-lite operations
+export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
+export const reconcileBroker = (payload) => sendJSON('/api/portfolio/reconciliation', 'POST', payload);
+export const syncCorporateActions = (payload = {}) => sendJSON('/api/portfolio/corporate-actions/sync', 'POST', payload);
+export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
+export const recordCorporateActionReceipt = (id, payload) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/receipt`, 'POST', payload);
+export const confirmSettlement = (eventId, note = '') => sendJSON(`/api/portfolio/settlements/${Number(eventId)}/confirm`, 'POST', { note });
+export const lockNav = (snapshotDate) => sendJSON(`/api/portfolio/nav/${encodeURIComponent(snapshotDate)}/lock`, 'POST', {});
+export const resolveRestatement = (id) => sendJSON(`/api/portfolio/restatements/${Number(id)}/resolve`, 'POST', {});
+export const updateSecurity = (symbol, payload) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}`, 'POST', payload);
