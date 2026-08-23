@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
 import { syncPortfolio } from '../lib/api.js';
+import { useI18n } from '../i18n.js';
 
-function money(v) { return v == null ? '-' : `${formatMoney(v)} VND`; }
 function pct(v, digits = 2) { return v == null ? '-' : `${(Number(v) * 100).toFixed(digits)}%`; }
 
 function Metric({ label, value, note, tone = '' }) {
@@ -16,8 +16,11 @@ function Metric({ label, value, note, tone = '' }) {
   );
 }
 
-export default function PortfolioDashboardPage({ dashboard: initialDashboard }) {
-  const [dashboard, setDashboard] = useState(initialDashboard || {});
+export default function PortfolioDashboardPage({ dashboard: initialDashboard, locale = 'en' }) {
+  const { t, status } = useI18n(locale);
+  const money = (v) => (v == null ? '-' : `${formatMoney(v, false, locale)} VND`);
+  const shares = (v) => formatShares(v, locale);
+  const [dashboard] = useState(initialDashboard || {});
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const portfolio = dashboard.portfolio || {};
@@ -32,70 +35,84 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
     setMessage('');
     try {
       const result = await syncPortfolio();
-      setMessage(result.message || 'Daily sync completed.');
+      setMessage(result.message || t('portfolio.sync_done'));
       window.location.reload();
     } catch (err) {
-      setMessage(`Sync failed: ${err.message}`);
+      setMessage(t('portfolio.sync_failed', { error: err.message }));
       setSyncing(false);
     }
   }
 
+  const invariantKeys = [
+    ['price movement never changes shares', 'transactions.rule_price'],
+    ['model output never changes shares', 'transactions.rule_risk'],
+    ['time/year-end never changes shares', null],
+    ['only explicit ledger events change holdings or cash', null],
+  ];
+  const invariantText = (value) => {
+    const found = invariantKeys.find(([raw]) => raw === value);
+    if (found?.[1]) return t(found[1]);
+    if (locale === 'vi' && value === 'time/year-end never changes shares') return 'Thời gian hoặc cuối năm không thay đổi số cổ phiếu.';
+    if (locale === 'vi' && value === 'only explicit ledger events change holdings or cash') return 'Chỉ sự kiện sổ cái rõ ràng mới thay đổi cổ phiếu hoặc tiền mặt.';
+    return value;
+  };
+
   return (
     <div className="page">
-      <AppNav active="Portfolio" />
+      <AppNav active="portfolio" locale={locale} />
       <header className="page-head portfolio-head">
         <div>
-          <h1>Portfolio</h1>
-          <p className="muted">Buy &amp; Hold portfolio information. Market data and risk signals never change holdings automatically.</p>
+          <h1>{t('portfolio.title')}</h1>
+          <p className="muted">{t('portfolio.subtitle')}</p>
         </div>
         <button className="btn-export" type="button" onClick={sync} disabled={syncing}>
-          {syncing ? 'Syncing market data…' : '↻ Sync daily prices'}
+          {syncing ? t('portfolio.syncing') : t('portfolio.sync')}
         </button>
       </header>
 
       {message && <div className="run-message">{message}</div>}
 
       <div className="metric-grid portfolio-metrics">
-        <Metric label="NAV" value={money(portfolio.nav || 0)} note={snapshot.snapshot_date ? `Snapshot ${snapshot.snapshot_date}` : 'No snapshot yet'} />
-        <Metric label="Equity" value={money(portfolio.equity_value || 0)} note={`${positions.length} holding${positions.length === 1 ? '' : 's'}`} />
-        <Metric label="Cash" value={money(portfolio.cash || 0)} note={portfolio.nav ? `${pct((portfolio.cash || 0) / portfolio.nav)} of NAV` : '—'} />
-        <Metric label="Total P/L" value={money(snapshot.total_pnl ?? 0)} tone={Number(snapshot.total_pnl || 0) >= 0 ? 'positive-card' : 'negative-card'} note={`Realized ${money(portfolio.realized_pnl || 0)}`} />
-        <Metric label="Current drawdown" value={pct(snapshot.current_drawdown)} note={`Max ${pct(snapshot.max_drawdown)}`} />
-        <Metric label="252D volatility" value={pct(risk.volatility_252)} note={`Risk data ${risk.status || 'UNAVAILABLE'}`} />
+        <Metric label={t('portfolio.nav')} value={money(portfolio.nav || 0)} note={snapshot.snapshot_date ? t('portfolio.snapshot', { date: snapshot.snapshot_date }) : t('portfolio.no_snapshot')} />
+        <Metric label={t('portfolio.equity')} value={money(portfolio.equity_value || 0)} note={t('portfolio.holdings_count', { count: positions.length, suffix: positions.length === 1 ? '' : 's' })} />
+        <Metric label={t('portfolio.cash')} value={money(portfolio.cash || 0)} note={portfolio.nav ? t('portfolio.of_nav', { value: pct((portfolio.cash || 0) / portfolio.nav) }) : '—'} />
+        <Metric label={t('portfolio.total_pl')} value={money(snapshot.total_pnl ?? 0)} tone={Number(snapshot.total_pnl || 0) >= 0 ? 'positive-card' : 'negative-card'} note={t('portfolio.realized', { value: money(portfolio.realized_pnl || 0) })} />
+        <Metric label={t('portfolio.current_drawdown')} value={pct(snapshot.current_drawdown)} note={t('portfolio.max', { value: pct(snapshot.max_drawdown) })} />
+        <Metric label={t('portfolio.volatility_252')} value={pct(risk.volatility_252)} note={t('portfolio.risk_data', { status: status(risk.status || 'UNAVAILABLE') })} />
       </div>
 
       <div className="card">
         <div className="section-head">
           <div>
-            <h3>Holdings</h3>
-            <div className="muted">Shares come only from the immutable transaction ledger. All prices and values are canonical VND.</div>
+            <h3>{t('portfolio.holdings')}</h3>
+            <div className="muted">{t('portfolio.holdings_note')}</div>
           </div>
           <div className={`status-pill status-${String(market.status || 'MISSING').toLowerCase()}`}>
-            Data {market.status || 'MISSING'}
+            {t('common.data')} {status(market.status || 'MISSING')}
           </div>
         </div>
 
         {positions.length === 0 ? (
           <div className="empty-state">
-            <h3>No holdings yet</h3>
-            <p>Import your opening positions or record cash/trades first. The system will not invent a portfolio.</p>
-            <a className="btn-export" href="/transactions">Add opening positions</a>
+            <h3>{t('portfolio.no_holdings')}</h3>
+            <p>{t('portfolio.no_holdings_note')}</p>
+            <a className="btn-export" href="/transactions">{t('portfolio.add_opening')}</a>
           </div>
         ) : (
           <div className="table-scroll">
             <table className="ranking portfolio-table">
               <thead><tr>
-                <th>Ticker</th>
-                <th>Shares</th>
-                <th>Avg cost</th>
-                <th>Price</th>
-                <th>Cost value</th>
-                <th>Market value</th>
-                <th>Unrealized P/L</th>
-                <th>Return</th>
-                <th>Weight</th>
-                <th>Risk contrib.</th>
-                <th>Status</th>
+                <th>{t('portfolio.ticker')}</th>
+                <th>{t('portfolio.shares')}</th>
+                <th>{t('portfolio.avg_cost')}</th>
+                <th>{t('portfolio.price')}</th>
+                <th>{t('portfolio.cost_value')}</th>
+                <th>{t('portfolio.market_value')}</th>
+                <th>{t('portfolio.unrealized_pl')}</th>
+                <th>{t('portfolio.return')}</th>
+                <th>{t('portfolio.weight')}</th>
+                <th>{t('portfolio.risk_contrib')}</th>
+                <th>{t('portfolio.status')}</th>
               </tr></thead>
               <tbody>
                 {positions.map((p) => {
@@ -103,7 +120,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
                   return (
                     <tr key={p.symbol}>
                       <td className="symbols-cell"><b>{p.symbol}</b><div className="muted">{p.price_date || '-'} · {p.price_source || '-'}</div></td>
-                      <td>{formatShares(p.shares)}</td>
+                      <td>{shares(p.shares)}</td>
                       <td>{money(p.average_cost)}</td>
                       <td>{money(p.price)}</td>
                       <td>{money(costValue)}</td>
@@ -112,7 +129,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
                       <td className={Number(p.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}>{pct(p.unrealized_return)}</td>
                       <td>{formatWeight(p.weight)}</td>
                       <td>{pct(p.risk_contribution)}</td>
-                      <td><span className={`signal signal-${String(p.status || 'HOLD').toLowerCase()}`}>{p.status || 'HOLD'}</span></td>
+                      <td><span className={`signal signal-${String(p.status || 'HOLD').toLowerCase()}`}>{status(p.status || 'HOLD')}</span></td>
                     </tr>
                   );
                 })}
@@ -124,38 +141,38 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
 
       <div className="expand-grid">
         <div className="card">
-          <h3>Portfolio health</h3>
-          <div className="diag-row"><span>Risk status</span><b>{risk.status || 'UNAVAILABLE'}</b></div>
-          <div className="diag-row"><span>63D volatility</span><b>{pct(risk.volatility_63)}</b></div>
-          <div className="diag-row"><span>252D volatility</span><b>{pct(risk.volatility_252)}</b></div>
-          <div className="diag-row"><span>Largest position</span><b>{pct(risk.max_position_weight)}</b></div>
-          <div className="diag-row"><span>HHI concentration</span><b>{risk.hhi == null ? '-' : Number(risk.hhi).toFixed(3)}</b></div>
-          <div className="muted" style={{ marginTop: 10 }}>Risk is informational only. It does not reduce equity exposure or create SELL orders.</div>
+          <h3>{t('portfolio.health')}</h3>
+          <div className="diag-row"><span>{t('portfolio.risk_status')}</span><b>{status(risk.status || 'UNAVAILABLE')}</b></div>
+          <div className="diag-row"><span>{t('portfolio.volatility_63')}</span><b>{pct(risk.volatility_63)}</b></div>
+          <div className="diag-row"><span>{t('portfolio.volatility_252')}</span><b>{pct(risk.volatility_252)}</b></div>
+          <div className="diag-row"><span>{t('portfolio.largest_position')}</span><b>{pct(risk.max_position_weight)}</b></div>
+          <div className="diag-row"><span>{t('portfolio.hhi')}</span><b>{risk.hhi == null ? '-' : Number(risk.hhi).toFixed(3)}</b></div>
+          <div className="muted" style={{ marginTop: 10 }}>{t('portfolio.risk_info_only')}</div>
         </div>
 
         <div className="card">
-          <h3>Deploy existing cash</h3>
-          <div className="muted">BUY-only suggestion · {suggestions.policy || '—'} · no trade is created automatically.</div>
+          <h3>{t('portfolio.deploy_cash')}</h3>
+          <div className="muted">{t('portfolio.buy_only', { policy: suggestions.policy || '—' })}</div>
           {(suggestions.suggestions || []).length === 0 ? (
-            <p>No contribution-directed additions are suggested.</p>
+            <p>{t('portfolio.no_suggestion')}</p>
           ) : (
             <div className="suggestion-list">
               {suggestions.suggestions.slice(0, 6).map((s) => (
                 <div className="diag-row" key={s.symbol}>
-                  <span><b>{s.symbol}</b> · {pct(s.current_weight)} → ref {pct(s.target_weight)}</span>
+                  <span><b>{s.symbol}</b> · {pct(s.current_weight)} → {t('portfolio.reference', { value: pct(s.target_weight) })}</span>
                   <b>{money(s.amount)}</b>
                 </div>
               ))}
             </div>
           )}
-          <div className="diag-row"><span>Available cash</span><b>{money(suggestions.available_cash || 0)}</b></div>
+          <div className="diag-row"><span>{t('portfolio.available_cash')}</span><b>{money(suggestions.available_cash || 0)}</b></div>
         </div>
       </div>
 
       <div className="card invariant-card">
-        <h3>Operational invariants</h3>
+        <h3>{t('portfolio.invariants')}</h3>
         <div className="invariant-grid">
-          {(dashboard.invariants || []).map((x) => <div key={x}>✓ {x}</div>)}
+          {(dashboard.invariants || []).map((x) => <div key={x}>✓ {invariantText(x)}</div>)}
         </div>
       </div>
     </div>
