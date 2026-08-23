@@ -1,0 +1,552 @@
+/* iPhone-style mobile shell.
+   IMPORTANT: every product-layout override is scoped below 720px so desktop remains unchanged. */
+
+.mobile-tab-icon,
+.mobile-nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 719px) {
+  html {
+    min-height: 100%;
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body,
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary {
+    touch-action: manipulation;
+  }
+
+  /* ---------- Native-like application frame ---------- */
+  .page {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    margin: 0;
+    padding:
+      calc(64px + env(safe-area-inset-top, 0px))
+      12px
+      calc(92px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-nav,
+  .app-nav.nav-open {
+    inset: 0 0 auto 0;
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background: color-mix(in srgb, var(--bg) 84%, transparent);
+    backdrop-filter: blur(22px) saturate(135%);
+    -webkit-backdrop-filter: blur(22px) saturate(135%);
+  }
+
+  .nav-shell {
+    width: 100%;
+    height: 54px;
+    padding: 0 14px;
+    display: block;
+    background: transparent;
+  }
+
+  .app-nav-head {
+    position: relative;
+    z-index: 230;
+    width: 100%;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .brand {
+    max-width: calc(100% - 54px);
+    gap: 7px;
+  }
+
+  .brand-prompt {
+    font-size: 16px;
+  }
+
+  .brand-copy strong {
+    font-size: 16px;
+    letter-spacing: -.045em;
+  }
+
+  .brand-copy small,
+  .live-badge {
+    display: none;
+  }
+
+  /* Ellipsis button opens the account / appearance sheet. */
+  .nav-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+  }
+
+  .nav-toggle span {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+  }
+
+  .nav-toggle[aria-expanded="true"] {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+  }
+
+  .nav-toggle[aria-expanded="true"] span {
+    background: var(--accent);
+  }
+
+  /* ---------- Persistent iPhone-style tab bar ---------- */
+  .app-nav-links.user-nav-links,
+  .nav-open .app-nav-links.user-nav-links {
+    position: fixed;
+    z-index: 210;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    min-height: calc(68px + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding: 5px 6px calc(5px + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+  }
+
+  .app-nav-links.admin-nav-links,
+  .nav-open .app-nav-links.admin-nav-links {
+    display: none;
+  }
+
+  .app-nav-links.user-nav-links a,
+  .nav-open .app-nav-links.user-nav-links a {
+    width: 100%;
+    min-width: 0;
+    min-height: 56px;
+    padding: 5px 3px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    line-height: 1.08;
+    letter-spacing: -.01em;
+    text-transform: none;
+    text-align: center;
+  }
+
+  .app-nav-links.user-nav-links a.active,
+  .nav-open .app-nav-links.user-nav-links a.active {
+    color: var(--accent);
+    border: 0;
+    background: transparent;
+  }
+
+  .app-nav-links.user-nav-links a:active {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
+
+  .mobile-tab-icon {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: currentColor;
+  }
+
+  .mobile-tab-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .app-nav-links.user-nav-links .nav-prefix {
+    display: none;
+  }
+
+  .nav-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---------- Account / appearance sheet ---------- */
+  .mobile-nav-backdrop {
+    position: fixed;
+    z-index: 180;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100dvh;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, #000 38%, transparent);
+  }
+
+  .app-nav-footer,
+  .nav-open .app-nav-footer {
+    position: fixed;
+    z-index: 220;
+    left: 10px;
+    right: 10px;
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: min(430px, calc(100dvh - 120px - env(safe-area-inset-top, 0px)));
+    overflow: visible;
+    display: none;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  .nav-open .app-nav-footer {
+    display: grid;
+  }
+
+  .nav-user {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-user-name {
+    max-width: 65vw;
+    font-size: 14px;
+  }
+
+  .nav-logout {
+    min-height: 40px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--danger);
+    font-size: 13px;
+  }
+
+  .appearance-control,
+  .appearance-toggle {
+    width: 100%;
+  }
+
+  .appearance-toggle {
+    min-height: 48px;
+    justify-content: flex-start;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    text-transform: none;
+  }
+
+  .language-switch {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .language-switch button {
+    min-width: 52px;
+    min-height: 38px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  /* Appearance itself behaves like a mobile bottom sheet. */
+  .appearance-popover {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: calc(100dvh - 98px - env(safe-area-inset-top, 0px));
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .appearance-row {
+    min-height: 50px;
+  }
+
+  .appearance-close {
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 50%;
+  }
+
+  .appearance-actions button {
+    min-height: 46px;
+    border-radius: 11px;
+  }
+
+  /* ---------- iOS grouped-content visual rhythm ---------- */
+  .page-head,
+  .portfolio-head {
+    margin-bottom: 12px;
+    padding: 4px 2px 14px;
+    border-bottom-color: color-mix(in srgb, var(--border) 68%, transparent);
+  }
+
+  .page-head h1 {
+    font-size: 25px;
+    line-height: 1.1;
+    letter-spacing: -.045em;
+  }
+
+  .page-head p,
+  .portfolio-head p {
+    font-size: 13.5px;
+    line-height: 1.58;
+  }
+
+  .portfolio-hero {
+    margin-bottom: 10px;
+    padding: 10px 2px 16px;
+    gap: 12px;
+  }
+
+  .portfolio-hero h1 {
+    font-size: clamp(30px, 10vw, 40px);
+    line-height: 1;
+  }
+
+  .card,
+  .metric-card,
+  .risk-plain-card,
+  .guide-step-card,
+  .guide-page-card {
+    border-radius: 14px;
+  }
+
+  .card {
+    margin-bottom: 10px;
+    padding: 15px;
+  }
+
+  .metric-grid {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .metric-card {
+    min-height: 92px;
+    padding: 13px;
+  }
+
+  .metric-label,
+  .eyebrow {
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+
+  .metric-value {
+    font-size: 19px;
+  }
+
+  .metric-note,
+  .hero-meta > span,
+  .hero-return span {
+    font-size: 12px;
+  }
+
+  @media (min-width: 360px) {
+    .metric-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* Buttons and fields should feel tappable, not like tiny desktop controls. */
+  button,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-export,
+  .btn-variant,
+  .btn-small,
+  .btn-danger {
+    min-height: 44px;
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    line-height: 1.2;
+    text-transform: none;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 48px;
+    border-radius: 10px;
+    padding-inline: 12px;
+    font-size: 16px;
+  }
+
+  details,
+  .disclosure-card,
+  .dividend-symbol-node {
+    border-radius: 14px;
+  }
+
+  details > summary,
+  .disclosure-card > summary,
+  .dividend-symbol-node > summary {
+    min-height: 48px;
+  }
+
+  /* Horizontal data remains auditable without crushing columns. */
+  .table-scroll,
+  .holding-source-scroll {
+    margin-inline: -4px;
+    padding-inline: 4px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .table-scroll::-webkit-scrollbar,
+  .holding-source-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ranking th,
+  .ranking td,
+  .portfolio-table th,
+  .portfolio-table td,
+  .transaction-table th,
+  .transaction-table td {
+    padding-block: 10px;
+  }
+
+  .portfolio-table th:first-child,
+  .portfolio-table td:first-child {
+    z-index: 2;
+    background: var(--panel);
+  }
+
+  /* Forms read as grouped app forms. */
+  .form-grid,
+  .reference-grid,
+  .guide-steps,
+  .expand-grid,
+  .dashboard-grid,
+  .health-grid {
+    gap: 10px;
+  }
+
+  .row-actions,
+  .cash-entry,
+  .run-form,
+  .run-actions,
+  .button-row {
+    gap: 9px;
+  }
+
+  .section-head {
+    gap: 9px;
+  }
+
+  .section-head h2,
+  .section-head h3,
+  .card h2,
+  .card h3 {
+    line-height: 1.35;
+  }
+
+  .diag-row,
+  .compact-list-row,
+  .compact-list > div {
+    gap: 5px;
+    padding-block: 10px;
+  }
+
+  /* Charts occupy the device width and scroll only when a component truly needs it. */
+  .chart {
+    min-height: 220px;
+    border-radius: 12px;
+  }
+
+  /* ---------- Sign-in and admin mobile surfaces ---------- */
+  .auth-shell {
+    min-height: 100dvh;
+    padding:
+      calc(18px + env(safe-area-inset-top, 0px))
+      12px
+      calc(18px + env(safe-area-inset-bottom, 0px));
+    align-items: start;
+  }
+
+  .auth-card {
+    margin-top: 12px;
+    padding: 22px 17px;
+    border-radius: 20px;
+  }
+
+  .auth-form input,
+  .admin-password-form input,
+  .register-field input {
+    min-height: 50px;
+    border-radius: 12px;
+    font-size: 16px;
+  }
+
+  .auth-submit {
+    min-height: 50px;
+    border-radius: 12px;
+  }
+
+  .admin-grid {
+    gap: 10px;
+  }
+
+  /* Avoid a modal keyboard being hidden behind the bottom tab bar. */
+  :focus-visible {
+    scroll-margin-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  }
+}
