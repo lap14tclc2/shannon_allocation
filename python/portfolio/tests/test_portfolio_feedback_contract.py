@@ -16,6 +16,28 @@ def test_portfolio_dashboard_restores_information_only_risk_assessment():
     assert "no BUY/SELL action" in source
 
 
+def test_holding_rows_expand_to_broker_account_breakdown_from_open_tax_lots():
+    source = (FRONTEND_SRC / "pages" / "PortfolioDashboardPage.jsx").read_text(encoding="utf-8")
+    styles = (FRONTEND_SRC / "portfolio-insights.css").read_text(encoding="utf-8")
+    api = (FRONTEND_SRC / "lib" / "api.js").read_text(encoding="utf-8")
+
+    assert "getPortfolioOperations" in source
+    assert "operations?.tax_lots" in source
+    assert "groupBrokerSources" in source
+    assert "remaining_quantity" in source
+    assert "broker_code" in source
+    assert "account_id" in source
+    assert 'className="holding-expand-button"' in source
+    assert "aria-expanded={expanded}" in source
+    assert 'className="ranking holding-source-table"' in source
+    assert "Cost value" in source
+    assert "Market value" in source
+    assert "% of symbol" in source
+    assert "getPortfolioOperations" in api
+    assert ".holding-source-scroll" in styles
+    assert "overflow-x: auto" in styles
+
+
 def test_dividend_ui_shows_latest_and_expands_full_history():
     source = (FRONTEND_SRC / "pages" / "PortfolioDashboardPage.jsx").read_text(encoding="utf-8")
     assert 'className="dividend-symbol-node"' in source
