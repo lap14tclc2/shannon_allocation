@@ -1,6 +1,8 @@
 // Client entry: hydrate the server-rendered operational QPort page.
 import React from 'react';
 import { hydrateRoot } from 'react-dom/client';
+import AuthPage from './pages/AuthPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 import PortfolioDashboardPage from './pages/PortfolioDashboardPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
@@ -14,8 +16,11 @@ import './styles.css';
 import './buyhold.css';
 import './responsive.css';
 import './portfolio-insights.css';
+import './auth.css';
 
 const PAGES = {
+  auth: AuthPage,
+  admin: AdminPage,
   portfolio: PortfolioDashboardPage,
   transactions: TransactionsPage,
   performance: PerformancePage,
@@ -27,6 +32,6 @@ const PAGES = {
   guide: GuidePage,
 };
 
-const page = window.__PAGE__ || { page: 'portfolio', props: { dashboard: {}, locale: 'en' } };
-const C = PAGES[page.page] || PortfolioDashboardPage;
+const page = window.__PAGE__ || { page: 'auth', props: { locale: 'en' } };
+const C = PAGES[page.page] || AuthPage;
 hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
