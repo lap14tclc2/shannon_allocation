@@ -167,6 +167,10 @@ class Handler(BaseHTTPRequestHandler):
         localized["locale"] = self._locale()
         self._send_bytes(200, _build_document(page, localized, title), "text/html; charset=utf-8")
 
+    @staticmethod
+    def _parts(path: str) -> list[str]:
+        return [unquote(p) for p in path.split("/") if p]
+
     def _portfolio_api(self, parts):
         svc = _portfolio()
         if not parts:
@@ -185,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(200, svc.dashboard().get("market_data") or {})
         if parts == ["preferences"]:
             return self._send_json(200, svc.preferences())
+        if parts == ["operations"]:
+            return self._send_json(200, svc.institutional_overview())
         return self._send_json(404, {"error": "Portfolio endpoint not found."})
 
     def _operational_page(self, page: str):
@@ -203,6 +209,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_page("risk", {"risk": svc.risk()}, self._title("Risk · QPort", "Rủi ro · QPort"))
         if page == "snapshots":
             return self._send_page("snapshots", {"snapshots": svc.snapshots()}, self._title("Snapshots · QPort", "Snapshot · QPort"))
+        if page == "operations":
+            return self._send_page("operations", {"operations": svc.institutional_overview(), "today": svc.today_vn()}, self._title("Operations · QPort", "Vận hành · QPort"))
         if page == "settings":
             return self._send_page("settings", {"dashboard": svc.dashboard()}, self._title("Settings · QPort", "Cài đặt · QPort"))
         if page == "guide":
@@ -219,7 +227,7 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _transaction_id(path: str) -> int | None:
-        parts = [unquote(p) for p in path.split("/") if p]
+        parts = Handler._parts(path)
         if len(parts) == 4 and parts[:3] == ["api", "portfolio", "transactions"]:
             try:
                 return int(parts[3])
@@ -230,14 +238,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path.startswith("/api/portfolio"):
-            parts = [unquote(p) for p in path.split("/") if p]
+            parts = self._parts(path)
             return self._portfolio_api(parts[2:])
         if path.startswith("/assets/"):
             target = self._safe_join(DIST_DIR, path.lstrip("/"))
             return self._send_file(target) if target and os.path.isfile(target) else self._send_json(404, {"error": "Asset not found."})
         if path in {"", "/"}:
             return self._operational_page("portfolio")
-        routes = {"/transactions": "transactions", "/performance": "performance", "/risk": "risk", "/snapshots": "snapshots", "/settings": "settings", "/guide": "guide"}
+        routes = {
+            "/transactions": "transactions",
+            "/performance": "performance",
+            "/risk": "risk",
+            "/snapshots": "snapshots",
+            "/operations": "operations",
+            "/settings": "settings",
+            "/guide": "guide",
+        }
         if path in routes:
             return self._operational_page(routes[path])
         return self._send_json(404, {"error": "Not found."})
@@ -246,6 +262,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        parts = self._parts(path)
         body = self._read_body_json()
         svc = _portfolio()
         try:
@@ -257,6 +274,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(200, svc.set_reference_weights(body.get("weights") or {}))
             if path == "/api/portfolio/cash-reserve":
                 return self._send_json(200, svc.set_cash_reserve(body.get("amount")))
+            if path == "/api/portfolio/reconciliation":
+                return self._send_json(201, svc.reconcile_broker(body))
+            if path == "/api/portfolio/corporate-actions/sync":
+                return self._send_json(200, svc.sync_corporate_actions(body.get("start"), body.get("end")))
+            if len(parts) == 6 and parts[:3] == ["api", "portfolio", "corporate-actions"] and parts[4] == "verify":
+                return self._send_json(200, svc.verify_corporate_action(int(parts[3]), body.get("source_url")))
+            if len(parts) == 6 and parts[:3] == ["api", "portfolio", "corporate-actions"] and parts[4] == "receipt":
+                return self._send_json(200, svc.record_corporate_action_receipt(int(parts[3]), body))
+            if len(parts) == 6 and parts[:3] == ["api", "portfolio", "settlements"] and parts[4] == "confirm":
+                return self._send_json(200, svc.confirm_settlement(int(parts[3]), body.get("note") or ""))
+            if len(parts) == 6 and parts[:3] == ["api", "portfolio", "nav"] and parts[4] == "lock":
+                return self._send_json(200, svc.lock_nav(parts[3]))
+            if len(parts) == 6 and parts[:3] == ["api", "portfolio", "restatements"] and parts[4] == "resolve":
+                return self._send_json(200, svc.resolve_restatement(int(parts[3])))
+            if len(parts) == 5 and parts[:3] == ["api", "portfolio", "securities"]:
+                return self._send_json(200, svc.update_security(parts[3], body))
         except InputValidationError as exc:
             return self._send_json(400, exc.as_dict())
         except Exception as exc:
@@ -307,7 +340,7 @@ def main():
     print(f"Daily sync   : {'disabled' if args.no_daily_sync else scheduler.hhmm + ' Asia/Ho_Chi_Minh'}", flush=True)
     port, server = _bind_with_fallback(args.host, args.port, Handler)
     print(f"Open http://{args.host}:{port}", flush=True)
-    print("Mode: BUY & HOLD portfolio information system", flush=True)
+    print("Mode: BUY & HOLD institutional-lite portfolio book", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
