@@ -25,6 +25,7 @@ import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';
 import './appearance-controls.css';
+import './risk-readable.css';
 
 // Apply a persisted custom palette before hydration. With no saved palette the
 // app explicitly stays on QPort's default dark appearance.
