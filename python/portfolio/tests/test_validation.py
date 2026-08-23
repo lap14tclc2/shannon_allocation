@@ -26,6 +26,19 @@ def test_rejects_invalid_symbol_and_zero_quantity():
     assert_code("REQUIRED_POSITIVE", lambda: normalize_event_payload({"event_type":"BUY","event_date":TODAY,"symbol":"FPT","quantity":0,"price":72_000}, today=TODAY))
 
 
+def test_client_cannot_spoof_server_managed_ledger_identity():
+    assert_code("FORBIDDEN_IDENTITY_FIELD", lambda: normalize_event_payload({
+        "event_type":"CASH_DEPOSIT","event_date":TODAY,"amount":1_000_000,"created_by":"admin",
+    }, today=TODAY))
+    clean = normalize_event_payload({
+        "event_type":"CASH_DEPOSIT","event_date":TODAY,"amount":1_000_000,
+        "metadata":{"created_by":"admin","actor_id":"admin","user_id":1,"role":"ADMIN","memo":"safe"},
+    }, today=TODAY)
+    assert clean["metadata"].get("memo") == "safe"
+    for field in ("created_by", "actor_id", "user_id", "role"):
+        assert field not in clean["metadata"]
+
+
 def test_irrelevant_fields_are_canonicalized_to_zero():
     clean = normalize_event_payload({"event_type":"CASH_DEPOSIT","event_date":TODAY,"amount":1_000_000,"symbol":"FPT","quantity":999,"price":72_000,"fee":100,"tax":50,"ratio":2,"metadata":{"settlement_date":"2026-08-25"}}, today=TODAY)
     assert clean["symbol"] is None
