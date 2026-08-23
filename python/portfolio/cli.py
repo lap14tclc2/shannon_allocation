@@ -28,6 +28,9 @@ def main() -> None:
         # does not keep a browser-style session alive.
         auth.logout(temporary_token)
 
+    if user.get("role") == "ADMIN":
+        parser.error("Admin is administration-only. Use the /admin page instead of portfolio CLI commands.")
+
     store = PortfolioStore(auth.portfolio_db_path(user["id"]))
     service = PortfolioService(store=store)
     if args.command == "sync":
