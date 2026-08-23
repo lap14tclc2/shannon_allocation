@@ -13,6 +13,7 @@ import ComboPage from './pages/ComboPage.jsx';
 import OptimizerListPage from './pages/OptimizerListPage.jsx';
 import OptimizerDetailPage from './pages/OptimizerDetailPage.jsx';
 import './styles.css';
+import './buyhold.css';
 
 const PAGES = {
   home: HomePage,
