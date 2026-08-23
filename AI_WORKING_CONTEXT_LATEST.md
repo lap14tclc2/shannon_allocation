@@ -196,3 +196,76 @@ python/portfolio/tests/test_risk_readability_and_ai_handoff_contract.py
 ```
 
 When changing these surfaces, update the implementation and contracts together.
+
+## 5. Mobile is an iPhone-style application shell; desktop stays unchanged
+
+Mobile UI is no longer treated as a shrunken desktop dashboard.
+
+Breakpoint boundary:
+
+```text
+< 720px  → mobile application presentation
+>= 720px → existing tablet/desktop presentation
+```
+
+The mobile-only implementation lives in:
+
+```text
+frontend/src/mobile-iphone.css
+```
+
+and is intentionally loaded **last** so it can reshape mobile presentation without changing desktop CSS.
+
+### Mobile navigation
+
+Normal users get:
+
+```text
+TOP APP BAR
+QPort                         •••
+
+CONTENT
+
+BOTTOM TAB BAR
+Portfolio | Transactions | Performance | Guide
+```
+
+The `•••` control opens a small mobile sheet for:
+
+```text
+current user / logout
+appearance colors
+EN / VI
+```
+
+Do not bring the old hamburger list back to mobile unless the product navigation changes materially.
+
+### iPhone viewport rules
+
+Preserve:
+
+- `viewport-fit=cover`;
+- `env(safe-area-inset-top)` and `env(safe-area-inset-bottom)`;
+- `100dvh` where full-device height matters;
+- bottom content padding large enough that the home indicator/tab bar never covers content;
+- form text at 16px so iOS Safari does not auto-zoom focused fields;
+- primary touch targets at least 44px;
+- persistent bottom tabs for the four normal-user primary routes;
+- grouped rounded cards and comfortable spacing on mobile;
+- horizontal scrolling for genuinely wide/auditable data tables instead of squeezing columns into unreadable text.
+
+### Desktop preservation rule
+
+Do not use the mobile redesign as an excuse to restyle desktop. Mobile product-layout overrides must stay under:
+
+```css
+@media (max-width: 719px)
+```
+
+Desktop should retain the existing QPort terminal/quant workstation identity.
+
+Relevant regression contract:
+
+```text
+python/portfolio/tests/test_mobile_iphone_shell_contract.py
+```
