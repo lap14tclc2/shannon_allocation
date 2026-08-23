@@ -27,13 +27,14 @@
 .negative-card .metric-value { color: var(--danger); }
 
 .table-scroll { overflow-x: auto; }
-.portfolio-table { min-width: 1320px; }
+.portfolio-table { min-width: 1420px; }
 .symbols-cell .muted { font-size: 10px; margin-top: 3px; }
 
 .status-pill, .signal { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; letter-spacing: .05em; white-space: nowrap; }
 .status-valid, .signal-hold { color: var(--success); }
 .status-stale, .status-partial, .signal-add { color: var(--warning); }
 .status-missing, .signal-review { color: var(--danger); }
+.signal-monitor { color: var(--muted); }
 
 .empty-state { text-align: center; padding: 34px 18px; border: 1px dashed var(--border); border-radius: 10px; }
 .invariant-grid, .rule-list { display: grid; gap: 8px; font-size: 13px; }
@@ -48,6 +49,10 @@
 .button-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .ledger-layout textarea { min-height: 68px; resize: vertical; }
 .suggestion-list { margin: 12px 0; }
+
+.field-error { display: block; color: var(--danger); font-size: 11px; font-weight: 650; margin-top: 3px; }
+input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger) !important; outline-color: var(--danger); }
+.soft-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
 
 .cash-entry { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; margin: 12px 0 16px; }
 .cash-entry input { min-width: 0; }
