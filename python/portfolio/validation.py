@@ -7,6 +7,7 @@ from datetime import date
 from .domain import EventType
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,10}$")
+ACCOUNT_RE = re.compile(r"^[A-Z0-9_.-]{1,32}$")
 MAX_NOTE_LENGTH = 500
 MAX_SHARES = 1_000_000_000.0
 MAX_PRICE_VND = 10_000_000.0
@@ -47,6 +48,15 @@ def _positive(value, field: str, maximum: float) -> float:
     return number
 
 
+def _iso_date(value, field: str) -> tuple[str, date]:
+    text = str(value or "").strip()
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError as exc:
+        raise InputValidationError("INVALID_DATE", f"{field} must use YYYY-MM-DD.", field) from exc
+    return text, parsed
+
+
 def normalize_symbol(value) -> str | None:
     symbol = str(value or "").strip().upper()
     if not symbol:
@@ -61,12 +71,7 @@ def normalize_symbol(value) -> str | None:
 
 
 def normalize_event_payload(payload: dict, *, today: str) -> dict:
-    """Validate and canonicalize one ledger event request.
-
-    Irrelevant numeric fields are reset to zero so stale form values cannot leak
-    into the immutable ledger. This function does not perform portfolio-state
-    checks such as available cash or owned shares; accounting performs those.
-    """
+    """Validate and canonicalize one ledger event request."""
     if not isinstance(payload, dict):
         raise InputValidationError("INVALID_PAYLOAD", "Request body must be an object.")
 
@@ -75,26 +80,19 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     except ValueError as exc:
         raise InputValidationError("INVALID_EVENT_TYPE", "Unknown event type.", "event_type") from exc
 
-    event_date = str(payload.get("event_date") or today).strip()
-    try:
-        parsed_date = date.fromisoformat(event_date)
-        today_date = date.fromisoformat(today)
-    except ValueError as exc:
-        raise InputValidationError("INVALID_DATE", "event_date must use YYYY-MM-DD.", "event_date") from exc
+    event_date, parsed_date = _iso_date(payload.get("event_date") or today, "event_date")
+    _, today_date = _iso_date(today, "today")
     if parsed_date > today_date:
         raise InputValidationError("FUTURE_DATE", "event_date cannot be in the future.", "event_date")
 
     note = str(payload.get("note") or "").strip()
     if len(note) > MAX_NOTE_LENGTH:
-        raise InputValidationError(
-            "NOTE_TOO_LONG",
-            f"note must be at most {MAX_NOTE_LENGTH} characters.",
-            "note",
-        )
+        raise InputValidationError("NOTE_TOO_LONG", f"note must be at most {MAX_NOTE_LENGTH} characters.", "note")
 
     metadata_raw = payload.get("metadata") or {}
     if not isinstance(metadata_raw, dict):
         raise InputValidationError("INVALID_METADATA", "metadata must be an object.", "metadata")
+    metadata = dict(metadata_raw)
 
     symbol_required = event_type in {
         EventType.POSITION_IMPORT,
@@ -139,11 +137,43 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
         tax = _finite_number(payload.get("tax"), "tax", minimum=0, maximum=MAX_MONEY_VND)
         gross = quantity * price
         if fee + tax > gross:
+            raise InputValidationError("COSTS_EXCEED_GROSS", "fee + tax cannot exceed the gross trade value.", "fee")
+
+        # QPort uses trade-date position recognition. event_date is therefore the
+        # canonical trade date; settlement is tracked separately in metadata.
+        metadata["trade_date"] = event_date
+        settlement_raw = metadata.get("settlement_date") or payload.get("settlement_date")
+        if settlement_raw:
+            settlement_text, settlement_date = _iso_date(settlement_raw, "settlement_date")
+            if settlement_date < parsed_date:
+                raise InputValidationError(
+                    "SETTLEMENT_BEFORE_TRADE",
+                    "settlement_date cannot be before the trade date.",
+                    "settlement_date",
+                )
+            metadata["settlement_date"] = settlement_text
+        else:
+            metadata.pop("settlement_date", None)
+        account_id = str(metadata.get("account_id") or payload.get("account_id") or "PRIMARY").strip().upper()
+        if not ACCOUNT_RE.fullmatch(account_id):
             raise InputValidationError(
-                "COSTS_EXCEED_GROSS",
-                "fee + tax cannot exceed the gross trade value.",
-                "fee",
+                "INVALID_ACCOUNT_ID",
+                "account_id may contain only letters, digits, underscore, dash and dot.",
+                "account_id",
             )
+        metadata["account_id"] = account_id
+        # Settlement must be confirmed through the dedicated control action, not
+        # by injecting a flag into transaction metadata.
+        metadata.pop("settlement_confirmed", None)
+        metadata.pop("settlement_status", None)
+    else:
+        for key in ("trade_date", "settlement_date", "settlement_confirmed", "settlement_status"):
+            metadata.pop(key, None)
+        if "account_id" in metadata:
+            account_id = str(metadata["account_id"] or "PRIMARY").strip().upper()
+            if not ACCOUNT_RE.fullmatch(account_id):
+                raise InputValidationError("INVALID_ACCOUNT_ID", "Invalid account_id.", "account_id")
+            metadata["account_id"] = account_id
 
     return {
         "event_type": event_type,
@@ -156,7 +186,7 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
         "amount": amount,
         "ratio": ratio,
         "note": note,
-        "metadata": dict(metadata_raw),
+        "metadata": metadata,
     }
 
 
@@ -165,7 +195,6 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
         raise InputValidationError("INVALID_WEIGHTS", "reference weights must be an object.", "weights")
     if not weights:
         return {}
-
     normalized: dict[str, float] = {}
     for raw_symbol, raw_weight in weights.items():
         symbol = normalize_symbol(raw_symbol)
@@ -175,7 +204,6 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
         if value <= 0:
             raise InputValidationError("INVALID_WEIGHT", f"weight[{symbol}] must be greater than 0.", "weights")
         normalized[symbol] = value
-
     if set(normalized) != set(holdings):
         missing = sorted(set(holdings) - set(normalized))
         extra = sorted(set(normalized) - set(holdings))
@@ -189,7 +217,6 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
             "Reference weights must cover exactly the current holdings" + (f" ({'; '.join(detail)})." if detail else "."),
             "weights",
         )
-
     total = sum(normalized.values())
     if abs(total - 1.0) > 1e-6:
         raise InputValidationError(
