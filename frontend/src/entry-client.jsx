@@ -27,6 +27,7 @@ import './accessibility-polish.css';
 import './appearance-controls.css';
 import './risk-readable.css';
 import './guide-friendly.css';
+import './mobile-iphone.css';
 
 // Apply a persisted custom palette before hydration. With no saved palette the
 // app explicitly stays on QPort's default dark appearance.
@@ -46,11 +47,7 @@ const PAGES = {
   guide: GuidePage,
 };
 
-const page = window.__PAGE__ || { page: 'auth', props: { locale: 'en' } };
-
-if (page.props?.currentUser?.role === 'ADMIN' && page.page !== 'admin') {
-  window.location.replace('/admin');
-} else {
-  const C = PAGES[page.page] || AuthPage;
-  hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
-}
+const root = document.getElementById('root');
+const props = window.__QPORT_PROPS__ || {};
+const Page = PAGES[props.page] || PortfolioPage;
+hydrateRoot(root, <Page {...props} />);
