@@ -9,6 +9,7 @@ export default function AuthPage({ locale = 'en' }) {
   const [missingUser, setMissingUser] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const isAdmin = username.trim().toLowerCase() === 'admin';
 
   async function login(event) {
     event.preventDefault();
@@ -16,7 +17,7 @@ export default function AuthPage({ locale = 'en' }) {
     setMessage('');
     setMissingUser(false);
     try {
-      const result = await loginUser(username, password);
+      const result = await loginUser(username, isAdmin ? password : '');
       window.location.assign(result.user?.role === 'ADMIN' ? '/admin' : '/');
     } catch (err) {
       if (err.code === 'USER_NOT_REGISTERED') {
@@ -69,23 +70,26 @@ export default function AuthPage({ locale = 'en' }) {
               autoFocus
               autoComplete="username"
               value={username}
-              onChange={e => { setUsername(e.target.value); setMissingUser(false); setMessage(''); }}
+              onChange={e => { setUsername(e.target.value); setMissingUser(false); setMessage(''); if (e.target.value.trim().toLowerCase() !== 'admin') setPassword(''); }}
               placeholder={text('Enter username', 'Nhập username')}
               maxLength={32}
               required
             />
           </label>
-          <label>
-            <span>{text('Admin password', 'Password admin')} <small>{text('(admin only)', '(chỉ admin)')}</small></span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder={text('Leave empty for normal user', 'User thường để trống')}
-            />
-          </label>
-          <button className="btn-primary auth-submit" type="submit" disabled={busy || !username.trim()}>
+          {isAdmin && (
+            <label>
+              <span>{text('Admin password', 'Password admin')}</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={text('Enter admin password', 'Nhập password admin')}
+                required
+              />
+            </label>
+          )}
+          <button className="btn-primary auth-submit" type="submit" disabled={busy || !username.trim() || (isAdmin && !password)}>
             {busy ? text('Signing in…', 'Đang đăng nhập…') : text('Sign in', 'Đăng nhập')}
           </button>
         </form>
