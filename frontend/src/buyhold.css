@@ -48,7 +48,7 @@
 .reference-input input { width: 100%; }
 .reference-input span { color: var(--muted); font-weight: 700; }
 .button-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-.ledger-layout textarea { min-height: 68px; resize: vertical; }
+.ledger-layout textarea, .ops-textarea { min-height: 96px; resize: vertical; width: 100%; }
 .suggestion-list { margin: 12px 0; }
 
 .field-error { display: block; color: var(--danger); font-size: 11px; font-weight: 650; margin-top: 3px; }
