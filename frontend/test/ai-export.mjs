@@ -49,11 +49,14 @@ const risk = {
 };
 
 const transactions = [
-  { id: 1, event_date: '2026-08-23', event_type: 'POSITION_IMPORT', symbol: 'ACB', quantity: 19_210, price: 19_780, amount: 0, fee: 0, tax: 0, ratio: 0, note: '', created_by: 'local' },
+  { id: 1, event_date: '2026-08-23', event_type: 'POSITION_IMPORT', symbol: 'ACB', quantity: 19_210, price: 19_780, amount: 0, fee: 0, tax: 0, ratio: 0, note: '', created_by: 'local', correction: { action: 'EDIT', reason: 'Correct price' } },
+];
+const corrections = [
+  { id: 1, event_id: 1, action: 'EDIT', reason: 'Correct price', created_at: '2026-08-23T05:00:00Z', created_by: 'local', original: { event_type: 'POSITION_IMPORT', symbol: 'ACB', price: 19_700 } },
 ];
 
 const markdown = buildAIExportMarkdown({
-  dashboard, performance, risk, snapshots: [], transactions,
+  dashboard, performance, risk, snapshots: [], transactions, corrections,
   generatedAt: '2026-08-23T05:00:00.000Z',
 });
 
@@ -71,6 +74,7 @@ check('does not invent deployable cash', markdown.includes('NO_ALLOCATION_POLICY
 check('contains history and XIRR quality', markdown.includes('NO_HISTORY') && markdown.includes('UNAVAILABLE_OPENING_BALANCE'));
 check('contains lineage and methodology', markdown.includes('## Data lineage') && markdown.includes('equity_normalized'));
 check('explains MONITOR semantics', markdown.includes('MONITOR means no explicit strategic target'));
+check('contains correction audit', markdown.includes('## Transaction correction audit') && markdown.includes('Correct price') && markdown.includes('"transaction_correction_audit"'));
 check('contains machine-readable JSON', markdown.includes('## Machine-readable payload') && markdown.includes('"schema_version": "qport-ai-export-v2"'));
 
 if (!process.exitCode) console.log('\nAI EXPORT V2 TEST PASSED');
