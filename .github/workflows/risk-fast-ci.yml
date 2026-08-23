@@ -60,6 +60,9 @@ jobs:
       - name: Build SSR
         working-directory: frontend
         run: npm run build:ssr
+      - name: Auth SSR smoke
+        working-directory: frontend
+        run: node test/auth-smoke.mjs
       - name: Operational SSR/hydration smoke
         working-directory: frontend
         run: node test/smoke.mjs
