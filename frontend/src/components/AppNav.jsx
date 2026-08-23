@@ -8,15 +8,6 @@ const GROUPS = [
       ['/', 'portfolio', 'nav.portfolio', '◫'],
       ['/transactions', 'transactions', 'nav.transactions', '↕'],
       ['/performance', 'performance', 'nav.performance', '⌁'],
-      ['/risk', 'risk', 'nav.risk', '◇'],
-    ],
-  },
-  {
-    en: 'Records', vi: 'Dữ liệu',
-    links: [
-      ['/snapshots', 'snapshots', 'nav.snapshots', '▤'],
-      ['/operations', 'operations', null, 'Operations', 'Vận hành', '⚙'],
-      ['/logs', 'logs', null, 'Activity', 'Nhật ký', '≡'],
     ],
   },
   {
@@ -60,21 +51,17 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
         {GROUPS.map(group => (
           <div className="nav-group" key={group.en}>
             <div className="nav-group-label">{text(group.en, group.vi)}</div>
-            {group.links.map(([href, key, labelKey, en, vi, icon]) => {
-              const label = labelKey ? t(labelKey) : text(en, vi);
-              const itemIcon = icon || en || '•';
-              return (
-                <a
-                  key={href}
-                  href={href}
-                  className={active === key ? 'active' : ''}
-                  aria-current={active === key ? 'page' : undefined}
-                >
-                  <span className="nav-icon" aria-hidden="true">{itemIcon}</span>
-                  <span>{label}</span>
-                </a>
-              );
-            })}
+            {group.links.map(([href, key, labelKey, icon]) => (
+              <a
+                key={href}
+                href={href}
+                className={active === key ? 'active' : ''}
+                aria-current={active === key ? 'page' : undefined}
+              >
+                <span className="nav-icon" aria-hidden="true">{icon}</span>
+                <span>{t(labelKey)}</span>
+              </a>
+            ))}
           </div>
         ))}
       </div>
