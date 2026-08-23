@@ -10,6 +10,31 @@ const LINKS = [
   ['/guide', 'guide', 'nav.guide'],
 ];
 
+function MobileTabIcon({ name }) {
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  };
+
+  if (name === 'portfolio') {
+    return <svg {...common}><path d="M4 10.5 12 4l8 6.5" /><path d="M6.5 9.5V20h11V9.5" /><path d="M9.5 20v-6h5v6" /></svg>;
+  }
+  if (name === 'transactions') {
+    return <svg {...common}><path d="M7 4v15" /><path d="m3.5 7.5 3.5-3.5 3.5 3.5" /><path d="M17 20V5" /><path d="m13.5 16.5 3.5 3.5 3.5-3.5" /></svg>;
+  }
+  if (name === 'performance') {
+    return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
+  }
+  return <svg {...common}><path d="M5 5.5A3.5 3.5 0 0 1 8.5 2H12v18H8.5A3.5 3.5 0 0 0 5 23Z" /><path d="M19 5.5A3.5 3.5 0 0 0 15.5 2H12v18h3.5A3.5 3.5 0 0 1 19 23Z" /></svg>;
+}
+
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const { t, setLanguage } = useI18n(locale);
   const [open, setOpen] = useState(false);
@@ -43,7 +68,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
             type="button"
             className="nav-toggle"
             aria-expanded={open}
-            aria-label={text('Toggle navigation', 'Mở/đóng điều hướng')}
+            aria-label={text('Open account and appearance menu', 'Mở menu tài khoản và giao diện')}
             onClick={() => setOpen(value => !value)}
           >
             <span />
@@ -52,7 +77,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
           </button>
         </div>
 
-        <div className="app-nav-links">
+        <div className={`app-nav-links ${adminMode ? 'admin-nav-links' : 'user-nav-links'}`}>
           {adminMode ? (
             <a href="/admin" className="active" aria-current="page">
               <span className="nav-prefix" aria-hidden="true">›</span>
@@ -65,8 +90,9 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
               className={active === key ? 'active' : ''}
               aria-current={active === key ? 'page' : undefined}
             >
+              <span className="mobile-tab-icon"><MobileTabIcon name={key} /></span>
               <span className="nav-prefix" aria-hidden="true">{active === key ? '›' : '·'}</span>
-              <span>{t(labelKey)}</span>
+              <span className="nav-label">{t(labelKey)}</span>
             </a>
           ))}
         </div>
