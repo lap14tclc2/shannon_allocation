@@ -14,7 +14,11 @@ from pathlib import Path
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
 DEFAULT_ADMIN_USERNAME = "admin"
 AUTH_SECURITY_VERSION = "2"
-SESSION_DAYS = 7
+USER_SESSION_DAYS = 7
+ADMIN_SESSION_HOURS = 12
+# Compatibility value used for the browser cookie's maximum lifetime. The DB
+# enforces the shorter role-specific admin expiry independently.
+SESSION_DAYS = USER_SESSION_DAYS
 PBKDF2_ITERATIONS = 600_000
 MIN_ADMIN_PASSWORD_LENGTH = 12
 
@@ -88,6 +92,19 @@ class AuthStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.initialize()
+        self._harden_local_permissions()
+
+    def _harden_local_permissions(self) -> None:
+        """Best-effort local filesystem privacy; harmless on Windows."""
+        try:
+            self.user_data_dir.chmod(0o700)
+        except OSError:
+            pass
+        try:
+            if self.path.exists():
+                self.path.chmod(0o600)
+        except OSError:
+            pass
 
     @contextmanager
     def connect(self):
@@ -260,7 +277,14 @@ class AuthStore:
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(32)
         now = _now()
-        expires = now + timedelta(days=SESSION_DAYS)
+        user = self.user_by_id(user_id)
+        if user is None:
+            raise AuthError("USER_NOT_FOUND", "User does not exist.", "user_id")
+        expires = (
+            now + timedelta(hours=ADMIN_SESSION_HOURS)
+            if user["role"] == "ADMIN"
+            else now + timedelta(days=USER_SESSION_DAYS)
+        )
         with self.connect() as db:
             db.execute(
                 "INSERT INTO sessions(token_hash,user_id,created_at,expires_at) VALUES (?,?,?,?)",
@@ -363,3 +387,4 @@ class AuthStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.initialize()
+        self._harden_local_permissions()
