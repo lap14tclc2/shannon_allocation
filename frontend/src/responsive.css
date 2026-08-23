@@ -16,14 +16,21 @@ body {
 
 .app-nav {
   height: 52px;
+  overflow: visible;
+}
+
+.app-nav.nav-open {
+  height: auto;
 }
 
 .nav-shell {
   width: 100%;
   max-width: 100%;
   padding: 0 12px;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   position: relative;
+  background: var(--overlay);
 }
 
 .app-nav-head {
@@ -74,18 +81,16 @@ body {
 .app-nav-links,
 .app-nav-footer {
   display: none;
-  position: absolute;
-  left: 0;
-  right: 0;
-  background: var(--overlay);
-  backdrop-filter: blur(12px);
+  position: static;
+  width: 100%;
+  background: transparent;
+  backdrop-filter: none;
 }
 
 .nav-open .app-nav-links {
-  top: 52px;
   display: grid;
   gap: 2px;
-  padding: 8px 12px;
+  padding: 8px 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -97,13 +102,11 @@ body {
 }
 
 .nav-open .app-nav-footer {
-  top: 244px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 0;
 }
 
 .theme-toggle,
@@ -135,6 +138,13 @@ body {
 
 .page-head h1 {
   font-size: clamp(22px, 8vw, 28px);
+}
+
+.page-head > button,
+.page-head > a,
+.section-head > button,
+.section-head > a {
+  width: 100%;
 }
 
 .portfolio-hero {
@@ -364,7 +374,8 @@ details > summary {
     padding: 82px 20px 56px;
   }
 
-  .app-nav {
+  .app-nav,
+  .app-nav.nav-open {
     height: 58px;
   }
 
@@ -375,6 +386,7 @@ details > summary {
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 14px;
+    background: transparent;
   }
 
   .app-nav-head {
@@ -401,6 +413,7 @@ details > summary {
   .nav-open .app-nav-footer {
     display: flex;
     position: static;
+    width: auto;
     background: transparent;
     backdrop-filter: none;
     border: 0;
@@ -429,6 +442,13 @@ details > summary {
   .section-head {
     flex-direction: row;
     align-items: flex-start;
+  }
+
+  .page-head > button,
+  .page-head > a,
+  .section-head > button,
+  .section-head > a {
+    width: auto;
   }
 
   .portfolio-hero {
