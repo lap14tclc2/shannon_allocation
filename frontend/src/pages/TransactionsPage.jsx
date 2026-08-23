@@ -228,6 +228,8 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             <th>{text('Date','Ngày')}</th>
             <th>{text('Type','Loại')}</th>
             <th>{text('Ticker','Mã')}</th>
+            <th>Broker</th>
+            <th>{text('Account','Tài khoản')}</th>
             <th>{text('Qty','SL')}</th>
             <th>{text('Price / Amount','Giá / Tiền')}</th>
             <th>{text('Note','Ghi chú')}</th>
@@ -235,10 +237,15 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           </tr></thead>
           <tbody>{transactions.map(row => {
             const deleting = deleteRowId === row.id;
+            const securityEvent = Boolean(row.symbol);
+            const broker = row.metadata?.broker_code || 'UNASSIGNED';
+            const account = row.metadata?.account_id || 'PRIMARY';
             return <tr key={row.id}>
               <td>{row.event_date}</td>
-              <td><b>{eventType(row.event_type)}</b>{row.correction && <div className="muted">{text('Corrected','Đã sửa')}</div>}</td>
+              <td><b>{eventType(row.event_type)}</b>{row.correction && <div className="muted">{text('Corrected','Đã sửa')}</div>}{row.metadata?.auto_generated && <div className="muted">AUTO</div>}</td>
               <td>{row.symbol || '-'}</td>
+              <td>{securityEvent ? broker : '-'}</td>
+              <td>{securityEvent ? account : '-'}</td>
               <td>{row.quantity ? shares(row.quantity) : '-'}</td>
               <td>{row.price ? money(row.price) : row.amount ? money(row.amount) : '-'}</td>
               <td>{row.note || '-'}</td>
