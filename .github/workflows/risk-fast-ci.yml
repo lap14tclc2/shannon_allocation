@@ -36,6 +36,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Audit Python dependencies
+        working-directory: python
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt
       - name: Compile operational Python
         working-directory: python
         run: python -m compileall -q portfolio buyhold_server.py serve.py main.py
@@ -51,6 +56,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
       - name: Client validation contract
         working-directory: frontend
         run: node test/validation.mjs
