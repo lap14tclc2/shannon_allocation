@@ -92,6 +92,10 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
             "note",
         )
 
+    metadata_raw = payload.get("metadata") or {}
+    if not isinstance(metadata_raw, dict):
+        raise InputValidationError("INVALID_METADATA", "metadata must be an object.", "metadata")
+
     symbol_required = event_type in {
         EventType.POSITION_IMPORT,
         EventType.BUY,
@@ -152,7 +156,7 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
         "amount": amount,
         "ratio": ratio,
         "note": note,
-        "metadata": dict(payload.get("metadata") or {}),
+        "metadata": dict(metadata_raw),
     }
 
 
@@ -197,4 +201,10 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
 
 
 def validate_cash_reserve(value) -> float:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise InputValidationError(
+            "CASH_RESERVE_REQUIRED",
+            "cash_reserve is required; use 0 only when you explicitly want no reserve.",
+            "cash_reserve",
+        )
     return _finite_number(value, "cash_reserve", minimum=0, maximum=MAX_MONEY_VND)
