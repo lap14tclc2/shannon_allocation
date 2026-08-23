@@ -1,0 +1,22 @@
+access-key-id: ${R2_ACCESS_KEY_ID}
+secret-access-key: ${R2_SECRET_ACCESS_KEY}
+region: auto
+endpoint: ${R2_ENDPOINT}
+sync-interval: 5s
+shutdown-sync-timeout: 30s
+shutdown-sync-interval: 500ms
+
+snapshot:
+  interval: 24h
+  retention: 168h
+
+dbs:
+  - dir: /data/qport
+    pattern: "*.sqlite3"
+    recursive: true
+    watch: true
+    meta-dir: /tmp/litestream-meta
+    replica:
+      type: s3
+      bucket: ${R2_BUCKET}
+      path: ${R2_PREFIX}
