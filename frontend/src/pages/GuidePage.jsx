@@ -16,9 +16,10 @@ export default function GuidePage({locale='en'}){
     <div className="card"><h3>{text('Authentication & first sign-in','Xác thực & đăng nhập lần đầu')}</h3><div className="rule-list">
       <div>✓ {text('Normal users sign in with a unique username only. No password is required for a normal user.','User thường đăng nhập chỉ bằng username duy nhất. User thường không cần password.')}</div>
       <div>✓ {text('If the username does not exist, QPort shows a registration field. Register it once, then the system creates an isolated private portfolio database for that user.','Nếu username chưa tồn tại, QPort sẽ hiện ô đăng ký. Đăng ký một lần, sau đó hệ thống tạo database danh mục riêng cho user đó.')}</div>
-      <div>✓ {text('Admin signs in with admin / abc123 by default. Change this password from the Admin page after first login.','Admin mặc định đăng nhập bằng admin / abc123. Hãy đổi password trong trang Admin sau lần đăng nhập đầu tiên.')}</div>
+      <div>✓ {text('Admin requires its password, but QPort never displays the credential in the sign-in page, Admin page, guide or startup output.','Admin cần password riêng, nhưng QPort không hiển thị credential trên trang đăng nhập, trang Admin, hướng dẫn hoặc startup output.')}</div>
+      <div>✓ {text('Admin is administration-only. After login it always stays on /admin and cannot access portfolio pages or portfolio APIs.','Admin chỉ dùng để quản trị. Sau khi đăng nhập admin luôn ở /admin và không thể truy cập portfolio pages hoặc portfolio APIs.')}</div>
       <div>✓ {text('Admin can remove a normal user. Removing the user also invalidates their sessions and deletes their complete portfolio SQLite database.','Admin có thể xóa user thường. Xóa user đồng thời vô hiệu session và xóa toàn bộ SQLite database danh mục của user đó.')}</div>
-      <div>✓ {text('Portfolio, transactions, prices, snapshots, dividends, operations and logs are all resolved from the currently authenticated user database.','Portfolio, giao dịch, giá, snapshot, cổ tức, operations và logs đều được đọc/ghi từ database của user đang đăng nhập.')}</div>
+      <div>✓ {text('Portfolio, transactions, prices, snapshots, dividends, operations and logs are all resolved from the currently authenticated normal-user database.','Portfolio, giao dịch, giá, snapshot, cổ tức, operations và logs đều được đọc/ghi từ database của normal user đang đăng nhập.')}</div>
     </div></div>
 
     <div className="guide-steps">{STEPS.map(([a,b])=><section className="card" key={a}><h3>{t(a)}</h3><p>{t(b)}</p></section>)}</div>
