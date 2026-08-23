@@ -60,3 +60,6 @@ jobs:
       - name: Operational SSR/hydration smoke
         working-directory: frontend
         run: node test/smoke.mjs
+      - name: AI export contract
+        working-directory: frontend
+        run: node test/ai-export.mjs
