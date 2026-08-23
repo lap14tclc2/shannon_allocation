@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from .accounting import AccountingError, apply_event, derive_state
 from .corrections import (
     CorrectionError,
@@ -17,6 +19,8 @@ from .institutional import InstitutionalBook
 from .service import PortfolioService
 from .validation import InputValidationError, normalize_event_payload
 
+AUTHORITATIVE_CA_HOSTS = ("vsd.vn", "hnx.vn", "hsx.vn", "hose.vn")
+
 
 class CorrectablePortfolioService(PortfolioService):
     """Operational QPort service with corrections + institutional-lite controls."""
@@ -26,6 +30,21 @@ class CorrectablePortfolioService(PortfolioService):
         ensure_schema(self.store)
         self.store.list_events = lambda start=None, end=None: effective_events(self.store, start=start, end=end)
         self.book = InstitutionalBook(self.store, today_fn=self.today_vn)
+        with self.store.connect() as db:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS corporate_action_postings (
+                    action_id INTEGER NOT NULL,
+                    posting_type TEXT NOT NULL,
+                    event_id INTEGER NOT NULL,
+                    created_by TEXT NOT NULL DEFAULT 'local',
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(action_id, posting_type),
+                    FOREIGN KEY(action_id) REFERENCES corporate_actions(id),
+                    FOREIGN KEY(event_id) REFERENCES ledger_events(id)
+                )
+                """
+            )
 
     def transactions(self) -> list[dict]:
         latest = latest_corrections(self.store)
@@ -54,10 +73,10 @@ class CorrectablePortfolioService(PortfolioService):
     @staticmethod
     def _event_from_clean(clean: dict, *, event_id: int | None, created_by: str, created_at=None) -> LedgerEvent:
         return LedgerEvent(
-            id=event_id, event_type=clean["event_type"], event_date=clean["event_date"],
-            symbol=clean["symbol"], quantity=clean["quantity"], price=clean["price"],
-            fee=clean["fee"], tax=clean["tax"], amount=clean["amount"], ratio=clean["ratio"],
-            note=clean["note"], created_by=created_by, created_at=created_at, metadata=clean["metadata"],
+            id=event_id, event_type=clean["event_type"], event_date=clean["event_date"], symbol=clean["symbol"],
+            quantity=clean["quantity"], price=clean["price"], fee=clean["fee"], tax=clean["tax"],
+            amount=clean["amount"], ratio=clean["ratio"], note=clean["note"], created_by=created_by,
+            created_at=created_at, metadata=clean["metadata"],
         )
 
     def append_event(self, payload: dict, created_by: str = "local") -> dict:
@@ -112,8 +131,7 @@ class CorrectablePortfolioService(PortfolioService):
         if current is None:
             raise CorrectionError("Transaction not found or already deleted.")
         replacement = self._replacement_event(int(event_id), payload)
-        candidate = [e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)] + [replacement]
-        self._validate_ledger(candidate)
+        self._validate_ledger([e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)] + [replacement])
         affected_from = min(current.event_date, replacement.event_date)
         correction_id = append_edit(self.store, int(event_id), replacement, reason=reason, created_by=created_by)
         self._mark_restatement_if_needed(affected_from, f"EDIT transaction #{event_id}: {reason}", int(event_id))
@@ -127,8 +145,7 @@ class CorrectablePortfolioService(PortfolioService):
         current = effective_event(self.store, int(event_id))
         if current is None:
             raise CorrectionError("Transaction not found or already deleted.")
-        candidate = [e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)]
-        self._validate_ledger(candidate)
+        self._validate_ledger([e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)])
         correction_id = append_delete(self.store, int(event_id), reason=reason, created_by=created_by)
         self._mark_restatement_if_needed(current.event_date, f"DELETE transaction #{event_id}: {reason}", int(event_id))
         history = self._refresh_derived_history()
@@ -141,7 +158,16 @@ class CorrectablePortfolioService(PortfolioService):
         prices = self.store.latest_prices(symbols)
         market = self._market_metadata(symbols, prices)
         snapshots = self.store.list_snapshots(limit=10000)
-        return self.book.overview(events=events, state=state, prices=prices, snapshots=snapshots, preferences=self.preferences(), market_status=market["status"])
+        overview = self.book.overview(events=events, state=state, prices=prices, snapshots=snapshots, preferences=self.preferences(), market_status=market["status"])
+        with self.store.connect() as db:
+            postings = [dict(r) for r in db.execute("SELECT * FROM corporate_action_postings ORDER BY action_id, posting_type").fetchall()]
+        posting_map = {}
+        for posting in postings:
+            posting_map.setdefault(int(posting["action_id"]), []).append(posting)
+        for action in overview.get("corporate_actions") or []:
+            action["postings"] = posting_map.get(int(action["id"]), [])
+            action["ledger_posted"] = bool(action["postings"])
+        return overview
 
     def reconcile_broker(self, payload: dict, created_by: str = "local") -> dict:
         events = effective_events(self.store)
@@ -157,11 +183,58 @@ class CorrectablePortfolioService(PortfolioService):
     def sync_corporate_actions(self, start: str | None = None, end: str | None = None) -> dict:
         return self.book.sync_corporate_actions(sorted(self.current_state().positions), start=start, end=end)
 
+    @staticmethod
+    def _authoritative_corporate_action_url(source_url: str) -> bool:
+        host = (urlparse(str(source_url or "")).hostname or "").lower().strip(".")
+        return any(host == allowed or host.endswith("." + allowed) for allowed in AUTHORITATIVE_CA_HOSTS)
+
     def verify_corporate_action(self, action_id: int, source_url: str, verified_by: str = "local") -> dict:
+        if not self._authoritative_corporate_action_url(source_url):
+            raise InputValidationError(
+                "NON_AUTHORITATIVE_CORPORATE_ACTION_SOURCE",
+                "VERIFIED requires an authoritative VSDC/HOSE/HNX source URL. Other sources may be used only for discovery/cross-checking.",
+                "source_url",
+            )
         return self.book.verify_corporate_action(action_id, source_url, verified_by=verified_by)
 
     def record_corporate_action_receipt(self, action_id: int, payload: dict, created_by: str = "local") -> dict:
         return self.book.record_corporate_action_receipt(action_id, payload, created_by=created_by)
+
+    def post_corporate_action_receipt(self, action_id: int, created_by: str = "local") -> dict:
+        actions = {int(a["id"]): a for a in self.book.corporate_actions(effective_events(self.store))}
+        action = actions.get(int(action_id))
+        if not action:
+            raise InputValidationError("CORPORATE_ACTION_NOT_FOUND", "Corporate action not found.", "action_id")
+        if action.get("verification_status") != "VERIFIED":
+            raise InputValidationError("CORPORATE_ACTION_NOT_VERIFIED", "Verify the corporate action against VSDC/HOSE/HNX before posting it to the ledger.", "action_id")
+        if action.get("status") != "RECONCILED":
+            raise InputValidationError("CORPORATE_ACTION_NOT_RECONCILED", "Record and reconcile the actual broker receipt before posting it to the ledger.", "action_id")
+        receipt = action.get("receipt") or {}
+        with self.store.connect() as db:
+            existing = {r["posting_type"]: int(r["event_id"]) for r in db.execute("SELECT posting_type,event_id FROM corporate_action_postings WHERE action_id=?", (int(action_id),)).fetchall()}
+        created = []
+        metadata = {"corporate_action_id": int(action_id), "corporate_action_source": action.get("source_url") or action.get("source")}
+        if float(receipt.get("actual_cash") or 0) > 0 and "CASH" not in existing:
+            result = self.append_event({
+                "event_type": "CASH_DIVIDEND", "event_date": receipt["received_date"], "symbol": action["symbol"],
+                "amount": float(receipt["actual_cash"]), "note": f"Corporate action #{action_id} cash receipt", "metadata": metadata,
+            }, created_by=created_by)
+            with self.store.connect() as db:
+                db.execute("INSERT INTO corporate_action_postings(action_id,posting_type,event_id,created_by,created_at) VALUES (?,?,?,?,datetime('now'))", (int(action_id), "CASH", int(result["event_id"]), str(created_by)[:100]))
+            created.append(result["event_id"])
+        if float(receipt.get("actual_shares") or 0) > 0 and "STOCK" not in existing:
+            result = self.append_event({
+                "event_type": "STOCK_DIVIDEND", "event_date": receipt["received_date"], "symbol": action["symbol"],
+                "quantity": float(receipt["actual_shares"]), "note": f"Corporate action #{action_id} stock receipt", "metadata": metadata,
+            }, created_by=created_by)
+            with self.store.connect() as db:
+                db.execute("INSERT INTO corporate_action_postings(action_id,posting_type,event_id,created_by,created_at) VALUES (?,?,?,?,datetime('now'))", (int(action_id), "STOCK", int(result["event_id"]), str(created_by)[:100]))
+            created.append(result["event_id"])
+        if not created and existing:
+            raise InputValidationError("CORPORATE_ACTION_ALREADY_POSTED", "Corporate-action receipt has already been posted to the ledger.", "action_id")
+        if not created:
+            raise InputValidationError("CORPORATE_ACTION_EMPTY_RECEIPT", "Receipt has no cash or shares to post.", "action_id")
+        return {"ok": True, "action_id": int(action_id), "event_ids": created, "posting_policy": "USER_CONFIRMED_ONLY"}
 
     def update_security(self, symbol: str, payload: dict) -> dict:
         return self.book.update_security(symbol, payload)
@@ -173,7 +246,14 @@ class CorrectablePortfolioService(PortfolioService):
         return self.book.lock_nav(snapshot_date)
 
     def resolve_restatement(self, restatement_id: int) -> dict:
-        return self.book.resolve_restatement(restatement_id)
+        with self.store.connect() as db:
+            row = db.execute("SELECT affected_from_date FROM nav_restatements WHERE id=?", (int(restatement_id),)).fetchone()
+        result = self.book.resolve_restatement(restatement_id)
+        if row:
+            with self.store.connect() as db:
+                db.execute("UPDATE nav_controls SET status='RESTATED',updated_at=datetime('now') WHERE snapshot_date >= ? AND status='OFFICIAL'", (row["affected_from_date"],))
+        result["nav_status"] = "RESTATED"
+        return result
 
     def performance(self) -> dict:
         result = super().performance()
