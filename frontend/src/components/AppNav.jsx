@@ -8,6 +8,15 @@ const LINKS = [
   ['/guide', 'guide', 'nav.guide'],
 ];
 
+function preferredTheme() {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const stored = window.localStorage.getItem('qport-theme');
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch { /* storage may be disabled */ }
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const { t, setLanguage } = useI18n(locale);
   const [open, setOpen] = useState(false);
@@ -15,8 +24,10 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
 
   useEffect(() => {
-    const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    const current = preferredTheme();
     setTheme(current);
+    document.documentElement.dataset.theme = current;
+    document.documentElement.style.colorScheme = current;
   }, []);
 
   function toggleTheme() {
