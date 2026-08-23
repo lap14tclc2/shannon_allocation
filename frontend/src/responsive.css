@@ -1,0 +1,575 @@
+/* Mobile-first responsive contract for QPort.
+   Base rules target narrow touch devices first; larger layouts progressively enhance via min-width breakpoints. */
+
+/* ---------- Mobile base: 320px+ ---------- */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.page {
+  width: 100%;
+  max-width: 100%;
+  padding: 68px 12px 40px;
+}
+
+.app-nav {
+  height: 52px;
+}
+
+.nav-shell {
+  width: 100%;
+  max-width: 100%;
+  padding: 0 12px;
+  display: block;
+  position: relative;
+}
+
+.app-nav-head {
+  width: 100%;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.brand {
+  min-width: 0;
+  max-width: calc(100% - 46px);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-copy small,
+.live-badge {
+  display: none;
+}
+
+.nav-toggle {
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  flex: 0 0 40px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: transparent;
+}
+
+.nav-toggle span {
+  display: block;
+  width: 16px;
+  height: 1px;
+  background: var(--text-secondary);
+}
+
+.app-nav-links,
+.app-nav-footer {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(12px);
+}
+
+.nav-open .app-nav-links {
+  top: 52px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-open .app-nav-links a {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+}
+
+.nav-open .app-nav-footer {
+  top: 244px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.theme-toggle,
+.language-switch {
+  min-height: 40px;
+}
+
+.theme-toggle {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.language-switch {
+  flex: 0 0 auto;
+}
+
+.page-head,
+.portfolio-head,
+.section-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.page-head {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+}
+
+.page-head h1 {
+  font-size: clamp(22px, 8vw, 28px);
+}
+
+.portfolio-hero {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 0 16px;
+}
+
+.portfolio-hero h1 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: clamp(27px, 9vw, 38px);
+  line-height: 1.02;
+}
+
+.hero-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+  justify-content: stretch;
+}
+
+.hero-actions > *,
+.button-row > button,
+.button-row > a {
+  width: 100%;
+}
+
+.metric-grid,
+.compact-metrics,
+.expand-grid,
+.dashboard-grid,
+.health-grid,
+.form-grid,
+.reference-grid,
+.guide-steps {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.metric-grid {
+  gap: 6px;
+}
+
+.metric-card {
+  min-width: 0;
+  min-height: 76px;
+  padding: 11px 12px;
+}
+
+.metric-value {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+}
+
+.table-tools {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+}
+
+.search-input,
+.table-tools > input,
+.table-tools > select,
+.table-tools > button {
+  width: 100%;
+  max-width: none;
+}
+
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+}
+
+.ranking,
+.portfolio-table-core,
+.transaction-table,
+.inline-ledger-table,
+.corporate-action-table,
+.activity-table,
+.dividend-overview-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.ranking th,
+.ranking td {
+  padding: 8px 7px;
+  white-space: nowrap;
+}
+
+.portfolio-table th:first-child,
+.portfolio-table td:first-child {
+  position: sticky;
+  left: 0;
+}
+
+input,
+select,
+textarea,
+button,
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.btn-export,
+.btn-variant,
+.btn-danger {
+  min-height: 44px;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+textarea {
+  min-height: 108px;
+}
+
+.row-actions,
+.cash-entry,
+.run-form,
+.universe-buttons,
+.run-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.row-actions > *,
+.cash-entry > *,
+.run-form > *,
+.run-actions > * {
+  width: 100%;
+  max-width: none;
+}
+
+.inline-control,
+.inline-account,
+.inline-wide,
+.inline-delete,
+.inline-delete input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.section-foot,
+.cash-summary,
+.compact-list > div,
+.compact-list-row,
+.diag-row {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.chart {
+  width: 100%;
+  min-height: 190px;
+  overflow-x: auto;
+}
+
+.chart svg {
+  min-width: 560px;
+}
+
+.disclosure-card > summary,
+details > summary {
+  min-height: 44px;
+}
+
+/* Prevent wide content from forcing viewport overflow. */
+.page-head *,
+.section-head *,
+.card *,
+.metric-card *,
+.hero-primary * {
+  min-width: 0;
+}
+
+/* ---------- Large phone / small tablet: 480px+ ---------- */
+@media (min-width: 480px) {
+  .page {
+    padding-inline: 16px;
+  }
+
+  .nav-shell {
+    padding-inline: 16px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-actions > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .button-row > button,
+  .button-row > a {
+    width: auto;
+  }
+}
+
+/* ---------- Tablet: 720px+ ---------- */
+@media (min-width: 720px) {
+  .page {
+    padding: 82px 20px 56px;
+  }
+
+  .app-nav {
+    height: 58px;
+  }
+
+  .nav-shell {
+    height: 58px;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .app-nav-head {
+    width: auto;
+    height: auto;
+    display: flex;
+  }
+
+  .brand {
+    max-width: none;
+  }
+
+  .brand-copy small {
+    display: inline;
+  }
+
+  .nav-toggle {
+    display: none;
+  }
+
+  .app-nav-links,
+  .app-nav-footer,
+  .nav-open .app-nav-links,
+  .nav-open .app-nav-footer {
+    display: flex;
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    border: 0;
+    padding: 0;
+  }
+
+  .app-nav-links {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-nav-links a,
+  .nav-open .app-nav-links a {
+    width: auto;
+    min-height: 38px;
+    padding: 7px 8px;
+  }
+
+  .theme-toggle,
+  .language-switch {
+    min-height: 36px;
+  }
+
+  .page-head,
+  .portfolio-head,
+  .section-head {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .portfolio-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 18px;
+  }
+
+  .hero-actions {
+    display: flex;
+    justify-content: flex-start;
+    width: auto;
+  }
+
+  .hero-actions > * {
+    width: auto;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .compact-metrics,
+  .form-grid,
+  .reference-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table-tools {
+    width: auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .search-input,
+  .table-tools > input {
+    width: 180px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 12px;
+  }
+
+  .row-actions,
+  .cash-entry,
+  .run-form,
+  .universe-buttons,
+  .run-actions {
+    display: flex;
+    width: auto;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .row-actions > *,
+  .cash-entry > *,
+  .run-form > *,
+  .run-actions > * {
+    width: auto;
+  }
+
+  .section-foot,
+  .cash-summary,
+  .compact-list > div,
+  .compact-list-row,
+  .diag-row {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .chart {
+    min-height: 230px;
+    overflow: hidden;
+  }
+
+  .chart svg {
+    min-width: 0;
+  }
+}
+
+/* ---------- Desktop: 1024px+ ---------- */
+@media (min-width: 1024px) {
+  .page {
+    width: min(100%, 1280px);
+    padding: 88px 28px 72px;
+  }
+
+  .nav-shell {
+    width: min(100%, 1280px);
+    padding-inline: 28px;
+    gap: 26px;
+  }
+
+  .live-badge {
+    display: inline-flex;
+  }
+
+  .portfolio-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .hero-actions {
+    justify-content: flex-end;
+    max-width: 420px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .compact-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  }
+
+  .expand-grid,
+  .dashboard-grid,
+  .health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid,
+  .reference-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+}
+
+/* ---------- Wide desktop: 1280px+ ---------- */
+@media (min-width: 1280px) {
+  .app-nav-links a {
+    padding-inline: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
