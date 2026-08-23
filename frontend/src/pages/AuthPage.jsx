@@ -119,11 +119,6 @@ export default function AuthPage({ locale = 'en' }) {
             </button>
           </form>
         )}
-
-        <div className="auth-footnote">
-          <span>{text('Default admin', 'Admin mặc định')}</span>
-          <code>admin / abc123</code>
-        </div>
       </section>
     </main>
   );
