@@ -27,17 +27,28 @@ def test_responsive_contract_is_mobile_first():
 def test_mobile_navigation_and_touch_targets_are_safe():
     css = _responsive_css()
     assert ".nav-toggle" in css
-    assert "min-height: 44px" in css
+    assert ".app-nav.nav-open" in css
     assert ".nav-open .app-nav-links" in css
+    assert "position: static" in css
+    assert "min-height: 44px" in css
     assert "justify-content: space-between" in css
 
 
 def test_mobile_forms_avoid_ios_zoom_and_stack_controls():
     css = _responsive_css()
     assert "font-size: 16px" in css
+    assert "Keep form text at 16px through tablet widths" in css
     assert ".form-grid" in css
     assert ".row-actions" in css
     assert ".inline-delete" in css
+
+
+def test_mobile_page_actions_stack_for_touch():
+    css = _responsive_css()
+    assert ".page-head > button" in css
+    assert ".section-head > button" in css
+    assert ".hero-actions" in css
+    assert "width: 100%" in css
 
 
 def test_wide_tables_scroll_inside_viewport():
