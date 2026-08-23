@@ -3,6 +3,7 @@ import {
   getPortfolioPerformance,
   getPortfolioRisk,
   listPortfolioSnapshots,
+  listPortfolioTransactionAudit,
   listPortfolioTransactions,
 } from './api.js';
 
@@ -68,7 +69,7 @@ function summaryRows(portfolio, performance) {
   ];
 }
 
-export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots, transactions, generatedAt }) {
+export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots, transactions, corrections = [], generatedAt }) {
   const portfolio = dashboard?.portfolio || {};
   const positions = portfolio.positions || [];
   const health = dashboard?.health || {};
@@ -154,8 +155,19 @@ export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots,
   );
 
   const ledgerTable = table(
-    ['ID', 'Date', 'Type', 'Ticker', 'Quantity', 'Price', 'Amount', 'Fee', 'Tax', 'Ratio', 'Note', 'Created by'],
-    ledger.map((e) => [e.id ?? '-', e.event_date || '-', e.event_type || '-', e.symbol || '-', num(e.quantity, 4), money(e.price), money(e.amount), money(e.fee), money(e.tax), num(e.ratio, 6), e.note || '-', e.created_by || '-']),
+    ['ID', 'Date', 'Type', 'Ticker', 'Quantity', 'Price', 'Amount', 'Fee', 'Tax', 'Ratio', 'Audit state', 'Note', 'Created by'],
+    ledger.map((e) => [
+      e.id ?? '-', e.event_date || '-', e.event_type || '-', e.symbol || '-', num(e.quantity, 4), money(e.price), money(e.amount),
+      money(e.fee), money(e.tax), num(e.ratio, 6), e.correction?.action || 'ORIGINAL', e.note || '-', e.created_by || '-',
+    ]),
+  );
+
+  const correctionTable = table(
+    ['Correction ID', 'Event ID', 'Action', 'Reason', 'Created at', 'Created by', 'Original type', 'Original ticker'],
+    (corrections || []).map((c) => [
+      c.id ?? '-', c.event_id ?? '-', c.action || '-', c.reason || '-', c.created_at || '-', c.created_by || '-',
+      c.original?.event_type || '-', c.original?.symbol || '-',
+    ]),
   );
 
   const snapshotTable = table(
@@ -182,6 +194,7 @@ export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots,
     performance,
     risk,
     transactions: ledger,
+    transaction_correction_audit: corrections,
     recent_official_snapshots: orderedSnapshots,
   });
 
@@ -210,10 +223,12 @@ export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots,
     `Reason: ${cell(suggestions.reason || '-')}\n\n${suggestionTable}` +
     `\n\n## Risk methodology\n\n\`\`\`json\n${JSON.stringify(clean(risk?.methodology || {}), null, 2)}\n\`\`\`` +
     `\n\n## Data lineage\n\n\`\`\`json\n${JSON.stringify(clean(lineage), null, 2)}\n\`\`\`` +
-    `\n\n## Immutable ledger\n\n${ledgerTable}` +
+    `\n\n## Effective ledger\n\n${ledgerTable}` +
+    `\n\n## Transaction correction audit\n\n${correctionTable}` +
     `\n\n## Recent official daily snapshots (up to ${MAX_SNAPSHOTS})\n\n${snapshotTable}` +
     `\n\n## Interpretation rules for AI\n\n` +
-    `- Ledger events are the source of truth for shares and cash.\n` +
+    `- Effective ledger events are the source of truth for current shares and cash.\n` +
+    `- Edit/Delete are audit-safe corrections: original source rows remain preserved in the correction audit.\n` +
     `- MONITOR means no explicit strategic target is configured; it is not a HOLD recommendation.\n` +
     `- Available cash is not deployable unless both cash-reserve and allocation policies are explicit.\n` +
     `- Accounting return is not TWR, XIRR or CAGR.\n` +
@@ -227,11 +242,12 @@ export function buildAIExportMarkdown({ dashboard, performance, risk, snapshots,
 }
 
 export async function downloadAIExport() {
-  const [dashboard, performance, risk, snapshots, transactions] = await Promise.all([
-    getPortfolioDashboard(), getPortfolioPerformance(), getPortfolioRisk(), listPortfolioSnapshots(), listPortfolioTransactions(),
+  const [dashboard, performance, risk, snapshots, transactions, corrections] = await Promise.all([
+    getPortfolioDashboard(), getPortfolioPerformance(), getPortfolioRisk(), listPortfolioSnapshots(),
+    listPortfolioTransactions(), listPortfolioTransactionAudit(),
   ]);
   const generatedAt = new Date().toISOString();
-  const markdown = buildAIExportMarkdown({ dashboard, performance, risk, snapshots, transactions, generatedAt });
+  const markdown = buildAIExportMarkdown({ dashboard, performance, risk, snapshots, transactions, corrections, generatedAt });
   const date = String(dashboard?.today || generatedAt.slice(0, 10));
   const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
