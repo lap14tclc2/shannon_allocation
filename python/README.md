@@ -1,6 +1,6 @@
 # QPort Python Architecture
 
-The Python application now has two intentionally separate domains.
+The Python application has two intentionally separate domains.
 
 ## 1. Operational core — `portfolio/`
 
@@ -14,6 +14,7 @@ portfolio/
   market_data.py   Vnstock/VNDIRECT provider adapters
   analytics.py     TWR, XIRR, drawdown helpers
   risk.py          informational volatility/concentration/ERC diagnostics
+  locale.py        EN/VI locale resolution from cookie/browser language
   service.py       application use cases
   scheduler.py     daily EOD market sync
   cli.py           sync/status/performance CLI
@@ -67,6 +68,22 @@ pip install -r requirements-vnstock.txt
 Vnstock is loaded lazily. Its absence cannot prevent portfolio accounting from
 running.
 
+### Locale policy
+
+Operational web UI supports:
+
+```text
+en — English
+vi — Vietnamese / Tiếng Việt
+```
+
+The browser stores the selected language in the `qport_lang` cookie. If no cookie
+exists, `Accept-Language` is used for the initial default and unsupported
+languages fall back to English.
+
+The locale is presentation state only. It is not stored in the portfolio ledger
+and cannot affect accounting/risk results.
+
 ## 2. Research Lab — `backtest/` and research entrypoints
 
 The previous optimizer architecture is retained for research only:
@@ -91,9 +108,23 @@ Web research routes:
 /research/optimizer
 ```
 
-Old `/optimizer` URLs are compatibility aliases only.
+Old `/optimizer` URLs are compatibility aliases only. Legacy optimizer/detail
+screens may retain English-only research labels.
 
-## 3. Operational API
+## 3. Operational web routes
+
+```text
+/              Portfolio dashboard
+/transactions  Immutable ledger workflow
+/performance   TWR/XIRR/NAV history
+/risk          Informational risk diagnostics
+/snapshots     Daily snapshot history
+/settings      Strategic information preferences
+/guide         Bilingual start-to-finish guide
+/research      Isolated Research Lab
+```
+
+## 4. Operational API
 
 ```text
 GET  /api/portfolio
@@ -108,7 +139,7 @@ POST /api/portfolio/reference-weights
 
 There is no auto-rebalance or optimizer-apply endpoint.
 
-## 4. Ledger events
+## 5. Ledger events
 
 Supported operational events:
 
@@ -124,10 +155,10 @@ SPLIT
 FEE
 ```
 
-The store deliberately has no update/delete method for ledger events. Use
-compensating events for corrections.
+The store deliberately has no normal update/delete method for ledger events.
+Verify migration entries carefully and keep database backups before bulk imports.
 
-## 5. Testing
+## 6. Testing
 
 Operational tests are dataset-independent:
 
@@ -146,14 +177,17 @@ npm run build:ssr
 node test/smoke.mjs
 ```
 
+The smoke suite renders both English and Vietnamese pages and checks hydration.
 Heavy research regressions are separate and can be run manually when research
 code changes.
 
-## 6. Canonical documentation
+## 7. Canonical documentation
 
 Read:
 
 - `../BUY_AND_HOLD_SYSTEM_SPEC.md`
+- `../docs/USER_GUIDE_EN.md`
+- `../docs/USER_GUIDE_VI.md`
 - `../user-guide.md`
 
 The old allocation implementation specification is deprecated for operational
