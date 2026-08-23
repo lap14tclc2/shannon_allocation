@@ -8,6 +8,8 @@ from .domain import EventType
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,10}$")
 ACCOUNT_RE = re.compile(r"^[A-Z0-9_.-]{1,32}$")
+BROKER_RE = re.compile(r"^[A-Z0-9_.-]{2,20}$")
+KNOWN_BROKERS = {"UNASSIGNED", "TCBS", "SSI", "DNSE", "VPS", "VCBS", "HSC", "VNDIRECT", "OTHER"}
 MAX_NOTE_LENGTH = 500
 MAX_SHARES = 1_000_000_000.0
 MAX_PRICE_VND = 10_000_000.0
@@ -62,19 +64,30 @@ def normalize_symbol(value) -> str | None:
     if not symbol:
         return None
     if not SYMBOL_RE.fullmatch(symbol):
-        raise InputValidationError(
-            "INVALID_SYMBOL",
-            "symbol must contain only 2–10 uppercase letters/digits (for example FPT).",
-            "symbol",
-        )
+        raise InputValidationError("INVALID_SYMBOL", "symbol must contain only 2–10 uppercase letters/digits (for example FPT).", "symbol")
     return symbol
+
+
+def normalize_broker(value) -> str:
+    broker = str(value or "UNASSIGNED").strip().upper()
+    if not BROKER_RE.fullmatch(broker):
+        raise InputValidationError("INVALID_BROKER", "broker_code may contain only letters, digits, underscore, dash and dot.", "broker_code")
+    if broker not in KNOWN_BROKERS:
+        raise InputValidationError("UNKNOWN_BROKER", f"Unknown broker_code {broker}. Use one of: {', '.join(sorted(KNOWN_BROKERS))}.", "broker_code")
+    return broker
+
+
+def normalize_account(value) -> str:
+    account_id = str(value or "PRIMARY").strip().upper()
+    if not ACCOUNT_RE.fullmatch(account_id):
+        raise InputValidationError("INVALID_ACCOUNT_ID", "account_id may contain only letters, digits, underscore, dash and dot.", "account_id")
+    return account_id
 
 
 def normalize_event_payload(payload: dict, *, today: str) -> dict:
     """Validate and canonicalize one ledger event request."""
     if not isinstance(payload, dict):
         raise InputValidationError("INVALID_PAYLOAD", "Request body must be an object.")
-
     try:
         event_type = EventType(str(payload.get("event_type") or "").strip().upper())
     except ValueError as exc:
@@ -93,15 +106,10 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     if not isinstance(metadata_raw, dict):
         raise InputValidationError("INVALID_METADATA", "metadata must be an object.", "metadata")
     metadata = dict(metadata_raw)
+    metadata["broker_code"] = normalize_broker(payload.get("broker_code") or metadata.get("broker_code"))
+    metadata["account_id"] = normalize_account(payload.get("account_id") or metadata.get("account_id"))
 
-    symbol_required = event_type in {
-        EventType.POSITION_IMPORT,
-        EventType.BUY,
-        EventType.SELL,
-        EventType.CASH_DIVIDEND,
-        EventType.STOCK_DIVIDEND,
-        EventType.SPLIT,
-    }
+    symbol_required = event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL, EventType.CASH_DIVIDEND, EventType.STOCK_DIVIDEND, EventType.SPLIT}
     symbol = normalize_symbol(payload.get("symbol"))
     if symbol_required and not symbol:
         raise InputValidationError("SYMBOL_REQUIRED", "symbol is required for this event.", "symbol")
@@ -116,11 +124,7 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     if event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL}:
         price = _positive(payload.get("price"), "price", MAX_PRICE_VND)
         if price < MIN_EQUITY_PRICE_VND:
-            raise InputValidationError(
-                "PRICE_UNIT_SUSPECT",
-                "price must be full VND per share (for example 72,000, not 72).",
-                "price",
-            )
+            raise InputValidationError("PRICE_UNIT_SUSPECT", "price must be full VND per share (for example 72,000, not 72).", "price")
 
     amount = 0.0
     if event_type in {EventType.CASH_DEPOSIT, EventType.CASH_WITHDRAW, EventType.CASH_DIVIDEND, EventType.FEE}:
@@ -138,42 +142,20 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
         gross = quantity * price
         if fee + tax > gross:
             raise InputValidationError("COSTS_EXCEED_GROSS", "fee + tax cannot exceed the gross trade value.", "fee")
-
-        # QPort uses trade-date position recognition. event_date is therefore the
-        # canonical trade date; settlement is tracked separately in metadata.
         metadata["trade_date"] = event_date
         settlement_raw = metadata.get("settlement_date") or payload.get("settlement_date")
         if settlement_raw:
             settlement_text, settlement_date = _iso_date(settlement_raw, "settlement_date")
             if settlement_date < parsed_date:
-                raise InputValidationError(
-                    "SETTLEMENT_BEFORE_TRADE",
-                    "settlement_date cannot be before the trade date.",
-                    "settlement_date",
-                )
+                raise InputValidationError("SETTLEMENT_BEFORE_TRADE", "settlement_date cannot be before the trade date.", "settlement_date")
             metadata["settlement_date"] = settlement_text
         else:
             metadata.pop("settlement_date", None)
-        account_id = str(metadata.get("account_id") or payload.get("account_id") or "PRIMARY").strip().upper()
-        if not ACCOUNT_RE.fullmatch(account_id):
-            raise InputValidationError(
-                "INVALID_ACCOUNT_ID",
-                "account_id may contain only letters, digits, underscore, dash and dot.",
-                "account_id",
-            )
-        metadata["account_id"] = account_id
-        # Settlement must be confirmed through the dedicated control action, not
-        # by injecting a flag into transaction metadata.
         metadata.pop("settlement_confirmed", None)
         metadata.pop("settlement_status", None)
     else:
         for key in ("trade_date", "settlement_date", "settlement_confirmed", "settlement_status"):
             metadata.pop(key, None)
-        if "account_id" in metadata:
-            account_id = str(metadata["account_id"] or "PRIMARY").strip().upper()
-            if not ACCOUNT_RE.fullmatch(account_id):
-                raise InputValidationError("INVALID_ACCOUNT_ID", "Invalid account_id.", "account_id")
-            metadata["account_id"] = account_id
 
     return {
         "event_type": event_type,
@@ -212,26 +194,14 @@ def validate_reference_weights(weights: dict, *, holdings: set[str]) -> dict[str
             detail.append(f"missing: {', '.join(missing)}")
         if extra:
             detail.append(f"not held: {', '.join(extra)}")
-        raise InputValidationError(
-            "WEIGHT_SYMBOL_MISMATCH",
-            "Reference weights must cover exactly the current holdings" + (f" ({'; '.join(detail)})." if detail else "."),
-            "weights",
-        )
+        raise InputValidationError("WEIGHT_SYMBOL_MISMATCH", "Reference weights must cover exactly the current holdings" + (f" ({'; '.join(detail)})." if detail else "."), "weights")
     total = sum(normalized.values())
     if abs(total - 1.0) > 1e-6:
-        raise InputValidationError(
-            "WEIGHTS_NOT_100",
-            f"Reference weights must total 100%; current total is {total * 100:.2f}%.",
-            "weights",
-        )
+        raise InputValidationError("WEIGHTS_NOT_100", f"Reference weights must total 100%; current total is {total * 100:.2f}%.", "weights")
     return normalized
 
 
 def validate_cash_reserve(value) -> float:
     if value is None or (isinstance(value, str) and not value.strip()):
-        raise InputValidationError(
-            "CASH_RESERVE_REQUIRED",
-            "cash_reserve is required; use 0 only when you explicitly want no reserve.",
-            "cash_reserve",
-        )
+        raise InputValidationError("CASH_RESERVE_REQUIRED", "cash_reserve is required; use 0 only when you explicitly want no reserve.", "cash_reserve")
     return _finite_number(value, "cash_reserve", minimum=0, maximum=MAX_MONEY_VND)
