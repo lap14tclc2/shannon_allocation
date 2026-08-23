@@ -11,9 +11,30 @@ import requests
 
 log = logging.getLogger(__name__)
 
+# VNDIRECT dchart and vnstock equity OHLCV commonly expose Vietnamese cash-equity
+# prices in "thousand VND" units (for example FPT=72.0 means 72,000 VND).
+# The operational portfolio domain stores one canonical unit only: absolute VND.
+THOUSAND_VND_SOURCES = {"vndirect", "vnstock"}
+
 
 class MarketDataError(RuntimeError):
     pass
+
+
+def canonical_vnd_price(value, source: str | None):
+    """Return a provider price in absolute VND.
+
+    Provider adapters are intentionally normalized at the persistence boundary so
+    accounting never needs to know whether an upstream source uses VND or kVND.
+    The <1000 guard also makes the conversion idempotent for already-normalized
+    values such as 72_000.
+    """
+    if value is None or pd.isna(value):
+        return None
+    price = float(value)
+    if str(source or "").lower() in THOUSAND_VND_SOURCES and 0 < abs(price) < 1000:
+        return price * 1000.0
+    return price
 
 
 class MarketDataProvider(Protocol):
@@ -221,16 +242,17 @@ def frame_to_price_rows(symbol: str, df: pd.DataFrame, source: str | None = None
     fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = []
     for ts, row in df.iterrows():
+        row_source = str(source or row.get("source") or "unknown").lower()
         rows.append(
             {
                 "symbol": symbol.upper(),
                 "trading_date": pd.Timestamp(ts).date().isoformat(),
-                "open": float(row["open"]) if pd.notna(row.get("open")) else None,
-                "high": float(row["high"]) if pd.notna(row.get("high")) else None,
-                "low": float(row["low"]) if pd.notna(row.get("low")) else None,
-                "close": float(row["close"]),
+                "open": canonical_vnd_price(row.get("open"), row_source),
+                "high": canonical_vnd_price(row.get("high"), row_source),
+                "low": canonical_vnd_price(row.get("low"), row_source),
+                "close": canonical_vnd_price(row["close"], row_source),
                 "volume": float(row["volume"]) if pd.notna(row.get("volume")) else None,
-                "source": str(source or row.get("source") or "unknown"),
+                "source": row_source,
                 "fetched_at": fetched_at,
                 "is_final": True,
                 "data_quality": "VALID",
