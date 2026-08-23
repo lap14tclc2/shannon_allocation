@@ -6,15 +6,22 @@ function apiError(data, fallback) {
   return err;
 }
 
+const SAME_ORIGIN_HEADERS = { 'X-QPort-Request': '1' };
+
 async function getJSON(url, signal) {
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal, headers: SAME_ORIGIN_HEADERS, credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
 }
 
 async function sendJSON(url, method, body) {
-  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
+  const res = await fetch(url, {
+    method,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...SAME_ORIGIN_HEADERS },
+    body: body == null ? undefined : JSON.stringify(body),
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
