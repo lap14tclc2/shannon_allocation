@@ -2,6 +2,12 @@
 import React from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import HomePage from './pages/HomePage.jsx';
+import PortfolioDashboardPage from './pages/PortfolioDashboardPage.jsx';
+import TransactionsPage from './pages/TransactionsPage.jsx';
+import PerformancePage from './pages/PerformancePage.jsx';
+import RiskPage from './pages/RiskPage.jsx';
+import SnapshotsPage from './pages/SnapshotsPage.jsx';
+import ResearchPage from './pages/ResearchPage.jsx';
 import RunPage from './pages/RunPage.jsx';
 import ComboPage from './pages/ComboPage.jsx';
 import OptimizerListPage from './pages/OptimizerListPage.jsx';
@@ -10,16 +16,18 @@ import './styles.css';
 
 const PAGES = {
   home: HomePage,
+  portfolio: PortfolioDashboardPage,
+  transactions: TransactionsPage,
+  performance: PerformancePage,
+  risk: RiskPage,
+  snapshots: SnapshotsPage,
+  research: ResearchPage,
   run: RunPage,
   combo: ComboPage,
   optimizer_list: OptimizerListPage,
   optimizer_detail: OptimizerDetailPage,
 };
 
-// Optimizer is the product landing experience. The explicit `home` key remains
-// supported because the Python SSR server uses it for `/` as a compatibility
-// adapter, but a missing page payload now fails toward the optimizer rather than
-// the retired legacy backtest landing page.
-const page = window.__PAGE__ || { page: 'optimizer_list', props: { experiments: [] } };
-const C = PAGES[page.page] || OptimizerListPage;
+const page = window.__PAGE__ || { page: 'portfolio', props: { dashboard: {} } };
+const C = PAGES[page.page] || PortfolioDashboardPage;
 hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
