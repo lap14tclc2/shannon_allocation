@@ -1,0 +1,316 @@
+/* Normal-user guide. Keeps QPort's terminal identity without reading like developer docs. */
+
+.guide-page {
+  --guide-gap: 14px;
+}
+
+.guide-hero {
+  margin-bottom: 8px;
+}
+
+.guide-hero .muted {
+  max-width: 900px;
+}
+
+.guide-intro-card,
+.guide-last-note {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 62%, transparent);
+}
+
+.guide-intro-card strong,
+.guide-last-note strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.guide-intro-card p,
+.guide-last-note p {
+  max-width: 980px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.guide-section {
+  margin-top: 24px;
+}
+
+.guide-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 11px;
+}
+
+.guide-section-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.guide-section-head > div > span {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.guide-section-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.guide-section-head > p {
+  max-width: 460px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: right;
+}
+
+.guide-start-grid,
+.guide-page-grid,
+.guide-status-grid,
+.guide-faq-grid,
+.guide-two-column {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--guide-gap);
+}
+
+.guide-step-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+
+.guide-step-number {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--accent-border);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.guide-step-card h3,
+.guide-page-card h3,
+.guide-faq-grid h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.guide-step-card p,
+.guide-page-card p,
+.guide-faq-grid p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.guide-page-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  min-height: 150px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: inherit;
+  text-decoration: none;
+}
+
+.guide-page-card:hover,
+.guide-page-card:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--panel-hover);
+}
+
+.guide-page-card > div > span {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.guide-page-card p {
+  grid-column: 1;
+}
+
+.guide-page-card > b {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--accent);
+  font-size: 20px;
+}
+
+.guide-page-card.is-advanced::after {
+  content: "advanced";
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.guide-task-list {
+  display: grid;
+  gap: 9px;
+}
+
+.guide-task-list details,
+.guide-advanced {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+}
+
+.guide-task-list summary,
+.guide-advanced > summary {
+  padding: 13px 15px;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guide-task-list details[open] summary,
+.guide-advanced[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.guide-task-list details p {
+  margin: 0;
+  padding: 13px 15px 15px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.67;
+}
+
+.guide-status-grid > div,
+.guide-faq-grid > div {
+  padding: 15px 16px;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg));
+}
+
+.guide-status-grid b {
+  display: inline-flex;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.guide-status-grid p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+.guide-status-ready { color: var(--success); }
+.guide-status-building,
+.guide-status-stale { color: var(--warning); }
+.guide-status-error { color: var(--danger); }
+
+.guide-friendly-card {
+  margin: 0;
+}
+
+.guide-friendly-card h2 {
+  margin: 5px 0 9px;
+  color: var(--text);
+  font-size: 16px;
+  text-transform: none;
+}
+
+.guide-friendly-card > p {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.68;
+}
+
+.guide-mini-rule {
+  margin-top: 9px;
+  padding: 10px 11px;
+  border-left: 2px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.guide-advanced {
+  margin-top: 24px;
+}
+
+.guide-advanced-body {
+  padding: 14px 16px 16px;
+}
+
+.guide-advanced-body p,
+.guide-advanced-body li {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.guide-advanced-body p {
+  margin-top: 0;
+}
+
+.guide-advanced-body ul {
+  margin-bottom: 0;
+  padding-left: 22px;
+}
+
+.guide-last-note {
+  margin-top: 18px;
+  margin-bottom: 0;
+}
+
+@media (min-width: 720px) {
+  .guide-start-grid,
+  .guide-page-grid,
+  .guide-status-grid,
+  .guide-faq-grid,
+  .guide-two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  .guide-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .guide-section-head > p {
+    text-align: left;
+  }
+
+  .guide-page-card {
+    min-height: 0;
+  }
+}
