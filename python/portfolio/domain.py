@@ -51,8 +51,12 @@ class LedgerEvent:
         return str(value) if value else None
 
     @property
+    def broker_code(self) -> str:
+        return str((self.metadata or {}).get("broker_code") or "UNASSIGNED").upper()
+
+    @property
     def account_id(self) -> str:
-        return str((self.metadata or {}).get("account_id") or "PRIMARY")
+        return str((self.metadata or {}).get("account_id") or "PRIMARY").upper()
 
 
 @dataclass
@@ -64,6 +68,7 @@ class TaxLot:
     original_quantity: float
     remaining_quantity: float
     cost_basis: float
+    broker_code: str = "UNASSIGNED"
     account_id: str = "PRIMARY"
 
     @property
