@@ -79,13 +79,22 @@ class DailySyncScheduler:
             "auto_dividends": None,
         }
         if weekday:
-            result["market"] = self.service.sync_daily()
+            market_result = self.service.sync_daily()
+            result["market"] = market_result
+            # Dividend-aware services may already perform these steps as part of
+            # a manual/weekday daily sync. Reuse their result instead of calling
+            # public providers twice.
+            if isinstance(market_result, dict):
+                result["corporate_actions"] = market_result.get("corporate_actions")
+                result["auto_dividends"] = market_result.get("auto_dividends")
         try:
-            result["corporate_actions"] = self._sync_corporate_actions()
-            result["auto_dividends"] = self._auto_post_dividends(result["date"])
+            if result["corporate_actions"] is None:
+                result["corporate_actions"] = self._sync_corporate_actions()
+            if result["auto_dividends"] is None:
+                result["auto_dividends"] = self._auto_post_dividends(result["date"])
         except Exception as exc:
             result["corporate_actions"] = result["corporate_actions"] or {"ok": False, "error": str(exc)}
-            result["auto_dividends"] = {"ok": False, "error": str(exc)}
+            result["auto_dividends"] = result["auto_dividends"] or {"ok": False, "error": str(exc)}
             log.exception("Scheduled corporate-action/dividend automation failed")
         return result
 
