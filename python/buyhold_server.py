@@ -94,6 +94,8 @@ class Handler(legacy.Handler):
             return self._send_page("risk", {"risk": svc.risk()}, "Risk · QPort")
         if page == "snapshots":
             return self._send_page("snapshots", {"snapshots": svc.snapshots()}, "Snapshots · QPort")
+        if page == "settings":
+            return self._send_page("settings", {"dashboard": svc.dashboard()}, "Settings · QPort")
         return self._send_json(404, {"error": "Page not found."})
 
     def do_GET(self):
@@ -113,6 +115,7 @@ class Handler(legacy.Handler):
             "/performance": "performance",
             "/risk": "risk",
             "/snapshots": "snapshots",
+            "/settings": "settings",
         }
         if path in operational:
             return self._operational_page(operational[path])
