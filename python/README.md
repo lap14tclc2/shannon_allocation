@@ -1,35 +1,34 @@
 # QPort Python Architecture
 
-The Python application has two intentionally separate domains.
-
-## 1. Operational core — `portfolio/`
-
-This is the production Buy & Hold information system.
+QPort has one production domain: the Buy & Hold portfolio information system.
 
 ```text
 portfolio/
-  domain.py        immutable event/state contracts
-  storage.py       SQLite ledger, market prices, snapshots
-  accounting.py    deterministic event replay
-  market_data.py   Vnstock/VNDIRECT provider adapters
-  analytics.py     TWR, XIRR, drawdown helpers
-  risk.py          informational volatility/concentration/ERC diagnostics
-  locale.py        EN/VI locale resolution from cookie/browser language
-  service.py       application use cases
-  scheduler.py     daily EOD market sync
-  cli.py           sync/status/performance CLI
+  domain.py        immutable ledger/state contracts
+  storage.py       SQLite ledger, market prices, daily snapshots
+  accounting.py    deterministic event replay and cost basis
+  market_data.py   optional Vnstock + VNDIRECT D1 providers
+  analytics.py     TWR, XIRR and return helpers
+  risk.py          informational portfolio/risk diagnostics
+  locale.py        EN/VI locale resolution
+  service.py       portfolio use cases and historical rebuild
+  scheduler.py     EOD data/snapshot sync
+  cli.py           local status/sync/performance commands
+
+buyhold_server.py  standalone operational HTTP/SSR server
+serve.py            primary web entrypoint
+main.py             primary CLI entrypoint
 ```
 
-The operational invariant is:
+## Invariant
 
 ```text
 only explicit ledger events change holdings or cash
 ```
 
-Market data, risk calculations, year-end and research output cannot change the
-portfolio.
+Market prices, risk calculations, time and UI information cannot create trades.
 
-Primary commands:
+## Commands
 
 ```bash
 python main.py status
@@ -38,26 +37,33 @@ python main.py performance
 python serve.py
 ```
 
-`serve.py` launches the Buy & Hold web product and an optional 15:30 Vietnam EOD
-sync scheduler.
+The web server starts an optional idempotent EOD sync at 15:30
+`Asia/Ho_Chi_Minh`.
 
-Operational database:
+## Database
+
+Default:
 
 ```text
 python/data/portfolio.sqlite3
 ```
 
-Override with `PORTFOLIO_DB`.
+Override:
 
-### Market-data dependencies
+```text
+PORTFOLIO_DB=/path/to/portfolio.sqlite3
+```
 
-Base install:
+The ledger is immutable from normal application APIs. Market prices and snapshots
+are derived/rebuildable data.
+
+## Market data
+
+Base installation uses VNDIRECT:
 
 ```bash
 pip install -r requirements.txt
 ```
-
-This includes VNDIRECT support.
 
 Optional Vnstock:
 
@@ -65,66 +71,62 @@ Optional Vnstock:
 pip install -r requirements-vnstock.txt
 ```
 
-Vnstock is loaded lazily. Its absence cannot prevent portfolio accounting from
-running.
+Provider failure never changes holdings. It produces explicit stale/missing data
+quality instead.
 
-### Locale policy
+## Historical rebuild
 
-Operational web UI supports:
+`PortfolioService.sync_daily()` performs two jobs:
 
-```text
-en — English
-vi — Vietnamese / Tiếng Việt
-```
+1. sync D1 prices for every symbol that exists in the ledger;
+2. rebuild derived daily portfolio snapshots from ledger dates and stored prices.
 
-The browser stores the selected language in the `qport_lang` cookie. If no cookie
-exists, `Accept-Language` is used for the initial default and unsupported
-languages fall back to English.
+This means a user does not need to run QPort every day from the date of purchase.
+After importing holdings with honest dates and syncing once, QPort reconstructs the
+available daily history.
 
-The locale is presentation state only. It is not stored in the portfolio ledger
-and cannot affect accounting/risk results.
+The rebuild calculates:
 
-## 2. Research Lab — `backtest/` and research entrypoints
+- NAV and equity/cash;
+- external-flow-neutral daily return;
+- TWR index;
+- current/max drawdown;
+- total P/L;
+- snapshot data quality.
 
-The previous optimizer architecture is retained for research only:
+`OFFICIAL` snapshots require an exact price for every active holding on the same
+trading date.
 
-```text
-backtest/
-optimize_main.py
-research_main.py
-research_legacy_server.py
-```
+## Risk
 
-It contains ERC/Shannon simulations, Dynamic Alpha, candidate search, NSGA-II,
-surrogate ranking, walk-forward validation and holdout reports.
+`portfolio/risk.py` is information only. It calculates:
 
-Research may produce evidence or proposals, but there is no code path that writes
-a research winner directly into the operational ledger.
+- 63D / 252D volatility;
+- capital concentration / HHI / effective positions;
+- average/max correlation;
+- diversification ratio;
+- portfolio risk contribution;
+- equal-risk (ERC) reference weights;
+- historical daily VaR/CVaR 95%;
+- downside volatility;
+- worst observed day and positive-day ratio;
+- history coverage.
 
-Web research routes:
+No risk function creates BUY/SELL events.
 
-```text
-/research
-/research/optimizer
-```
-
-Old `/optimizer` URLs are compatibility aliases only. Legacy optimizer/detail
-screens may retain English-only research labels.
-
-## 3. Operational web routes
+## Web routes
 
 ```text
-/              Portfolio dashboard
-/transactions  Immutable ledger workflow
-/performance   TWR/XIRR/NAV history
-/risk          Informational risk diagnostics
-/snapshots     Daily snapshot history
-/settings      Strategic information preferences
-/guide         Bilingual start-to-finish guide
-/research      Isolated Research Lab
+/              Portfolio
+/transactions  Immutable ledger
+/performance   Return/P&L/drawdown history
+/risk          Risk diagnostics
+/snapshots     Derived daily checkpoints
+/settings      Optional guidance preferences
+/guide         EN/VI guide
 ```
 
-## 4. Operational API
+## API
 
 ```text
 GET  /api/portfolio
@@ -137,39 +139,24 @@ GET  /api/portfolio/snapshots
 POST /api/portfolio/reference-weights
 ```
 
-There is no auto-rebalance or optimizer-apply endpoint.
+There is no optimizer, research, auto-rebalance or automatic-execution API.
 
-## 5. Ledger events
-
-Supported operational events:
+## Locale
 
 ```text
-POSITION_IMPORT
-BUY
-SELL
-CASH_DEPOSIT
-CASH_WITHDRAW
-CASH_DIVIDEND
-STOCK_DIVIDEND
-SPLIT
-FEE
+en — English
+vi — Tiếng Việt
 ```
 
-The store deliberately has no normal update/delete method for ledger events.
-Verify migration entries carefully and keep database backups before bulk imports.
+The locale is presentation state stored in the `qport_lang` browser cookie and
+cannot affect portfolio calculations.
 
-## 6. Testing
-
-Operational tests are dataset-independent:
+## Testing
 
 ```bash
-python -m pytest portfolio/tests -q
 python -m compileall -q portfolio buyhold_server.py serve.py main.py
-```
+python -m pytest portfolio/tests -q
 
-Frontend:
-
-```bash
 cd ../frontend
 npm ci
 npm run build
@@ -177,18 +164,8 @@ npm run build:ssr
 node test/smoke.mjs
 ```
 
-The smoke suite renders both English and Vietnamese pages and checks hydration.
-Heavy research regressions are separate and can be run manually when research
-code changes.
-
-## 7. Canonical documentation
-
-Read:
+## Documentation
 
 - `../BUY_AND_HOLD_SYSTEM_SPEC.md`
 - `../docs/USER_GUIDE_EN.md`
 - `../docs/USER_GUIDE_VI.md`
-- `../user-guide.md`
-
-The old allocation implementation specification is deprecated for operational
-development.
