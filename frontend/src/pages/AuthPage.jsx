@@ -1,5 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { loginUser, registerUser } from '../lib/api.js';
+
+function safeNextPath() {
+  if (typeof window === 'undefined') return '/';
+  const raw = new URLSearchParams(window.location.search).get('next') || '';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/login')) return '/';
+  return raw;
+}
 
 export default function AuthPage({ locale = 'en' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
@@ -10,6 +17,8 @@ export default function AuthPage({ locale = 'en' }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const isAdmin = username.trim().toLowerCase() === 'admin';
+  const nextPath = useMemo(safeNextPath, []);
+  const sessionExpired = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reason') === 'session_expired';
 
   async function login(event) {
     event.preventDefault();
@@ -18,7 +27,7 @@ export default function AuthPage({ locale = 'en' }) {
     setMissingUser(false);
     try {
       const result = await loginUser(username, isAdmin ? password : '');
-      window.location.assign(result.user?.role === 'ADMIN' ? '/admin' : '/');
+      window.location.replace(result.user?.role === 'ADMIN' ? '/admin' : nextPath);
     } catch (err) {
       if (err.code === 'USER_NOT_REGISTERED') {
         setRegisterUsername(username.trim());
@@ -38,7 +47,7 @@ export default function AuthPage({ locale = 'en' }) {
     setMessage('');
     try {
       await registerUser(registerUsername);
-      window.location.assign('/');
+      window.location.replace(nextPath);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -62,6 +71,11 @@ export default function AuthPage({ locale = 'en' }) {
             'User thường chỉ cần username duy nhất. Admin cần thêm password.'
           )}</p>
         </div>
+
+        {sessionExpired && <div className="auth-message info" role="status">{text(
+          'Your session expired. Sign in again to continue where you left off.',
+          'Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục trang đang xem.'
+        )}</div>}
 
         <form className="auth-form" onSubmit={login}>
           <label>
