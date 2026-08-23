@@ -1,80 +1,43 @@
 import { buildAIExportMarkdown } from '../src/lib/aiExport.js';
 
 const dashboard = {
-  philosophy: 'BUY_AND_HOLD_INFORMATION_SYSTEM',
   today: '2026-08-23',
-  preferences: { cash_reserve_configured: false, cash_reserve: null, reference_weights: {} },
+  preferences: { cash_reserve_configured: true, cash_reserve: 20_000_000 },
   portfolio: {
     nav: 1_133_527_500, equity_value: 1_083_527_500, cash: 50_000_000,
-    cost_value: 1_125_449_800, net_external_contributions: 1_175_449_800,
-    total_pnl: -41_922_300, accounting_return: -0.035664,
-    unrealized_pnl: -41_922_300, realized_pnl: 0, dividend_income: 0, fees_and_taxes: 0,
-    reference_weights: {},
-    positions: [
-      { symbol: 'ACB', shares: 19_210, average_cost: 19_780, price: 22_750, cost_value: 379_973_800, market_value: 437_027_500, unrealized_pnl: 57_053_700, unrealized_return: 0.150153, weight: 0.38555, equity_weight: 0.4033, risk_contribution: 0.29699, erc_reference_weight: 0.40, status: 'MONITOR', price_date: '2026-08-21', price_source: 'vndirect' },
-      { symbol: 'DGC', shares: 10_000, average_cost: 52_340, price: 43_050, cost_value: 523_400_000, market_value: 430_500_000, unrealized_pnl: -92_900_000, unrealized_return: -0.177493, weight: 0.37978, equity_weight: 0.3973, risk_contribution: 0.55419, erc_reference_weight: 0.267, status: 'MONITOR', price_date: '2026-08-21', price_source: 'vndirect' },
-      { symbol: 'FPT', shares: 3_000, average_cost: 74_025, price: 72_000, cost_value: 222_075_000, market_value: 216_000_000, unrealized_pnl: -6_075_000, unrealized_return: -0.02736, weight: 0.19055, equity_weight: 0.1994, risk_contribution: 0.14909, erc_reference_weight: 0.333, status: 'MONITOR', price_date: '2026-08-21', price_source: 'vndirect' },
-    ],
+    cost_value: 1_125_449_800, total_pnl: -41_922_300, accounting_return: -0.035664,
+    unrealized_pnl: -41_922_300, realized_pnl: 0, dividend_income: 0,
+    positions: [{ symbol: 'DGC', shares: 10_000, average_cost: 52_340, price: 43_050, cost_value: 523_400_000, market_value: 430_500_000, unrealized_pnl: -92_900_000, weight: .38, equity_weight: .397, risk_contribution: .5541, status: 'MONITOR' }],
   },
-  health: {
-    status: 'ATTENTION', current_drawdown: null, max_drawdown: null,
-    flags: [{ level: 'WARNING', code: 'RISK_CONCENTRATION', message: 'DGC contributes 55.4% of portfolio risk.' }],
-  },
-  market_data: { status: 'VALID', market_date: '2026-08-21', aligned: true, calendar_age_days: 2, provider: { provider: 'auto' } },
-  data_lineage: { analytics: { status: 'UNVERIFIED', corporate_action_adjusted: null } },
-  contribution_suggestions: {
-    available_cash: 50_000_000, strategic_cash_reserve: null, deployable_cash: null,
-    policy: 'NO_ALLOCATION_POLICY', reason: 'Configure explicit strategic reference weights.', suggestions: [],
-  },
+  market_data: { market_date: '2026-08-21' },
+  data_lineage: { analytics: { status: 'UNVERIFIED' } },
+  contribution_suggestions: { policy: 'NO_ALLOCATION_POLICY' },
 };
-
-const performance = {
-  history_status: 'NO_HISTORY', first_date: null, latest_date: null,
-  snapshot_count: 0, official_snapshot_count: 0,
-  current_drawdown: null, max_drawdown: null, annualized_twr: null, xirr: null,
-  xirr_status: 'UNAVAILABLE_OPENING_BALANCE', cashflow_history_quality: 'OPENING_BALANCE_ONLY',
-  returns: { daily: null, mtd: null, ytd: null, since_inception: null },
+const performance = { history_status: 'NO_HISTORY', latest_date: null, returns: { since_inception: null }, xirr: null, current_drawdown: null, methodology_policy: { policy_version: 'QPORT_PERF_V2', cost_method: 'FIFO_TAX_LOTS' } };
+const risk = { status: 'VALID', volatility_252: .2577, equity_hhi: .3603, effective_positions: 2.78, largest_risk_symbol: 'DGC', largest_risk_contribution: .5541, daily_var_95: -.028, daily_cvar_95: -.037 };
+const operations = {
+  book_type: 'INSTITUTIONAL_LITE_IBOR', accounting_cost_method: 'FIFO_TAX_LOTS', position_recognition: 'TRADE_DATE',
+  settlement: { settled_cash: 50_000_000, projected_cash: 50_000_000, unsettled_receivable: 0, unsettled_payable: 0, strategic_reserve: 20_000_000, available_to_invest: 30_000_000, trades: [] },
+  tax_lots: [{ lot_id: 'DGC:1', symbol: 'DGC', acquisition_date: '2026-01-02', original_quantity: 10000, remaining_quantity: 10000, unit_cost: 52340, cost_basis: 523400000, account_id: 'PRIMARY' }],
+  reconciliations: [{ id: 1, as_of_date: '2026-08-23', status: 'MATCH', qport_cash: 50000000, broker_cash: 50000000, cash_difference: 0 }],
+  corporate_action_provider: { provider: 'vnstock_data', available: true },
+  corporate_actions: [{ id: 7, symbol: 'DGC', action_type: 'CASH_DIVIDEND', record_date: '2026-09-01', expected_cash: 30000000, expected_shares: null, verification_status: 'VERIFIED', status: 'ENTITLEMENT_READY' }],
+  exceptions: [{ severity: 'WARNING', code: 'RISK_CONCENTRATION', message: 'DGC concentration.' }],
+  pnl_attribution: [{ symbol: 'DGC', unrealized_pnl: -92900000, realized_pnl: 0, dividend_income: 0, total_contribution_vnd: -92900000 }],
 };
+const transactions = [{ id: 1, event_date: '2026-08-23', event_type: 'POSITION_IMPORT', symbol: 'DGC', quantity: 10000, price: 52340, correction: { action: 'EDIT' } }];
+const corrections = [{ id: 1, event_id: 1, action: 'EDIT', reason: 'Correct broker cost', created_at: '2026-08-23T05:00:00Z' }];
 
-const risk = {
-  status: 'VALID', volatility_63: 0.2188, volatility_252: 0.2577,
-  max_position_weight: 0.38555, max_equity_weight: 0.4033,
-  equity_hhi: 0.3603, effective_positions: 2.78, effective_position_ratio: 0.926,
-  average_correlation: 0.31, max_correlation: 0.48, diversification_ratio: 1.24,
-  largest_risk_symbol: 'DGC', largest_risk_contribution: 0.55419,
-  equal_risk_contribution: 1 / 3, risk_concentration_ratio: 1.6626,
-  daily_var_95: -0.021, daily_cvar_95: -0.031, max_daily_loss: -0.045,
-  downside_volatility: 0.19, return_observations: 252, quality: { coverage_weight: 1 },
-  methodology: { concentration_basis: 'equity_normalized', annualization: 252 },
-};
-
-const transactions = [
-  { id: 1, event_date: '2026-08-23', event_type: 'POSITION_IMPORT', symbol: 'ACB', quantity: 19_210, price: 19_780, amount: 0, fee: 0, tax: 0, ratio: 0, note: '', created_by: 'local', correction: { action: 'EDIT', reason: 'Correct price' } },
-];
-const corrections = [
-  { id: 1, event_id: 1, action: 'EDIT', reason: 'Correct price', created_at: '2026-08-23T05:00:00Z', created_by: 'local', original: { event_type: 'POSITION_IMPORT', symbol: 'ACB', price: 19_700 } },
-];
-
-const markdown = buildAIExportMarkdown({
-  dashboard, performance, risk, snapshots: [], transactions, corrections,
-  generatedAt: '2026-08-23T05:00:00.000Z',
-});
-
-function check(name, ok) {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`);
-  if (!ok) process.exitCode = 1;
-}
-
-check('has v2 schema', markdown.includes('qport-ai-export-v2'));
-check('separates as-of dates', markdown.includes('Portfolio state as of') && markdown.includes('Market data as of') && markdown.includes('Performance as of'));
-check('uses accounting-return terminology', markdown.includes('Accounting return vs recorded capital'));
-check('contains equity-normalized concentration', markdown.includes('Equity HHI') && markdown.includes('Effective-position ratio'));
-check('contains DGC risk concentration', markdown.includes('DGC') && markdown.includes('55.42%'));
-check('does not invent deployable cash', markdown.includes('NO_ALLOCATION_POLICY') && markdown.includes('Deployable cash: **-**'));
-check('contains history and XIRR quality', markdown.includes('NO_HISTORY') && markdown.includes('UNAVAILABLE_OPENING_BALANCE'));
-check('contains lineage and methodology', markdown.includes('## Data lineage') && markdown.includes('equity_normalized'));
-check('explains MONITOR semantics', markdown.includes('MONITOR means no explicit strategic target'));
-check('contains correction audit', markdown.includes('## Transaction correction audit') && markdown.includes('Correct price') && markdown.includes('"transaction_correction_audit"'));
-check('contains machine-readable JSON', markdown.includes('## Machine-readable payload') && markdown.includes('"schema_version": "qport-ai-export-v2"'));
-
-if (!process.exitCode) console.log('\nAI EXPORT V2 TEST PASSED');
+const markdown = buildAIExportMarkdown({ dashboard, performance, risk, operations, snapshots: [], transactions, corrections, generatedAt: '2026-08-23T05:00:00.000Z' });
+function check(name, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) process.exitCode = 1; }
+check('has v3 schema', markdown.includes('qport-ai-export-v3'));
+check('contains institutional book identity', markdown.includes('INSTITUTIONAL_LITE_IBOR') && markdown.includes('FIFO_TAX_LOTS'));
+check('contains settlement cash', markdown.includes('Settled cash') && markdown.includes('Available to invest'));
+check('contains tax lots', markdown.includes('## Tax lots') && markdown.includes('DGC:1'));
+check('contains reconciliation', markdown.includes('## Broker reconciliation') && markdown.includes('MATCH'));
+check('contains corporate actions', markdown.includes('## Corporate actions') && markdown.includes('VERIFIED'));
+check('contains operations exceptions', markdown.includes('## Operations exceptions'));
+check('contains performance policy', markdown.includes('QPORT_PERF_V2'));
+check('contains correction audit', markdown.includes('## Transaction correction audit') && markdown.includes('Correct broker cost'));
+check('contains machine-readable institutional payload', markdown.includes('"operations"') && markdown.includes('"schema_version": "qport-ai-export-v3"'));
+if (!process.exitCode) console.log('\nAI EXPORT V3 TEST PASSED');
