@@ -1,4 +1,4 @@
-// SSR + hydration smoke test for the buy-and-hold operational product.
+// SSR + hydration smoke test for the bilingual buy-and-hold operational product.
 import { JSDOM } from 'jsdom';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -61,29 +61,51 @@ let renderPage = null;
 if (existsSync(ssrEntry)) {
   ({ renderPage } = await import(`file://${ssrEntry.replace(/\\/g, '/')}`));
 
-  const portfolioHtml = renderPage('portfolio', { dashboard });
-  check('portfolio SSR is product landing', portfolioHtml.includes('Portfolio') && portfolioHtml.includes('BUY &amp; HOLD'));
-  check('portfolio SSR renders holdings', portfolioHtml.includes('FPT') && portfolioHtml.includes('Holdings'));
+  const portfolioHtml = renderPage('portfolio', { dashboard, locale: 'en' });
+  check('English portfolio SSR is product landing', portfolioHtml.includes('Portfolio') && portfolioHtml.includes('BUY &amp; HOLD'));
+  check('English portfolio SSR renders holdings', portfolioHtml.includes('FPT') && portfolioHtml.includes('Holdings'));
   check('portfolio SSR renders explicit valuation columns', portfolioHtml.includes('Cost value') && portfolioHtml.includes('Market value') && portfolioHtml.includes('Unrealized P/L'));
   check('portfolio SSR renders canonical VND values', portfolioHtml.includes('65,000 VND') && portfolioHtml.includes('70,000 VND') && portfolioHtml.includes('14,000,000 VND'));
+  check('language switch renders EN and VI', portfolioHtml.includes('>EN<') && portfolioHtml.includes('>VI<'));
 
-  const txHtml = renderPage('transactions', { transactions: fixtures.transactions, today: '2026-08-23' });
-  check('transactions SSR renders immutable ledger', txHtml.includes('Immutable event history') && txHtml.includes('POSITION_IMPORT'));
+  const viPortfolioHtml = renderPage('portfolio', { dashboard, locale: 'vi' });
+  check('Vietnamese portfolio SSR renders translated labels', viPortfolioHtml.includes('Danh mục') && viPortfolioHtml.includes('Giá trị vốn') && viPortfolioHtml.includes('Lãi/lỗ chưa thực hiện'));
+  check('Vietnamese portfolio SSR translates status', viPortfolioHtml.includes('GIỮ') && viPortfolioHtml.includes('HỢP LỆ'));
 
-  const perfHtml = renderPage('performance', { performance: fixtures.performance });
+  const txHtml = renderPage('transactions', { transactions: fixtures.transactions, today: '2026-08-23', locale: 'en' });
+  check('English transactions SSR renders immutable ledger', txHtml.includes('Immutable event history') && txHtml.includes('Opening position import'));
+  const viTxHtml = renderPage('transactions', { transactions: fixtures.transactions, today: '2026-08-23', locale: 'vi' });
+  check('Vietnamese transactions SSR renders immutable ledger', viTxHtml.includes('Lịch sử sự kiện bất biến') && viTxHtml.includes('Nhập vị thế ban đầu'));
+
+  const perfHtml = renderPage('performance', { performance: fixtures.performance, locale: 'en' });
   check('performance SSR renders TWR/XIRR', perfHtml.includes('TWR since inception') && perfHtml.includes('XIRR'));
+  const viPerfHtml = renderPage('performance', { performance: fixtures.performance, locale: 'vi' });
+  check('Vietnamese performance SSR renders translated headings', viPerfHtml.includes('Hiệu suất') && viPerfHtml.includes('Lịch sử NAV chính thức'));
 
-  const riskHtml = renderPage('risk', { risk: fixtures.risk });
+  const riskHtml = renderPage('risk', { risk: fixtures.risk, locale: 'en' });
   check('risk SSR is informational', riskHtml.includes('Information only') && riskHtml.includes('ERC reference'));
+  const viRiskHtml = renderPage('risk', { risk: fixtures.risk, locale: 'vi' });
+  check('Vietnamese risk SSR is informational', viRiskHtml.includes('Rủi ro') && viRiskHtml.includes('Chỉ mang tính thông tin'));
 
-  const snapshotsHtml = renderPage('snapshots', { snapshots: fixtures.snapshots });
+  const snapshotsHtml = renderPage('snapshots', { snapshots: fixtures.snapshots, locale: 'en' });
   check('snapshot SSR renders official state', snapshotsHtml.includes('OFFICIAL') && snapshotsHtml.includes('2026-08-21'));
+  const viSnapshotsHtml = renderPage('snapshots', { snapshots: fixtures.snapshots, locale: 'vi' });
+  check('Vietnamese snapshot SSR renders official state', viSnapshotsHtml.includes('CHÍNH THỨC') && viSnapshotsHtml.includes('Ảnh chụp hằng ngày'));
 
-  const settingsHtml = renderPage('settings', { dashboard });
+  const settingsHtml = renderPage('settings', { dashboard, locale: 'en' });
   check('settings SSR is strategic-only', settingsHtml.includes('Strategic reference weights') && settingsHtml.includes('no annual allocation'));
+  const viSettingsHtml = renderPage('settings', { dashboard, locale: 'vi' });
+  check('Vietnamese settings SSR renders translated controls', viSettingsHtml.includes('Tỷ trọng tham chiếu chiến lược') && viSettingsHtml.includes('Cài đặt'));
 
-  const researchHtml = renderPage('research', { experiments: [], runs: [] });
+  const guideHtml = renderPage('guide', { locale: 'en' });
+  check('English guide SSR renders start-to-finish workflow', guideHtml.includes('Start-to-finish guide') && guideHtml.includes('Install and start'));
+  const viGuideHtml = renderPage('guide', { locale: 'vi' });
+  check('Vietnamese guide SSR renders start-to-finish workflow', viGuideHtml.includes('Hướng dẫn từ đầu đến cuối') && viGuideHtml.includes('Cài đặt và khởi động'));
+
+  const researchHtml = renderPage('research', { experiments: [], runs: [], locale: 'en' });
   check('research SSR shows hard boundary', researchHtml.includes('Research Lab') && researchHtml.includes('Proposal only'));
+  const viResearchHtml = renderPage('research', { experiments: [], runs: [], locale: 'vi' });
+  check('Vietnamese research SSR shows hard boundary', viResearchHtml.includes('Phòng nghiên cứu') && viResearchHtml.includes('Chỉ là đề xuất'));
 }
 
 const clientJs = join(root, 'dist', 'assets', 'client.js');
@@ -104,14 +126,14 @@ if (existsSync(clientJs) && renderPage) {
 
   const errors = [];
   window.addEventListener('error', (e) => errors.push(e.message));
-  const html = renderPage('portfolio', { dashboard });
+  const html = renderPage('portfolio', { dashboard, locale: 'vi' });
   window.document.getElementById('root').innerHTML = html;
-  window.__PAGE__ = { page: 'portfolio', props: { dashboard } };
+  window.__PAGE__ = { page: 'portfolio', props: { dashboard, locale: 'vi' } };
 
   eval(readFileSync(clientJs, 'utf8')); // eslint-disable-line no-eval
   await new Promise((r) => setTimeout(r, 300));
   const text = window.document.getElementById('root').textContent;
-  check('portfolio hydration rendered', text.includes('FPT') && text.includes('Portfolio'));
+  check('Vietnamese portfolio hydration rendered', text.includes('FPT') && text.includes('Danh mục'));
   check('no hydration errors', errors.length === 0);
   if (errors.length) console.log('errors:', errors);
 }
