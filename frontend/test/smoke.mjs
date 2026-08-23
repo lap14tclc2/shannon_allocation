@@ -1,6 +1,4 @@
-// SSR + hydration smoke test.
-// 1. Imports the built SSR bundle and asserts renderPage() produces HTML.
-// 2. Loads the client bundle in jsdom and asserts hydration runs without errors.
+// SSR + hydration smoke test for the buy-and-hold operational product.
 import { JSDOM } from 'jsdom';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,98 +7,45 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 
+const dashboard = {
+  philosophy: 'BUY_AND_HOLD_INFORMATION_SYSTEM',
+  portfolio: {
+    cash: 10000000,
+    equity_value: 14000000,
+    nav: 24000000,
+    realized_pnl: 0,
+    positions: [{
+      symbol: 'FPT', shares: 200, average_cost: 65000, price: 70000,
+      price_date: '2026-08-21', price_source: 'vnstock', market_value: 14000000,
+      weight: 14000000 / 24000000, unrealized_pnl: 1000000,
+      unrealized_return: 1000000 / 13000000, risk_contribution: 1,
+      status: 'HOLD',
+    }],
+  },
+  latest_snapshot: {
+    snapshot_date: '2026-08-21', nav: 24000000, total_pnl: 1000000,
+    current_drawdown: -0.02, max_drawdown: -0.05,
+  },
+  risk: { status: 'VALID', volatility_63: 0.21, volatility_252: 0.24, max_position_weight: 0.5833, hhi: 0.34 },
+  market_data: { status: 'VALID', provider: { provider: 'auto' } },
+  contribution_suggestions: { available_cash: 10000000, policy: 'EQUAL_WEIGHT_DEFICITS', suggestions: [] },
+  invariants: ['price movement never changes shares', 'only explicit ledger events change holdings or cash'],
+};
+
 const fixtures = {
-  runs: [
-    { run_id: 'r1', generated_at: '2026-08-21T19:06:01' },
-    { run_id: 'r0', generated_at: '2026-08-20T10:00:00' },
-  ],
-  meta: {
-    run_id: 'r1',
-    params: {
-      initial_balance: 200000000,
-      annual_deposit: 20000000,
-      allocation_frequency: 'quarterly',
-      lookback_days: 252,
-    },
+  transactions: [{ id: 1, event_date: '2026-01-02', event_type: 'POSITION_IMPORT', symbol: 'FPT', quantity: 200, price: 65000, fee: 0, tax: 0, amount: 0, created_by: 'local' }],
+  performance: {
+    returns: { daily: 0.01, mtd: 0.03, ytd: 0.1, since_inception: 0.12 },
+    xirr: 0.11, realized_pnl: 0, dividend_income: 200000, fees_and_taxes: 10000,
+    net_external_contributions: 23000000, latest: { nav: 24000000 },
+    series: [{ date: '2026-08-20', nav: 23700000 }, { date: '2026-08-21', nav: 24000000 }],
   },
-  index: {
-    combinations: [
-      {
-        rank: 1,
-        slug: 'HAG_LPB_PGB_TCB_VPB_VTP',
-        symbols: 'HAG LPB PGB TCB VPB VTP',
-        n_symbols: 6,
-        n_allocations: 19,
-        score: 45.42,
-        final_nav: 518824250,
-        twr_annualized_pct: 12.53,
-        xirr_pct: 12.73,
-        sortino: 1.23,
-        sharpe: 0.872,
-        max_drawdown_pct: -36.6,
-      },
-    ],
+  risk: {
+    status: 'VALID', volatility_63: 0.21, volatility_252: 0.24, max_position_weight: 0.58,
+    hhi: 0.34, risk_contributions: { FPT: 1 }, erc_reference_weights: { FPT: 1 },
+    quality: { coverage_weight: 1, requested_symbols: 1, eligible_symbols: 1, missing_covariance_cells: 0 },
   },
-  combo: {
-    symbols: ['HAG', 'LPB', 'PGB', 'TCB', 'VPB', 'VTP'],
-    score: 45.42,
-    final_nav: 518824250,
-    absolute_profit: 218824250,
-    twr_annualized_pct: 12.53,
-    xirr_pct: 12.73,
-    sortino: 1.233,
-    calmar: 0.34,
-    annual_returns: { 2022: -13.4, 2023: 34.55 },
-    total_return_pct: 72.94,
-    cagr_pct: 11.85,
-    annualized_volatility_pct: 27.2,
-    sharpe: 0.717,
-    max_drawdown_pct: -56.66,
-    nav_history: [
-      ['2022-01-04', 220000000],
-      ['2022-04-01', 220218607],
-      ['2026-07-01', 518824250],
-    ],
-    allocations: [
-      {
-        year: 2022,
-        quarter: 1,
-        allocation_date: '2022-01-04',
-        initial_allocation: true,
-        deposit_amount: 20000000,
-        rebalances_since_last_allocation: 0,
-        nav_before: 200000000,
-        cash_before: 200000000,
-        nav_after: 220000000,
-        cash_after: 0,
-        erc: {
-          observations: 98,
-          window_start: '2021-08-16',
-          window_end: '2021-12-31',
-          portfolio_risk: 0.31,
-          portfolio_variance: 0.096,
-          erc_error: 1e-8,
-          weights: { HAG: 0.2, LPB: 0.17, PGB: 0.16, TCB: 0.15, VPB: 0.15, VTP: 0.17 },
-        },
-        targets: { HAG: 0.2, LPB: 0.17, PGB: 0.16, TCB: 0.15, VPB: 0.15, VTP: 0.17 },
-        holdings_before: [],
-        recommendations: [
-          {
-            symbol: 'HAG',
-            current_weight: 0,
-            target_weight: 0.2,
-            band: 'HARD',
-            drift: -0.2,
-            recommendation: 'BUY',
-            target_trade_amount: 44000000,
-            funded_trade_amount: 44000000,
-            shares_to_trade: 10000,
-          },
-        ],
-        holdings_after: [{ symbol: 'HAG', shares: 10000, price: 4400, value: 44000000, weight: 0.2 }],
-      },
-    ],
-  },
+  snapshots: [{ snapshot_date: '2026-08-21', official: true, data_quality: 'VALID', nav: 24000000, cash: 10000000, equity_value: 14000000, daily_pnl: 200000, daily_return: 0.0084, current_drawdown: -0.02, volatility_252: 0.24, positions: [{ symbol: 'FPT' }] }],
 };
 
 let pass = true;
@@ -109,36 +54,37 @@ function check(name, ok) {
   if (!ok) pass = false;
 }
 
-// ---- 1. SSR rendering (react-dom/server) ----
 const ssrEntry = join(root, 'dist-ssr', 'ssr-entry.mjs');
 check('SSR bundle exists', existsSync(ssrEntry));
 let renderPage = null;
 if (existsSync(ssrEntry)) {
   ({ renderPage } = await import(`file://${ssrEntry.replace(/\\/g, '/')}`));
 
-  const homeHtml = renderPage('home', { runs: fixtures.runs });
-  check('home SSR renders Dynamic Alpha optimizer landing page', homeHtml.includes('Growth Optimizer') && homeHtml.includes('Dynamic Alpha + allocation'));
+  const portfolioHtml = renderPage('portfolio', { dashboard });
+  check('portfolio SSR is product landing', portfolioHtml.includes('Portfolio') && portfolioHtml.includes('BUY &amp; HOLD'));
+  check('portfolio SSR renders holdings', portfolioHtml.includes('FPT') && portfolioHtml.includes('Holdings'));
 
-  const optimizerHtml = renderPage('optimizer_list', { experiments: [] });
-  check('optimizer SSR renders the same primary workflow', optimizerHtml.includes('Growth Optimizer') && optimizerHtml.includes('Dynamic Alpha + allocation'));
+  const txHtml = renderPage('transactions', { transactions: fixtures.transactions, today: '2026-08-23' });
+  check('transactions SSR renders immutable ledger', txHtml.includes('Immutable event history') && txHtml.includes('POSITION_IMPORT'));
 
-  const runHtml = renderPage('run', { meta: fixtures.meta, index: fixtures.index });
-  check('run SSR renders ranking row', runHtml.includes('HAG') && runHtml.includes('45.4'));
-  check('run SSR shows score', runHtml.includes('Score') || runHtml.includes('45.4'));
+  const perfHtml = renderPage('performance', { performance: fixtures.performance });
+  check('performance SSR renders TWR/XIRR', perfHtml.includes('TWR since inception') && perfHtml.includes('XIRR'));
 
-  const comboHtml = renderPage('combo', { combo: fixtures.combo, runId: 'r1' });
-  check('combo SSR renders symbols', comboHtml.includes('HAG') && comboHtml.includes('VPB'));
-  check('combo SSR renders score metric', comboHtml.includes('45.42'));
-  check('combo SSR renders allocation date', comboHtml.includes('2022-01-04'));
-  check('combo SSR renders equity chart svg', comboHtml.includes('<svg') || comboHtml.includes('viewBox'));
+  const riskHtml = renderPage('risk', { risk: fixtures.risk });
+  check('risk SSR is informational', riskHtml.includes('Information only') && riskHtml.includes('ERC reference'));
+
+  const snapshotsHtml = renderPage('snapshots', { snapshots: fixtures.snapshots });
+  check('snapshot SSR renders official state', snapshotsHtml.includes('OFFICIAL') && snapshotsHtml.includes('2026-08-21'));
+
+  const researchHtml = renderPage('research', { experiments: [], runs: [] });
+  check('research SSR shows hard boundary', researchHtml.includes('Research Lab') && researchHtml.includes('Proposal only'));
 }
 
-// ---- 2. Hydration (client bundle in jsdom) ----
 const clientJs = join(root, 'dist', 'assets', 'client.js');
 check('client bundle exists', existsSync(clientJs));
-if (existsSync(clientJs)) {
+if (existsSync(clientJs) && renderPage) {
   const dom = new JSDOM('<html><head></head><body><div id="root"></div></body></html>', {
-    url: 'http://localhost:8090/runs/r1/combinations/HAG_LPB_PGB_TCB_VPB_VTP',
+    url: 'http://localhost:8080/',
     pretendToBeVisual: true,
   });
   const { window } = dom;
@@ -148,20 +94,18 @@ if (existsSync(clientJs)) {
   globalThis.HTMLElement = window.HTMLElement;
   globalThis.MutationObserver = window.MutationObserver;
   globalThis.requestAnimationFrame = window.requestAnimationFrame?.bind(window) || ((cb) => setTimeout(cb, 16));
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
 
   const errors = [];
   window.addEventListener('error', (e) => errors.push(e.message));
-  const comboHtml = renderPage('combo', { combo: fixtures.combo, runId: 'r1' });
-  window.document.getElementById('root').innerHTML = comboHtml;
-  window.__PAGE__ = { page: 'combo', props: { combo: fixtures.combo, runId: 'r1' } };
+  const html = renderPage('portfolio', { dashboard });
+  window.document.getElementById('root').innerHTML = html;
+  window.__PAGE__ = { page: 'portfolio', props: { dashboard } };
 
   eval(readFileSync(clientJs, 'utf8')); // eslint-disable-line no-eval
-  await new Promise((r) => setTimeout(r, 500));
-
+  await new Promise((r) => setTimeout(r, 300));
   const text = window.document.getElementById('root').textContent;
-  check('hydration rendered content', text.length > 0);
-  check('hydration shows symbols', text.includes('HAG') && text.includes('VPB'));
-  check('hydration shows allocation', text.includes('2022-01-04'));
+  check('portfolio hydration rendered', text.includes('FPT') && text.includes('Portfolio'));
   check('no hydration errors', errors.length === 0);
   if (errors.length) console.log('errors:', errors);
 }
