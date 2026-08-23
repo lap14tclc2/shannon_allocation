@@ -55,7 +55,8 @@ export default function MarketHistoryIndicator({ dashboard = {}, locale = 'en' }
       setSnapshot(next);
       setPhase(next.state);
       if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(leaseKey);
+        if (next.state === 'READY') window.localStorage.removeItem(leaseKey);
+        else window.localStorage.setItem(leaseKey, String(Date.now()));
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
@@ -74,7 +75,8 @@ export default function MarketHistoryIndicator({ dashboard = {}, locale = 'en' }
       if (!leasedRecently) window.localStorage.setItem(leaseKey, String(Date.now()));
     } catch { /* storage may be unavailable */ }
     if (!leasedRecently) runBackfill({ automatic: true });
-    // Run once for the current holding set. A successful sync reloads the dashboard.
+    // Run once for the current holding set. A complete sync reloads the dashboard;
+    // partial histories keep a short lease so newly listed symbols cannot loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, symbolKey]);
 
