@@ -1,0 +1,112 @@
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 18px;
+  background:
+    radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--accent, #7dd3fc) 12%, transparent), transparent 32%),
+    var(--bg, #0b0f14);
+}
+
+.auth-card {
+  width: min(100%, 560px);
+  border: 1px solid var(--border, #27313d);
+  border-radius: 18px;
+  background: var(--panel, #111821);
+  padding: 28px;
+  box-shadow: 0 24px 70px rgba(0,0,0,.24);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 34px;
+}
+
+.auth-brand > div { display: grid; gap: 1px; }
+.auth-brand strong { font-size: 20px; letter-spacing: -.03em; }
+.auth-brand small { color: var(--muted, #8996a8); font-size: 12px; }
+.auth-copy h1 { margin: 6px 0 10px; font-size: clamp(28px, 6vw, 42px); line-height: 1.05; }
+.auth-copy p { color: var(--muted, #8996a8); margin: 0 0 26px; line-height: 1.6; }
+
+.auth-form,
+.admin-password-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-form label,
+.admin-password-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.auth-form label > span,
+.admin-password-form label > span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--muted, #8996a8);
+}
+
+.auth-form input,
+.admin-password-form input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border, #27313d);
+  border-radius: 10px;
+  background: var(--input, rgba(0,0,0,.18));
+  color: var(--text, #e8edf4);
+  padding: 10px 12px;
+  outline: none;
+}
+
+.auth-form input:focus,
+.admin-password-form input:focus {
+  border-color: var(--accent, #7dd3fc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #7dd3fc) 14%, transparent);
+}
+
+.auth-submit { width: 100%; min-height: 46px; }
+.auth-message { margin-top: 16px; border-radius: 10px; padding: 11px 12px; font-size: 13px; }
+.auth-message.error { border: 1px solid rgba(248,113,113,.35); background: rgba(248,113,113,.08); color: #fca5a5; }
+.auth-message.info { border: 1px solid rgba(125,211,252,.3); background: rgba(125,211,252,.08); color: var(--text, #e8edf4); }
+
+.register-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border, #27313d);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.register-panel p { margin: 5px 0 0; color: var(--muted, #8996a8); font-size: 13px; }
+.auth-footnote { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border, #27313d); color: var(--muted, #8996a8); font-size: 12px; display: flex; justify-content: space-between; gap: 12px; }
+.auth-footnote code { color: var(--text, #e8edf4); }
+
+.nav-user { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nav-user-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text, #e8edf4); font-size: 12px; }
+.nav-logout { border: 0; background: transparent; color: var(--muted, #8996a8); cursor: pointer; font-size: 11px; padding: 4px 0; }
+.nav-logout:hover { color: var(--text, #e8edf4); }
+
+.admin-header { margin-bottom: 18px; }
+.admin-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, .8fr); gap: 18px; }
+.admin-user-table .user-self { margin-left: 8px; font-size: 10px; text-transform: uppercase; color: var(--muted, #8996a8); }
+.btn-danger-small { border: 1px solid rgba(248,113,113,.35); background: rgba(248,113,113,.08); color: #fca5a5; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+.btn-danger-small:hover { background: rgba(248,113,113,.14); }
+.admin-password-card h2 { margin-top: 5px; }
+.admin-password-card > .muted { margin-bottom: 20px; line-height: 1.55; }
+
+@media (max-width: 900px) {
+  .admin-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .auth-shell { padding: 18px 12px; align-items: start; }
+  .auth-card { margin-top: 24px; padding: 22px 16px; border-radius: 14px; }
+  .register-panel { align-items: stretch; flex-direction: column; }
+  .auth-footnote { flex-direction: column; }
+}
