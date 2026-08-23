@@ -12,6 +12,7 @@ import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
+import { applyStoredAppearance } from './lib/appearance.js';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
@@ -23,7 +24,11 @@ import './ui-polish.css';
 import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';
-import './cream-light-theme.css';
+import './appearance-controls.css';
+
+// Apply a persisted custom palette before hydration. With no saved palette the
+// app explicitly stays on QPort's default dark appearance.
+applyStoredAppearance();
 
 const PAGES = {
   auth: AuthPage,
