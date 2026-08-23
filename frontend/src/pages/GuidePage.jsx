@@ -15,56 +15,27 @@ const STEPS = [
   ['guide.step10', 'guide.step10_body'],
 ];
 
-const WARNINGS = ['guide.warning_1', 'guide.warning_2', 'guide.warning_3', 'guide.warning_4'];
+const WARNINGS = ['guide.warning_1', 'guide.warning_2', 'guide.warning_3'];
 
 export default function GuidePage({ locale = 'en' }) {
   const { t } = useI18n(locale);
+  const text = (en, vi) => locale === 'vi' ? vi : en;
   return (
     <div className="page">
       <AppNav active="guide" locale={locale} />
-      <header className="page-head">
-        <h1>{t('guide.title')}</h1>
-        <p className="muted">{t('guide.subtitle')}</p>
-      </header>
+      <header className="page-head"><div><h1>{t('guide.title')}</h1><p className="muted">{t('guide.subtitle')}</p></div></header>
 
-      <div className="card guide-principle">
-        <h3>{t('guide.principle')}</h3>
-        <p>{t('guide.principle_body')}</p>
-      </div>
+      <div className="card guide-principle"><h3>{t('guide.principle')}</h3><p>{text('QPort is a Buy & Hold portfolio information system. Only explicit ledger events change shares or cash. Market prices, risk metrics and calendar time never create trades.', 'QPort là hệ thống thông tin danh mục Buy & Hold. Chỉ các sự kiện sổ cái rõ ràng mới thay đổi cổ phiếu hoặc tiền mặt. Giá thị trường, chỉ số rủi ro và thời gian không bao giờ tự tạo giao dịch.')}</p></div>
 
-      <div className="card">
-        <div className="section-head">
-          <div>
-            <h3>{t('guide.quick_start')}</h3>
-            <div className="muted">QPort operational workflow</div>
-          </div>
-        </div>
-        <pre className="guide-code"><code>{`cd frontend\nnpm ci\nnpm run build\nnpm run build:ssr\n\ncd ../python\npip install -r requirements.txt\npython serve.py`}</code></pre>
-      </div>
+      <div className="card"><div className="section-head"><div><h3>{t('guide.quick_start')}</h3><div className="muted">QPort operational workflow</div></div></div><pre className="guide-code"><code>{`cd frontend\nnpm ci\nnpm run build\nnpm run build:ssr\n\ncd ../python\npip install -r requirements.txt\npython serve.py`}</code></pre></div>
 
-      <div className="guide-steps">
-        {STEPS.map(([titleKey, bodyKey]) => (
-          <section className="card" key={titleKey}>
-            <h3>{t(titleKey)}</h3>
-            <p>{t(bodyKey)}</p>
-          </section>
-        ))}
-      </div>
+      <div className="guide-steps">{STEPS.map(([titleKey, bodyKey]) => <section className="card" key={titleKey}><h3>{t(titleKey)}</h3><p>{t(bodyKey)}</p></section>)}</div>
 
-      <div className="card warning-card">
-        <h3>{t('guide.warning_title')}</h3>
-        <div className="rule-list">
-          {WARNINGS.map((key) => <div key={key}>✓ {t(key)}</div>)}
-        </div>
-      </div>
+      <div className="card"><h3>{text('Two actions new users usually miss', 'Hai thao tác người dùng mới thường bỏ sót')}</h3><div className="rule-list"><div>✓ {text('Record portfolio cash on the Portfolio page or as a Cash deposit event. Without it, BUY transactions correctly fail for insufficient cash.', 'Ghi số tiền mặt của danh mục ngay trên trang Danh mục hoặc bằng sự kiện Nạp tiền. Nếu chưa có tiền, giao dịch MUA sẽ bị từ chối đúng quy tắc.')}</div><div>✓ {text('After importing holdings, run Sync once. QPort fetches D1 history and rebuilds daily snapshots, Performance and Drawdown automatically.', 'Sau khi nhập vị thế, chạy Đồng bộ một lần. QPort sẽ lấy lịch sử D1 và tự dựng Snapshot, Hiệu suất và Drawdown hàng ngày.')}</div></div></div>
 
-      <div className="card">
-        <h3>{t('guide.full_docs')}</h3>
-        <div className="button-row">
-          <a className="btn-export" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_EN.md">{t('guide.english_doc')}</a>
-          <a className="btn-variant" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_VI.md">{t('guide.vietnamese_doc')}</a>
-        </div>
-      </div>
+      <div className="card warning-card"><h3>{t('guide.warning_title')}</h3><div className="rule-list">{WARNINGS.map((key) => <div key={key}>✓ {t(key)}</div>)}</div></div>
+
+      <div className="card"><h3>{t('guide.full_docs')}</h3><div className="button-row"><a className="btn-export" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_EN.md">{t('guide.english_doc')}</a><a className="btn-variant" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_VI.md">{t('guide.vietnamese_doc')}</a></div></div>
     </div>
   );
 }
