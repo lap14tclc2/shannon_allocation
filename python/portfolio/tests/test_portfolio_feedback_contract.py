@@ -23,6 +23,7 @@ def test_holding_rows_expand_to_broker_account_breakdown_from_open_tax_lots():
 
     assert "getPortfolioOperations" in source
     assert "operations?.tax_lots" in source
+    assert "operations?.dividend_receipts_by_broker" in source
     assert "groupBrokerSources" in source
     assert "remaining_quantity" in source
     assert "broker_code" in source
@@ -30,6 +31,8 @@ def test_holding_rows_expand_to_broker_account_breakdown_from_open_tax_lots():
     assert 'className="holding-expand-button"' in source
     assert "aria-expanded={expanded}" in source
     assert 'className="ranking holding-source-table"' in source
+    assert "Stock dividends received" in source
+    assert "Net cash dividends" in source
     assert "Cost value" in source
     assert "Market value" in source
     assert "% of symbol" in source
@@ -38,12 +41,13 @@ def test_holding_rows_expand_to_broker_account_breakdown_from_open_tax_lots():
     assert "overflow-x: auto" in styles
 
 
-def test_dividend_ui_shows_latest_and_expands_full_history():
+def test_dividend_ui_shows_canonical_source_and_expands_full_history():
     source = (FRONTEND_SRC / "pages" / "PortfolioDashboardPage.jsx").read_text(encoding="utf-8")
     assert 'className="dividend-symbol-node"' in source
     assert "result.events" in source
     assert "Latest" in source
-    assert "Refresh from providers" in source
+    assert "Refresh canonical source" in source
+    assert "canonical_source" in source
     assert "loadPositionDividends(false)" in source
     assert "loadPositionDividends(true)" in source
 
@@ -55,7 +59,10 @@ def test_dividend_backend_is_sqlite_first_with_explicit_provider_refresh():
     assert "CREATE TABLE IF NOT EXISTS dividend_fetch_state" in source
     assert 'origin="SQLITE_CACHE"' in source
     assert "force_refresh" in source
+    # Legacy server construction may pass False, but the default-provider service
+    # itself now enforces one canonical source for production runtime.
     assert "SqliteDividendService(_portfolio(user).store, stop_on_first_data=False)" in server
+    assert "self.stop_on_first_data = True if using_defaults" in source
     assert 'parse_qs(query).get("refresh")' in server
 
 
