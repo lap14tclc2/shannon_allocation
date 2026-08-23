@@ -7,13 +7,21 @@ import pandas as pd
 
 
 def concentration_metrics(position_rows: list[dict]) -> dict:
-    weights = [max(0.0, float(p.get("weight") or 0)) for p in position_rows]
-    hhi = sum(w * w for w in weights) if weights else 0.0
+    nav_weights = [max(0.0, float(p.get("weight") or 0)) for p in position_rows]
+    equity_total = sum(nav_weights)
+    equity_weights = [w / equity_total for w in nav_weights] if equity_total > 1e-12 else []
+    hhi = sum(w * w for w in equity_weights) if equity_weights else 0.0
+    effective = (1.0 / hhi) if hhi > 1e-12 else 0.0
+    n = len(equity_weights)
     return {
         "hhi": hhi,
-        "effective_positions": (1.0 / hhi) if hhi > 1e-12 else 0.0,
-        "max_position_weight": max(weights) if weights else 0.0,
-        "n_positions": len(weights),
+        "equity_hhi": hhi,
+        "effective_positions": effective,
+        "effective_position_ratio": (effective / n) if n else 0.0,
+        "max_position_weight": max(nav_weights) if nav_weights else 0.0,
+        "max_equity_weight": max(equity_weights) if equity_weights else 0.0,
+        "equity_weight_sum": equity_total,
+        "n_positions": n,
     }
 
 
@@ -146,6 +154,8 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "risk_contribution_hhi": None,
         "largest_risk_symbol": None,
         "largest_risk_contribution": None,
+        "equal_risk_contribution": None,
+        "risk_concentration_ratio": None,
         "erc_reference_weights": {},
         "average_correlation": None,
         "max_correlation": None,
@@ -155,6 +165,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "max_daily_loss": None,
         "downside_volatility": None,
         "positive_day_ratio": None,
+        "return_observations": 0,
     }
     if not position_rows:
         return {**empty_payload, "status": "NO_POSITIONS", "quality": {"reason": "no_positions"}}
@@ -192,6 +203,12 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     erc_weights = {s: float(v) for s, v in zip(eligible, erc)} if erc is not None else {}
     largest_risk_symbol = max(risk_contrib, key=risk_contrib.get) if risk_contrib else None
     largest_risk_contribution = risk_contrib.get(largest_risk_symbol) if largest_risk_symbol else None
+    equal_risk = 1.0 / len(eligible) if eligible else None
+    risk_concentration_ratio = (
+        largest_risk_contribution / equal_risk
+        if largest_risk_contribution is not None and equal_risk and equal_risk > 0
+        else None
+    )
     rc_hhi = float(sum(float(v) ** 2 for v in rc)) if len(rc) else None
 
     indiv_vol = np.sqrt(np.maximum(0.0, np.diag(cov)))
@@ -214,6 +231,8 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "risk_contribution_hhi": rc_hhi,
         "largest_risk_symbol": largest_risk_symbol,
         "largest_risk_contribution": largest_risk_contribution,
+        "equal_risk_contribution": equal_risk,
+        "risk_concentration_ratio": risk_concentration_ratio,
         "erc_reference_weights": erc_weights,
         "diversification_ratio": diversification_ratio,
         "quality": {
