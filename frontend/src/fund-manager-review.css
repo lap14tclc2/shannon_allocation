@@ -1,4 +1,4 @@
-/* Professional portfolio review: readable, evidence-first, terminal-compatible. */
+/* Concise professional portfolio review. Detailed metrics belong in /risk. */
 
 .fund-manager-review-card {
   order: 35 !important;
@@ -20,8 +20,8 @@
 .fm-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 3px 8px;
+  min-height: 28px;
+  padding: 4px 9px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   font-size: 12.5px;
@@ -37,128 +37,64 @@
   border-color: color-mix(in srgb, var(--success) 55%, var(--border-strong));
 }
 
-.fm-pill-building {
-  color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-strong));
-}
-
+.fm-pill-building,
 .fm-pill-warning {
   color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 70%, var(--border-strong));
+  border-color: color-mix(in srgb, var(--warning) 60%, var(--border-strong));
 }
 
 .fm-pill-neutral {
   color: var(--text-secondary);
 }
 
-.fm-executive-strip {
-  display: grid;
-  grid-template-columns: 1fr;
-  margin-top: 16px;
-  border: 1px solid var(--border-strong);
-}
-
-.fm-executive-strip > div {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "label pill"
-    "value pill";
-  gap: 2px 10px;
+.fm-manager-summary {
+  display: flex;
   align-items: center;
-  padding: 12px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-}
-
-.fm-executive-strip > div:last-child {
-  border-bottom: 0;
-}
-
-.fm-executive-strip span:first-child {
-  grid-area: label;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-}
-
-.fm-executive-strip b {
-  grid-area: value;
-  color: var(--text);
-  font-size: 14px;
-}
-
-.fm-executive-strip .fm-pill {
-  grid-area: pill;
-}
-
-.fm-review-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.fm-review-block {
-  min-width: 0;
-  padding: 14px;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 13px 15px;
   border: 1px solid var(--border-strong);
-  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+  background: color-mix(in srgb, var(--panel-2) 58%, transparent);
 }
 
-.fm-review-block h3,
-.fm-commentary h3,
+.fm-manager-summary span {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.fm-manager-summary b {
+  color: var(--text);
+  font-size: 15px;
+  text-align: right;
+}
+
+.fm-manager-assessment,
+.fm-priorities {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-left: 2px solid var(--accent-border);
+  background: color-mix(in srgb, var(--panel-2) 48%, transparent);
+}
+
+.fm-manager-assessment h3,
 .fm-priorities h3 {
-  margin: 0 0 10px;
+  margin: 0 0 11px;
   color: var(--text);
   font-size: 15px;
   line-height: 1.35;
-  letter-spacing: .01em;
   text-transform: none;
 }
 
-.fm-review-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: baseline;
-  min-height: 40px;
-  padding: 9px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  font-size: 13px;
-}
-
-.fm-review-row:last-child {
-  border-bottom: 0;
-}
-
-.fm-review-row span {
+.fm-manager-assessment p {
+  max-width: 1040px;
+  margin: 0 0 12px;
   color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.72;
 }
 
-.fm-review-row b {
-  max-width: 230px;
-  color: var(--text);
-  font-size: 13.5px;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
-.fm-commentary,
-.fm-priorities {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-left: 2px solid var(--accent-border);
-  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
-}
-
-.fm-commentary p {
-  margin: 0 0 10px;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.7;
-}
-
-.fm-commentary p:last-child {
+.fm-manager-assessment p:last-child {
   margin-bottom: 0;
 }
 
@@ -168,11 +104,11 @@
 }
 
 .fm-priorities li {
-  margin: 7px 0;
+  margin: 8px 0;
   padding-left: 4px;
   color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.62;
 }
 
 .fm-priorities li::marker {
@@ -181,44 +117,21 @@
 }
 
 .fm-review-foot {
-  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 15px;
 }
 
-@media (min-width: 720px) {
-  .fm-executive-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .fm-executive-strip > div:nth-child(odd) {
-    border-right: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  }
-
-  .fm-executive-strip > div:nth-last-child(-n + 2) {
-    border-bottom: 0;
-  }
-
-  .fm-review-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.fm-review-foot .text-link {
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
-@media (min-width: 1180px) {
-  .fm-executive-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .fm-executive-strip > div {
-    border-bottom: 0;
-    border-right: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  }
-
-  .fm-executive-strip > div:last-child {
-    border-right: 0;
-  }
-
-  .fm-review-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+.fm-review-foot .muted {
+  font-size: 13px;
 }
 
 @media (max-width: 719px) {
@@ -226,13 +139,23 @@
     justify-content: flex-start;
   }
 
-  .fm-review-row {
-    grid-template-columns: 1fr;
+  .fm-manager-summary {
+    align-items: flex-start;
+    flex-direction: column;
     gap: 4px;
   }
 
-  .fm-review-row b {
-    max-width: none;
+  .fm-manager-summary b {
     text-align: left;
+  }
+
+  .fm-manager-assessment,
+  .fm-priorities {
+    padding: 14px 15px;
+  }
+
+  .fm-manager-assessment p,
+  .fm-priorities li {
+    font-size: 13.5px;
   }
 }
