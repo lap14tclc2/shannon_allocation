@@ -7,6 +7,9 @@ from datetime import date, timedelta
 from .accounting import derive_state
 from .correctable_service import CorrectablePortfolioService
 from .corrections import effective_events
+from .domain import EventType
+from .tax_policy import apply_dividend_tax_policy
+from .validation import normalize_event_payload
 
 VIETNAM_PAR_VALUE_VND = 10_000.0
 
@@ -16,12 +19,7 @@ def _previous_day(day: str) -> str:
 
 
 def _cash_percent_fallback(action: dict) -> tuple[float | None, float | None]:
-    """Return (cash_per_share, percent) when a provider only says e.g. 7% cash.
-
-    Vietnamese listed common shares normally use VND 10,000 par value for a
-    dividend percentage announcement. Explicit provider cash_per_share always
-    wins; this parser is only a fallback for text-only provider events.
-    """
+    """Return (cash_per_share, percent) when a provider only says e.g. 7% cash."""
     explicit = action.get("cash_per_share")
     if explicit not in (None, ""):
         try:
@@ -48,16 +46,97 @@ def _cash_percent_fallback(action: dict) -> tuple[float | None, float | None]:
 
 
 class AutomatedPortfolioService(CorrectablePortfolioService):
-    """QPort service that automatically posts due dividend entitlements.
+    """Operational QPort service with automatic dividend posting and tax policy."""
 
-    Discovery remains provider-driven. Once a CASH_DIVIDEND or STOCK_DIVIDEND
-    has a payment date at or before today and enough entitlement information,
-    QPort creates the matching immutable ledger transaction exactly once.
-    """
+    def _apply_tax_to_payload(self, payload: dict, prior_events: list, *, event_id=None, created_by="local") -> dict:
+        clean = normalize_event_payload(payload, today=self.today_vn())
+        draft = self._event_from_clean(clean, event_id=event_id, created_by=str(created_by or "local")[:100])
+        taxed = apply_dividend_tax_policy(draft, prior_events)
+        return {
+            "event_type": taxed.event_type.value,
+            "event_date": taxed.event_date,
+            "symbol": taxed.symbol,
+            "quantity": taxed.quantity,
+            "price": taxed.price,
+            "fee": taxed.fee,
+            "tax": taxed.tax,
+            "amount": taxed.amount,
+            "ratio": taxed.ratio,
+            "note": taxed.note,
+            "metadata": taxed.metadata,
+            "broker_code": taxed.broker_code,
+            "account_id": taxed.account_id,
+            "settlement_date": taxed.settlement_date,
+        }
+
+    def append_event(self, payload: dict, created_by: str = "local") -> dict:
+        prior = effective_events(self.store)
+        taxed_payload = self._apply_tax_to_payload(payload, prior, created_by=created_by)
+        result = super().append_event(taxed_payload, created_by=created_by)
+        # Holdings, performance snapshots and transaction history all derive from
+        # the same effective ledger immediately after every user/system mutation.
+        result["history"] = self._refresh_derived_history()
+        result["portfolio_sync"] = "LEDGER_DERIVED_IMMEDIATE"
+        return result
+
+    def _replacement_event(self, event_id: int, payload: dict):
+        replacement = super()._replacement_event(event_id, payload)
+        prior = [e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)]
+        return apply_dividend_tax_policy(replacement, prior)
+
+    def dashboard(self) -> dict:
+        data = super().dashboard()
+        health = data.get("health") or {}
+        risk = data.get("risk") or {}
+        perf = data.get("performance_summary") or {}
+        quality = risk.get("quality") or {}
+        missing = quality.get("missing_symbols") or []
+        for flag in health.get("flags") or []:
+            if flag.get("code") == "RISK_COVERAGE":
+                coverage = float(quality.get("coverage_weight") or 0)
+                suffix = f" Missing D1 history: {', '.join(missing)}." if missing else ""
+                flag["message"] = (
+                    f"Risk coverage is {coverage * 100:.1f}% (target ≥90%).{suffix} "
+                    "Volatility/correlation/tail-risk fields stay suppressed until evidence is sufficient."
+                )
+            elif flag.get("code") == "PERFORMANCE_HISTORY":
+                count = int(perf.get("official_snapshot_count") or 0)
+                flag["message"] = (
+                    f"Only {count} official daily snapshots are available. "
+                    "QPort needs at least 20 for basic short-history statistics and roughly 252 for a full 1-year view."
+                )
+
+        events = effective_events(self.store)
+        cash_dividend_tax = sum(
+            float((e.metadata or {}).get("cash_dividend_withholding_tax") or 0)
+            for e in events if e.event_type == EventType.CASH_DIVIDEND
+        )
+        stock_dividend_sale_tax = sum(
+            float((e.metadata or {}).get("stock_dividend_sale_tax") or 0)
+            for e in events if e.event_type == EventType.SELL
+        )
+        perf["cash_dividend_tax"] = cash_dividend_tax
+        perf["stock_dividend_sale_tax"] = stock_dividend_sale_tax
+        perf["net_dividend_income"] = float(perf.get("dividend_income") or 0) - cash_dividend_tax
+        perf["tax_policy"] = "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_VALUE_ON_SALE"
+        data["performance_summary"] = perf
+        data["health"] = health
+        return data
+
+    def performance(self) -> dict:
+        perf = super().performance()
+        events = effective_events(self.store)
+        cash_tax = sum(float((e.metadata or {}).get("cash_dividend_withholding_tax") or 0) for e in events if e.event_type == EventType.CASH_DIVIDEND)
+        stock_tax = sum(float((e.metadata or {}).get("stock_dividend_sale_tax") or 0) for e in events if e.event_type == EventType.SELL)
+        perf.update({
+            "cash_dividend_tax": cash_tax,
+            "stock_dividend_sale_tax": stock_tax,
+            "net_dividend_income": float(perf.get("dividend_income") or 0) - cash_tax,
+            "tax_policy": "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_VALUE_ON_SALE",
+        })
+        return perf
 
     def _entitlement_state(self, action: dict):
-        # The holder must own the stock before ex-date. If ex-date is unavailable,
-        # record date is the next-best entitlement cutoff.
         ex_date = action.get("ex_date")
         cutoff = _previous_day(ex_date) if ex_date else (action.get("record_date") or action.get("payment_date"))
         if not cutoff:
@@ -91,7 +170,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 continue
 
             entitlement_state, entitlement_date = self._entitlement_state(action)
-            position = (entitlement_state.positions.get(action["symbol"]) if entitlement_state else None)
+            position = entitlement_state.positions.get(action["symbol"]) if entitlement_state else None
             entitled_shares = float(position.shares) if position else 0.0
             if entitled_shares <= 0:
                 skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "NO_ENTITLED_SHARES"})
@@ -104,8 +183,6 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 "entitlement_date": entitlement_date,
                 "entitlement_shares": entitled_shares,
                 "payment_date": payment_date,
-                # UNASSIGNED intentionally allocates a stock dividend pro-rata
-                # across all open broker/account lots instead of inventing a broker.
                 "broker_code": "UNASSIGNED",
                 "account_id": "PRIMARY",
             }
@@ -118,9 +195,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 amount = entitled_shares * cash_per_share
                 metadata.update({"cash_per_share": cash_per_share, "cash_rate_percent": cash_pct})
                 payload = {
-                    "event_type": "CASH_DIVIDEND",
-                    "event_date": payment_date,
-                    "symbol": action["symbol"],
+                    "event_type": "CASH_DIVIDEND", "event_date": payment_date, "symbol": action["symbol"],
                     "amount": amount,
                     "note": f"Auto dividend #{action_id}: {cash_per_share:g} VND/share × {entitled_shares:g} shares",
                     "metadata": metadata,
@@ -133,9 +208,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 quantity = entitled_shares * ratio
                 metadata.update({"stock_ratio": ratio})
                 payload = {
-                    "event_type": "STOCK_DIVIDEND",
-                    "event_date": payment_date,
-                    "symbol": action["symbol"],
+                    "event_type": "STOCK_DIVIDEND", "event_date": payment_date, "symbol": action["symbol"],
                     "quantity": quantity,
                     "note": f"Auto stock dividend #{action_id}: {ratio * 100:g}% × {entitled_shares:g} shares",
                     "metadata": metadata,
@@ -148,6 +221,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 continue
 
             event_id = int(result["event_id"])
+            posted_event = result.get("event") or {}
             actual_cash = float(payload.get("amount") or 0)
             actual_shares = float(payload.get("quantity") or 0)
             with self.store.connect() as db:
@@ -161,37 +235,25 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                         action_id,received_date,actual_cash,actual_shares,note,created_by,created_at
                     ) VALUES (?,?,?,?,?,?,datetime('now'))
                     """,
-                    (
-                        action_id, payment_date, actual_cash, actual_shares,
-                        f"Automatically calculated from {entitled_shares:g} entitled shares.", created_by,
-                    ),
+                    (action_id, payment_date, actual_cash, actual_shares, f"Automatically calculated from {entitled_shares:g} entitled shares.", created_by),
                 )
             posted.add((action_id, posting_type))
             created.append({
-                "action_id": action_id,
-                "event_id": event_id,
-                "symbol": action["symbol"],
-                "event_type": action_type,
-                "event_date": payment_date,
-                "entitlement_shares": entitled_shares,
-                "amount": payload.get("amount"),
-                "quantity": payload.get("quantity"),
+                "action_id": action_id, "event_id": event_id, "symbol": action["symbol"],
+                "event_type": action_type, "event_date": payment_date, "entitlement_shares": entitled_shares,
+                "amount": payload.get("amount"), "quantity": payload.get("quantity"),
+                "tax": posted_event.get("tax"), "net_cash": (posted_event.get("metadata") or {}).get("cash_dividend_net_amount"),
             })
 
         result = {
-            "ok": True,
-            "as_of": today,
-            "created": created,
-            "created_count": len(created),
-            "skipped": skipped,
+            "ok": True, "as_of": today, "created": created, "created_count": len(created), "skipped": skipped,
             "posting_policy": "AUTOMATIC_ON_PAYMENT_DATE_IDEMPOTENT",
         }
         if created or skipped:
             self._log(
                 "SYSTEM", created_by, "CORPORATE_ACTION", "DIVIDEND_AUTO_POST",
                 f"Dividend automation created {len(created)} ledger transaction(s).",
-                details=result,
-                status="SUCCESS" if not skipped else "PARTIAL",
+                details=result, status="SUCCESS" if not skipped else "PARTIAL",
             )
         return result
 
