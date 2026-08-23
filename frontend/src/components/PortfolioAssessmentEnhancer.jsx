@@ -15,6 +15,7 @@ export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = '
   const risk = dashboard.risk || {};
   const perf = dashboard.performance_summary || {};
   const quality = risk.quality || {};
+  const methodology = risk.methodology || {};
   const positions = dashboard.portfolio?.positions || [];
 
   useEffect(() => {
@@ -51,12 +52,14 @@ export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = '
 
       <div className="assessment-depth-grid">
         <section className="assessment-depth-block">
-          <h4>{text('Data readiness', 'Độ sẵn sàng dữ liệu')}</h4>
+          <h4>{text('Data readiness & methodology', 'Dữ liệu & phương pháp')}</h4>
           <div className="diag-row"><span>{text('Risk coverage', 'Độ phủ risk')}</span><b>{pct(evidence.coverage)} · {evidence.eligible}/{evidence.requested} {text('holdings', 'mã')}</b></div>
           <div className="diag-row"><span>{text('Portfolio return observations', 'Quan sát lợi suất danh mục')}</span><b>{evidence.returnObs}</b></div>
           <div className="diag-row"><span>{text('Official performance snapshots', 'Snapshot performance chính thức')}</span><b>{evidence.historyCount}</b></div>
           <div className="diag-row"><span>{text('Missing D1 history', 'Thiếu lịch sử D1')}</span><b>{(quality.missing_symbols || []).length ? quality.missing_symbols.join(', ') : text('None', 'Không')}</b></div>
-          <p className="muted">{text('Risk values are intentionally suppressed when evidence is insufficient; a dash means unavailable, not zero.', 'Risk được chủ động để trống khi bằng chứng chưa đủ; dấu gạch ngang nghĩa là chưa khả dụng, không phải bằng 0.')}</p>
+          <div className="diag-row"><span>{text('Risk return model', 'Mô hình return risk')}</span><b>{methodology.return_type || 'log_return'} · {methodology.annualization || 252}D</b></div>
+          <div className="diag-row"><span>{text('Covariance evidence', 'Bằng chứng covariance')}</span><b>{quality.min_periods ? `≥${quality.min_periods} ${text('overlapping observations', 'quan sát giao nhau')}` : text('Pairwise history', 'Lịch sử pairwise')}</b></div>
+          <p className="muted">{text('A dash means unavailable evidence, not zero. Risk uses stored market returns with current equity weights; tracked performance uses realized daily portfolio snapshots.', 'Dấu gạch ngang nghĩa là chưa đủ bằng chứng, không phải bằng 0. Risk dùng market return đã lưu với tỷ trọng cổ phiếu hiện tại; performance dùng daily portfolio snapshot thực tế đã theo dõi.')}</p>
         </section>
 
         <section className="assessment-depth-block">
@@ -82,7 +85,7 @@ export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = '
         <section className="assessment-depth-block">
           <h4>{text('Tail risk & tracked performance', 'Tail risk & hiệu suất đã theo dõi')}</h4>
           <div className="diag-row"><span>{text('Daily VaR / CVaR 95%', 'VaR / CVaR ngày 95%')}</span><b>{pct(risk.daily_var_95)} / {pct(risk.daily_cvar_95)}</b></div>
-          <div className="diag-row"><span>{text('Worst observed day', 'Ngày xấu nhất')}</span><b>{pct(risk.max_daily_loss)}</b></div>
+          <div className="diag-row"><span>{text('Worst observed risk day', 'Ngày risk xấu nhất')}</span><b>{pct(risk.max_daily_loss)}</b></div>
           <div className="diag-row"><span>{text('Since-inception TWR', 'TWR từ khi bắt đầu')}</span><b>{pct(perf.returns?.since_inception)}</b></div>
           <div className="diag-row"><span>{text('Current / max drawdown', 'Drawdown hiện tại / lớn nhất')}</span><b>{pct(perf.current_drawdown)} / {pct(perf.max_drawdown)}</b></div>
           <div className="diag-row"><span>{text('Best / worst tracked day', 'Ngày tốt / xấu nhất đã theo dõi')}</span><b>{pct(perf.best_day)} / {pct(perf.worst_day)}</b></div>
@@ -90,7 +93,7 @@ export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = '
         </section>
       </div>
 
-      <p className="assessment-depth-note muted">{text('Interpret these diagnostics together. Concentration, correlation and tail loss can disagree; no single metric is used as a trading trigger.', 'Các chẩn đoán này phải được đọc cùng nhau. Tập trung, tương quan và tail loss có thể cho tín hiệu khác nhau; không chỉ số đơn lẻ nào được dùng làm trigger giao dịch.')}</p>
+      <p className="assessment-depth-note muted">{text('Interpret these diagnostics together. Concentration, correlation and tail loss can disagree; no single metric is used as a trading trigger. Historical VaR/CVaR describes the stored sample and is not a forecast.', 'Các chẩn đoán này phải được đọc cùng nhau. Tập trung, tương quan và tail loss có thể cho tín hiệu khác nhau; không chỉ số đơn lẻ nào được dùng làm trigger giao dịch. VaR/CVaR lịch sử mô tả mẫu đã lưu và không phải dự báo.')}</p>
     </div>,
     target,
   );
