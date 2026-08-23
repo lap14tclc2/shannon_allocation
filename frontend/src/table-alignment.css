@@ -1,0 +1,31 @@
+/* Desktop/tablet tables fill the available card width.
+   Mobile keeps width:max-content from responsive.css so narrow screens still scroll safely. */
+@media (min-width: 720px) {
+  .table-scroll {
+    width: 100%;
+  }
+
+  .table-scroll > table,
+  .ranking,
+  .portfolio-table-core,
+  .transaction-table,
+  .inline-ledger-table,
+  .corporate-action-table,
+  .activity-table,
+  .dividend-overview-table,
+  .holding-source-table,
+  .dividend-history-table,
+  .received-dividend-table {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .holding-source-scroll {
+    width: 100%;
+  }
+
+  .holding-source-panel,
+  .holding-source-scroll > table {
+    max-width: none;
+  }
+}
