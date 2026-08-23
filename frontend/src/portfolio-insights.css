@@ -1,0 +1,278 @@
+/* Portfolio intelligence + dividend history. Mobile-first, layered after responsive.css. */
+
+.portfolio-assessment-card {
+  border-color: var(--border-strong);
+}
+
+.assessment-head {
+  margin-bottom: 10px;
+}
+
+.assessment-status-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.assessment-copy {
+  margin: 0 0 12px;
+  padding: 10px 11px;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.assessment-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.assessment-metrics > div {
+  min-width: 0;
+  padding: 10px 11px;
+  background: var(--panel);
+}
+
+.assessment-metrics span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.assessment-metrics b {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assessment-flags {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.assessment-flag {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.assessment-flag > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.assessment-flag b {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.assessment-flag p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.assessment-flag.warn-flag {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+}
+
+.assessment-flag.warn-flag > span,
+.assessment-flag.warn-flag b {
+  color: var(--warning);
+}
+
+.assessment-flag.info-flag > span,
+.assessment-flag.info-flag b {
+  color: var(--info);
+}
+
+.dividend-symbol-list {
+  display: grid;
+  gap: 7px;
+}
+
+.dividend-symbol-node {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--panel);
+}
+
+.dividend-symbol-node > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 11px;
+  border: 0;
+  cursor: pointer;
+}
+
+.dividend-symbol-node > summary::before {
+  display: none;
+  content: none;
+}
+
+.dividend-symbol-node > summary::after {
+  content: "+";
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.dividend-symbol-node[open] > summary::after {
+  content: "−";
+}
+
+.dividend-symbol-node[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.dividend-node-symbol {
+  min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.dividend-node-symbol > b {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.dividend-node-symbol > span {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  font-size: 9px;
+}
+
+.dividend-node-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.dividend-node-stat span {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.dividend-node-stat b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dividend-history-body {
+  padding: 10px;
+  background: var(--bg-elevated);
+}
+
+.dividend-history-table {
+  min-width: 940px;
+}
+
+.compact-empty {
+  padding-block: 16px;
+}
+
+@media (min-width: 480px) {
+  .assessment-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 720px) {
+  .assessment-status-block {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .assessment-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dividend-symbol-node > summary {
+    grid-template-columns: minmax(125px, 1.25fr) repeat(2, minmax(105px, .8fr)) auto;
+    gap: 10px;
+  }
+
+  .dividend-symbol-node > summary::after {
+    grid-column: 4;
+  }
+
+  .dividend-node-symbol {
+    grid-column: 1;
+  }
+
+  .dividend-node-stat {
+    display: block;
+    grid-column: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .dividend-node-stat:nth-of-type(n + 4) {
+    display: none;
+  }
+
+  .dividend-node-stat b {
+    display: block;
+    margin-top: 3px;
+    text-align: left;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dividend-symbol-node > summary {
+    grid-template-columns: minmax(150px, 1.3fr) repeat(5, minmax(95px, 1fr)) auto;
+  }
+
+  .dividend-symbol-node > summary::after {
+    grid-column: 7;
+  }
+
+  .dividend-node-stat:nth-of-type(n) {
+    display: block;
+  }
+}
