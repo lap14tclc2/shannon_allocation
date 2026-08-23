@@ -51,6 +51,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Client validation contract
+        working-directory: frontend
+        run: node test/validation.mjs
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -60,3 +63,6 @@ jobs:
       - name: Operational SSR/hydration smoke
         working-directory: frontend
         run: node test/smoke.mjs
+      - name: AI export contract
+        working-directory: frontend
+        run: node test/ai-export.mjs

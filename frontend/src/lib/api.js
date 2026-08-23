@@ -1,128 +1,53 @@
+function apiError(data, fallback) {
+  const err = new Error(data?.error || fallback);
+  err.code = data?.code || 'REQUEST_FAILED';
+  err.field = data?.field || null;
+  err.details = data;
+  return err;
+}
+
 async function getJSON(url, signal) {
   const res = await fetch(url, { signal });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed: ${res.status} ${url}`);
+  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
 }
 
 async function sendJSON(url, method, body) {
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body == null ? undefined : JSON.stringify(body),
-  });
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed: ${res.status} ${url}`);
+  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
 }
 
-// ---- Operational buy-and-hold portfolio APIs ----
-export async function getPortfolioDashboard() {
-  return getJSON('/api/portfolio');
-}
+export const getPortfolioDashboard = () => getJSON('/api/portfolio');
+export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
+export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
+export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
+export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
+export const deletePortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
+export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');
+export const getPortfolioRisk = () => getJSON('/api/portfolio/risk');
+export async function listPortfolioSnapshots() { const d = await getJSON('/api/portfolio/snapshots'); return d.snapshots || []; }
+export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
+export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
+export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
+export const getActivityLog = () => getJSON('/api/portfolio/logs');
+export const logClientActivity = (action, details = {}) => sendJSON('/api/portfolio/activity', 'POST', { action, details });
 
-export async function listPortfolioTransactions() {
-  const data = await getJSON('/api/portfolio/transactions');
-  return data.transactions || [];
-}
-
-export async function createPortfolioTransaction(payload) {
-  return sendJSON('/api/portfolio/transactions', 'POST', payload);
-}
-
-export async function syncPortfolio() {
-  return sendJSON('/api/portfolio/sync', 'POST', {});
-}
-
-export async function getPortfolioPerformance() {
-  return getJSON('/api/portfolio/performance');
-}
-
-export async function getPortfolioRisk() {
-  return getJSON('/api/portfolio/risk');
-}
-
-export async function listPortfolioSnapshots() {
-  const data = await getJSON('/api/portfolio/snapshots');
-  return data.snapshots || [];
-}
-
-export async function setReferenceWeights(weights) {
-  return sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
-}
-
-// ---- Legacy research APIs (explicitly isolated from the live ledger) ----
-export async function listRuns() {
-  const data = await getJSON('/api/research/runs');
-  return data.runs || [];
-}
-
-export async function getRunIndex(runId) {
-  return getJSON(`/api/research/runs/${encodeURIComponent(runId)}/index`);
-}
-
-export async function getRunMeta(runId) {
-  return getJSON(`/api/research/runs/${encodeURIComponent(runId)}/meta`);
-}
-
-export async function getCombination(runId, slug) {
-  return getJSON(`/api/research/runs/${encodeURIComponent(runId)}/combinations/${encodeURIComponent(slug)}`);
-}
-
-export async function listAvailableSymbols() {
-  const data = await getJSON('/api/symbols');
-  return {
-    symbols: data.symbols || [],
-    minSelected: Number(data.min_selected || 5),
-    maxSelected: Number(data.max_selected || 10),
-  };
-}
-
-export async function analyzeCombination(symbols, includeSuggestions = true) {
-  return sendJSON('/api/combination/health', 'POST', {
-    symbols: symbols || [],
-    include_suggestions: Boolean(includeSuggestions),
-    suggestion_limit: 5,
-  });
-}
-
-export async function listOptimizerExperiments() {
-  const data = await getJSON('/api/research/optimizer');
-  return data.experiments || [];
-}
-
-export async function getOptimizerExperiment(experimentId) {
-  return getJSON(`/api/research/optimizer/${encodeURIComponent(experimentId)}`);
-}
-
-export function optimizerDownloadAllUrl(experimentId) {
-  return `/api/research/optimizer/${encodeURIComponent(experimentId)}/download`;
-}
-
-export function optimizerFileUrl(experimentId, name) {
-  return `/api/research/optimizer/${encodeURIComponent(experimentId)}/file?name=${encodeURIComponent(name)}`;
-}
-
-export async function startOptimizerRun(cfg) {
-  return sendJSON('/api/research/optimizer/run', 'POST', cfg || {});
-}
-
-export async function getOptimizerStatus() {
-  const data = await getJSON('/api/research/optimizer/status');
-  return data.runs || [];
-}
-
-export async function deleteOptimizerExperiment(experimentId) {
-  const res = await fetch(`/api/research/optimizer/${encodeURIComponent(experimentId)}`, { method: 'DELETE' });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Delete failed: ${res.status}`);
-  return data;
-}
-
-export async function getCandidateHistory(experimentId, symbols, allocationDays, signal) {
-  const days = allocationDays.join(',');
-  return getJSON(
-    `/api/research/optimizer/${encodeURIComponent(experimentId)}/candidate?symbols=${encodeURIComponent(symbols.join(','))}&days=${encodeURIComponent(days)}`,
-    signal
-  );
-}
+// Institutional-lite operations
+export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
+export const reconcileBroker = (payload) => sendJSON('/api/portfolio/reconciliation', 'POST', payload);
+export const syncCorporateActions = (payload = {}) => sendJSON('/api/portfolio/corporate-actions/sync', 'POST', payload);
+export const getLatestDividend = (symbol) => getJSON(`/api/portfolio/dividends/latest/${encodeURIComponent(String(symbol || '').toUpperCase())}`);
+export const getDividendProviderHealth = () => getJSON('/api/portfolio/dividends/health');
+export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
+export const recordCorporateActionReceipt = (id, payload) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/receipt`, 'POST', payload);
+export const postCorporateActionReceipt = (id) => sendJSON('/api/portfolio/corporate-actions/post', 'POST', { action_id: Number(id) });
+export const confirmSettlement = (eventId, note = '') => sendJSON(`/api/portfolio/settlements/${Number(eventId)}/confirm`, 'POST', { note });
+export const lockNav = (snapshotDate) => sendJSON(`/api/portfolio/nav/${encodeURIComponent(snapshotDate)}/lock`, 'POST', {});
+export const resolveRestatement = (id) => sendJSON(`/api/portfolio/restatements/${Number(id)}/resolve`, 'POST', {});
+export const updateSecurity = (symbol, payload) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}`, 'POST', payload);
+export const resolveSecurity = (symbol) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}/resolve`, 'POST', {});
+export const resolveAllSecurities = () => sendJSON('/api/portfolio/securities/resolve', 'POST', {});

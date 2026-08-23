@@ -1,175 +1,151 @@
 # QPort — Buy & Hold Portfolio Information System Specification
 
-**Status:** Canonical operational specification  
-**Version:** 1.0  
+**Status:** Canonical  
+**Version:** 2.0  
 **Date:** 2026-08-23
 
-This document is the authoritative contract for the operational product. The
-legacy optimizer/backtest system is retained as a **Research Lab** and is not an
-operational portfolio controller.
+## 1. Purpose
 
----
+QPort tracks a user-owned Vietnamese equity portfolio. It is an information and
+accounting system, not a portfolio optimizer or trading engine.
 
-## 1. Product purpose
+The user decides what to own and records real portfolio events. QPort provides:
 
-QPort is a long-horizon information system for a user-owned Vietnamese equity
-portfolio.
-
-The user decides what they own and records real portfolio events. QPort provides:
-
-- immutable portfolio accounting;
-- daily market-data synchronization;
-- NAV and P/L;
-- TWR and XIRR;
-- drawdown and volatility;
-- concentration and risk contribution;
-- optional ERC reference information;
-- HOLD / ADD / REVIEW information;
-- an isolated research area for backtests and experiments.
-
-QPort does **not** optimize annual allocation dates, rotate stocks automatically,
-or create trades from a model output.
-
----
+- immutable accounting and cost basis;
+- available cash tracking;
+- Vnstock/VNDIRECT daily market data;
+- live NAV and P/L;
+- reconstructed daily portfolio history;
+- TWR, XIRR and drawdown;
+- volatility, concentration, correlation and tail-risk diagnostics;
+- optional target-weight guidance for ADD / HOLD / REVIEW;
+- bilingual English/Vietnamese UI.
 
 ## 2. Non-negotiable invariants
 
 ```text
-INV-P01  Price movement never changes shares.
-INV-P02  Model output never changes shares or cash.
-INV-P03  Risk output never changes shares or cash.
-INV-P04  Time/year-end/schedules never change shares or cash.
-INV-P05  Only explicit immutable ledger events change holdings/cash.
-INV-P06  SELL may not exceed owned shares.
-INV-P07  BUY/withdraw/fee may not create negative cash.
-INV-P08  Research cannot write to the operational ledger.
-INV-P09  Missing/stale market data is reported, never hidden.
-INV-P10  Only fully fresh daily data may produce an OFFICIAL snapshot.
-INV-P11  Contribution suggestions are BUY-only information and never execution.
-INV-P12  ERC is a risk reference, never a mandatory allocation instruction.
+INV-01 Price movement never changes shares.
+INV-02 Risk output never changes shares or cash.
+INV-03 Time/year-end never changes shares or cash.
+INV-04 Only explicit immutable ledger events change holdings/cash.
+INV-05 SELL may not exceed owned shares.
+INV-06 BUY/withdraw/fee may not create negative cash.
+INV-07 Missing/stale market data is visible, never hidden.
+INV-08 OFFICIAL snapshots require exact same-date prices for all active holdings.
+INV-09 Suggestions are information only and never execution.
+INV-10 ERC is a diagnostic reference, never an allocation instruction.
 ```
 
-These invariants take priority over convenience or historical optimizer behavior.
+There is no optimizer, stock-rotation, annual-allocation, auto-rebalance or
+automatic-trading subsystem in QPort.
 
----
-
-## 3. Operational architecture
+## 3. Architecture
 
 ```text
-                         USER
-                          │
-                    explicit events
-                          │
-                          ▼
-                ┌──────────────────┐
-                │ IMMUTABLE LEDGER │
-                └────────┬─────────┘
-                         │
-                         ▼
-                  CURRENT STATE
-                 holdings + cash
-                         ▲
-                         │
-                DAILY MARKET DATA
-                ┌────────┴────────┐
-                │                 │
-             Vnstock         VNDIRECT
-                │                 │
-                └────────┬────────┘
-                         ▼
-                   NORMALIZATION
-                         │
-                         ▼
-                DAILY PRICE STORE
-                         │
-                         ▼
-               PORTFOLIO SNAPSHOT
-             ┌───────────┼───────────┐
-             ▼           ▼           ▼
-            NAV      PERFORMANCE    RISK
-             │           │           │
-             └───────────┼───────────┘
-                         ▼
-                 HOLD / ADD / REVIEW
-                         │
-                         ▼
-                        USER
+                     USER
+                      │
+               explicit events
+                      ▼
+             IMMUTABLE LEDGER
+                      │
+                holdings + cash
+                      ▲
+                      │
+              DAILY MARKET DATA
+             Vnstock → VNDIRECT
+                      │
+                      ▼
+               CANONICAL VND D1
+                      │
+                      ▼
+            DAILY SNAPSHOT REBUILD
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+         NAV      PERFORMANCE    RISK
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+                 INFORMATION
+                      ▼
+                     USER
 ```
 
-Operational Python package:
+Operational package:
 
 ```text
 python/portfolio/
-  domain.py        event/state contracts
-  storage.py       SQLite ledger, prices, snapshots
-  accounting.py    deterministic event replay
-  market_data.py   provider boundary
-  analytics.py     TWR/XIRR/drawdown helpers
-  risk.py          informational portfolio risk
-  service.py       application orchestration
-  scheduler.py     EOD data/snapshot scheduler
-  cli.py           local operations
+  domain.py
+  storage.py
+  accounting.py
+  market_data.py
+  analytics.py
+  risk.py
+  locale.py
+  service.py
+  scheduler.py
+  cli.py
 ```
 
-No module in `portfolio/` imports `backtest.optimize` or uses optimizer output to
-mutate state.
+Primary web server: `python/buyhold_server.py`.
 
----
-
-## 4. Ledger model
-
-The ledger is append-only at the application boundary.
+## 4. Immutable ledger
 
 Supported event types:
 
 ### `POSITION_IMPORT`
-Migration/opening-position event. Adds shares and cost basis without pretending
-that a historical cash trade occurred inside QPort.
+
+Migrates an existing holding into QPort. Adds shares and cost basis without
+pretending a historical cash trade happened inside QPort.
 
 Required:
-- symbol;
-- quantity > 0;
-- average/import cost > 0.
-
-It is intended primarily for initial migration. For clean XIRR history, use the
-actual acquisition date when known.
-
-### `BUY`
-A real executed purchase. Reduces cash by:
 
 ```text
-quantity × price + fee + tax
+symbol
+quantity > 0
+price/cost per share > 0
 ```
 
-and increases shares/cost basis.
+Use an honest acquisition/migration date because historical performance starts
+from ledger dates.
+
+### `CASH_DEPOSIT` / `CASH_WITHDRAW`
+
+Investor cash flows. The current ledger cash balance is the available cash shown
+on Portfolio.
+
+### `BUY`
+
+```text
+cash -= quantity × price + fee + tax
+shares += quantity
+cost basis += gross + buy fee
+```
+
+BUY requires sufficient recorded cash.
 
 ### `SELL`
-A real executed sale. Quantity cannot exceed holdings. Realized P/L uses average
-cost accounting.
 
-### Cash events
-- `CASH_DEPOSIT`
-- `CASH_WITHDRAW`
-- `CASH_DIVIDEND`
-- `FEE`
+Cannot exceed owned shares. Cash increases by net proceeds and realized P/L uses
+average cost.
 
-Cash dividends are portfolio return, not external investor contributions.
+### Income/corporate actions
 
-### Share/corporate-action events
-- `STOCK_DIVIDEND`
-- `SPLIT`
+```text
+CASH_DIVIDEND
+STOCK_DIVIDEND
+SPLIT
+FEE
+```
 
-They update shares explicitly. Adjusted historical prices must never be used as a
-substitute for changing the actual share ledger.
+Cash dividends are investment return, not external contributions. Stock dividends
+and splits change shares explicitly while preserving cost basis as defined by the
+accounting engine.
 
-Corrections are represented by explicit compensating events. The application has
-no ledger-event update/delete API.
+The normal application API has no ledger-event update/delete operation.
 
----
+## 5. Market data
 
-## 5. Market-data boundary
-
-Operational code depends on this conceptual contract:
+Provider contract:
 
 ```python
 class MarketDataProvider:
@@ -177,195 +153,171 @@ class MarketDataProvider:
     def health(): ...
 ```
 
-Current provider chain:
+Policy:
 
 ```text
 optional Vnstock
-    ↓ failure / unavailable
-VNDIRECT public dchart
-    ↓ failure
-stored last-known price + explicit STALE/MISSING state
+       ↓ unavailable/error
+VNDIRECT public D1
+       ↓ unavailable/error
+stored price + explicit STALE/MISSING state
 ```
 
-The implementation pattern is adapted from the `dnse_bot` project.
+All Vietnamese equity OHLC prices are normalized to **full VND per share** before
+persistence and valuation.
 
-### VNDIRECT
-Daily OHLCV comes from the public dchart endpoint and is normalized into:
+Market-price storage is idempotent on `(symbol, trading_date)`.
+
+## 6. Live valuation and P/L
+
+For every position:
 
 ```text
-trading_date
-open
-high
-low
-close
-volume
-source
-fetched_at
-is_final
-data_quality
+Cost Value       = shares × average cost
+Market Value     = shares × current market price
+Unrealized P/L   = Market Value - Cost Value
+Unrealized Return= Unrealized P/L / Cost Value
 ```
 
-### Vnstock
-Vnstock is an optional dependency and is imported lazily. The base product must
-remain usable when Vnstock is unavailable.
-
-### Price persistence
-Market prices are stored locally in SQLite. Repeated sync is idempotent by
-`(symbol, trading_date)`.
-
-### Data-quality rule
-For a multi-stock portfolio, a daily snapshot is OFFICIAL only when every active
-holding has the same latest trading date and the current sync has no provider
-errors.
-
-Otherwise QPort may show an estimated/stale snapshot, clearly labeled as such.
-
----
-
-## 6. Daily monitoring lifecycle
-
-Default scheduler time:
+Portfolio:
 
 ```text
-15:30 Asia/Ho_Chi_Minh
+NAV        = cash + Σ Market Value
+Total P/L  = NAV - Net External Contributions
 ```
 
-On a weekday:
+`Total P/L` is calculated from current ledger state and current stored prices. It
+does not require a daily snapshot to exist.
+
+Cash dividends, realized P/L, fees and current unrealized P/L therefore flow into
+portfolio Total P/L through NAV/accounting rather than being hard-coded UI values.
+
+## 7. Historical rebuild and snapshots
+
+A user does not manually create snapshots.
+
+`sync_daily()`:
 
 ```text
-fetch/update market history for current holdings
-→ normalize/store prices
-→ validate common latest trading date
-→ replay immutable ledger
-→ mark positions to market
-→ compute portfolio risk information
-→ calculate external flow since prior snapshot
-→ create/update daily snapshot
-→ classify OFFICIAL vs STALE/MISSING
+sync D1 prices for all ledger symbols
+→ rebuild daily states from immutable ledger
+→ value each date from stored prices
+→ neutralize external flows
+→ chain TWR
+→ calculate drawdown
+→ save derived snapshots
 ```
 
-The scheduler has no transaction-writing operation.
+This allows QPort to populate Performance and Drawdown after the first sync,
+provided the ledger dates and historical D1 data are available.
 
-Manual equivalent:
+### Snapshot quality
 
-```bash
-python -m portfolio.cli sync
-```
+`OFFICIAL`:
+- every active holding has an exact price for that trading date.
 
-The scheduler is safe to run repeatedly because price rows and date snapshots are
-idempotent.
+`STALE`:
+- at least one active holding is valued from a previous known price.
 
----
+Stale rows remain visible for diagnosis but are excluded from official performance
+statistics.
 
-## 7. Portfolio snapshot
+Snapshots are rebuildable derived data. The ledger remains the source of truth.
 
-A daily snapshot records at least:
+## 8. Performance
+
+### External-flow neutralized daily return
 
 ```text
-snapshot_date
-cash
-equity_value
-nav
-external_flow
-daily_pnl
-daily_return
-twr_index
-total_pnl
-current_drawdown
-max_drawdown
-volatility_63
-volatility_252
-hhi
-max_position_weight
-data_quality
-official
-```
-
-Each position snapshot records:
-
-```text
-symbol
-shares
-average_cost
-price
-market_value
-weight
-unrealized_pnl
-unrealized_return
-risk_contribution
-erc_reference_weight
-status
-```
-
-Historical portfolio snapshots preserve the valuation used on that date even if
-a data provider later revises historical bars.
-
----
-
-## 8. Performance accounting
-
-### NAV
-
-```text
-NAV = cash + Σ(shares × latest valuation price)
-```
-
-### Daily P/L
-External cash/asset contributions are removed from the daily performance return:
-
-```text
-daily_pnl = NAV_t - NAV_t-1 - external_flow_t
-
+daily_pnl    = NAV_t - NAV_t-1 - external_flow_t
 daily_return = daily_pnl / NAV_t-1
 ```
 
 ### TWR
-Daily returns are chain-linked into a TWR wealth index. Deposits and withdrawals
-do not create fake investment return.
+
+Official daily returns are chain-linked. Investor deposits/withdrawals do not
+create fake investment return.
 
 ### XIRR
-XIRR uses dated investor cash flows plus terminal NAV. It represents investor
-experience and is distinct from TWR.
 
-### Dividends
-Cash dividends remain inside NAV and count as investment return unless the user
-records a withdrawal event.
+Uses dated external investor cash flows plus terminal current NAV. It represents
+the investor's money-weighted experience.
 
----
+### Drawdown
 
-## 9. Risk is information, not execution
-
-The operational system computes:
-
-- 63-session volatility;
-- 252-session volatility;
-- HHI concentration;
-- maximum position weight;
-- covariance-based portfolio risk;
-- risk contribution by holding;
-- optional ERC reference weights.
-
-Risk output can make the UI say `REVIEW`, but cannot generate `SELL`.
+Drawdown is calculated from the TWR wealth index:
 
 ```text
-risk rises
-→ dashboard warning
-→ user reviews
-→ portfolio unchanged
+DD_t = TWR_index_t / running_peak - 1
 ```
 
-Pairwise covariance with minimum-history checks is used so one short-history
-holding does not erase all portfolio diagnostics. Missing coverage is reported.
+This prevents deposits and withdrawals from creating artificial peaks/losses.
 
----
+Performance output includes:
 
-## 10. Strategic reference weights
+- daily / MTD / YTD return;
+- TWR since inception and annualized TWR;
+- XIRR;
+- current/max drawdown;
+- best/worst daily return;
+- positive-day ratio;
+- live total/unrealized/realized P/L;
+- dividend income;
+- fees/taxes;
+- history coverage.
 
-Reference weights are optional and persistent until the user changes them.
+## 9. Risk and Portfolio Health
 
-They are **not annual targets** and do not expire/recalculate at year-end.
+Risk is information only.
 
-When present:
+Current diagnostics include:
+
+```text
+63D realized volatility
+252D realized volatility
+63D / 252D volatility ratio
+largest capital position
+HHI concentration
+effective positions = 1 / HHI
+average pairwise correlation
+maximum pairwise correlation
+diversification ratio
+risk contribution by holding
+risk-contribution HHI
+largest risk contributor
+ERC equal-risk reference
+historical daily VaR 95%
+historical daily CVaR 95%
+downside volatility
+worst observed day
+positive-day ratio
+history coverage
+```
+
+Historical VaR/CVaR describes the observed sample. It is not a forecast or a loss
+limit.
+
+Portfolio Health summarizes accounting/performance/risk quality and raises
+informational warnings for conditions such as:
+
+- stale data;
+- large single-position concentration;
+- high HHI;
+- high correlation;
+- large drawdown;
+- high volatility;
+- incomplete risk-history coverage.
+
+None of these warnings can create a trade.
+
+## 10. Optional target-weight guidance
+
+QPort works without target weights. This is **pure Buy & Hold monitoring**.
+
+If the user explicitly enables target-weight guidance, all active holdings must
+have persistent weights summing to 100%.
+
+Then:
 
 ```text
 current < 80% of reference  → ADD
@@ -373,45 +325,26 @@ current > 120% of reference → REVIEW
 otherwise                   → HOLD
 ```
 
-These labels are informational.
+References do not expire, do not recalculate annually and do not create trades.
 
-If no reference weights exist, contribution-directed suggestions use equal-weight
-deficits only as a simple informational baseline.
+Available cash may be shown as BUY-only contribution suggestions toward positive
+deficits. Actual broker executions must still be recorded explicitly.
 
----
+## 11. Web product
 
-## 11. Contribution-directed BUY-only suggestions
-
-When cash exists, QPort may calculate how cash could reduce underweight drift.
-
-```text
-available cash
-→ compute positive target deficits
-→ allocate only toward deficits
-→ return ADD suggestions
-```
-
-No SELL is generated and no BUY event is persisted automatically.
-
-The user must record an actual broker execution as a separate `BUY` event.
-
----
-
-## 12. Web product
-
-Primary routes:
+Routes:
 
 ```text
 /              Portfolio Dashboard
-/transactions  Immutable ledger entry/history
-/performance   NAV, TWR, XIRR, P/L
-/risk          Informational risk diagnostics
-/snapshots     Daily snapshot history
-/settings      Optional strategic references
-/research      Isolated research lab
+/transactions  Ledger entry/history
+/performance   P/L, TWR, XIRR, drawdown, NAV history
+/risk          Detailed portfolio-risk diagnostics
+/snapshots     Daily checkpoint history and data quality
+/settings      Fixed system policy + optional target-weight guidance
+/guide         Start-to-finish EN/VI guide
 ```
 
-Primary operational API:
+API:
 
 ```text
 GET  /api/portfolio
@@ -424,114 +357,73 @@ GET  /api/portfolio/snapshots
 POST /api/portfolio/reference-weights
 ```
 
-There is intentionally no endpoint such as:
+No other investment-decision or automatic-execution API is part of the product.
+
+## 12. Daily operation
+
+Typical workflow:
 
 ```text
-POST /api/portfolio/apply-optimizer
-POST /api/portfolio/auto-rebalance
-POST /api/portfolio/annual-allocation
+after market close
+→ sync prices
+→ rebuild snapshots
+→ inspect Portfolio Health / Performance / Risk
+→ record only real portfolio events when they actually occur
 ```
 
----
-
-## 13. Research boundary
-
-The previous system remains available for research:
-
-- backtests;
-- ERC/Shannon experiments;
-- Dynamic Alpha;
-- NSGA-II;
-- surrogate models;
-- allocation timing experiments;
-- walk-forward/holdout analysis.
-
-Research lives under:
+Default in-process sync time:
 
 ```text
-/research
-/research/optimizer
-python/backtest/
-python/research_main.py
-python/optimize_main.py
-python/research_legacy_server.py
+15:30 Asia/Ho_Chi_Minh
 ```
 
-Boundary:
+Manual equivalent:
+
+```bash
+python -m portfolio.cli sync
+```
+
+## 13. EN / VI
+
+The operational UI supports:
 
 ```text
-RESEARCH RESULT
-      ↓
-PROPOSAL / EVIDENCE
-      ↓
-HUMAN DECISION
-      ↓
-EXPLICIT LEDGER EVENT
-      ↓
-OPERATIONAL PORTFOLIO
+EN — English
+VI — Tiếng Việt
 ```
 
-Research cannot bypass the explicit ledger event.
+Locale is presentation-only state persisted in the `qport_lang` cookie and cannot
+affect accounting or risk calculations.
 
----
+## 14. Testing requirements
 
-## 14. Testing policy
-
-Operational core must have dataset-independent tests for:
+Core regression tests must cover:
 
 - deterministic ledger replay;
-- oversell rejection;
-- negative-cash rejection;
-- dividends/splits;
-- market sync not mutating shares;
-- snapshot accounting;
-- suggestion non-mutation;
-- absence of event update/delete APIs;
-- SSR/hydration of operational pages.
+- oversell and negative-cash rejection;
+- cash/dividend/share corporate actions;
+- market sync never changing shares;
+- full-VND price normalization;
+- live Total P/L without requiring snapshots;
+- first-sync historical snapshot reconstruction;
+- TWR/drawdown series availability;
+- risk diagnostic fields;
+- absence of any optimizer/research runtime or route;
+- bilingual SSR/hydration.
 
-Network provider integration is tested separately and must not be required for
-core accounting tests.
+Core tests must not require external network access.
 
-Research regression tests are maintained separately and may be run manually to
-reduce CI cost.
+## 15. Definition of done
 
----
+QPort is considered coherent when:
 
-## 15. Migration from the optimizer-first product
-
-The following concepts are removed from the operational domain:
-
-```text
-allocation_frequency
-allocation_days
-allocation_count_per_year
-optimized schedule
-annual allocation event
-quarterly benchmark
-champion candidate
-live-eligible optimizer winner
-dynamic alpha membership
-volatility-triggered automatic equity reduction
-```
-
-They may still exist inside Research Lab artifacts/code.
-
-Operational portfolio state is now entirely derived from real user-recorded
-portfolio events plus market prices.
-
----
-
-## 16. Definition of done
-
-The Buy & Hold refactor is operationally complete when:
-
-1. `/` renders portfolio information, not an optimizer.
-2. a fresh database starts with no fabricated holdings;
-3. opening positions can be explicitly imported;
-4. daily sync obtains/stores prices and creates a snapshot;
-5. sync/risk/research cannot mutate shares or cash;
-6. ledger transactions are append-only through the application API;
-7. TWR/XIRR/performance use official snapshots correctly;
-8. Research Lab is reachable but separated from operational state;
-9. documentation identifies this specification as canonical;
-10. operational core tests and frontend smoke tests pass locally/CI when run.
+1. a fresh database starts empty;
+2. existing holdings/cash can be migrated honestly;
+3. live NAV/P&L reconcile with the broker;
+4. one market sync can reconstruct available daily history;
+5. Performance and Drawdown are populated from that history;
+6. Risk and Portfolio Health provide useful diagnostics;
+7. snapshots are automatic and clearly explain OFFICIAL/STALE;
+8. Settings exposes only understandable long-lived preferences;
+9. no optimizer/research/automatic-allocation code or route exists;
+10. only explicit ledger events can change holdings or cash.

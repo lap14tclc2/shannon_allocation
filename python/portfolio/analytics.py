@@ -5,7 +5,7 @@ from datetime import date
 
 
 def drawdown_from_twr_indices(indices: list[float]) -> tuple[float | None, float | None]:
-    if not indices:
+    if len(indices) < 2:
         return None, None
     peak = float(indices[0])
     current = 0.0
@@ -84,8 +84,12 @@ def xirr(cashflows: list[tuple[date, float]]) -> float | None:
 
 
 def period_returns(snapshots: list[dict]) -> dict:
-    """Return TWR-based daily/MTD/YTD/since-inception performance."""
-    if not snapshots:
+    """Return TWR-based daily/MTD/YTD/since-inception performance.
+
+    At least two official observations are required. A single opening snapshot
+    establishes the measurement baseline but is not evidence of a 0% return.
+    """
+    if len(snapshots) < 2:
         return {"daily": None, "mtd": None, "ytd": None, "since_inception": None}
     rows = sorted(snapshots, key=lambda x: x["snapshot_date"])
     last = rows[-1]

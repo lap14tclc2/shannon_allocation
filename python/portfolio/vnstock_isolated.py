@@ -1,0 +1,320 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+
+class VnstockIsolatedError(RuntimeError):
+    pass
+
+
+_WORKER_PATH = Path(__file__).resolve()
+_HEALTH_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def configured_python() -> str:
+    """Python interpreter used exclusively for Vnstock calls.
+
+    QPort itself may run on another Python version. Set QPORT_VNSTOCK_PYTHON to
+    the python.exe inside the environment where Vnstock is known to work, e.g.
+    a Python 3.12 venv. When unset, QPort falls back to its own interpreter.
+    """
+    configured = str(os.environ.get("QPORT_VNSTOCK_PYTHON") or "").strip().strip('"')
+    return str(Path(configured).expanduser()) if configured else sys.executable
+
+
+def _records(frame) -> list[dict]:
+    if frame is None:
+        return []
+    if hasattr(frame, "to_json"):
+        try:
+            return json.loads(frame.to_json(orient="records", date_format="iso"))
+        except Exception:
+            pass
+    if hasattr(frame, "to_dict"):
+        try:
+            return [dict(row) for row in frame.to_dict("records")]
+        except Exception:
+            pass
+    if isinstance(frame, dict):
+        return [dict(frame)]
+    if isinstance(frame, list):
+        return [dict(row) for row in frame if isinstance(row, dict)]
+    return []
+
+
+def _reference_factory():
+    try:
+        from vnstock import Reference  # type: ignore
+        return Reference, "vnstock", "community_v4"
+    except Exception as community_exc:
+        try:
+            from vnstock_data import Reference  # type: ignore
+            return Reference, "vnstock_data", "sponsor"
+        except Exception as sponsor_exc:
+            raise RuntimeError(f"vnstock: {community_exc}; vnstock_data: {sponsor_exc}") from sponsor_exc
+
+
+def _market_factory():
+    try:
+        from vnstock import Market  # type: ignore
+        return Market, "community_v4"
+    except Exception:
+        from vnstock.ui import Market  # type: ignore
+        return Market, "legacy_ui"
+
+
+def _company_events(ref, symbol: str) -> list[dict]:
+    company = getattr(ref, "company", None)
+    if company is None:
+        return []
+    events_method = getattr(company, "events", None)
+    if callable(events_method):
+        for call in (lambda: events_method(symbol=symbol), lambda: events_method(symbol)):
+            try:
+                rows = _records(call())
+                if rows:
+                    return rows
+            except Exception:
+                pass
+    if callable(company):
+        try:
+            obj = company(symbol)
+            method = getattr(obj, "events", None)
+            if callable(method):
+                return _records(method())
+        except Exception:
+            pass
+    return []
+
+
+def _company_info(ref, symbol: str) -> list[dict]:
+    company = getattr(ref, "company", None)
+    if company is None:
+        return []
+    if callable(company):
+        try:
+            obj = company(symbol)
+            method = getattr(obj, "info", None)
+            if callable(method):
+                rows = _records(method())
+                if rows:
+                    return rows
+        except Exception:
+            pass
+    info = getattr(company, "info", None)
+    if callable(info):
+        for call in (lambda: info(symbol=symbol), lambda: info(symbol)):
+            try:
+                rows = _records(call())
+                if rows:
+                    return rows
+            except Exception:
+                pass
+    return []
+
+
+def _calendar_events(ref, start: str, end: str) -> list[dict]:
+    events_obj = getattr(ref, "events", None)
+    calendar = getattr(events_obj, "calendar", None) if events_obj is not None else None
+    if not callable(calendar):
+        return []
+    try:
+        return _records(calendar(start=start, end=end, event_type="dividend"))
+    except Exception:
+        return []
+
+
+def _ohlcv(market, symbol: str, start: str, end: str):
+    equity = market.equity
+    if hasattr(equity, "ohlcv"):
+        return equity.ohlcv(symbol=symbol.upper(), start=start, end=end, interval="1D")
+    if callable(equity):
+        return equity(symbol.upper()).ohlcv(start=start, end=end, interval="1D")
+    raise RuntimeError("Unsupported Vnstock Market.equity interface")
+
+
+def _execute_task(task: str, payload: dict[str, Any]) -> dict:
+    if task == "probe_reference":
+        _, provider, variant = _reference_factory()
+        return {
+            "status": "success", "data": [], "provider": provider,
+            "api_variant": variant, "python": sys.executable,
+            "python_version": sys.version.split()[0], "capability": "reference",
+        }
+    if task == "probe_market":
+        _, variant = _market_factory()
+        return {
+            "status": "success", "data": [], "provider": "vnstock",
+            "api_variant": variant, "python": sys.executable,
+            "python_version": sys.version.split()[0], "capability": "market",
+        }
+    if task == "ohlcv":
+        Market, variant = _market_factory()
+        rows = _records(_ohlcv(Market(), payload["symbol"], payload["start"], payload["end"]))
+        return {"status": "success", "data": rows, "provider": "vnstock", "api_variant": variant}
+
+    Reference, provider, variant = _reference_factory()
+    ref = Reference()
+    if task == "events":
+        symbols = [str(s).upper() for s in payload.get("symbols") or []]
+        rows = _calendar_events(ref, payload["start"], payload["end"])
+        if not rows:
+            rows = []
+            for symbol in symbols:
+                for row in _company_events(ref, symbol):
+                    item = dict(row)
+                    item.setdefault("symbol", symbol)
+                    rows.append(item)
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    if task == "company_info":
+        rows = _company_info(ref, str(payload["symbol"]).upper())
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    raise RuntimeError(f"Unknown Vnstock task: {task}")
+
+
+def _worker_main() -> int:
+    """JSON stdin/stdout worker so QPort can use a different Python runtime."""
+    try:
+        request = json.loads(sys.stdin.read() or "{}")
+        result = _execute_task(str(request.get("task") or ""), dict(request.get("payload") or {}))
+    except BaseException as exc:  # contains SystemExit from third-party code too
+        result = {"status": "error", "error": f"{type(exc).__name__}: {exc}", "python": sys.executable}
+    sys.stdout.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
+    sys.stdout.flush()
+    return 0
+
+
+def _decode_worker_output(stdout: str) -> dict | None:
+    # Some Vnstock builds print banners/notices. The worker result is the last
+    # JSON object line, so inspect output from the bottom instead of assuming a
+    # clean stdout stream.
+    for line in reversed(str(stdout or "").splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            value = json.loads(line)
+            if isinstance(value, dict) and value.get("status") in {"success", "error"}:
+                return value
+        except Exception:
+            continue
+    return None
+
+
+def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
+    python_exe = configured_python()
+    if not Path(python_exe).exists() and python_exe != sys.executable:
+        raise VnstockIsolatedError(f"QPORT_VNSTOCK_PYTHON does not exist: {python_exe}")
+    try:
+        proc = subprocess.run(
+            [python_exe, str(_WORKER_PATH), "--worker"],
+            input=json.dumps({"task": task, "payload": payload}, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise VnstockIsolatedError(f"Vnstock {task} timed out after {timeout:g}s") from exc
+    except OSError as exc:
+        raise VnstockIsolatedError(f"Cannot start Vnstock Python interpreter {python_exe}: {exc}") from exc
+
+    result = _decode_worker_output(proc.stdout)
+    if result is None:
+        stderr = str(proc.stderr or "").strip()
+        raise VnstockIsolatedError(
+            f"Vnstock {task} worker returned no JSON result (exit={proc.returncode})"
+            + (f": {stderr[-800:]}" if stderr else "")
+        )
+    if result.get("status") != "success":
+        raise VnstockIsolatedError(str(result.get("error") or f"Vnstock {task} failed"))
+    result.setdefault("worker_python", python_exe)
+    return result
+
+
+def _is_rate_limit(text: str) -> bool:
+    low = str(text or "").lower()
+    return any(key in low for key in ("rate limit", "429", "wait to retry", "maximum api request", "20 requests"))
+
+
+def _wait_seconds(text: str) -> int:
+    for pattern in (r"chờ\s+(\d+)\s*giây", r"wait\s+(\d+)\s*seconds?", r"retry\s+after\s+(\d+)"):
+        match = re.search(pattern, str(text or ""), re.IGNORECASE)
+        if match:
+            return min(120, int(match.group(1)) + 2)
+    return 15
+
+
+def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120.0, max_attempts: int = 3) -> dict:
+    """Run Vnstock in a crash-isolated, optionally separate Python environment.
+
+    Set ``QPORT_VNSTOCK_PYTHON`` to the Python 3.12 interpreter/venv where
+    Vnstock works. This is intentionally stronger than multiprocessing.spawn:
+    the QPort web server may remain on another Python runtime while all Vnstock
+    calls execute in the known-good data environment.
+    """
+    last_error = "unknown Vnstock failure"
+    for attempt in range(1, max(1, int(max_attempts)) + 1):
+        try:
+            return _run_once(task, dict(payload), timeout=timeout)
+        except Exception as exc:
+            last_error = str(exc)
+        if attempt < max_attempts:
+            time.sleep(_wait_seconds(last_error) if _is_rate_limit(last_error) else min(10, 2 * attempt))
+    raise VnstockIsolatedError(last_error)
+
+
+def vnstock_runtime_health(capability: str = "reference", *, cache_seconds: float = 60.0) -> dict:
+    """Probe actual capability in the configured worker interpreter.
+
+    This prevents the previous false-positive state where the parent Python had
+    a package named ``vnstock`` but that version did not expose ``Reference``.
+    """
+    capability = "market" if capability == "market" else "reference"
+    cache_key = f"{configured_python()}::{capability}"
+    cached = _HEALTH_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] <= cache_seconds:
+        return dict(cached[1])
+    task = "probe_market" if capability == "market" else "probe_reference"
+    try:
+        result = _run_once(task, {}, timeout=15.0)
+        health = {
+            "available": True,
+            "provider": result.get("provider") or "vnstock",
+            "api_variant": result.get("api_variant"),
+            "worker_python": result.get("worker_python") or configured_python(),
+            "python_version": result.get("python_version"),
+            "capability": capability,
+            "error": None,
+        }
+    except Exception as exc:
+        health = {
+            "available": False,
+            "provider": "vnstock",
+            "api_variant": "unavailable",
+            "worker_python": configured_python(),
+            "python_version": None,
+            "capability": capability,
+            "error": str(exc),
+        }
+    _HEALTH_CACHE[cache_key] = (now, health)
+    return dict(health)
+
+
+def vnstock_available() -> bool:
+    # Compatibility helper used by existing adapters. It now means the actual
+    # Reference capability is executable, not merely that a package is importable.
+    return bool(vnstock_runtime_health("reference").get("available"))
+
+
+if __name__ == "__main__":
+    if "--worker" in sys.argv:
+        raise SystemExit(_worker_main())
