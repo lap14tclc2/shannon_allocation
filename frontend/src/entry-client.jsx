@@ -6,6 +6,7 @@ import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
 import RiskPage from './pages/RiskPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
+import OperationsPage from './pages/OperationsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import './styles.css';
@@ -17,6 +18,7 @@ const PAGES = {
   performance: PerformancePage,
   risk: RiskPage,
   snapshots: SnapshotsPage,
+  operations: OperationsPage,
   settings: SettingsPage,
   guide: GuidePage,
 };
