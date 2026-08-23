@@ -9,7 +9,6 @@ const LINKS = [
   ['/snapshots', 'snapshots', 'nav.snapshots'],
   ['/settings', 'settings', 'nav.settings'],
   ['/guide', 'guide', 'nav.guide'],
-  ['/research', 'research', 'nav.research'],
 ];
 
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
