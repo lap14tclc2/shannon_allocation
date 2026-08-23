@@ -34,6 +34,10 @@ import './mobile-scroll-fix.css';
 // app explicitly stays on QPort's default dark appearance.
 applyStoredAppearance();
 
+// Browser device simulators, bfcache and hot reload can preserve a body class
+// from an open mobile sheet. Never carry that scroll lock into a fresh page.
+if (typeof document !== 'undefined') document.body.classList.remove('mobile-sheet-open');
+
 const PAGES = {
   auth: AuthPage,
   admin: AdminPage,
