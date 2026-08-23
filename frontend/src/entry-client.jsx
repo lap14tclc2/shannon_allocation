@@ -32,6 +32,16 @@ const PAGES = {
   guide: GuidePage,
 };
 
-const page = window.__PAGE__ || { page: 'auth', props: { locale: 'en' } };
+function readPageBootstrap() {
+  const node = document.getElementById('qport-page-data');
+  if (!node) return { page: 'auth', props: { locale: 'en' } };
+  try {
+    return JSON.parse(node.textContent || '{}');
+  } catch {
+    return { page: 'auth', props: { locale: 'en' } };
+  }
+}
+
+const page = readPageBootstrap();
 const C = PAGES[page.page] || AuthPage;
 hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
