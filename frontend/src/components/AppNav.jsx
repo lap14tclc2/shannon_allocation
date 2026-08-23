@@ -7,6 +7,7 @@ const LINKS = [
   ['/performance', 'performance', 'nav.performance'],
   ['/risk', 'risk', 'nav.risk'],
   ['/snapshots', 'snapshots', 'nav.snapshots'],
+  ['/operations', 'operations', null, 'Operations', 'Vận hành'],
   ['/settings', 'settings', 'nav.settings'],
   ['/guide', 'guide', 'nav.guide'],
 ];
@@ -17,8 +18,8 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     <nav className="app-nav" aria-label={t('nav.primary')}>
       <a className="brand" href="/">QPort</a>
       <div className="app-nav-links">
-        {LINKS.map(([href, key, labelKey]) => (
-          <a key={href} href={href} className={active === key ? 'active' : ''}>{t(labelKey)}</a>
+        {LINKS.map(([href, key, labelKey, en, vi]) => (
+          <a key={href} href={href} className={active === key ? 'active' : ''}>{labelKey ? t(labelKey) : (locale === 'vi' ? vi : en)}</a>
         ))}
       </div>
       <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
