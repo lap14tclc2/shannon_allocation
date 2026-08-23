@@ -28,6 +28,7 @@
 
 .table-scroll { overflow-x: auto; }
 .portfolio-table { min-width: 1420px; }
+.transaction-table { min-width: 1280px; }
 .symbols-cell .muted { font-size: 10px; margin-top: 3px; }
 
 .status-pill, .signal { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; letter-spacing: .05em; white-space: nowrap; }
@@ -54,6 +55,14 @@
 input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger) !important; outline-color: var(--danger); }
 .soft-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
 
+.correction-form { border-color: var(--warning); }
+.correction-audit-card { margin-top: 14px; }
+.row-actions { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.btn-small { padding: 5px 8px; font-size: 11px; }
+.btn-danger { appearance: none; border: 1px solid var(--danger); background: transparent; color: var(--danger); border-radius: 7px; padding: 7px 10px; font-weight: 700; cursor: pointer; }
+.btn-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.btn-danger:disabled { opacity: .5; cursor: not-allowed; }
+
 .cash-entry { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 8px; margin: 12px 0 16px; }
 .cash-entry input { min-width: 0; }
 .health-card { margin-top: 14px; }
@@ -79,4 +88,5 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
   .guide-steps { grid-template-columns: 1fr; }
   .cash-entry { grid-template-columns: 1fr; }
   .cash-entry button { width: 100%; }
+  .row-actions { flex-direction: column; align-items: stretch; }
 }
