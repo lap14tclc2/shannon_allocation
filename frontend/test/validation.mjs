@@ -1,5 +1,6 @@
 import {
   FormValidationError,
+  parseVndMoneyInput,
   validateCashAmount,
   validateCashReserveInput,
   validateReferenceWeightInputs,
@@ -23,6 +24,12 @@ check('reject bad ticker', rejects('symbol', () => validateTransactionForm('BUY'
 check('reject zero quantity', rejects('quantity', () => validateTransactionForm('BUY', { ...base, quantity: '0' }, '2026-08-23', 'en')));
 check('cash amount positive', validateCashAmount('50000000', 'en') === 50000000);
 check('cash reserve allows explicit zero', validateCashReserveInput('0', 'en') === 0);
+check('parse 20tr', parseVndMoneyInput('20tr', 'cash_reserve', 'vi') === 20_000_000);
+check('parse 20m', parseVndMoneyInput('20m', 'cash_reserve', 'en') === 20_000_000);
+check('parse Vietnamese grouped VND', parseVndMoneyInput('20.000.000', 'cash_reserve', 'vi') === 20_000_000);
+check('parse comma grouped VND', parseVndMoneyInput('20,000,000', 'cash_reserve', 'en') === 20_000_000);
+check('parse decimal million suffix', parseVndMoneyInput('20,5tr', 'cash_reserve', 'vi') === 20_500_000);
+check('reject malformed money', rejects('cash_reserve', () => parseVndMoneyInput('20..000', 'cash_reserve', 'vi')));
 check('reference weights require 100%', rejects('weights', () => validateReferenceWeightInputs({ ACB: 40, DGC: 40, FPT: 10 }, ['ACB', 'DGC', 'FPT'], 'en')));
 check('reference weights normalize', validateReferenceWeightInputs({ ACB: 40, DGC: 30, FPT: 30 }, ['ACB', 'DGC', 'FPT'], 'en').ACB === 0.4);
 
