@@ -88,8 +88,12 @@ http://127.0.0.1:8080/
 Navigation:
 
 ```text
-Portfolio | Transactions | Performance | Risk | Snapshots | Research
+Portfolio | Transactions | Performance | Risk | Snapshots | Settings | Research
 ```
+
+`Settings` contains only long-lived operational preferences such as optional
+strategic reference weights. It does not contain annual allocation or optimizer
+controls.
 
 The server starts an idempotent EOD market sync at **15:30 Asia/Ho_Chi_Minh** on
 weekdays. Override with `PORTFOLIO_SYNC_TIME=HH:MM` or run with
