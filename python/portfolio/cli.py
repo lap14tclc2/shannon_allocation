@@ -4,7 +4,7 @@ import argparse
 import json
 
 from .auth import AuthError, AuthStore
-from .service import PortfolioService
+from .automated_service import AutomatedPortfolioService
 from .storage import PortfolioStore
 
 
@@ -32,7 +32,7 @@ def main() -> None:
         parser.error("Admin is administration-only. Use the /admin page instead of portfolio CLI commands.")
 
     store = PortfolioStore(auth.portfolio_db_path(user["id"]))
-    service = PortfolioService(store=store)
+    service = AutomatedPortfolioService(store=store)
     if args.command == "sync":
         result = service.sync_daily()
     elif args.command == "performance":
