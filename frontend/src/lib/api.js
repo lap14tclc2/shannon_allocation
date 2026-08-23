@@ -1,7 +1,15 @@
+function apiError(data, fallback) {
+  const err = new Error(data?.error || fallback);
+  err.code = data?.code || 'REQUEST_FAILED';
+  err.field = data?.field || null;
+  err.details = data;
+  return err;
+}
+
 async function getJSON(url, signal) {
   const res = await fetch(url, { signal });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed: ${res.status} ${url}`);
+  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
 }
 
@@ -12,7 +20,7 @@ async function sendJSON(url, method, body) {
     body: body == null ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed: ${res.status} ${url}`);
+  if (!res.ok) throw apiError(data, `Request failed: ${res.status} ${url}`);
   return data;
 }
 
@@ -46,6 +54,14 @@ export async function listPortfolioSnapshots() {
   return data.snapshots || [];
 }
 
+export async function getPortfolioPreferences() {
+  return getJSON('/api/portfolio/preferences');
+}
+
 export async function setReferenceWeights(weights) {
   return sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
+}
+
+export async function setCashReserve(amount) {
+  return sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
 }
