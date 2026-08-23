@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import './styles.css';
 import './buyhold.css';
+import './responsive.css';
 
 const PAGES = {
   portfolio: PortfolioDashboardPage,
