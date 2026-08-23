@@ -131,7 +131,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     <header className="page-head">
       <div>
         <h1>{t('transactions.title')}</h1>
-        <p className="muted">{text('Record what actually happened in your portfolio. Advanced broker and settlement fields are optional.', 'Ghi lại những gì thực sự xảy ra trong danh mục. Broker và settlement là thông tin nâng cao, không bắt buộc.')}</p>
+        <p className="muted">{text('Record what actually happened in your portfolio. Holdings are derived from this ledger immediately after every create/edit/delete.', 'Ghi lại những gì thực sự xảy ra trong danh mục. Holdings được derive từ ledger này ngay sau mỗi create/edit/delete.')}</p>
       </div>
     </header>
 
@@ -232,6 +232,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             <th>{text('Account','Tài khoản')}</th>
             <th>{text('Qty','SL')}</th>
             <th>{text('Price / Amount','Giá / Tiền')}</th>
+            <th>{text('Fee / Tax','Phí / Thuế')}</th>
             <th>{text('Note','Ghi chú')}</th>
             <th>{text('Actions','Thao tác')}</th>
           </tr></thead>
@@ -240,6 +241,8 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             const securityEvent = Boolean(row.symbol);
             const broker = row.metadata?.broker_code || 'UNASSIGNED';
             const account = row.metadata?.account_id || 'PRIMARY';
+            const stockDividendTax = Number(row.metadata?.stock_dividend_sale_tax || 0);
+            const cashDividendTax = Number(row.metadata?.cash_dividend_withholding_tax || 0);
             return <tr key={row.id}>
               <td>{row.event_date}</td>
               <td><b>{eventType(row.event_type)}</b>{row.correction && <div className="muted">{text('Corrected','Đã sửa')}</div>}{row.metadata?.auto_generated && <div className="muted">AUTO</div>}</td>
@@ -248,6 +251,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
               <td>{securityEvent ? account : '-'}</td>
               <td>{row.quantity ? shares(row.quantity) : '-'}</td>
               <td>{row.price ? money(row.price) : row.amount ? money(row.amount) : '-'}</td>
+              <td>{Number(row.fee || 0) || Number(row.tax || 0) ? <>
+                <div>{money(Number(row.fee || 0))} / {money(Number(row.tax || 0))}</div>
+                {stockDividendTax > 0 && <div className="muted">{text('stock-dividend 5%', 'CP cổ tức 5%')}: {money(stockDividendTax)}</div>}
+                {cashDividendTax > 0 && <div className="muted">{text('cash withholding 5%', 'khấu trừ tiền 5%')}: {money(cashDividendTax)}</div>}
+              </> : '-'}</td>
               <td>{row.note || '-'}</td>
               <td>{deleting ? <div className="inline-delete">
                 <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder={text('Reason for delete','Lý do xóa')}/>
