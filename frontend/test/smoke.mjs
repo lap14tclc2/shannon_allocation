@@ -29,8 +29,8 @@ const ssrEntry=join(root,'dist-ssr','ssr-entry.mjs'); check('SSR bundle exists',
 if(existsSync(ssrEntry)){
   ({renderPage}=await import(`file://${ssrEntry.replace(/\\/g,'/')}`));
   const portfolioHtml=renderPage('portfolio',{dashboard,locale:'en'});
-  check('portfolio renders live accounting and AI export',portfolioHtml.includes('Total P/L')&&portfolioHtml.includes('1,000,000 VND')&&portfolioHtml.includes('Export for AI'));
-  check('portfolio has Operations and Logs navigation',portfolioHtml.includes('Operations')&&portfolioHtml.includes('Logs'));
+  check('portfolio renders live accounting and AI export',portfolioHtml.includes('Total portfolio')&&portfolioHtml.includes('1,000,000 VND')&&portfolioHtml.includes('Export for AI'));
+  check('portfolio has Operations and Logs navigation',portfolioHtml.includes('href="/operations"')&&portfolioHtml.includes('href="/logs"'));
   check('portfolio has no research navigation',!portfolioHtml.includes('Research Lab')&&!portfolioHtml.includes('Optimizer'));
   const perfHtml=renderPage('performance',{performance,locale:'en'}); check('performance renders controlled history',perfHtml.includes('Total P/L')&&perfHtml.includes('Current drawdown')&&perfHtml.includes('History quality'));
   const riskHtml=renderPage('risk',{risk,locale:'en'}); check('risk renders concentration and tail risk',riskHtml.includes('Equity HHI')&&riskHtml.includes('Daily CVaR 95%'));
