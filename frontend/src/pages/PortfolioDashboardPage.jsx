@@ -68,7 +68,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
         <div className="section-head">
           <div>
             <h3>Holdings</h3>
-            <div className="muted">Shares come only from the immutable transaction ledger.</div>
+            <div className="muted">Shares come only from the immutable transaction ledger. All prices and values are canonical VND.</div>
           </div>
           <div className={`status-pill status-${String(market.status || 'MISSING').toLowerCase()}`}>
             Data {market.status || 'MISSING'}
@@ -85,22 +85,37 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard }) 
           <div className="table-scroll">
             <table className="ranking portfolio-table">
               <thead><tr>
-                <th>Ticker</th><th>Shares</th><th>Avg cost</th><th>Price</th><th>Value</th><th>Weight</th><th>Unrealized P/L</th><th>Risk contrib.</th><th>Status</th>
+                <th>Ticker</th>
+                <th>Shares</th>
+                <th>Avg cost</th>
+                <th>Price</th>
+                <th>Cost value</th>
+                <th>Market value</th>
+                <th>Unrealized P/L</th>
+                <th>Return</th>
+                <th>Weight</th>
+                <th>Risk contrib.</th>
+                <th>Status</th>
               </tr></thead>
               <tbody>
-                {positions.map((p) => (
-                  <tr key={p.symbol}>
-                    <td className="symbols-cell"><b>{p.symbol}</b><div className="muted">{p.price_date || '-'} · {p.price_source || '-'}</div></td>
-                    <td>{formatShares(p.shares)}</td>
-                    <td>{money(p.average_cost)}</td>
-                    <td>{money(p.price)}</td>
-                    <td>{money(p.market_value)}</td>
-                    <td>{formatWeight(p.weight)}</td>
-                    <td className={Number(p.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}>{money(p.unrealized_pnl)}<div className="muted">{pct(p.unrealized_return)}</div></td>
-                    <td>{pct(p.risk_contribution)}</td>
-                    <td><span className={`signal signal-${String(p.status || 'HOLD').toLowerCase()}`}>{p.status || 'HOLD'}</span></td>
-                  </tr>
-                ))}
+                {positions.map((p) => {
+                  const costValue = p.cost_value ?? (Number(p.shares || 0) * Number(p.average_cost || 0));
+                  return (
+                    <tr key={p.symbol}>
+                      <td className="symbols-cell"><b>{p.symbol}</b><div className="muted">{p.price_date || '-'} · {p.price_source || '-'}</div></td>
+                      <td>{formatShares(p.shares)}</td>
+                      <td>{money(p.average_cost)}</td>
+                      <td>{money(p.price)}</td>
+                      <td>{money(costValue)}</td>
+                      <td>{money(p.market_value)}</td>
+                      <td className={Number(p.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}>{money(p.unrealized_pnl)}</td>
+                      <td className={Number(p.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}>{pct(p.unrealized_return)}</td>
+                      <td>{formatWeight(p.weight)}</td>
+                      <td>{pct(p.risk_contribution)}</td>
+                      <td><span className={`signal signal-${String(p.status || 'HOLD').toLowerCase()}`}>{p.status || 'HOLD'}</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
