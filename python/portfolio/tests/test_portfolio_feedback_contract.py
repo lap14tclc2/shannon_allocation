@@ -55,7 +55,7 @@ def test_dividend_backend_is_sqlite_first_with_explicit_provider_refresh():
     assert "CREATE TABLE IF NOT EXISTS dividend_fetch_state" in source
     assert 'origin="SQLITE_CACHE"' in source
     assert "force_refresh" in source
-    assert "SqliteDividendService(_portfolio().store, stop_on_first_data=False)" in server
+    assert "SqliteDividendService(_portfolio(user).store, stop_on_first_data=False)" in server
     assert 'parse_qs(query).get("refresh")' in server
 
 
