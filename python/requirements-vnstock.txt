@@ -1,6 +1,6 @@
 -r requirements.txt
-vnstock>=3.0
-# Optional reference/event layer used by Corporate Actions discovery.
-# The operational app still starts when this package is absent; the Operations
-# page will report the provider as UNAVAILABLE instead of fabricating events.
-vnstock_data>=3.2
+vnstock>=4.0
+# Optional institutional reference/event layer used by Corporate Actions.
+# vnstock_data 3.x introduced the current Unified UI (Reference/Market/etc.).
+# The core app still starts without it and reports the provider as UNAVAILABLE.
+vnstock_data>=3.0.0
