@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from typing import Any, Protocol
+
+from .vnstock_isolated import run_vnstock_task, vnstock_available
 
 
 @dataclass
@@ -13,6 +16,7 @@ class CorporateAction:
     external_key: str
     symbol: str
     action_type: str
+    event_name: str | None = None
     announcement_date: str | None = None
     ex_date: str | None = None
     record_date: str | None = None
@@ -28,7 +32,6 @@ class CorporateAction:
 
 class CorporateActionProvider(Protocol):
     name: str
-
     def events(self, symbols: list[str], start: str, end: str) -> list[CorporateAction]: ...
     def health(self) -> dict: ...
 
@@ -59,16 +62,11 @@ def _date_value(value) -> str | None:
 
 def _classify(text: str) -> str:
     low = text.lower()
-    if "cổ tức" in low and ("tiền" in low or "cash" in low):
-        return "CASH_DIVIDEND"
-    if "cổ tức" in low and ("cổ phiếu" in low or "stock" in low):
-        return "STOCK_DIVIDEND"
-    if "thưởng" in low and "cổ phiếu" in low:
-        return "BONUS_SHARE"
-    if "quyền mua" in low or "rights" in low:
-        return "RIGHTS_ISSUE"
-    if "phát hành" in low and "cổ phiếu" in low:
-        return "STOCK_ISSUE"
+    if "cổ tức" in low and ("tiền" in low or "cash" in low): return "CASH_DIVIDEND"
+    if "cổ tức" in low and ("cổ phiếu" in low or "stock" in low): return "STOCK_DIVIDEND"
+    if "thưởng" in low and "cổ phiếu" in low: return "BONUS_SHARE"
+    if "quyền mua" in low or "rights" in low: return "RIGHTS_ISSUE"
+    if "phát hành" in low and "cổ phiếu" in low: return "STOCK_ISSUE"
     return "OTHER"
 
 
@@ -76,215 +74,171 @@ def _parse_stock_ratio(text: str) -> float | None:
     low = text.lower().replace(",", ".")
     match = re.search(r"(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)", low)
     if match:
-        existing = float(match.group(1))
-        received = float(match.group(2))
-        if existing > 0:
-            return received / existing
+        existing, received = float(match.group(1)), float(match.group(2))
+        return received / existing if existing > 0 else None
     match = re.search(r"(?:tỷ lệ|ty le|ratio)?\s*(\d+(?:\.\d+)?)\s*%", low)
     if match:
         pct = float(match.group(1))
-        if 0 < pct <= 1000:
-            return pct / 100.0
+        return pct / 100.0 if 0 < pct <= 1000 else None
     return None
 
 
 def _parse_cash_per_share(text: str) -> float | None:
     normalized = text.lower().replace(".", "").replace(",", "")
-    patterns = [
+    for pattern in (
         r"(\d+)\s*(?:đồng|vnd)\s*/\s*(?:cp|cổ phiếu|share)",
         r"(?:cash|tiền mặt)[^\d]{0,20}(\d+)\s*(?:đồng|vnd)",
-    ]
-    for pattern in patterns:
+    ):
         match = re.search(pattern, normalized)
-        if match:
-            return float(match.group(1))
+        if match: return float(match.group(1))
     return None
 
 
-def normalize_event_row(row: dict, default_symbol: str | None = None, source: str = "vnstock") -> CorporateAction | None:
-    """Normalize an unknown provider row without assuming a fixed vendor schema.
+def _stable_event_key(*, source: str, symbol: str, action_type: str, event_name: str | None, record_date: str | None,
+                      ex_date: str | None, payment_date: str | None, announcement_date: str | None,
+                      cash_per_share: float | None, stock_ratio: float | None, raw: dict) -> str:
+    native_id = _value(raw, ("event_id", "eventid", "id", "event_code", "eventcode", "news_id"))
+    if native_id not in (None, ""):
+        return f"{source}:{symbol}:id:{str(native_id).strip()}"
+    material = {
+        "symbol": symbol,
+        "action_type": action_type,
+        "event_name": re.sub(r"\s+", " ", str(event_name or "").strip().lower()),
+        "record_date": record_date,
+        "ex_date": ex_date,
+        "payment_date": payment_date,
+        "announcement_date": announcement_date,
+        "cash_per_share": round(float(cash_per_share), 6) if cash_per_share is not None else None,
+        "stock_ratio": round(float(stock_ratio), 10) if stock_ratio is not None else None,
+    }
+    digest = hashlib.sha256(json.dumps(material, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    return f"{source}:{symbol}:event:{digest}"
 
-    Vnstock's reference interfaces can evolve between Community/Sponsor releases.
-    QPort therefore preserves the complete raw row, uses aliases only for common
-    fields, and marks every discovered event PROVISIONAL until an authoritative
-    VSDC/HOSE/HNX URL is attached by the user.
+
+def normalize_event_row(row: dict, default_symbol: str | None = None, source: str = "vnstock") -> CorporateAction | None:
+    """Normalize one provider row while preserving multiple dividend installments.
+
+    Identity is based on provider event id when available, otherwise stable business
+    fields (type/name/dates/rate). Raw payload changes therefore do not create a new
+    installment by accident. Different record/payment dates remain distinct rows.
     """
     raw = {str(k): (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     symbol = str(_value(raw, ("symbol", "ticker", "code", "stock_code")) or default_symbol or "").upper().strip()
-    if not symbol:
-        return None
+    if not symbol: return None
     text = _text(raw)
     action_type = _classify(text)
+    event_name_value = _value(raw, ("event_name", "event_title", "title", "name", "description", "purpose", "reason"))
+    event_name = str(event_name_value).strip() if event_name_value not in (None, "") else None
     record_date = _date_value(_value(raw, ("record_date", "last_registration_date", "registration_date", "ngay_dang_ky_cuoi_cung")))
     ex_date = _date_value(_value(raw, ("ex_date", "ex_right_date", "ngay_giao_dich_khong_huong_quyen")))
     payment_date = _date_value(_value(raw, ("payment_date", "pay_date", "execution_date", "ngay_thanh_toan")))
     announcement_date = _date_value(_value(raw, ("announcement_date", "publish_date", "date", "event_date")))
     cash = _value(raw, ("cash_per_share", "dividend_value", "cash_dividend"))
     ratio = _value(raw, ("stock_ratio", "ratio", "dividend_ratio"))
-    try:
-        cash_per_share = float(cash) if cash not in (None, "") else _parse_cash_per_share(text)
-    except Exception:
-        cash_per_share = _parse_cash_per_share(text)
+    try: cash_per_share = float(cash) if cash not in (None, "") else _parse_cash_per_share(text)
+    except Exception: cash_per_share = _parse_cash_per_share(text)
     try:
         stock_ratio = float(ratio) if ratio not in (None, "") else _parse_stock_ratio(text)
-        if stock_ratio is not None and stock_ratio > 10:
-            stock_ratio /= 100.0
+        if stock_ratio is not None and stock_ratio > 10: stock_ratio /= 100.0
     except Exception:
         stock_ratio = _parse_stock_ratio(text)
-    key_material = json.dumps(raw, ensure_ascii=False, sort_keys=True, default=str)
-    external_key = f"{source}:{symbol}:{hashlib.sha256(key_material.encode('utf-8')).hexdigest()[:24]}"
     source_url = _value(raw, ("url", "source_url", "link"))
+    external_key = _stable_event_key(
+        source=source, symbol=symbol, action_type=action_type, event_name=event_name,
+        record_date=record_date, ex_date=ex_date, payment_date=payment_date,
+        announcement_date=announcement_date, cash_per_share=cash_per_share,
+        stock_ratio=stock_ratio, raw=raw,
+    )
     return CorporateAction(
-        external_key=external_key,
-        symbol=symbol,
-        action_type=action_type,
-        announcement_date=announcement_date,
-        ex_date=ex_date,
-        record_date=record_date,
-        payment_date=payment_date,
-        cash_per_share=cash_per_share,
-        stock_ratio=stock_ratio,
-        source=source,
-        source_url=str(source_url) if source_url else None,
-        confidence="PROVISIONAL",
-        verification_status="UNVERIFIED",
-        raw=raw,
+        external_key=external_key, symbol=symbol, action_type=action_type, event_name=event_name,
+        announcement_date=announcement_date, ex_date=ex_date, record_date=record_date,
+        payment_date=payment_date, cash_per_share=cash_per_share, stock_ratio=stock_ratio,
+        source=source, source_url=str(source_url) if source_url else None,
+        confidence="PROVISIONAL", verification_status="UNVERIFIED", raw=raw,
     )
 
 
 def _records(frame) -> list[dict]:
-    if frame is None:
-        return []
+    if frame is None: return []
     if hasattr(frame, "to_dict"):
-        try:
-            return [dict(row) for row in frame.to_dict("records")]
-        except Exception:
-            return []
-    if isinstance(frame, list):
-        return [dict(row) for row in frame if isinstance(row, dict)]
+        try: return [dict(row) for row in frame.to_dict("records")]
+        except Exception: return []
+    if isinstance(frame, list): return [dict(row) for row in frame if isinstance(row, dict)]
     return []
 
 
 class VnstockCorporateActionProvider:
-    """Corporate-action discovery using the installed Vnstock Reference layer.
-
-    Resolution order:
-      1. Community Vnstock v4+: ``from vnstock import Reference``
-      2. Optional Sponsor package: ``from vnstock_data import Reference``
-
-    The adapter supports both the Unified v4 ``ref.company.events(symbol=...)``
-    shape and the older ``ref.company(symbol).events()`` shape. Discovery is
-    intentionally PROVISIONAL; authoritative verification remains VSDC/HOSE/HNX.
-    """
+    """Vnstock corporate-action discovery, isolated in a child process by default."""
 
     def __init__(self, reference_factory=None, provider_name: str | None = None) -> None:
         self._Reference = reference_factory
-        self._error: str | None = None
         self.name = provider_name or "vnstock"
-        self._api_variant = "injected" if reference_factory is not None else None
-
-        if reference_factory is not None:
-            return
-
-        community_error = None
-        try:
-            from vnstock import Reference  # type: ignore
-
-            self._Reference = Reference
-            self.name = "vnstock"
-            self._api_variant = "community_v4"
-            return
-        except Exception as exc:
-            community_error = str(exc)
-
-        try:
-            from vnstock_data import Reference  # type: ignore
-
-            self._Reference = Reference
-            self.name = "vnstock_data"
-            self._api_variant = "sponsor"
-            return
-        except Exception as exc:
-            self._Reference = None
-            self._error = f"vnstock: {community_error}; vnstock_data: {exc}"
-            self._api_variant = "unavailable"
+        self._error: str | None = None
+        self._api_variant = "injected" if reference_factory is not None else "isolated_spawn"
+        self._isolated = reference_factory is None
+        if self._isolated and not vnstock_available():
+            self._error = "Vnstock is not installed."
 
     def health(self) -> dict:
         return {
             "provider": self.name,
-            "available": self._Reference is not None,
+            "available": self._Reference is not None or (self._isolated and vnstock_available()),
             "error": self._error,
             "api_variant": self._api_variant,
-            "mode": "raw-first runtime-schema normalization",
+            "isolation": "CHILD_PROCESS" if self._isolated else "INJECTED_DIRECT",
+            "mode": "raw-first stable-event normalization",
         }
+
+    @staticmethod
+    def _company_events(ref, symbol: str) -> list[dict]:
+        company = getattr(ref, "company", None)
+        if company is None: return []
+        events_method = getattr(company, "events", None)
+        if callable(events_method):
+            for call in (lambda: events_method(symbol=symbol), lambda: events_method(symbol)):
+                try:
+                    rows = _records(call())
+                    if rows: return rows
+                except Exception: pass
+        if callable(company):
+            try:
+                obj = company(symbol); method = getattr(obj, "events", None)
+                if callable(method): return _records(method())
+            except Exception: pass
+        return []
 
     @staticmethod
     def _calendar_events(ref, start: str, end: str) -> list[dict]:
         events_obj = getattr(ref, "events", None)
         calendar = getattr(events_obj, "calendar", None) if events_obj is not None else None
-        if not callable(calendar):
-            return []
-        try:
-            return _records(calendar(start=start, end=end, event_type="dividend"))
-        except Exception:
-            return []
-
-    @staticmethod
-    def _company_events(ref, symbol: str) -> list[dict]:
-        company = getattr(ref, "company", None)
-        if company is None:
-            return []
-
-        # Vnstock v4 Unified UI: ref.company.events(symbol="FPT")
-        events_method = getattr(company, "events", None)
-        if callable(events_method):
-            for call in (
-                lambda: events_method(symbol=symbol),
-                lambda: events_method(symbol),
-            ):
-                try:
-                    rows = _records(call())
-                    if rows:
-                        return rows
-                except Exception:
-                    pass
-
-        # Legacy/Sponsor shape: ref.company("FPT").events()
-        if callable(company):
-            try:
-                company_obj = company(symbol)
-                legacy_events = getattr(company_obj, "events", None)
-                if callable(legacy_events):
-                    return _records(legacy_events())
-            except Exception:
-                pass
-        return []
+        if not callable(calendar): return []
+        try: return _records(calendar(start=start, end=end, event_type="dividend"))
+        except Exception: return []
 
     def events(self, symbols: list[str], start: str, end: str) -> list[CorporateAction]:
-        if self._Reference is None:
-            raise RuntimeError(
-                "Corporate-action provider is unavailable. Install/upgrade Vnstock Community: pip install -U vnstock"
-            )
-
-        ref = self._Reference()
-        rows = self._calendar_events(ref, start, end)
-        if not rows:
-            rows = []
-            for symbol in symbols:
-                for row in self._company_events(ref, symbol):
-                    row = dict(row)
-                    row.setdefault("symbol", symbol)
-                    rows.append(row)
-
         wanted = {str(s).upper() for s in symbols}
+        provider_name = self.name
+        if self._isolated:
+            result = run_vnstock_task("events", {"symbols": sorted(wanted), "start": start, "end": end})
+            rows = result.get("data") or []
+            provider_name = str(result.get("provider") or self.name)
+            self.name = provider_name
+            self._api_variant = str(result.get("api_variant") or self._api_variant)
+        else:
+            ref = self._Reference()
+            rows = self._calendar_events(ref, start, end)
+            if not rows:
+                rows = []
+                for symbol in sorted(wanted):
+                    for row in self._company_events(ref, symbol):
+                        item = dict(row); item.setdefault("symbol", symbol); rows.append(item)
         out: list[CorporateAction] = []
         seen: set[str] = set()
         for row in rows:
             default_symbol = str(row.get("symbol") or "").upper() or None
-            action = normalize_event_row(dict(row), default_symbol=default_symbol, source=self.name)
+            action = normalize_event_row(dict(row), default_symbol=default_symbol, source=provider_name)
             if action and action.symbol in wanted and action.external_key not in seen:
-                out.append(action)
-                seen.add(action.external_key)
+                out.append(action); seen.add(action.external_key)
         return out
 
 
