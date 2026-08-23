@@ -20,6 +20,15 @@ async function sendJSON(url, method, body) {
   return data;
 }
 
+// Authentication
+export const getCurrentUser = () => getJSON('/api/auth/me');
+export const loginUser = (username, password = '') => sendJSON('/api/auth/login', 'POST', { username, password });
+export const registerUser = (username) => sendJSON('/api/auth/register', 'POST', { username });
+export const logoutUser = () => sendJSON('/api/auth/logout', 'POST', {});
+export const listUsers = () => getJSON('/api/auth/users');
+export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)}`, 'DELETE', {});
+export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
+
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
 export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
 export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
