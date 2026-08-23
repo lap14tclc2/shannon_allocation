@@ -33,6 +33,8 @@ export async function listPortfolioSnapshots() { const d = await getJSON('/api/p
 export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
 export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
 export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
+export const getActivityLog = () => getJSON('/api/portfolio/logs');
+export const logClientActivity = (action, details = {}) => sendJSON('/api/portfolio/activity', 'POST', { action, details });
 
 // Institutional-lite operations
 export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
@@ -45,3 +47,5 @@ export const confirmSettlement = (eventId, note = '') => sendJSON(`/api/portfoli
 export const lockNav = (snapshotDate) => sendJSON(`/api/portfolio/nav/${encodeURIComponent(snapshotDate)}/lock`, 'POST', {});
 export const resolveRestatement = (id) => sendJSON(`/api/portfolio/restatements/${Number(id)}/resolve`, 'POST', {});
 export const updateSecurity = (symbol, payload) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}`, 'POST', payload);
+export const resolveSecurity = (symbol) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}/resolve`, 'POST', {});
+export const resolveAllSecurities = () => sendJSON('/api/portfolio/securities/resolve', 'POST', {});
