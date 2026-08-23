@@ -38,9 +38,15 @@ export function parseVndMoneyInput(value, field = 'amount', locale = 'en') {
   if (hasSuffix) {
     if (!/^\d+(?:[.,]\d+)?$/.test(text)) throw new FormValidationError(field, 'Enter a valid VND amount, for example 20m or 20,000,000.', 'Nhập số tiền VND hợp lệ, ví dụ 20tr hoặc 20.000.000.', locale);
     normalized = text.replace(',', '.');
+  } else if (/^\d+$/.test(text)) {
+    normalized = text;
   } else {
-    if (!/^[\d.,]+$/.test(text)) throw new FormValidationError(field, 'Enter a valid VND amount, for example 20m or 20,000,000.', 'Nhập số tiền VND hợp lệ, ví dụ 20tr hoặc 20.000.000.', locale);
-    normalized = text.replace(/[.,]/g, '');
+    // Without a magnitude suffix, punctuation is a thousands separator only.
+    // Require one consistent separator and exactly three digits per group so
+    // malformed values such as "20..000" cannot silently become 20,000 VND.
+    const grouped = text.match(/^\d{1,3}([.,])\d{3}(?:\1\d{3})*$/);
+    if (!grouped) throw new FormValidationError(field, 'Enter a valid VND amount, for example 20m or 20,000,000.', 'Nhập số tiền VND hợp lệ, ví dụ 20tr hoặc 20.000.000.', locale);
+    normalized = text.split(grouped[1]).join('');
   }
   const n = Number(normalized) * multiplier;
   if (!Number.isFinite(n) || n < 0 || n > MAX_MONEY) throw new FormValidationError(field, 'VND amount is outside the allowed range.', 'Số tiền VND vượt phạm vi cho phép.', locale);
