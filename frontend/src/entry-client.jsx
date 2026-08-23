@@ -48,6 +48,13 @@ const PAGES = {
 };
 
 const root = document.getElementById('root');
-const props = window.__QPORT_PROPS__ || {};
-const Page = PAGES[props.page] || PortfolioPage;
+
+// buyhold_server.py serializes the SSR bootstrap as window.__PAGE__ =
+// { page, props }. Keep the older object name as a temporary compatibility
+// fallback, but never default a known login/auth document to PortfolioPage.
+const bootstrap = window.__PAGE__ || window.__QPORT_PROPS__ || {};
+const pageName = bootstrap.page || 'portfolio';
+const props = bootstrap.props || (bootstrap.page ? {} : bootstrap);
+const Page = PAGES[pageName] || PortfolioPage;
+
 hydrateRoot(root, <Page {...props} />);
