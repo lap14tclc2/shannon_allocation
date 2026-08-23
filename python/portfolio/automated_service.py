@@ -10,7 +10,7 @@ from .correctable_service import CorrectablePortfolioService
 from .corrections import effective_events
 from .domain import EventType
 from .market_data import frame_to_price_rows
-from .tax_policy import apply_dividend_tax_policy
+from .tax_policy import CASH_DIVIDEND_WITHHOLDING_RATE, apply_dividend_tax_policy
 from .validation import normalize_event_payload
 
 VIETNAM_PAR_VALUE_VND = 10_000.0
@@ -75,9 +75,11 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
         prior = effective_events(self.store)
         taxed_payload = self._apply_tax_to_payload(payload, prior, created_by=created_by)
         result = super().append_event(taxed_payload, created_by=created_by)
-        # Holdings, performance snapshots and transaction history all derive from
-        # the same effective ledger immediately after every user/system mutation.
-        result["history"] = self._refresh_derived_history()
+        # Holdings, Performance and Transaction history all derive from the same
+        # effective ledger. Rebuild immediately when the parent service did not
+        # already rebuild a historical mutation.
+        if result.get("history") is None:
+            result["history"] = self._refresh_derived_history()
         result["portfolio_sync"] = "LEDGER_DERIVED_IMMEDIATE"
         return result
 
@@ -98,6 +100,8 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 "stock_dividend_sale_tax",
                 "stock_dividend_taxable_quantity",
                 "stock_dividend_tax_par_value",
+                "stock_dividend_tax_basis_per_share",
+                "stock_dividend_tax_basis_source",
             ):
                 if key in old_meta and key not in new_meta:
                     new_meta[key] = old_meta[key]
@@ -163,7 +167,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
         perf["cash_dividend_tax"] = cash_dividend_tax
         perf["stock_dividend_sale_tax"] = stock_dividend_sale_tax
         perf["net_dividend_income"] = float(perf.get("dividend_income") or 0) - cash_dividend_tax
-        perf["tax_policy"] = "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_VALUE_ON_SALE"
+        perf["tax_policy"] = "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_OR_LOWER_TRANSFER_PRICE_ON_SALE"
         data["performance_summary"] = perf
         data["health"] = health
         return data
@@ -177,7 +181,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
             "cash_dividend_tax": cash_tax,
             "stock_dividend_sale_tax": stock_tax,
             "net_dividend_income": float(perf.get("dividend_income") or 0) - cash_tax,
-            "tax_policy": "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_VALUE_ON_SALE",
+            "tax_policy": "CASH_DIVIDEND_5PCT_WITHHOLDING; STOCK_DIVIDEND_5PCT_PAR_OR_LOWER_TRANSFER_PRICE_ON_SALE",
         })
         return perf
 
@@ -188,6 +192,55 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
             return None, None
         events = [event for event in effective_events(self.store) if event.event_date <= cutoff]
         return derive_state(events), cutoff
+
+    @staticmethod
+    def _broker_account_entitlements(entitlement_state, symbol: str) -> list[dict]:
+        """Capture who owned the entitled shares at the entitlement cutoff."""
+        position = entitlement_state.positions.get(symbol) if entitlement_state else None
+        if position is None or position.shares <= 0:
+            return []
+        groups: dict[tuple[str, str], float] = {}
+        for lot in position.lots:
+            quantity = float(lot.remaining_quantity or 0)
+            if quantity <= 0:
+                continue
+            key = (str(lot.broker_code or "UNASSIGNED").upper(), str(lot.account_id or "PRIMARY").upper())
+            groups[key] = groups.get(key, 0.0) + quantity
+        if not groups:
+            groups[("UNASSIGNED", "PRIMARY")] = float(position.shares)
+        return [
+            {"broker_code": broker, "account_id": account, "entitled_shares": shares}
+            for (broker, account), shares in sorted(groups.items())
+        ]
+
+    @staticmethod
+    def _with_cash_allocation(allocations: list[dict], total_shares: float, gross_cash: float) -> list[dict]:
+        out = []
+        for row in allocations:
+            weight = float(row.get("entitled_shares") or 0) / total_shares if total_shares > 0 else 0.0
+            gross = gross_cash * weight
+            tax = gross * CASH_DIVIDEND_WITHHOLDING_RATE
+            out.append({
+                **row,
+                "cash_dividend_gross": gross,
+                "cash_dividend_tax": tax,
+                "cash_dividend_net": gross - tax,
+            })
+        return out
+
+    @staticmethod
+    def _with_stock_allocation(allocations: list[dict], total_shares: float, received_shares: float) -> list[dict]:
+        out = []
+        allocated = 0.0
+        for index, row in enumerate(allocations):
+            if index == len(allocations) - 1:
+                quantity = max(0.0, received_shares - allocated)
+            else:
+                weight = float(row.get("entitled_shares") or 0) / total_shares if total_shares > 0 else 0.0
+                quantity = received_shares * weight
+                allocated += quantity
+            out.append({**row, "stock_dividend_shares": quantity})
+        return out
 
     def auto_post_due_dividends(self, as_of: str | None = None, created_by: str = "system:corporate-action") -> dict:
         today = str(as_of or self.today_vn())
@@ -220,6 +273,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
             if entitled_shares <= 0:
                 skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "NO_ENTITLED_SHARES"})
                 continue
+            broker_allocations = self._broker_account_entitlements(entitlement_state, action["symbol"])
 
             metadata = {
                 "corporate_action_id": action_id,
@@ -238,7 +292,11 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                     skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "MISSING_CASH_PER_SHARE"})
                     continue
                 amount = entitled_shares * cash_per_share
-                metadata.update({"cash_per_share": cash_per_share, "cash_rate_percent": cash_pct})
+                metadata.update({
+                    "cash_per_share": cash_per_share,
+                    "cash_rate_percent": cash_pct,
+                    "broker_account_allocations": self._with_cash_allocation(broker_allocations, entitled_shares, amount),
+                })
                 payload = {
                     "event_type": "CASH_DIVIDEND", "event_date": payment_date, "symbol": action["symbol"],
                     "amount": amount,
@@ -251,7 +309,10 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                     skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "MISSING_STOCK_RATIO"})
                     continue
                 quantity = entitled_shares * ratio
-                metadata.update({"stock_ratio": ratio})
+                metadata.update({
+                    "stock_ratio": ratio,
+                    "broker_account_allocations": self._with_stock_allocation(broker_allocations, entitled_shares, quantity),
+                })
                 payload = {
                     "event_type": "STOCK_DIVIDEND", "event_date": payment_date, "symbol": action["symbol"],
                     "quantity": quantity,
@@ -286,6 +347,7 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
             created.append({
                 "action_id": action_id, "event_id": event_id, "symbol": action["symbol"],
                 "event_type": action_type, "event_date": payment_date, "entitlement_shares": entitled_shares,
+                "broker_account_allocations": metadata.get("broker_account_allocations") or [],
                 "amount": payload.get("amount"), "quantity": payload.get("quantity"),
                 "tax": posted_event.get("tax"), "net_cash": (posted_event.get("metadata") or {}).get("cash_dividend_net_amount"),
             })
@@ -301,6 +363,62 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 details=result, status="SUCCESS" if not skipped else "PARTIAL",
             )
         return result
+
+    def institutional_overview(self) -> dict:
+        overview = super().institutional_overview()
+        grouped: dict[tuple[str, str, str], dict] = {}
+        for event in effective_events(self.store):
+            if event.event_type not in {EventType.CASH_DIVIDEND, EventType.STOCK_DIVIDEND} or not event.symbol:
+                continue
+            meta = event.metadata or {}
+            allocations = meta.get("broker_account_allocations") or []
+            if not allocations:
+                allocations = [{
+                    "broker_code": event.broker_code,
+                    "account_id": event.account_id,
+                    "entitled_shares": float(meta.get("entitlement_shares") or 0),
+                    "stock_dividend_shares": float(event.quantity or 0) if event.event_type == EventType.STOCK_DIVIDEND else 0.0,
+                    "cash_dividend_gross": float(event.amount or 0) if event.event_type == EventType.CASH_DIVIDEND else 0.0,
+                    "cash_dividend_tax": float(meta.get("cash_dividend_withholding_tax") or 0),
+                    "cash_dividend_net": float(meta.get("cash_dividend_net_amount") or 0),
+                }]
+            for allocation in allocations:
+                broker = str(allocation.get("broker_code") or "UNASSIGNED").upper()
+                account = str(allocation.get("account_id") or "PRIMARY").upper()
+                key = (event.symbol.upper(), broker, account)
+                row = grouped.setdefault(key, {
+                    "symbol": event.symbol.upper(),
+                    "broker_code": broker,
+                    "account_id": account,
+                    "stock_dividend_shares_received": 0.0,
+                    "cash_dividend_gross": 0.0,
+                    "cash_dividend_tax": 0.0,
+                    "cash_dividend_net": 0.0,
+                    "event_ids": [],
+                    "last_received_date": None,
+                })
+                row["stock_dividend_shares_received"] += float(allocation.get("stock_dividend_shares") or 0)
+                row["cash_dividend_gross"] += float(allocation.get("cash_dividend_gross") or 0)
+                row["cash_dividend_tax"] += float(allocation.get("cash_dividend_tax") or 0)
+                row["cash_dividend_net"] += float(allocation.get("cash_dividend_net") or 0)
+                row["event_ids"].append(int(event.id or 0))
+                if not row["last_received_date"] or event.event_date > row["last_received_date"]:
+                    row["last_received_date"] = event.event_date
+
+        overview["dividend_receipts_by_broker"] = sorted(
+            grouped.values(),
+            key=lambda row: (row["symbol"], row["broker_code"], row["account_id"]),
+        )
+        overview["dividend_automation"] = {
+            "posting_policy": "AUTOMATIC_ON_PAYMENT_DATE_IDEMPOTENT",
+            "broker_allocation_basis": "ENTITLEMENT_DATE_OPEN_LOTS",
+            "manual_transaction_form": "DIVIDEND_TYPES_HIDDEN",
+        }
+        overview["dividend_tax_policy"] = {
+            "cash_dividend_withholding_rate": CASH_DIVIDEND_WITHHOLDING_RATE,
+            "stock_dividend_tax_timing": "ON_SALE",
+        }
+        return overview
 
     def sync_daily(self, actor_type: str = "SYSTEM", actor_id: str = "scheduler") -> dict:
         result = super().sync_daily(actor_type=actor_type, actor_id=actor_id)
