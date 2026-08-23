@@ -13,9 +13,9 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
+from portfolio.correctable_service import CorrectablePortfolioService
 from portfolio.locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
-from portfolio.service import PortfolioService
 from portfolio.validation import InputValidationError
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,13 +35,13 @@ MIME = {
 
 _css_url = None
 _ssr_proc: subprocess.Popen | None = None
-_service: PortfolioService | None = None
+_service: CorrectablePortfolioService | None = None
 
 
-def _portfolio() -> PortfolioService:
+def _portfolio() -> CorrectablePortfolioService:
     global _service
     if _service is None:
-        _service = PortfolioService()
+        _service = CorrectablePortfolioService()
     return _service
 
 
@@ -173,6 +173,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(200, svc.dashboard())
         if parts == ["transactions"]:
             return self._send_json(200, {"transactions": svc.transactions()})
+        if parts == ["transaction-audit"]:
+            return self._send_json(200, {"corrections": svc.transaction_audit()})
         if parts == ["performance"]:
             return self._send_json(200, svc.performance())
         if parts == ["risk"]:
@@ -190,7 +192,11 @@ class Handler(BaseHTTPRequestHandler):
         if page == "portfolio":
             return self._send_page("portfolio", {"dashboard": svc.dashboard()}, self._title("Portfolio · QPort", "Danh mục · QPort"))
         if page == "transactions":
-            return self._send_page("transactions", {"transactions": svc.transactions(), "today": svc.today_vn()}, self._title("Transactions · QPort", "Giao dịch · QPort"))
+            return self._send_page(
+                "transactions",
+                {"transactions": svc.transactions(), "corrections": svc.transaction_audit(), "today": svc.today_vn()},
+                self._title("Transactions · QPort", "Giao dịch · QPort"),
+            )
         if page == "performance":
             return self._send_page("performance", {"performance": svc.performance()}, self._title("Performance · QPort", "Hiệu suất · QPort"))
         if page == "risk":
@@ -210,6 +216,16 @@ class Handler(BaseHTTPRequestHandler):
             return json.loads(raw.decode("utf-8") or "{}")
         except Exception:
             return {}
+
+    @staticmethod
+    def _transaction_id(path: str) -> int | None:
+        parts = [unquote(p) for p in path.split("/") if p]
+        if len(parts) == 4 and parts[:3] == ["api", "portfolio", "transactions"]:
+            try:
+                return int(parts[3])
+            except ValueError:
+                return None
+        return None
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -246,6 +262,32 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._send_json(400, {"error": str(exc), "code": "PORTFOLIO_ERROR", "field": None})
         return self._send_json(404, {"error": "Not found."})
+
+    def do_PATCH(self):
+        path = urlparse(self.path).path
+        event_id = self._transaction_id(path)
+        if event_id is None:
+            return self._send_json(404, {"error": "Transaction endpoint not found."})
+        body = self._read_body_json()
+        try:
+            return self._send_json(200, _portfolio().update_event(event_id, body))
+        except InputValidationError as exc:
+            return self._send_json(400, exc.as_dict())
+        except Exception as exc:
+            return self._send_json(400, {"error": str(exc), "code": "PORTFOLIO_ERROR", "field": None})
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        event_id = self._transaction_id(path)
+        if event_id is None:
+            return self._send_json(404, {"error": "Transaction endpoint not found."})
+        body = self._read_body_json()
+        try:
+            return self._send_json(200, _portfolio().delete_event(event_id, body.get("reason")))
+        except InputValidationError as exc:
+            return self._send_json(400, exc.as_dict())
+        except Exception as exc:
+            return self._send_json(400, {"error": str(exc), "code": "PORTFOLIO_ERROR", "field": None})
 
 
 def main():
