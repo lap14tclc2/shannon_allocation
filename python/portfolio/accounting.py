@@ -169,9 +169,13 @@ def apply_event(state: PortfolioState, event: LedgerEvent) -> None:
         return
 
     if et == EventType.CASH_DIVIDEND:
-        amount = _positive(event.amount, "amount")
-        state.cash += amount
-        state.dividend_income += amount
+        gross = _positive(event.amount, "amount")
+        withholding = float(event.tax or 0)
+        if withholding < 0 or withholding > gross + 1e-9:
+            raise AccountingError("CASH_DIVIDEND tax must be between 0 and gross dividend amount")
+        state.cash += gross - withholding
+        state.dividend_income += gross
+        state.fees_and_taxes += withholding
         return
 
     if et == EventType.FEE:
