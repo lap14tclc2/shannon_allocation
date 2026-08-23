@@ -128,8 +128,8 @@ export default function AdminPage({ locale = 'en' }) {
           <div className="eyebrow">{text('Admin security', 'Bảo mật admin')}</div>
           <h2>{text('Update admin password', 'Đổi password admin')}</h2>
           <p className="muted">{text(
-            'The default password is abc123. Change it after first login. Updating the password signs out existing admin sessions.',
-            'Password mặc định là abc123. Nên đổi sau lần đăng nhập đầu tiên. Khi đổi password, các session admin hiện tại sẽ bị đăng xuất.'
+            'Use this form to change the admin password. Updating it signs out existing admin sessions.',
+            'Dùng form này để đổi password admin. Khi đổi password, các session admin hiện tại sẽ bị đăng xuất.'
           )}</p>
           <form className="admin-password-form" onSubmit={updatePassword}>
             <label><span>{text('Current password', 'Password hiện tại')}</span><input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required /></label>
