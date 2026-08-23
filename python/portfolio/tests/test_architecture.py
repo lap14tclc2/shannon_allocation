@@ -48,3 +48,11 @@ def test_scheduler_does_not_require_transaction_writer():
     assert ".sync_daily()" in source
     assert "append_event" not in source
     assert "append_transaction" not in source
+
+
+def test_operational_server_wires_bilingual_locale_and_guide():
+    source = (PYTHON_DIR / "buyhold_server.py").read_text(encoding="utf-8")
+    assert "from portfolio.locale import resolve_locale" in source
+    assert 'localized["locale"]' in source
+    assert '"/guide": "guide"' in source
+    assert "<html lang='" in source
