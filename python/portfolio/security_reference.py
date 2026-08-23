@@ -39,6 +39,10 @@ def _find_isin(row: dict[str, Any]) -> str | None:
 class VnstockSecurityReferenceProvider:
     """Resolve master-data attributes without inventing identifiers.
 
+    ISIN is not mathematically derived from ticker or exchange metadata; QPort
+    accepts it only when a reference provider returns a valid identifier and
+    otherwise keeps the security explicitly UNRESOLVED/PARTIAL.
+
     Normal runtime calls are isolated in a spawned child process so Vnstock
     failures cannot terminate QPort. Injected factories remain direct for tests.
     """
