@@ -5,7 +5,7 @@ import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
-import PerformancePage from './pages/PerformancePage.jsx';
+import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
@@ -20,6 +20,7 @@ import './received-dividends.css';
 import './table-alignment.css';
 import './auth.css';
 import './ui-polish.css';
+import './insight-depth.css';
 
 const PAGES = {
   auth: AuthPage,
