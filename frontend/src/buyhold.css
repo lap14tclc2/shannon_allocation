@@ -67,7 +67,7 @@
 .negative-card .metric-value { color: var(--danger); }
 
 .table-scroll { overflow-x: auto; }
-.portfolio-table { min-width: 1050px; }
+.portfolio-table { min-width: 1320px; }
 .symbols-cell .muted { font-size: 10px; margin-top: 3px; }
 
 .status-pill,
