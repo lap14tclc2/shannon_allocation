@@ -16,6 +16,8 @@ import './styles.css';
 import './buyhold.css';
 import './responsive.css';
 import './portfolio-insights.css';
+import './received-dividends.css';
+import './table-alignment.css';
 import './auth.css';
 
 const PAGES = {
