@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
-import { getLatestDividend, syncPortfolio } from '../lib/api.js';
+import { getLatestDividend, getPortfolioOperations, syncPortfolio } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
 import { useI18n } from '../i18n.js';
 
@@ -15,6 +15,46 @@ function latestComponents(result) {
 
 function eventDate(event) {
   return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || '-';
+}
+
+function groupBrokerSources(lots, position) {
+  const groups = new Map();
+  const symbol = String(position?.symbol || '').toUpperCase();
+  for (const lot of lots || []) {
+    if (String(lot?.symbol || '').toUpperCase() !== symbol) continue;
+    const quantity = Number(lot?.remaining_quantity || 0);
+    if (!(quantity > 0)) continue;
+    const broker = String(lot?.broker_code || 'UNASSIGNED').toUpperCase();
+    const account = String(lot?.account_id || 'PRIMARY').toUpperCase();
+    const key = `${broker}::${account}`;
+    const current = groups.get(key) || {
+      broker,
+      account,
+      shares: 0,
+      cost_value: 0,
+      lot_count: 0,
+    };
+    current.shares += quantity;
+    current.cost_value += Number(lot?.cost_basis || 0);
+    current.lot_count += 1;
+    groups.set(key, current);
+  }
+
+  const price = position?.price == null ? null : Number(position.price);
+  const totalShares = Number(position?.shares || 0);
+  return [...groups.values()]
+    .map(source => {
+      const marketValue = price == null ? null : source.shares * price;
+      return {
+        ...source,
+        average_cost: source.shares > 0 ? source.cost_value / source.shares : 0,
+        market_value: marketValue,
+        unrealized_pnl: marketValue == null ? null : marketValue - source.cost_value,
+        unrealized_return: marketValue != null && source.cost_value > 0 ? marketValue / source.cost_value - 1 : null,
+        symbol_weight: totalShares > 0 ? source.shares / totalShares : 0,
+      };
+    })
+    .sort((a, b) => b.shares - a.shares || a.broker.localeCompare(b.broker) || a.account.localeCompare(b.account));
 }
 
 function Metric({ label, value, note, tone = '' }) {
@@ -35,6 +75,10 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState('');
   const [positionQuery, setPositionQuery] = useState('');
+  const [expandedHoldings, setExpandedHoldings] = useState({});
+  const [brokerLots, setBrokerLots] = useState(null);
+  const [brokerLotsLoading, setBrokerLotsLoading] = useState(false);
+  const [brokerLotsError, setBrokerLotsError] = useState('');
   const [dividendLoading, setDividendLoading] = useState(false);
   const [dividendRows, setDividendRows] = useState([]);
 
@@ -79,6 +123,27 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
     } finally {
       setExporting(false);
     }
+  }
+
+  async function loadBrokerLots() {
+    if (brokerLots !== null || brokerLotsLoading) return;
+    setBrokerLotsLoading(true);
+    setBrokerLotsError('');
+    try {
+      const operations = await getPortfolioOperations();
+      setBrokerLots(Array.isArray(operations?.tax_lots) ? operations.tax_lots : []);
+    } catch (err) {
+      setBrokerLotsError(err.message);
+      setBrokerLots([]);
+    } finally {
+      setBrokerLotsLoading(false);
+    }
+  }
+
+  async function toggleHolding(symbol) {
+    const opening = !expandedHoldings[symbol];
+    setExpandedHoldings(current => ({ ...current, [symbol]: opening }));
+    if (opening) await loadBrokerLots();
   }
 
   async function loadPositionDividends(refresh = false) {
@@ -221,7 +286,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           <div>
             <div className="eyebrow">{text('Investments', 'Khoản đầu tư')}</div>
             <h2>{t('portfolio.holdings')}</h2>
-            <p className="muted">{text('Shares, cost, current value and P/L. Risk evaluation stays at portfolio level above.', 'Hiển thị số lượng, giá vốn, giá trị hiện tại và P/L. Đánh giá rủi ro được giữ ở cấp toàn danh mục phía trên.')}</p>
+            <p className="muted">{text('Each ticker is consolidated across brokers. Expand a holding to see the current shares and cost basis by broker/account.', 'Mỗi mã được tổng hợp từ tất cả broker. Mở rộng một mã để xem số lượng và giá vốn hiện tại theo từng broker/account.')}</p>
           </div>
           <div className="table-tools">
             <input
@@ -245,7 +310,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           <div className="empty-state">{text('No holding matches that ticker.', 'Không có mã nào khớp tìm kiếm.')}</div>
         ) : (
           <div className="table-scroll">
-            <table className="ranking portfolio-table portfolio-table-core">
+            <table className="ranking portfolio-table portfolio-table-core holdings-expand-table">
               <thead><tr>
                 <th>{t('portfolio.ticker')}</th>
                 <th className="num">{t('portfolio.shares')}</th>
@@ -256,18 +321,84 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                 <th className="num">{t('portfolio.return')}</th>
                 <th className="num">{t('portfolio.weight')}</th>
               </tr></thead>
-              <tbody>{visiblePositions.map(p => (
-                <tr key={p.symbol}>
-                  <td className="symbols-cell"><b>{p.symbol}</b><div className="muted">{p.price_date || '-'} · {p.price_source || '-'}</div></td>
-                  <td className="num">{shares(p.shares)}</td>
-                  <td className="num">{money(p.average_cost)}</td>
-                  <td className="num">{money(p.price)}</td>
-                  <td className="num emphasis">{money(p.market_value)}</td>
-                  <td className={`num ${Number(p.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}`}>{money(p.unrealized_pnl)}</td>
-                  <td className={`num ${Number(p.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}`}>{pct(p.unrealized_return)}</td>
-                  <td className="num">{formatWeight(p.weight)}</td>
-                </tr>
-              ))}</tbody>
+              <tbody>{visiblePositions.map(p => {
+                const expanded = Boolean(expandedHoldings[p.symbol]);
+                const sources = brokerLots === null ? [] : groupBrokerSources(brokerLots, p);
+                return <React.Fragment key={p.symbol}>
+                  <tr className={`holding-parent-row ${expanded ? 'is-expanded' : ''}`}>
+                    <td className="symbols-cell">
+                      <button
+                        className="holding-expand-button"
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-controls={`holding-sources-${p.symbol}`}
+                        onClick={() => toggleHolding(p.symbol)}
+                      >
+                        <span className="holding-expand-icon" aria-hidden="true">{expanded ? '−' : '+'}</span>
+                        <span className="holding-symbol-copy">
+                          <b>{p.symbol}</b>
+                          <span className="muted">{p.price_date || '-'} · {p.price_source || '-'}</span>
+                        </span>
+                      </button>
+                    </td>
+                    <td className="num">{shares(p.shares)}</td>
+                    <td className="num">{money(p.average_cost)}</td>
+                    <td className="num">{money(p.price)}</td>
+                    <td className="num emphasis">{money(p.market_value)}</td>
+                    <td className={`num ${Number(p.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}`}>{money(p.unrealized_pnl)}</td>
+                    <td className={`num ${Number(p.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}`}>{pct(p.unrealized_return)}</td>
+                    <td className="num">{formatWeight(p.weight)}</td>
+                  </tr>
+                  {expanded && <tr className="holding-source-row" id={`holding-sources-${p.symbol}`}>
+                    <td colSpan="8">
+                      <div className="holding-source-panel">
+                        <div className="holding-source-head">
+                          <div>
+                            <b>{p.symbol} · {text('broker sources', 'nguồn theo broker')}</b>
+                            <span className="muted">{text('Open tax lots grouped by broker and account. Totals reconcile to the consolidated row above.', 'Các tax lot còn mở được nhóm theo broker và account. Tổng số liệu khớp với dòng tổng hợp phía trên.')}</span>
+                          </div>
+                          {brokerLots !== null && <span className="source-count-badge">{sources.length} {text(sources.length === 1 ? 'source' : 'sources', 'nguồn')}</span>}
+                        </div>
+
+                        {brokerLotsLoading && brokerLots === null ? (
+                          <div className="holding-source-state"><span className="spinner" />{text('Loading broker positions…', 'Đang tải vị thế theo broker…')}</div>
+                        ) : brokerLotsError ? (
+                          <div className="holding-source-state error">{brokerLotsError}</div>
+                        ) : sources.length === 0 ? (
+                          <div className="holding-source-state">{text('No open broker/account lots were found for this holding.', 'Không tìm thấy tax lot broker/account đang mở cho mã này.')}</div>
+                        ) : (
+                          <div className="holding-source-scroll">
+                            <table className="ranking holding-source-table">
+                              <thead><tr>
+                                <th>{text('Broker', 'Broker')}</th>
+                                <th>{text('Account', 'Tài khoản')}</th>
+                                <th className="num">{text('Shares', 'Số lượng')}</th>
+                                <th className="num">{text('Avg cost', 'Giá vốn TB')}</th>
+                                <th className="num">{text('Cost value', 'Tổng giá vốn')}</th>
+                                <th className="num">{text('Market value', 'Giá trị hiện tại')}</th>
+                                <th className="num">{text('Unrealized P/L', 'P/L chưa thực hiện')}</th>
+                                <th className="num">{text('% of symbol', '% của mã')}</th>
+                              </tr></thead>
+                              <tbody>{sources.map(source => (
+                                <tr key={`${p.symbol}-${source.broker}-${source.account}`}>
+                                  <td><b>{source.broker}</b></td>
+                                  <td>{source.account}</td>
+                                  <td className="num">{shares(source.shares)}</td>
+                                  <td className="num">{money(source.average_cost)}</td>
+                                  <td className="num">{money(source.cost_value)}</td>
+                                  <td className="num">{money(source.market_value)}</td>
+                                  <td className={`num ${Number(source.unrealized_pnl || 0) >= 0 ? 'pos' : 'neg'}`}>{money(source.unrealized_pnl)}</td>
+                                  <td className="num">{pct(source.symbol_weight)}</td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>}
+                </React.Fragment>;
+              })}</tbody>
             </table>
           </div>
         )}
