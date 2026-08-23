@@ -21,6 +21,7 @@ import './table-alignment.css';
 import './auth.css';
 import './ui-polish.css';
 import './insight-depth.css';
+import './holding-info-row.css';
 
 const PAGES = {
   auth: AuthPage,
