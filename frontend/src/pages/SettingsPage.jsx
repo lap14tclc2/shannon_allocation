@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { setCashReserve, setReferenceWeights } from '../lib/api.js';
+import { formatMoney } from '../lib/format.js';
 import { validateCashReserveInput, validateReferenceWeightInputs } from '../lib/validation.js';
 import { useI18n } from '../i18n.js';
 
@@ -22,6 +23,11 @@ export default function SettingsPage({ dashboard = {}, locale = 'en' }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const total = useMemo(() => Object.values(weights).reduce((sum, v) => sum + (v === '' ? 0 : Number(v || 0)), 0), [weights]);
 
+  const reservePreview = useMemo(() => {
+    if (String(cashReserve ?? '').trim() === '') return null;
+    try { return validateCashReserveInput(cashReserve, locale); } catch { return null; }
+  }, [cashReserve, locale]);
+
   async function save(e) {
     e.preventDefault();
     setSaving(true);
@@ -34,9 +40,20 @@ export default function SettingsPage({ dashboard = {}, locale = 'en' }) {
         if (positions.length === 0) throw new Error(text('Add holdings before enabling target-weight guidance.', 'Hãy thêm cổ phiếu trước khi bật tham chiếu tỷ trọng.'));
         normalizedWeights = validateReferenceWeightInputs(weights, positions.map((p) => p.symbol), locale);
       }
-      await setCashReserve(reserve);
+      const reserveResult = await setCashReserve(reserve);
       await setReferenceWeights(normalizedWeights);
-      setMessage(text('Preferences saved. Cash is only considered deployable above the reserve and only when explicit target weights are enabled.', 'Đã lưu tùy chọn. Tiền mặt chỉ được coi là có thể phân bổ khi vượt mức dự trữ và khi đã bật tỷ trọng mục tiêu rõ ràng.'));
+      const persistedReserve = Number(reserveResult?.cash_reserve);
+      if (!Number.isFinite(persistedReserve) || persistedReserve !== reserve) {
+        throw new Error(text(
+          `Cash reserve verification failed. Expected ${reserve.toLocaleString('en-US')} VND but backend returned ${String(reserveResult?.cash_reserve)}.`,
+          `Xác minh tiền dự trữ thất bại. Dự kiến ${reserve.toLocaleString('vi-VN')} VND nhưng backend trả về ${String(reserveResult?.cash_reserve)}.`,
+        ));
+      }
+      setCashReserveValue(String(persistedReserve));
+      setMessage(text(
+        `Preferences saved. Strategic cash reserve confirmed at ${formatMoney(persistedReserve, false, locale)} VND. Cash is only considered deployable above this reserve and when explicit target weights are enabled.`,
+        `Đã lưu tùy chọn. Tiền mặt dự trữ được xác nhận là ${formatMoney(persistedReserve, false, locale)} VND. Tiền mặt chỉ được coi là có thể phân bổ khi vượt mức này và đã bật tỷ trọng mục tiêu rõ ràng.`,
+      ));
       setSaving(false);
     } catch (err) {
       if (err.field) setFieldErrors({ [err.field]: err.message });
@@ -63,7 +80,17 @@ export default function SettingsPage({ dashboard = {}, locale = 'en' }) {
       <form className="card" onSubmit={save} noValidate>
         <div className="section-head"><div><h3>{text('Cash policy', 'Chính sách tiền mặt')}</h3><p className="muted">{text('Available cash is not automatically deployable. Set the amount you intentionally want to keep untouched. Enter 0 only if you explicitly want no reserve.', 'Tiền mặt khả dụng không tự động đồng nghĩa có thể phân bổ. Hãy đặt số tiền bạn chủ động muốn giữ nguyên. Chỉ nhập 0 nếu bạn thực sự không muốn giữ dự trữ.')}</p></div></div>
         <label>{text('Strategic cash reserve (VND)', 'Tiền mặt dự trữ chiến lược (VND)')}
-          <input type="number" min="0" step="1000" value={cashReserve} onChange={(e) => { setCashReserveValue(e.target.value); setFieldErrors((x) => ({ ...x, cash_reserve: undefined })); }} placeholder="20000000" aria-invalid={!!fieldErrors.cash_reserve} />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={cashReserve}
+            onChange={(e) => { setCashReserveValue(e.target.value); setFieldErrors((x) => ({ ...x, cash_reserve: undefined })); }}
+            placeholder={text('20m or 20,000,000', '20tr hoặc 20.000.000')}
+            aria-invalid={!!fieldErrors.cash_reserve}
+            autoComplete="off"
+          />
+          <span className="muted">{text('Accepted: 20000000 · 20,000,000 · 20.000.000 · 20m · 20tr', 'Chấp nhận: 20000000 · 20,000,000 · 20.000.000 · 20m · 20tr')}</span>
+          {reservePreview != null && <span className="money-preview"><b>{text('Will save', 'Sẽ lưu')}:</b> {formatMoney(reservePreview, false, locale)} VND</span>}
           <FieldError error={fieldErrors.cash_reserve} />
         </label>
 
