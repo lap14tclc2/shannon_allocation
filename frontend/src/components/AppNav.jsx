@@ -22,7 +22,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
           <a key={href} href={href} className={active === key ? 'active' : ''}>{t(labelKey)}</a>
         ))}
       </div>
-      <div className="language-switch" aria-label="Language">
+      <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
         <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>EN</button>
         <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>VI</button>
       </div>
