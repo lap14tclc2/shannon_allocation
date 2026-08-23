@@ -110,6 +110,7 @@ class PortfolioStore:
                     shares REAL NOT NULL,
                     average_cost REAL NOT NULL,
                     price REAL,
+                    cost_value REAL NOT NULL DEFAULT 0,
                     market_value REAL NOT NULL,
                     weight REAL NOT NULL,
                     unrealized_pnl REAL NOT NULL,
@@ -134,6 +135,48 @@ class PortfolioStore:
                 );
                 """
             )
+
+            # Existing databases created before cost_value was exposed need a
+            # non-destructive schema upgrade. Snapshots are derived data, while
+            # the ledger remains immutable source-of-truth data.
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(snapshot_positions)").fetchall()
+            }
+            if "cost_value" not in columns:
+                db.execute(
+                    "ALTER TABLE snapshot_positions ADD COLUMN cost_value REAL NOT NULL DEFAULT 0"
+                )
+
+            # One-time repair for the original provider-unit bug. VNDIRECT and
+            # vnstock bars such as 22.75/72.0 mean 22,750/72,000 VND. Canonical
+            # persisted prices are absolute VND. If legacy rows are repaired,
+            # previously-derived snapshots are invalidated rather than silently
+            # preserving wrong NAV/P&L history; a normal daily sync regenerates
+            # the current snapshot from the immutable ledger and corrected data.
+            marker = db.execute(
+                "SELECT value FROM app_meta WHERE key = 'price_units_vnd_v1'"
+            ).fetchone()
+            if marker is None:
+                cur = db.execute(
+                    """
+                    UPDATE market_prices
+                    SET
+                        open = CASE WHEN open IS NOT NULL AND ABS(open) < 1000 THEN open * 1000 ELSE open END,
+                        high = CASE WHEN high IS NOT NULL AND ABS(high) < 1000 THEN high * 1000 ELSE high END,
+                        low = CASE WHEN low IS NOT NULL AND ABS(low) < 1000 THEN low * 1000 ELSE low END,
+                        close = close * 1000
+                    WHERE LOWER(source) IN ('vndirect', 'vnstock')
+                      AND close > 0 AND close < 1000
+                    """
+                )
+                migrated = max(0, int(cur.rowcount or 0))
+                if migrated:
+                    db.execute("DELETE FROM snapshot_positions")
+                    db.execute("DELETE FROM portfolio_snapshots")
+                db.execute(
+                    "INSERT INTO app_meta(key, value) VALUES ('price_units_vnd_v1', ?)",
+                    (f"migrated:{migrated}",),
+                )
 
     @staticmethod
     def _now() -> str:
@@ -345,19 +388,19 @@ class PortfolioStore:
             db.executemany(
                 """
                 INSERT INTO snapshot_positions (
-                    snapshot_id, symbol, shares, average_cost, price, market_value,
-                    weight, unrealized_pnl, unrealized_return, risk_contribution,
-                    erc_reference_weight, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    snapshot_id, symbol, shares, average_cost, price, cost_value,
+                    market_value, weight, unrealized_pnl, unrealized_return,
+                    risk_contribution, erc_reference_weight, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         sid, p["symbol"], float(p.get("shares", 0)),
                         float(p.get("average_cost", 0)), p.get("price"),
-                        float(p.get("market_value", 0)), float(p.get("weight", 0)),
-                        float(p.get("unrealized_pnl", 0)), p.get("unrealized_return"),
-                        p.get("risk_contribution"), p.get("erc_reference_weight"),
-                        str(p.get("status") or "HOLD"),
+                        float(p.get("cost_value", 0)), float(p.get("market_value", 0)),
+                        float(p.get("weight", 0)), float(p.get("unrealized_pnl", 0)),
+                        p.get("unrealized_return"), p.get("risk_contribution"),
+                        p.get("erc_reference_weight"), str(p.get("status") or "HOLD"),
                     )
                     for p in positions
                 ],
