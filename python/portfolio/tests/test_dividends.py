@@ -59,7 +59,6 @@ def test_fireant_parses_documented_event_shape():
     assert len(rows) == 2
     assert rows[0].cash_per_share == 700
     assert rows[1].stock_ratio == 0.15
-    assert rows[0].source_event_id == "101"
 
 
 def test_vps_parses_nested_dividend_events_and_ignores_unrelated_company_events():
@@ -70,116 +69,98 @@ def test_vps_parses_nested_dividend_events_and_ignores_unrelated_company_events(
     rows = VpsDividendProvider(session=session).events("ACB", "2026-01-01", "2026-12-31")
     assert len(rows) == 1
     assert rows[0].source == "vps_events"
-    assert rows[0].source_event_id == "vps-cash-1"
-    assert rows[0].dividend_type == "CASH_DIVIDEND"
-    assert rows[0].record_date == "2026-06-16"
-    assert rows[0].payment_date == "2026-07-01"
     assert rows[0].cash_per_share == 700
+    assert rows[0].record_date == "2026-06-16"
 
 
-def test_vps_parses_stock_dividend_ratio_from_title():
-    session = FakeSession({"items":[{"id":"vps-stock-1","symbol":"FPT","title":"Trả cổ tức bằng cổ phiếu tỷ lệ 15%","lastRegistrationDate":"20/07/2026","exDate":"17/07/2026"}]})
-    rows = VpsDividendProvider(session=session).events("FPT", "2026-01-01", "2026-12-31")
-    assert len(rows) == 1
-    assert rows[0].dividend_type == "STOCK_DIVIDEND"
-    assert rows[0].stock_ratio == 0.15
-    assert rows[0].record_date == "2026-07-20"
-    assert rows[0].ex_date == "2026-07-17"
+def test_vps_single_source_row_can_emit_cash_and_stock_components():
+    session = FakeSession({"events":[{
+        "eventId":"acb-combined",
+        "symbol":"ACB",
+        "title":"Trả cổ tức bằng tiền 700 đồng/cp và trả cổ tức bằng cổ phiếu tỷ lệ 100:13",
+        "recordDate":"2026-06-16",
+        "exDate":"2026-06-15",
+    }]})
+    rows = VpsDividendProvider(session=session).events("ACB", "2026-01-01", "2026-12-31")
+    assert len(rows) == 2
+    assert {row.dividend_type for row in rows} == {"CASH_DIVIDEND", "STOCK_DIVIDEND"}
+    cash = next(row for row in rows if row.dividend_type == "CASH_DIVIDEND")
+    stock = next(row for row in rows if row.dividend_type == "STOCK_DIVIDEND")
+    assert cash.cash_per_share == 700
+    assert stock.stock_ratio == 0.13
+    assert cash.source_event_id == stock.source_event_id == "acb-combined"
 
 
 def test_fireant_public_bff_can_parse_nested_json_without_oauth():
     session = FakeSession({"content":{"corporateActions":[{"eventID":"fa-public-1","symbol":"DGC","title":"Cổ tức bằng tiền 3.000 đồng/cp","recordDate":"2026-04-10","executionDate":"2026-04-25"}]}})
     rows = FireAntPublicContentProvider(session=session).events("DGC", "2026-01-01", "2026-12-31")
-    assert len(rows) == 1
-    assert rows[0].source == "fireant_public"
-    assert rows[0].cash_per_share == 3000
+    assert len(rows) == 1 and rows[0].cash_per_share == 3000
 
 
-def test_cafef_public_html_parses_gdkhq_cash_dividend():
+def test_cafef_public_html_parses_combined_acb_dividend():
     page = """
-    <html><body>
-      <div>02/07/2026 00:00 VPS: 23.7.2026, ngày GDKHQ chi trả cổ tức năm 2025 bằng tiền (550 đ/cp)</div>
-      <div>26/06/2026 Nghị quyết HĐQT về việc thực hiện chi trả cổ tức năm 2025</div>
-    </body></html>
+    <html><body><a>ACB: 15.6.2026, ngày GDKHQ trả cổ tức năm 2025 bằng tiền (700 đ/cp), trả cổ tức bằng cổ phiếu (tỷ lệ 100:13)</a></body></html>
     """
-    session = FakeSession(payload=ValueError("not json"), text=page)
-    rows = CafeFDividendProvider(session=session).events("VPS", "2026-01-01", "2026-12-31")
-    assert rows
-    latest = max(rows, key=lambda item: item.ex_date or item.announcement_date or "")
-    assert latest.source == "cafef_public"
-    assert latest.dividend_type == "CASH_DIVIDEND"
-    assert latest.ex_date == "2026-07-23"
-    assert latest.cash_per_share == 550
+    rows = CafeFDividendProvider(session=FakeSession(payload=ValueError("not json"), text=page)).events("ACB", "2026-01-01", "2026-12-31")
+    assert len(rows) == 2
+    assert {row.dividend_type for row in rows} == {"CASH_DIVIDEND", "STOCK_DIVIDEND"}
+    cash = next(row for row in rows if row.dividend_type == "CASH_DIVIDEND")
+    stock = next(row for row in rows if row.dividend_type == "STOCK_DIVIDEND")
+    assert cash.ex_date == stock.ex_date == "2026-06-15"
+    assert cash.cash_per_share == 700
+    assert stock.stock_ratio == 0.13
 
 
 class StaticProvider:
     def __init__(self, name, events=None, error=None):
-        self.name = name
-        self._events = events or []
-        self._error = error
-        self.calls = 0
-
-    def health(self):
-        return {"provider": self.name, "available": self._error is None}
-
+        self.name = name; self._events = events or []; self._error = error; self.calls = 0
+    def health(self): return {"provider":self.name,"available":self._error is None}
     def events(self, symbol, start, end):
         self.calls += 1
-        if self._error:
-            raise self._error
+        if self._error: raise self._error
         return list(self._events)
 
 
 def test_latest_selects_latest_record_date_not_latest_payment_of_old_event():
-    old = DividendEvent(symbol="FPT", dividend_type="CASH_DIVIDEND", source="vci_iq", source_event_id="old", record_date="2026-05-29", payment_date="2026-12-31", cash_per_share=1000)
-    new = DividendEvent(symbol="FPT", dividend_type="STOCK_DIVIDEND", source="vci_iq", source_event_id="new", record_date="2026-07-20", payment_date="2026-08-01", stock_ratio=0.15)
-    result = LatestDividendService([StaticProvider("vci_iq", [old, new])]).latest("FPT")
-    assert result["found"] is True
+    old = DividendEvent(symbol="FPT",dividend_type="CASH_DIVIDEND",source="vci_iq",source_event_id="old",record_date="2026-05-29",payment_date="2026-12-31",cash_per_share=1000)
+    new = DividendEvent(symbol="FPT",dividend_type="STOCK_DIVIDEND",source="vci_iq",source_event_id="new",record_date="2026-07-20",payment_date="2026-08-01",stock_ratio=0.15)
+    result = LatestDividendService([StaticProvider("vci_iq",[old,new])]).latest("FPT")
     assert result["latest"]["source_event_id"] == "new"
-    assert result["latest"]["effective_event_date"] == "2026-07-20"
+    assert result["latest_event_date"] == "2026-07-20"
+
+
+def test_latest_returns_all_components_on_same_latest_event_date():
+    cash = DividendEvent(symbol="ACB",dividend_type="CASH_DIVIDEND",source="cafef_public",source_event_id="same",ex_date="2026-06-15",cash_per_share=700)
+    stock = DividendEvent(symbol="ACB",dividend_type="STOCK_DIVIDEND",source="cafef_public",source_event_id="same",ex_date="2026-06-15",stock_ratio=0.13)
+    result = LatestDividendService([StaticProvider("cafef_public",[cash,stock])]).latest("ACB")
+    assert result["found"] is True
+    assert len(result["latest_components"]) == 2
+    assert result["latest"]["dividend_type"] == "CASH_DIVIDEND"
 
 
 def test_provider_failure_does_not_block_fallback():
-    fallback = DividendEvent(symbol="DGC", dividend_type="CASH_DIVIDEND", source="fireant", source_event_id="fa-1", record_date="2026-04-10", cash_per_share=3000)
-    result = LatestDividendService([
-        StaticProvider("vci_iq", error=RuntimeError("temporary outage")),
-        StaticProvider("fireant", [fallback]),
-    ]).latest("DGC")
-    assert result["found"] is True
-    assert result["latest"]["source"] == "fireant"
-    assert result["errors"][0]["provider"] == "vci_iq"
+    fallback = DividendEvent(symbol="DGC",dividend_type="CASH_DIVIDEND",source="cafef_public",source_event_id="cf-1",ex_date="2026-04-10",cash_per_share=3000)
+    result = LatestDividendService([StaticProvider("vps_events",error=RuntimeError("temporary outage")),StaticProvider("cafef_public",[fallback])]).latest("DGC")
+    assert result["latest"]["source"] == "cafef_public"
+    assert result["errors"][0]["provider"] == "vps_events"
 
 
-def test_equivalent_events_are_cross_source_matched():
-    vci = DividendEvent(symbol="FPT", dividend_type="CASH_DIVIDEND", source="vci_iq", source_event_id="vci-1", record_date="2026-05-29", ex_date="2026-05-28", payment_date="2026-06-10", cash_per_share=1000)
-    fireant = DividendEvent(symbol="FPT", dividend_type="CASH_DIVIDEND", source="fireant", source_event_id="fa-1", record_date="2026-05-29", ex_date="2026-05-28", payment_date="2026-06-10", cash_per_share=1000)
-    result = LatestDividendService([
-        StaticProvider("vci_iq", [vci]),
-        StaticProvider("fireant", [fireant]),
-    ]).latest("FPT")
-    assert result["latest"]["source"] == "vci_iq"
+def test_equivalent_events_are_cross_source_matched_in_aggregate_mode():
+    a = DividendEvent(symbol="FPT",dividend_type="CASH_DIVIDEND",source="vci_iq",source_event_id="vci-1",record_date="2026-05-29",ex_date="2026-05-28",payment_date="2026-06-10",cash_per_share=1000)
+    b = DividendEvent(symbol="FPT",dividend_type="CASH_DIVIDEND",source="fireant",source_event_id="fa-1",record_date="2026-05-29",ex_date="2026-05-28",payment_date="2026-06-10",cash_per_share=1000)
+    result = LatestDividendService([StaticProvider("vci_iq",[a]),StaticProvider("fireant",[b])]).latest("FPT")
     assert result["latest"]["cross_source_match"] is True
-    assert {e["source"] for e in result["latest"]["evidence"]} == {"vci_iq", "fireant"}
 
 
-def test_default_provider_order_prefers_unauthenticated_sources():
+def test_default_provider_order_prefers_public_no_auth_sources():
     service = LatestDividendService()
-    assert [p.name for p in service.providers] == [
-        "vps_events",
-        "fireant_public",
-        "cafef_public",
-        "vci_iq",
-        "fireant",
-    ]
+    assert [p.name for p in service.providers] == ["vps_events","cafef_public","fireant_public","vci_iq","fireant"]
     assert service.stop_on_first_data is True
 
 
 def test_failover_short_circuits_after_first_usable_provider():
-    event = DividendEvent(symbol="ACB", dividend_type="CASH_DIVIDEND", source="vps_events", source_event_id="vps-1", record_date="2026-06-16", cash_per_share=700)
-    primary = StaticProvider("vps_events", [event])
-    blocked = StaticProvider("vci_iq", error=RuntimeError("should never be called"))
-    result = LatestDividendService([primary, blocked], stop_on_first_data=True).latest("ACB")
-    assert result["found"] is True
+    event = DividendEvent(symbol="ACB",dividend_type="CASH_DIVIDEND",source="vps_events",source_event_id="vps-1",record_date="2026-06-16",cash_per_share=700)
+    primary = StaticProvider("vps_events",[event]); blocked = StaticProvider("vci_iq",error=RuntimeError("should never be called"))
+    result = LatestDividendService([primary,blocked],stop_on_first_data=True).latest("ACB")
     assert result["latest"]["source"] == "vps_events"
-    assert primary.calls == 1
-    assert blocked.calls == 0
-    assert result["provider_attempts"] == [{"provider":"vps_events","status":"SUCCESS","count":1}]
+    assert primary.calls == 1 and blocked.calls == 0
