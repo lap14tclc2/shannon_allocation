@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlparse
 from portfolio.locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
 from portfolio.service import PortfolioService
+from portfolio.validation import InputValidationError
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(REPO, "frontend")
@@ -180,6 +181,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(200, {"snapshots": svc.snapshots()})
         if parts == ["market"]:
             return self._send_json(200, svc.dashboard().get("market_data") or {})
+        if parts == ["preferences"]:
+            return self._send_json(200, svc.preferences())
         return self._send_json(404, {"error": "Portfolio endpoint not found."})
 
     def _operational_page(self, page: str):
@@ -236,8 +239,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(200, svc.sync_daily())
             if path == "/api/portfolio/reference-weights":
                 return self._send_json(200, svc.set_reference_weights(body.get("weights") or {}))
+            if path == "/api/portfolio/cash-reserve":
+                return self._send_json(200, svc.set_cash_reserve(body.get("amount")))
+        except InputValidationError as exc:
+            return self._send_json(400, exc.as_dict())
         except Exception as exc:
-            return self._send_json(400, {"error": str(exc)})
+            return self._send_json(400, {"error": str(exc), "code": "PORTFOLIO_ERROR", "field": None})
         return self._send_json(404, {"error": "Not found."})
 
 
