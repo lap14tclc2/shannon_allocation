@@ -125,8 +125,10 @@ body {
   outline: none;
 }
 
+/* This child table has more audit columns than the parent. It still fills a
+   wide desktop card, while tablet/mobile use the existing horizontal scroller. */
 .holding-source-table {
-  min-width: 1180px;
+  min-width: 1180px !important;
 }
 
 .dividend-received-cell {
