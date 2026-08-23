@@ -13,9 +13,10 @@ from pathlib import Path
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
 DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_PASSWORD = "abc123"
-SESSION_DAYS = 30
-PBKDF2_ITERATIONS = 200_000
+AUTH_SECURITY_VERSION = "2"
+SESSION_DAYS = 7
+PBKDF2_ITERATIONS = 600_000
+MIN_ADMIN_PASSWORD_LENGTH = 12
 
 
 def _now() -> datetime:
@@ -48,6 +49,14 @@ def _verify_password(password: str, encoded: str | None) -> bool:
         return False
 
 
+def _needs_rehash(encoded: str | None) -> bool:
+    try:
+        scheme, iterations, *_ = str(encoded or "").split("$", 3)
+        return scheme != "pbkdf2_sha256" or int(iterations) < PBKDF2_ITERATIONS
+    except Exception:
+        return True
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
 
@@ -63,17 +72,12 @@ class AuthError(ValueError):
 
 
 class AuthStore:
-    """Small local auth database plus one isolated portfolio SQLite DB per user.
+    """Local identity database plus one isolated portfolio SQLite DB per user.
 
-    The authenticated identity database is intentionally separate from portfolio
-    databases. Normal users authenticate by unique username only. The built-in
-    admin account requires a password. Deleting a normal user removes the auth
-    row, active sessions and that user's entire portfolio database.
-
-    The default storage namespace is ``python/data/auth-v1``. The previous
-    single-user ``python/data/portfolio.sqlite3`` database is deliberately not
-    reused, giving the authentication migration a fresh clean data namespace.
-    Environment variables can override both locations for tests/deployment.
+    Normal users authenticate by unique username only and are therefore suitable
+    only for trusted-local use. Admin credentials are never embedded in source,
+    UI, documentation, or logs. The admin password must be bootstrapped once via
+    ``python -m portfolio.cli setup-admin`` or ``QPORT_ADMIN_PASSWORD``.
     """
 
     def __init__(self, path: str | Path | None = None, user_data_dir: str | Path | None = None) -> None:
@@ -96,7 +100,19 @@ class AuthStore:
         finally:
             db.close()
 
+    @staticmethod
+    def validate_admin_password(password: str) -> str:
+        value = str(password or "")
+        if len(value) < MIN_ADMIN_PASSWORD_LENGTH or len(value) > 128:
+            raise AuthError(
+                "INVALID_NEW_PASSWORD",
+                f"Admin password must be {MIN_ADMIN_PASSWORD_LENGTH}-128 characters.",
+                "new_password",
+            )
+        return value
+
     def initialize(self) -> None:
+        now = _iso()
         with self.connect() as db:
             db.executescript(
                 """
@@ -118,15 +134,44 @@ class AuthStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
                 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+                CREATE TABLE IF NOT EXISTS auth_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
-            admin = db.execute("SELECT id FROM users WHERE role='ADMIN' LIMIT 1").fetchone()
+            admin = db.execute("SELECT * FROM users WHERE role='ADMIN' LIMIT 1").fetchone()
             if admin is None:
-                now = _iso()
-                db.execute(
-                    "INSERT INTO users(username,role,password_hash,created_at,updated_at) VALUES (?,?,?,?,?)",
-                    (DEFAULT_ADMIN_USERNAME, "ADMIN", _hash_password(DEFAULT_ADMIN_PASSWORD), now, now),
+                cur = db.execute(
+                    "INSERT INTO users(username,role,password_hash,created_at,updated_at) VALUES (?, 'ADMIN', NULL, ?, ?)",
+                    (DEFAULT_ADMIN_USERNAME, now, now),
                 )
+                admin = db.execute("SELECT * FROM users WHERE id=?", (int(cur.lastrowid),)).fetchone()
+
+            version_row = db.execute("SELECT value FROM auth_meta WHERE key='security_version'").fetchone()
+            current_version = version_row["value"] if version_row else None
+            if current_version != AUTH_SECURITY_VERSION:
+                # Security v2 intentionally invalidates any credential/session created
+                # by the earlier hard-coded-admin-password implementation. This is
+                # required because removing the plaintext from HEAD cannot remove it
+                # from Git history or from an already-created local auth database.
+                db.execute(
+                    "UPDATE users SET password_hash=NULL,updated_at=? WHERE role='ADMIN'",
+                    (now,),
+                )
+                db.execute(
+                    "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role='ADMIN')"
+                )
+                db.execute(
+                    "INSERT INTO auth_meta(key,value) VALUES ('security_version',?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (AUTH_SECURITY_VERSION,),
+                )
+
+        bootstrap_password = os.environ.get("QPORT_ADMIN_PASSWORD")
+        if bootstrap_password and not self.admin_configured():
+            self.bootstrap_admin_password(bootstrap_password)
         self.cleanup_expired_sessions()
 
     @staticmethod
@@ -167,6 +212,11 @@ class AuthStore:
             row = db.execute("SELECT * FROM users WHERE id=?", (int(user_id),)).fetchone()
         return dict(row) if row else None
 
+    def admin_configured(self) -> bool:
+        with self.connect() as db:
+            row = db.execute("SELECT password_hash FROM users WHERE role='ADMIN' LIMIT 1").fetchone()
+        return bool(row and row["password_hash"])
+
     def register(self, username: str) -> dict:
         username = self.normalize_username(username)
         if username.lower() == DEFAULT_ADMIN_USERNAME.lower():
@@ -189,8 +239,21 @@ class AuthStore:
             row = db.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
         if row is None:
             raise AuthError("USER_NOT_REGISTERED", "Username is not registered.", "username")
-        if row["role"] == "ADMIN" and not _verify_password(str(password or ""), row["password_hash"]):
-            raise AuthError("INVALID_ADMIN_PASSWORD", "Admin password is incorrect.", "password")
+        if row["role"] == "ADMIN":
+            if not row["password_hash"]:
+                raise AuthError(
+                    "ADMIN_NOT_CONFIGURED",
+                    "Admin password is not configured. Run: python -m portfolio.cli setup-admin",
+                    "password",
+                )
+            if not _verify_password(str(password or ""), row["password_hash"]):
+                raise AuthError("INVALID_ADMIN_PASSWORD", "Admin password is incorrect.", "password")
+            if _needs_rehash(row["password_hash"]):
+                with self.connect() as db:
+                    db.execute(
+                        "UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
+                        (_hash_password(str(password or "")), _iso(), int(row["id"])),
+                    )
         token = self.create_session(int(row["id"]))
         return self._public_user(row), token
 
@@ -258,21 +321,36 @@ class AuthStore:
                 sidecar.unlink()
         return {"ok": True, "user": self._public_user(row), "portfolio_data_removed": removed_data}
 
+    def bootstrap_admin_password(self, new_password: str) -> dict:
+        new_password = self.validate_admin_password(new_password)
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM users WHERE role='ADMIN' LIMIT 1").fetchone()
+            if row is None:
+                raise AuthError("ADMIN_REQUIRED", "Admin account is missing.")
+            if row["password_hash"]:
+                raise AuthError(
+                    "ADMIN_ALREADY_CONFIGURED",
+                    "Admin password is already configured. Change it from the Admin page.",
+                )
+            db.execute(
+                "UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
+                (_hash_password(new_password), _iso(), int(row["id"])),
+            )
+            db.execute("DELETE FROM sessions WHERE user_id=?", (int(row["id"]),))
+        return {"ok": True, "message": "Admin password configured."}
+
     def change_admin_password(self, admin_id: int, current_password: str, new_password: str) -> dict:
         row = self.user_by_id(admin_id)
         if row is None or row["role"] != "ADMIN":
             raise AuthError("ADMIN_REQUIRED", "Admin access is required.")
-        if not _verify_password(str(current_password or ""), row["password_hash"]):
+        if not row.get("password_hash") or not _verify_password(str(current_password or ""), row["password_hash"]):
             raise AuthError("INVALID_ADMIN_PASSWORD", "Current admin password is incorrect.", "current_password")
-        new_password = str(new_password or "")
-        if len(new_password) < 6 or len(new_password) > 128:
-            raise AuthError("INVALID_NEW_PASSWORD", "New password must be 6-128 characters.", "new_password")
+        new_password = self.validate_admin_password(new_password)
         with self.connect() as db:
             db.execute(
                 "UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
                 (_hash_password(new_password), _iso(), int(admin_id)),
             )
-            # Password rotation invalidates every other admin session.
             db.execute("DELETE FROM sessions WHERE user_id=?", (int(admin_id),))
         return {"ok": True, "message": "Admin password updated. Please sign in again."}
 
