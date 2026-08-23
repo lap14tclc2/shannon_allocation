@@ -13,6 +13,10 @@ function latestComponents(result) {
   return result?.latest_components?.length ? result.latest_components : (result?.latest ? [result.latest] : []);
 }
 
+function eventDate(event) {
+  return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || '-';
+}
+
 function Metric({ label, value, note, tone = '' }) {
   return <div className={`metric-card ${tone}`}>
     <div className="metric-label">{label}</div>
@@ -38,6 +42,12 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const positions = portfolio.positions || [];
   const perf = dashboard.performance_summary || {};
   const market = dashboard.market_data || {};
+  const risk = dashboard.risk || {};
+  const health = dashboard.health || {};
+  const healthFlags = health.flags || [];
+  const warningFlags = healthFlags.filter(flag => flag.level === 'WARNING');
+  const infoFlags = healthFlags.filter(flag => flag.level !== 'WARNING');
+  const riskCoverage = health.risk_coverage ?? risk.quality?.coverage_weight;
   const positionSymbolsKey = positions.map(p => p.symbol).sort().join('|');
 
   const visiblePositions = useMemo(() => {
@@ -71,7 +81,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
     }
   }
 
-  async function loadPositionDividends() {
+  async function loadPositionDividends(refresh = false) {
     const symbols = [...new Set(positions.map(p => String(p.symbol || '').toUpperCase()).filter(Boolean))];
     if (!symbols.length) {
       setDividendRows([]);
@@ -84,7 +94,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
       const batch = symbols.slice(i, i + 4);
       const rows = await Promise.all(batch.map(async symbol => {
         try {
-          return { symbol, result: await getLatestDividend(symbol), error: null };
+          return { symbol, result: await getLatestDividend(symbol, { refresh }), error: null };
         } catch (err) {
           return { symbol, result: null, error: err.message };
         }
@@ -96,12 +106,23 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   }
 
   useEffect(() => {
-    if (positionSymbolsKey) loadPositionDividends();
+    if (positionSymbolsKey) loadPositionDividends(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionSymbolsKey]);
 
   const totalPnlPositive = Number(portfolio.total_pnl || 0) >= 0;
   const dividendFound = dividendRows.filter(row => row.result?.found).length;
+  const assessmentStatus = health.status || (positions.length ? 'UNKNOWN' : 'NO_HOLDINGS');
+  const assessmentTone = assessmentStatus === 'HEALTHY' ? 'status-valid' : assessmentStatus === 'ATTENTION' ? 'status-partial' : 'status-missing';
+  const assessmentSummary = warningFlags.length
+    ? text(
+        `${warningFlags.length} portfolio risk signal${warningFlags.length === 1 ? '' : 's'} need attention. These are diagnostics, not automatic trade instructions.`,
+        `${warningFlags.length} tín hiệu rủi ro của toàn danh mục cần chú ý. Đây là chẩn đoán thông tin, không phải lệnh giao dịch tự động.`
+      )
+    : text(
+        'No major portfolio-level warning is currently triggered by concentration, correlation, drawdown, volatility or data coverage rules.',
+        'Hiện chưa có cảnh báo lớn ở cấp toàn danh mục theo các tiêu chí tập trung, tương quan, drawdown, biến động hoặc độ phủ dữ liệu.'
+      );
 
   return (
     <div className="page">
@@ -156,12 +177,51 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
         />
       </div>
 
+      <section className="card portfolio-assessment-card">
+        <div className="section-head assessment-head">
+          <div>
+            <div className="eyebrow">{text('Portfolio intelligence', 'Đánh giá danh mục')}</div>
+            <h2>{text('Portfolio assessment', 'Đánh giá toàn danh mục')}</h2>
+            <p className="muted">{text('QPort evaluates the current portfolio from stored market history, position weights, correlations and tracked performance. It never changes holdings automatically.', 'QPort đánh giá danh mục hiện tại từ lịch sử thị trường đã lưu, tỷ trọng vị thế, tương quan và hiệu suất theo dõi. Hệ thống không tự động thay đổi vị thế.')}</p>
+          </div>
+          <div className="assessment-status-block">
+            <span className={`status-pill ${assessmentTone}`}>{assessmentStatus}</span>
+            <span className="muted">{risk.as_of || market.market_date || '-'}</span>
+          </div>
+        </div>
+
+        <div className="assessment-copy">{assessmentSummary}</div>
+
+        <div className="assessment-metrics">
+          <div><span>{text('252D volatility', 'Biến động 252D')}</span><b>{pct(risk.volatility_252)}</b></div>
+          <div><span>{text('Current drawdown', 'Drawdown hiện tại')}</span><b className={Number(perf.current_drawdown || 0) < 0 ? 'neg' : ''}>{pct(perf.current_drawdown)}</b></div>
+          <div><span>{text('Effective positions', 'Số vị thế hiệu dụng')}</span><b>{risk.effective_positions == null ? '-' : Number(risk.effective_positions).toFixed(2)}</b></div>
+          <div><span>{text('Risk coverage', 'Độ phủ dữ liệu rủi ro')}</span><b>{pct(riskCoverage)}</b></div>
+          <div><span>{text('Largest risk contributor', 'Đóng góp rủi ro lớn nhất')}</span><b>{risk.largest_risk_symbol || '-'} {risk.largest_risk_contribution != null ? pct(risk.largest_risk_contribution) : ''}</b></div>
+          <div><span>{text('Daily CVaR 95%', 'CVaR ngày 95%')}</span><b className={Number(risk.daily_cvar_95 || 0) < 0 ? 'neg' : ''}>{pct(risk.daily_cvar_95)}</b></div>
+        </div>
+
+        {(warningFlags.length > 0 || infoFlags.length > 0) && <div className="assessment-flags">
+          {healthFlags.map(flag => (
+            <div className={`assessment-flag ${flag.level === 'WARNING' ? 'warn-flag' : 'info-flag'}`} key={`${flag.code}-${flag.message}`}>
+              <span>{flag.level === 'WARNING' ? '!' : 'i'}</span>
+              <div><b>{flag.code}</b><p>{flag.message}</p></div>
+            </div>
+          ))}
+        </div>}
+
+        <div className="section-foot">
+          <span className="muted">{text('Risk is informational only; no BUY/SELL action is generated from this assessment.', 'Rủi ro chỉ mang tính thông tin; đánh giá này không tạo lệnh BUY/SELL.')}</span>
+          <a className="text-link" href="/risk">{text('Advanced risk details →', 'Chi tiết rủi ro nâng cao →')}</a>
+        </div>
+      </section>
+
       <section className="card holdings-card">
         <div className="section-head holdings-head">
           <div>
             <div className="eyebrow">{text('Investments', 'Khoản đầu tư')}</div>
             <h2>{t('portfolio.holdings')}</h2>
-            <p className="muted">{text('Shares, cost, current value and P/L. No model or risk status is mixed into this table.', 'Chỉ hiển thị số lượng, giá vốn, giá trị hiện tại và P/L. Không trộn trạng thái model hay rủi ro vào bảng này.')}</p>
+            <p className="muted">{text('Shares, cost, current value and P/L. Risk evaluation stays at portfolio level above.', 'Hiển thị số lượng, giá vốn, giá trị hiện tại và P/L. Đánh giá rủi ro được giữ ở cấp toàn danh mục phía trên.')}</p>
           </div>
           <div className="table-tools">
             <input
@@ -218,52 +278,90 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           <div>
             <div className="eyebrow">{text('Income', 'Thu nhập')}</div>
             <h2>{text('Dividends', 'Cổ tức')}</h2>
-            <p className="muted">{text('Automatically checks every stock you currently own.', 'Tự động tra toàn bộ mã cổ phiếu bạn đang nắm giữ.')}</p>
+            <p className="muted">{text('Latest event is shown by default. Expand a ticker to see its full stored history. QPort reads SQLite first and calls providers only when the database has no cached result.', 'Mặc định hiển thị sự kiện mới nhất. Mở rộng từng mã để xem toàn bộ lịch sử đã lưu. QPort đọc SQLite trước và chỉ gọi provider khi cơ sở dữ liệu chưa có kết quả cache.')}</p>
           </div>
-          <button className="btn-secondary" type="button" disabled={dividendLoading || positions.length === 0} onClick={loadPositionDividends}>
-            {dividendLoading ? text('Checking…', 'Đang tra…') : text('Refresh dividends', 'Tra lại cổ tức')}
+          <button className="btn-secondary" type="button" disabled={dividendLoading || positions.length === 0} onClick={() => loadPositionDividends(true)}>
+            {dividendLoading ? text('Refreshing…', 'Đang cập nhật…') : text('Refresh from providers', 'Cập nhật từ provider')}
           </button>
         </div>
 
         <div className="dividend-summary">
           <span>{positions.length} {text('holdings', 'mã')}</span>
-          <span>{dividendRows.length} {text('checked', 'đã tra')}</span>
-          <span className="pos">{dividendFound} {text('with data', 'có dữ liệu')}</span>
+          <span>{dividendRows.length} {text('loaded', 'đã tải')}</span>
+          <span className="pos">{dividendFound} {text('with history', 'có lịch sử')}</span>
         </div>
 
         {positions.length === 0 ? (
           <div className="empty-state">{text('Add a position to start dividend tracking.', 'Thêm vị thế để bắt đầu theo dõi cổ tức.')}</div>
         ) : dividendRows.length === 0 && dividendLoading ? (
-          <div className="loading-line"><span className="spinner" />{text('Fetching dividends…', 'Đang lấy dữ liệu cổ tức…')}</div>
+          <div className="loading-line"><span className="spinner" />{text('Loading dividend history…', 'Đang tải lịch sử cổ tức…')}</div>
         ) : (
-          <div className="table-scroll">
-            <table className="ranking dividend-overview-table">
-              <thead><tr>
-                <th>{text('Ticker', 'Mã')}</th>
-                <th>{text('Latest event', 'Event mới nhất')}</th>
-                <th className="num">{text('Cash / share', 'Tiền / CP')}</th>
-                <th className="num">{text('Stock ratio', 'Tỷ lệ CP')}</th>
-                <th>{text('Payment', 'Thanh toán')}</th>
-                <th>{text('Source', 'Nguồn')}</th>
-              </tr></thead>
-              <tbody>{dividendRows.map(row => {
-                const components = latestComponents(row.result);
-                const cash = components.find(x => x.dividend_type === 'CASH_DIVIDEND');
-                const stock = components.find(x => x.dividend_type === 'STOCK_DIVIDEND');
-                const first = components[0];
-                const sources = [...new Set(components.map(x => x.source).filter(Boolean))].join(', ');
-                return (
-                  <tr key={row.symbol}>
-                    <td><b>{row.symbol}</b></td>
-                    <td>{row.result?.latest_event_date || first?.effective_event_date || '-'}</td>
-                    <td className="num">{cash?.cash_per_share != null ? money(cash.cash_per_share) : '-'}</td>
-                    <td className="num">{stock?.stock_ratio_percent != null ? `${Number(stock.stock_ratio_percent).toFixed(2)}%` : '-'}</td>
-                    <td>{first?.payment_date || '-'}</td>
-                    <td>{sources || '-'}{row.error && <div className="muted error-copy">{row.error}</div>}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
+          <div className="dividend-symbol-list">
+            {dividendRows.map(row => {
+              const result = row.result || {};
+              const components = latestComponents(result);
+              const history = result.events || components;
+              const cash = components.find(x => x.dividend_type === 'CASH_DIVIDEND');
+              const stock = components.find(x => x.dividend_type === 'STOCK_DIVIDEND');
+              const first = components[0];
+              const sources = [...new Set(components.map(x => x.source).filter(Boolean))].join(', ');
+              const origin = result.data_origin === 'SQLITE_CACHE'
+                ? text('database', 'database')
+                : result.data_origin === 'PROVIDER_REFRESH'
+                  ? text('provider refreshed', 'đã cập nhật provider')
+                  : '-';
+              return (
+                <details className="dividend-symbol-node" key={row.symbol}>
+                  <summary>
+                    <div className="dividend-node-symbol">
+                      <b>{row.symbol}</b>
+                      <span className="muted">{history.length} {text('events', 'sự kiện')} · {origin}</span>
+                    </div>
+                    <div className="dividend-node-stat"><span>{text('Latest', 'Mới nhất')}</span><b>{result.latest_event_date || eventDate(first)}</b></div>
+                    <div className="dividend-node-stat"><span>{text('Cash/share', 'Tiền/CP')}</span><b>{cash?.cash_per_share != null ? money(cash.cash_per_share) : '-'}</b></div>
+                    <div className="dividend-node-stat"><span>{text('Stock ratio', 'Tỷ lệ CP')}</span><b>{stock?.stock_ratio_percent != null ? `${Number(stock.stock_ratio_percent).toFixed(2)}%` : '-'}</b></div>
+                    <div className="dividend-node-stat"><span>{text('Payment', 'Thanh toán')}</span><b>{first?.payment_date || '-'}</b></div>
+                    <div className="dividend-node-stat"><span>{text('Source', 'Nguồn')}</span><b>{sources || '-'}</b></div>
+                  </summary>
+
+                  <div className="dividend-history-body">
+                    {row.error && <div className="run-message">{row.error}</div>}
+                    {!history.length ? (
+                      <div className="empty-state compact-empty">{text('No dividend event is stored for this ticker.', 'Chưa lưu sự kiện cổ tức nào cho mã này.')}</div>
+                    ) : (
+                      <div className="table-scroll">
+                        <table className="ranking dividend-history-table">
+                          <thead><tr>
+                            <th>{text('Event date', 'Ngày sự kiện')}</th>
+                            <th>{text('Type', 'Loại')}</th>
+                            <th>{text('Announcement', 'Công bố')}</th>
+                            <th>{text('Ex date', 'GDKHQ')}</th>
+                            <th>{text('Record date', 'ĐKCC')}</th>
+                            <th>{text('Payment', 'Thanh toán')}</th>
+                            <th className="num">{text('Cash/share', 'Tiền/CP')}</th>
+                            <th className="num">{text('Stock ratio', 'Tỷ lệ CP')}</th>
+                            <th>{text('Source', 'Nguồn')}</th>
+                          </tr></thead>
+                          <tbody>{history.map((event, index) => (
+                            <tr key={`${event.event_key || event.source_event_id || eventDate(event)}-${event.dividend_type}-${index}`}>
+                              <td>{eventDate(event)}</td>
+                              <td><b>{event.dividend_type === 'CASH_DIVIDEND' ? text('Cash', 'Tiền mặt') : text('Stock', 'Cổ phiếu')}</b></td>
+                              <td>{event.announcement_date || '-'}</td>
+                              <td>{event.ex_date || '-'}</td>
+                              <td>{event.record_date || '-'}</td>
+                              <td>{event.payment_date || '-'}</td>
+                              <td className="num">{event.cash_per_share != null ? money(event.cash_per_share) : '-'}</td>
+                              <td className="num">{event.stock_ratio_percent != null ? `${Number(event.stock_ratio_percent).toFixed(2)}%` : '-'}</td>
+                              <td>{event.source || '-'}</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
       </section>
