@@ -55,6 +55,12 @@ def _payload_to_event(payload: dict, *, event_id: int, fallback: LedgerEvent) ->
     )
 
 
+def raw_events(store) -> list[LedgerEvent]:
+    with store.connect() as db:
+        rows = db.execute("SELECT * FROM ledger_events ORDER BY event_date, id").fetchall()
+    return [store._event_from_row(row) for row in rows]
+
+
 def raw_event(store, event_id: int) -> LedgerEvent | None:
     with store.connect() as db:
         row = db.execute("SELECT * FROM ledger_events WHERE id = ?", (int(event_id),)).fetchone()
@@ -91,7 +97,7 @@ def latest_corrections(store) -> dict[int, dict]:
 
 def effective_events(store, start: str | None = None, end: str | None = None) -> list[LedgerEvent]:
     """Return the user-visible/effective ledger without mutating source rows."""
-    originals = store.list_events()
+    originals = raw_events(store)
     latest = latest_corrections(store)
     out: list[LedgerEvent] = []
     for original in originals:
@@ -121,6 +127,8 @@ def append_edit(store, event_id: int, replacement: LedgerEvent, *, reason: str, 
     original = raw_event(store, event_id)
     if original is None:
         raise CorrectionError("Transaction not found.")
+    if effective_event(store, event_id) is None:
+        raise CorrectionError("Deleted transactions cannot be edited.")
     reason = str(reason or "").strip()
     if not reason:
         raise CorrectionError("Correction reason is required.")
@@ -163,7 +171,7 @@ def append_delete(store, event_id: int, *, reason: str, created_by: str = "local
 
 def audit_log(store) -> list[dict]:
     corrections = list_corrections(store)
-    originals = {int(e.id): _event_to_payload(e) for e in store.list_events() if e.id is not None}
+    originals = {int(e.id): _event_to_payload(e) for e in raw_events(store) if e.id is not None}
     out = []
     for row in reversed(corrections):
         out.append({
