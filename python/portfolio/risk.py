@@ -7,11 +7,21 @@ import pandas as pd
 
 
 def concentration_metrics(position_rows: list[dict]) -> dict:
-    weights = [max(0.0, float(p.get("weight") or 0)) for p in position_rows]
+    nav_weights = [max(0.0, float(p.get("weight") or 0)) for p in position_rows]
+    equity_total = sum(nav_weights)
+    equity_weights = [w / equity_total for w in nav_weights] if equity_total > 1e-12 else []
+    hhi = sum(w * w for w in equity_weights) if equity_weights else 0.0
+    effective = (1.0 / hhi) if hhi > 1e-12 else 0.0
+    n = len(equity_weights)
     return {
-        "hhi": sum(w * w for w in weights) if weights else 0.0,
-        "max_position_weight": max(weights) if weights else 0.0,
-        "n_positions": len(weights),
+        "hhi": hhi,
+        "equity_hhi": hhi,
+        "effective_positions": effective,
+        "effective_position_ratio": (effective / n) if n else 0.0,
+        "max_position_weight": max(nav_weights) if nav_weights else 0.0,
+        "max_equity_weight": max(equity_weights) if equity_weights else 0.0,
+        "equity_weight_sum": equity_total,
+        "n_positions": n,
     }
 
 
@@ -40,13 +50,10 @@ def _pairwise_covariance(returns: pd.DataFrame, min_periods: int = 40) -> tuple[
         return None, [], {"reason": "insufficient_history"}
     frame = returns[eligible]
     cov_df = frame.cov(min_periods=min_periods) * 252.0
-    # Pairwise history prevents a newly listed symbol from erasing all covariance
-    # observations. Unknown cross-covariances are conservatively treated as zero;
-    # the quality block reports how many pairs were unavailable.
     missing_pairs = int(cov_df.isna().sum().sum())
     cov = cov_df.fillna(0.0).to_numpy(dtype=float)
     diag = np.diag(np.diag(cov))
-    cov = 0.90 * cov + 0.10 * diag  # light diagonal shrinkage for stability
+    cov = 0.90 * cov + 0.10 * diag
     return cov, eligible, {
         "eligible_symbols": len(eligible),
         "missing_covariance_cells": missing_pairs,
@@ -79,8 +86,6 @@ def _solve_erc(cov: np.ndarray) -> np.ndarray | None:
         rc = (weights * marginal) / variance
         if np.max(np.abs(rc - target)) < 1e-7:
             return weights / weights.sum()
-        # Multiplicative risk-budget update. Clip the denominator to avoid an
-        # unstable sign flip from noisy pairwise covariance estimates.
         safe = np.maximum(np.abs(rc), 1e-12)
         weights = weights * np.power(target / safe, 0.35)
         weights = np.maximum(weights, 1e-10)
@@ -93,19 +98,77 @@ def _solve_erc(cov: np.ndarray) -> np.ndarray | None:
     return weights if np.max(np.abs(rc - target)) < 1e-4 else None
 
 
+def _correlation_metrics(returns: pd.DataFrame, symbols: list[str]) -> dict:
+    if len(symbols) < 2:
+        return {"average_correlation": None, "max_correlation": None}
+    corr = returns[symbols].tail(252).corr(min_periods=40)
+    values = []
+    for i in range(len(symbols)):
+        for j in range(i + 1, len(symbols)):
+            value = corr.iloc[i, j]
+            if pd.notna(value):
+                values.append(float(value))
+    return {
+        "average_correlation": float(np.mean(values)) if values else None,
+        "max_correlation": max(values) if values else None,
+    }
+
+
+def _portfolio_return_metrics(returns: pd.DataFrame, symbols: list[str], weights: np.ndarray) -> dict:
+    if not symbols:
+        return {}
+    frame = returns[symbols].tail(252).dropna(how="any")
+    if len(frame) < 20:
+        return {
+            "daily_var_95": None,
+            "daily_cvar_95": None,
+            "max_daily_loss": None,
+            "downside_volatility": None,
+            "positive_day_ratio": None,
+            "return_observations": int(len(frame)),
+        }
+    p = frame.to_numpy(dtype=float) @ weights
+    var95 = float(np.quantile(p, 0.05))
+    tail = p[p <= var95]
+    downside = p[p < 0]
+    downside_vol = float(np.std(downside, ddof=1) * math.sqrt(252)) if len(downside) >= 2 else None
+    return {
+        "daily_var_95": var95,
+        "daily_cvar_95": float(np.mean(tail)) if len(tail) else var95,
+        "max_daily_loss": float(np.min(p)),
+        "downside_volatility": downside_vol,
+        "positive_day_ratio": float(np.mean(p > 0)),
+        "return_observations": int(len(p)),
+    }
+
+
 def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) -> dict:
     """Informational portfolio risk; never produces or executes a trade."""
     concentration = concentration_metrics(position_rows)
+    empty_payload = {
+        **concentration,
+        "volatility_63": None,
+        "volatility_252": None,
+        "volatility_ratio": None,
+        "risk_contributions": {},
+        "risk_contribution_hhi": None,
+        "largest_risk_symbol": None,
+        "largest_risk_contribution": None,
+        "equal_risk_contribution": None,
+        "risk_concentration_ratio": None,
+        "erc_reference_weights": {},
+        "average_correlation": None,
+        "max_correlation": None,
+        "diversification_ratio": None,
+        "daily_var_95": None,
+        "daily_cvar_95": None,
+        "max_daily_loss": None,
+        "downside_volatility": None,
+        "positive_day_ratio": None,
+        "return_observations": 0,
+    }
     if not position_rows:
-        return {
-            **concentration,
-            "status": "NO_POSITIONS",
-            "volatility_63": None,
-            "volatility_252": None,
-            "risk_contributions": {},
-            "erc_reference_weights": {},
-            "quality": {"reason": "no_positions"},
-        }
+        return {**empty_payload, "status": "NO_POSITIONS", "quality": {"reason": "no_positions"}}
 
     value_by_symbol = {
         p["symbol"]: max(0.0, float(p.get("market_value") or 0))
@@ -113,15 +176,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     }
     total = sum(value_by_symbol.values())
     if total <= 0:
-        return {
-            **concentration,
-            "status": "UNAVAILABLE",
-            "volatility_63": None,
-            "volatility_252": None,
-            "risk_contributions": {},
-            "erc_reference_weights": {},
-            "quality": {"reason": "zero_equity_value"},
-        }
+        return {**empty_payload, "status": "UNAVAILABLE", "quality": {"reason": "zero_equity_value"}}
 
     returns = _returns_frame(histories)
     cov, eligible, quality = _pairwise_covariance(returns, min_periods=40)
@@ -129,13 +184,9 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     missing = sorted(set(requested) - set(eligible))
     if cov is None:
         return {
-            **concentration,
+            **empty_payload,
             "status": "UNAVAILABLE",
-            "volatility_63": None,
-            "volatility_252": None,
-            "risk_contributions": {},
-            "erc_reference_weights": {},
-            "quality": {**quality, "missing_symbols": missing},
+            "quality": {**quality, "requested_symbols": len(requested), "missing_symbols": missing, "coverage_weight": 0.0},
         }
 
     eligible_values = np.array([value_by_symbol[s] for s in eligible], dtype=float)
@@ -150,15 +201,40 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     erc = _solve_erc(cov)
     risk_contrib = {s: float(v) for s, v in zip(eligible, rc)}
     erc_weights = {s: float(v) for s, v in zip(eligible, erc)} if erc is not None else {}
+    largest_risk_symbol = max(risk_contrib, key=risk_contrib.get) if risk_contrib else None
+    largest_risk_contribution = risk_contrib.get(largest_risk_symbol) if largest_risk_symbol else None
+    equal_risk = 1.0 / len(eligible) if eligible else None
+    risk_concentration_ratio = (
+        largest_risk_contribution / equal_risk
+        if largest_risk_contribution is not None and equal_risk and equal_risk > 0
+        else None
+    )
+    rc_hhi = float(sum(float(v) ** 2 for v in rc)) if len(rc) else None
+
+    indiv_vol = np.sqrt(np.maximum(0.0, np.diag(cov)))
+    weighted_indiv_vol = float(weights @ indiv_vol)
+    diversification_ratio = weighted_indiv_vol / vol252 if vol252 and vol252 > 1e-12 else None
+
+    corr_metrics = _correlation_metrics(returns, eligible)
+    return_metrics = _portfolio_return_metrics(returns, eligible, weights)
 
     status = "VALID" if not missing else "PARTIAL"
     return {
         **concentration,
+        **corr_metrics,
+        **return_metrics,
         "status": status,
         "volatility_63": vol63,
         "volatility_252": vol252,
+        "volatility_ratio": (vol63 / vol252) if vol63 is not None and vol252 and vol252 > 0 else None,
         "risk_contributions": risk_contrib,
+        "risk_contribution_hhi": rc_hhi,
+        "largest_risk_symbol": largest_risk_symbol,
+        "largest_risk_contribution": largest_risk_contribution,
+        "equal_risk_contribution": equal_risk,
+        "risk_concentration_ratio": risk_concentration_ratio,
         "erc_reference_weights": erc_weights,
+        "diversification_ratio": diversification_ratio,
         "quality": {
             **quality,
             "requested_symbols": len(requested),
