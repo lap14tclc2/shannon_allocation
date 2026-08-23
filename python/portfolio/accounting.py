@@ -34,6 +34,7 @@ def _add_lot(position: PositionState, event: LedgerEvent, quantity: float, cost_
             original_quantity=quantity,
             remaining_quantity=quantity,
             cost_basis=cost_basis,
+            broker_code=event.broker_code,
             account_id=event.account_id,
         )
     )
@@ -41,11 +42,27 @@ def _add_lot(position: PositionState, event: LedgerEvent, quantity: float, cost_
     position.cost_basis += cost_basis
 
 
-def _consume_fifo(position: PositionState, quantity: float) -> float:
-    """Consume tax lots FIFO and return the disposed cost basis."""
+def _consume_fifo(position: PositionState, quantity: float, *, broker_code: str, account_id: str) -> float:
+    """Consume FIFO lots inside one broker/account book and return disposed cost basis.
+
+    Legacy UNASSIGNED events may consume across the consolidated book. Once a
+    broker is explicitly assigned, a SELL must not silently dispose lots held at
+    another broker/account.
+    """
     remaining = quantity
     disposed_cost = 0.0
-    for lot in sorted(position.lots, key=lambda x: (x.acquisition_date, x.source_event_id or 0, x.lot_id)):
+    broker_code = str(broker_code or "UNASSIGNED").upper()
+    account_id = str(account_id or "PRIMARY").upper()
+    lots = sorted(position.lots, key=lambda x: (x.acquisition_date, x.source_event_id or 0, x.lot_id))
+    if broker_code != "UNASSIGNED":
+        lots = [lot for lot in lots if lot.broker_code == broker_code and lot.account_id == account_id]
+        available = sum(lot.remaining_quantity for lot in lots)
+        if quantity > available + 1e-9:
+            raise AccountingError(
+                f"SELL {quantity} {position.symbol} exceeds shares {available} at {broker_code}/{account_id}"
+            )
+
+    for lot in lots:
         if remaining <= 1e-9:
             break
         if lot.remaining_quantity <= 1e-9:
@@ -69,15 +86,23 @@ def _consume_fifo(position: PositionState, quantity: float) -> float:
     return disposed_cost
 
 
-def _allocate_stock_quantity(position: PositionState, added_quantity: float) -> None:
-    """Allocate stock dividends pro-rata across open lots without changing cost basis."""
+def _allocate_stock_quantity(position: PositionState, added_quantity: float, *, broker_code: str, account_id: str) -> None:
+    """Allocate stock dividends pro-rata across matching open lots without changing cost basis."""
     if position.shares <= 0 or not position.lots:
         raise AccountingError("Cannot allocate stock quantity to an empty lot book")
-    before = position.shares
+    matching = [lot for lot in position.lots if lot.remaining_quantity > 1e-9]
+    broker_code = str(broker_code or "UNASSIGNED").upper()
+    account_id = str(account_id or "PRIMARY").upper()
+    if broker_code != "UNASSIGNED":
+        matching = [lot for lot in matching if lot.broker_code == broker_code and lot.account_id == account_id]
+        if not matching:
+            raise AccountingError(f"No open lots for {position.symbol} at {broker_code}/{account_id}")
+    before = sum(lot.remaining_quantity for lot in matching)
+    if before <= 0:
+        raise AccountingError("Cannot allocate stock quantity to an empty lot book")
     allocated = 0.0
-    lots = [lot for lot in position.lots if lot.remaining_quantity > 1e-9]
-    for index, lot in enumerate(lots):
-        if index == len(lots) - 1:
+    for index, lot in enumerate(matching):
+        if index == len(matching) - 1:
             add = added_quantity - allocated
         else:
             add = added_quantity * (lot.remaining_quantity / before)
@@ -123,7 +148,7 @@ def apply_event(state: PortfolioState, event: LedgerEvent) -> None:
         if qty > p.shares + 1e-9:
             raise AccountingError(f"SELL {qty} {p.symbol} exceeds owned shares {p.shares}")
         gross = qty * price
-        disposed_cost = _consume_fifo(p, qty)
+        disposed_cost = _consume_fifo(p, qty, broker_code=event.broker_code, account_id=event.account_id)
         pnl = gross - disposed_cost - fee_tax
         p.realized_pnl += pnl
         state.realized_pnl += pnl
@@ -162,8 +187,7 @@ def apply_event(state: PortfolioState, event: LedgerEvent) -> None:
         p = _position(state, event.symbol)
         if p.shares <= 0:
             raise AccountingError("Cannot apply stock dividend to an empty position")
-        _allocate_stock_quantity(p, qty)
-        # Total cost basis is unchanged; lot unit costs fall mechanically.
+        _allocate_stock_quantity(p, qty, broker_code=event.broker_code, account_id=event.account_id)
         return
 
     if et == EventType.SPLIT:
@@ -173,10 +197,16 @@ def apply_event(state: PortfolioState, event: LedgerEvent) -> None:
         p = _position(state, event.symbol)
         if p.shares <= 0:
             raise AccountingError("Cannot split an empty position")
-        for lot in p.lots:
+        broker_code = event.broker_code
+        matching = p.lots if broker_code == "UNASSIGNED" else [lot for lot in p.lots if lot.broker_code == broker_code and lot.account_id == event.account_id]
+        if not matching:
+            raise AccountingError(f"No open lots for {p.symbol} at {broker_code}/{event.account_id}")
+        added = 0.0
+        for lot in matching:
+            before = lot.remaining_quantity
             lot.remaining_quantity *= ratio
-        p.shares *= ratio
-        # Total cost basis is unchanged; lot unit costs change inversely.
+            added += lot.remaining_quantity - before
+        p.shares += added
         return
 
     raise AccountingError(f"Unsupported event type: {et}")
@@ -199,10 +229,7 @@ def state_as_dict(state: PortfolioState) -> dict:
         "external_withdrawals": state.external_withdrawals,
         "net_external_contributions": state.net_external_contributions,
         "fees_and_taxes": state.fees_and_taxes,
-        "positions": {
-            s: {**asdict(p), "average_cost": p.average_cost}
-            for s, p in sorted(state.positions.items())
-        },
+        "positions": {s: {**asdict(p), "average_cost": p.average_cost} for s, p in sorted(state.positions.items())},
     }
 
 
