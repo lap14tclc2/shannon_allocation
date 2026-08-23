@@ -87,19 +87,21 @@ def test_http_surface_has_csrf_security_headers_body_cap_and_remote_bind_guard()
 
 def test_known_exposed_bootstrap_credential_cannot_reappear_in_current_tree():
     forbidden = "abc" + "123"
-    targets = [
-        REPO_DIR / "README.md",
-        REPO_DIR / "user-guide.md",
-        PYTHON_DIR / "buyhold_server.py",
-        PORTFOLIO_DIR / "auth.py",
-        PORTFOLIO_DIR / "cli.py",
-        FRONTEND_SRC / "pages" / "AuthPage.jsx",
-        FRONTEND_SRC / "pages" / "AdminPage.jsx",
-        FRONTEND_SRC / "pages" / "GuidePage.jsx",
-        FRONTEND_DIR / "test" / "auth-smoke.mjs",
-    ]
-    for path in targets:
-        assert forbidden not in path.read_text(encoding="utf-8"), f"exposed credential found in {path}"
+    text_extensions = {".py", ".js", ".jsx", ".mjs", ".md", ".json", ".yml", ".yaml", ".html", ".css"}
+    excluded_dirs = {".git", "node_modules", "dist", "dist-ssr", "__pycache__", ".pytest_cache"}
+    offenders = []
+    for path in REPO_DIR.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in text_extensions:
+            continue
+        if any(part in excluded_dirs for part in path.parts):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if forbidden in content:
+            offenders.append(str(path.relative_to(REPO_DIR)))
+    assert offenders == [], f"known exposed credential found in current tree: {offenders}"
 
 
 def test_legacy_single_user_database_is_removed_on_authenticated_server_start():
