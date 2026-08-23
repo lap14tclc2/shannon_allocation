@@ -33,8 +33,21 @@ export async function listPortfolioTransactions() {
   return data.transactions || [];
 }
 
+export async function listPortfolioTransactionAudit() {
+  const data = await getJSON('/api/portfolio/transaction-audit');
+  return data.corrections || [];
+}
+
 export async function createPortfolioTransaction(payload) {
   return sendJSON('/api/portfolio/transactions', 'POST', payload);
+}
+
+export async function updatePortfolioTransaction(eventId, payload) {
+  return sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
+}
+
+export async function deletePortfolioTransaction(eventId, reason) {
+  return sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
 }
 
 export async function syncPortfolio() {
