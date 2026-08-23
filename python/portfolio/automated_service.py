@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from datetime import date, timedelta
 
 from .accounting import derive_state
 from .correctable_service import CorrectablePortfolioService
 from .corrections import effective_events
 from .domain import EventType
+from .market_data import frame_to_price_rows
 from .tax_policy import apply_dividend_tax_policy
 from .validation import normalize_event_payload
 
@@ -80,9 +82,52 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
         return result
 
     def _replacement_event(self, event_id: int, payload: dict):
+        current = next((e for e in effective_events(self.store) if int(e.id or 0) == int(event_id)), None)
         replacement = super()._replacement_event(event_id, payload)
+        # The frontend sends the visible total SELL tax. Restore previous automatic
+        # tax metadata before recalculation so an edit cannot double-count it.
+        if current is not None:
+            old_meta = current.metadata or {}
+            new_meta = dict(replacement.metadata or {})
+            for key in (
+                "cash_dividend_withholding_rate",
+                "cash_dividend_withholding_tax",
+                "cash_dividend_gross_amount",
+                "cash_dividend_net_amount",
+                "stock_dividend_sale_tax_rate",
+                "stock_dividend_sale_tax",
+                "stock_dividend_taxable_quantity",
+                "stock_dividend_tax_par_value",
+            ):
+                if key in old_meta and key not in new_meta:
+                    new_meta[key] = old_meta[key]
+            replacement = replace(replacement, metadata=new_meta)
         prior = [e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)]
         return apply_dividend_tax_policy(replacement, prior)
+
+    def _sync_symbol(self, symbol: str, today: date) -> dict:
+        """Fetch enough D1 history for both valuation and meaningful risk metrics."""
+        latest = self.store.latest_price(symbol)
+        count = self.store.market_price_count(symbol)
+        symbol_events = [e for e in self.store.list_events() if e.symbol and e.symbol.upper() == symbol.upper()]
+        earliest_event = min((date.fromisoformat(e.event_date) for e in symbol_events), default=None)
+        if latest and count >= 260:
+            start_date = date.fromisoformat(latest["trading_date"]) - timedelta(days=10)
+        else:
+            risk_lookback_start = today - timedelta(days=550)
+            event_start = (earliest_event - timedelta(days=10)) if earliest_event else risk_lookback_start
+            start_date = min(risk_lookback_start, event_start)
+        df, source = self.market.daily_history_with_source(symbol, start_date.isoformat(), today.isoformat())
+        rows = frame_to_price_rows(symbol, df, source=source)
+        self.store.upsert_market_prices(rows)
+        return {
+            "symbol": symbol,
+            "source": source,
+            "bars": len(rows),
+            "latest": rows[-1]["trading_date"] if rows else None,
+            "history_start": rows[0]["trading_date"] if rows else None,
+            "risk_ready": self.store.market_price_count(symbol) >= 260,
+        }
 
     def dashboard(self) -> dict:
         data = super().dashboard()
