@@ -41,6 +41,35 @@ class LedgerEvent:
     created_at: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def trade_date(self) -> str:
+        return str((self.metadata or {}).get("trade_date") or self.event_date)
+
+    @property
+    def settlement_date(self) -> str | None:
+        value = (self.metadata or {}).get("settlement_date")
+        return str(value) if value else None
+
+    @property
+    def account_id(self) -> str:
+        return str((self.metadata or {}).get("account_id") or "PRIMARY")
+
+
+@dataclass
+class TaxLot:
+    lot_id: str
+    symbol: str
+    acquisition_date: str
+    source_event_id: int | None
+    original_quantity: float
+    remaining_quantity: float
+    cost_basis: float
+    account_id: str = "PRIMARY"
+
+    @property
+    def unit_cost(self) -> float:
+        return self.cost_basis / self.remaining_quantity if self.remaining_quantity > 0 else 0.0
+
 
 @dataclass
 class PositionState:
@@ -48,6 +77,7 @@ class PositionState:
     shares: float = 0.0
     cost_basis: float = 0.0
     realized_pnl: float = 0.0
+    lots: list[TaxLot] = field(default_factory=list)
 
     @property
     def average_cost(self) -> float:
