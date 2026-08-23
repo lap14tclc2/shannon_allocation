@@ -14,6 +14,9 @@ from .dividends import (
     default_dividend_providers,
 )
 
+VIETNAM_PAR_VALUE_VND = 10_000.0
+EVENT_DATE_TOLERANCE_DAYS = 2
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -49,6 +52,20 @@ def _row_dates(row: dict) -> set[str]:
     }
 
 
+def _date_distance_days(a, b) -> int | None:
+    if not a or not b:
+        return None
+    try:
+        return abs((date.fromisoformat(str(a)[:10]) - date.fromisoformat(str(b)[:10])).days)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dates_close(a, b, tolerance: int = EVENT_DATE_TOLERANCE_DAYS) -> bool:
+    distance = _date_distance_days(a, b)
+    return distance is not None and distance <= tolerance
+
+
 def _economic_value_matches(a: dict, b: dict) -> bool:
     if a.get("dividend_type") == "CASH_DIVIDEND":
         av, bv = a.get("cash_per_share"), b.get("cash_per_share")
@@ -61,29 +78,59 @@ def _economic_value_matches(a: dict, b: dict) -> bool:
     return True
 
 
-def _same_economic_event(a: dict, b: dict) -> bool:
-    """Best-effort duplicate detector for stale multi-provider cache rows.
+def _same_dividend_family(a: dict, b: dict) -> bool:
+    """Match two components to the same corporate-action family.
 
-    Providers often describe the same dividend with different native IDs and may
-    omit one of record/ex/payment dates. QPort therefore compares the economic
-    component and overlapping dates instead of source IDs.
+    Provider feeds disagree on which date is the event date and can differ by a
+    day because one reports ex-date while another reports record-date. Exact
+    source IDs therefore cannot be the identity of a dividend event.
     """
-    if a.get("symbol") != b.get("symbol") or a.get("dividend_type") != b.get("dividend_type"):
+    if str(a.get("symbol") or "").upper() != str(b.get("symbol") or "").upper():
         return False
-    if not _economic_value_matches(a, b):
-        return False
+
+    source_id_a, source_id_b = a.get("source_event_id"), b.get("source_event_id")
+    if source_id_a and source_id_b and source_id_a == source_id_b and a.get("source") == b.get("source"):
+        return True
+
     dates_a, dates_b = _row_dates(a), _row_dates(b)
     if dates_a & dates_b:
         return True
-    effective_a = a.get("effective_event_date")
-    effective_b = b.get("effective_event_date")
-    if effective_a and effective_b:
-        try:
-            delta = abs((date.fromisoformat(effective_a) - date.fromisoformat(effective_b)).days)
-            return delta <= 7
-        except ValueError:
-            pass
+
+    # Same semantic dates are strong evidence even if timezone/provider
+    # normalization shifts the date by one or two days.
+    for field in ("ex_date", "record_date", "payment_date"):
+        if _dates_close(a.get(field), b.get(field)):
+            return True
+
+    # Providers often expose record-date as their effective date while another
+    # provider exposes ex-date. Keep this fallback deliberately tight.
+    if _dates_close(a.get("effective_event_date"), b.get("effective_event_date")):
+        return True
+
     return False
+
+
+def _same_economic_event(a: dict, b: dict) -> bool:
+    """Provider-independent identity for one cash or stock dividend component."""
+    if str(a.get("symbol") or "").upper() != str(b.get("symbol") or "").upper():
+        return False
+    if a.get("dividend_type") != b.get("dividend_type"):
+        return False
+    if not _economic_value_matches(a, b):
+        return False
+    return _same_dividend_family(a, b)
+
+
+def _evidence_stub(row: dict) -> dict:
+    return {
+        key: row.get(key)
+        for key in (
+            "source", "source_event_id", "title", "effective_event_date",
+            "announcement_date", "ex_date", "record_date", "payment_date",
+            "cash_per_share", "stock_ratio", "source_url",
+        )
+        if row.get(key) not in (None, "")
+    }
 
 
 def _merge_cached_row(primary: dict, other: dict) -> dict:
@@ -94,15 +141,79 @@ def _merge_cached_row(primary: dict, other: dict) -> dict:
     ):
         if merged.get(key) in (None, "", 0) and other.get(key) not in (None, ""):
             merged[key] = other[key]
+
     evidence = list(merged.get("evidence") or [])
-    evidence.extend(item for item in (other.get("evidence") or []) if item not in evidence)
+    for item in list(other.get("evidence") or []) + [_evidence_stub(other)]:
+        if item and item not in evidence:
+            evidence.append(item)
     merged["evidence"] = evidence
     merged["cross_source_match"] = bool(
         merged.get("cross_source_match")
         or other.get("cross_source_match")
         or primary.get("source") != other.get("source")
     )
+    merged["duplicate_sources"] = sorted({
+        str(source)
+        for source in (
+            primary.get("source"),
+            other.get("source"),
+            *(item.get("source") for item in evidence if isinstance(item, dict)),
+        )
+        if source
+    })
     return merged
+
+
+def _suppress_cash_percent_stock_artifacts(rows: list[dict]) -> list[dict]:
+    """Remove a common schema-tolerant parser artifact.
+
+    Some generic provider rows expose the cash rate in a field called ``ratio``.
+    A combined announcement such as "7% cash + 13% stock" can therefore produce
+    stock rows 7% and 13%. When a stock ratio equals cash-per-share/par-value and
+    the same event family also contains another distinct stock ratio, the matching
+    cash-percent stock row is treated as an artifact.
+    """
+    cash_rows = [row for row in rows if row.get("dividend_type") == "CASH_DIVIDEND"]
+    stock_rows = [row for row in rows if row.get("dividend_type") == "STOCK_DIVIDEND"]
+    suppressed_ids: set[int] = set()
+
+    for stock in stock_rows:
+        stock_ratio = stock.get("stock_ratio")
+        if stock_ratio in (None, ""):
+            continue
+        stock_ratio = float(stock_ratio)
+        for cash in cash_rows:
+            cash_per_share = cash.get("cash_per_share")
+            if cash_per_share in (None, "") or not _same_dividend_family(stock, cash):
+                continue
+            cash_ratio = float(cash_per_share) / VIETNAM_PAR_VALUE_VND
+            if abs(stock_ratio - cash_ratio) > 1e-6:
+                continue
+
+            # Do not suppress a genuine only-stock component. Require another
+            # distinct stock ratio in the same family, e.g. real 13% beside the
+            # spurious 7% derived from a 700 VND cash dividend.
+            distinct_sibling = any(
+                sibling is not stock
+                and sibling.get("stock_ratio") not in (None, "")
+                and abs(float(sibling.get("stock_ratio")) - stock_ratio) > 1e-6
+                and _same_dividend_family(stock, sibling)
+                for sibling in stock_rows
+            )
+            if not distinct_sibling:
+                continue
+
+            same_native_event = bool(
+                stock.get("source") == cash.get("source")
+                and stock.get("source_event_id")
+                and stock.get("source_event_id") == cash.get("source_event_id")
+            )
+            same_title = bool(stock.get("title") and stock.get("title") == cash.get("title"))
+            if same_native_event or same_title or stock.get("source") == cash.get("source"):
+                suppressed_ids.add(id(stock))
+                break
+
+    return [row for row in rows if id(row) not in suppressed_ids]
 
 
 def ensure_dividend_schema(store) -> None:
@@ -151,12 +262,7 @@ def ensure_dividend_schema(store) -> None:
 
 
 class SqliteDividendService:
-    """DB-first dividend history with a single canonical runtime provider.
-
-    Production/default providers are tried in priority order and the first one
-    returning usable dividend data becomes the source for that refresh. Custom
-    provider lists may still opt into aggregate evidence for tests/research.
-    """
+    """DB-first dividend history with canonical provider-independent events."""
 
     def __init__(
         self,
@@ -168,8 +274,9 @@ class SqliteDividendService:
         using_defaults = providers is None
         self.store = store
         self.providers = providers or default_dividend_providers()
-        # The normal QPort runtime always uses one canonical provider. This also
-        # neutralizes the legacy server argument stop_on_first_data=False.
+        # Normal QPort refreshes stop after the first usable provider. Historical
+        # cache rows are still event-level canonicalized so older multi-source
+        # data cannot leak duplicate rows into the UI.
         self.stop_on_first_data = True if using_defaults else (
             False if stop_on_first_data is None else bool(stop_on_first_data)
         )
@@ -186,7 +293,7 @@ class SqliteDividendService:
             "strategy": "SQLITE_FIRST_PROVIDER_ON_CACHE_MISS",
             "provider_strategy": self.provider_strategy,
             "provider_order": [p.name for p in self.providers],
-            "deduplication": "SINGLE_CANONICAL_SOURCE_PLUS_ECONOMIC_EVENT_DEDUPE",
+            "deduplication": "CANONICAL_EVENT_FAMILY_PLUS_PARSER_ARTIFACT_SUPPRESSION",
             "providers": [p.health() for p in self.providers],
             "persistence": "SQLITE",
         }
@@ -233,17 +340,19 @@ class SqliteDividendService:
         if not out:
             return out
 
+        # First remove a known parser artifact, then merge provider rows by the
+        # economics of the event rather than by provider-native IDs.
+        out = _suppress_cash_percent_stock_artifacts(out)
         priority = {p.name: i for i, p in enumerate(self.providers)}
-        if self.single_source_runtime:
-            available_sources = {row.get("source") for row in out if row.get("source")}
-            preferred = min(available_sources, key=lambda source: priority.get(source, 999)) if available_sources else None
-            if preferred:
-                out = [row for row in out if row.get("source") == preferred]
-
         canonical: list[dict] = []
         for row in out:
-            duplicate_index = next((i for i, current in enumerate(canonical) if _same_economic_event(current, row)), None)
+            duplicate_index = next((
+                i for i, current in enumerate(canonical)
+                if _same_economic_event(current, row)
+            ), None)
             if duplicate_index is None:
+                row = dict(row)
+                row["duplicate_sources"] = [row.get("source")] if row.get("source") else []
                 canonical.append(row)
             else:
                 current = canonical[duplicate_index]
@@ -349,13 +458,22 @@ class SqliteDividendService:
                 rows = provider.events(symbol, start, end)
                 counts[provider.name] = len(rows)
                 events.extend(rows)
-                attempts.append({"provider": provider.name, "status": "SUCCESS" if rows else "EMPTY", "count": len(rows)})
+                attempts.append({
+                    "provider": provider.name,
+                    "status": "SUCCESS" if rows else "EMPTY",
+                    "count": len(rows),
+                })
                 if rows and self.stop_on_first_data:
                     break
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
                 errors.append({"provider": provider.name, "error": error})
-                attempts.append({"provider": provider.name, "status": "ERROR", "count": 0, "error": error})
+                attempts.append({
+                    "provider": provider.name,
+                    "status": "ERROR",
+                    "count": 0,
+                    "error": error,
+                })
 
         canonical: dict[tuple, DividendEvent] = {}
         evidence: dict[tuple, list[DividendEvent]] = {}
@@ -367,14 +485,19 @@ class SqliteDividendService:
             if current is None or priority.get(event.source, 999) < priority.get(current.source, 999):
                 canonical[sig] = event
 
-        # A successful canonical refresh replaces stale multi-provider cache rows
-        # for that symbol. Provider failures do not destroy the last good cache.
+        # A successful normal refresh replaces stale multi-provider cache rows.
+        # Provider failures never destroy the last good cache.
         if canonical and self.single_source_runtime:
             with self.store.connect() as db:
                 db.execute("DELETE FROM dividend_events WHERE symbol = ?", (symbol,))
         self._persist_events(canonical, evidence)
         fetched_at = self._write_fetch_state(
-            symbol, start=start, end=end, counts=counts, errors=errors, attempts=attempts,
+            symbol,
+            start=start,
+            end=end,
+            counts=counts,
+            errors=errors,
+            attempts=attempts,
         )
         return {
             "source_counts": counts,
@@ -389,8 +512,14 @@ class SqliteDividendService:
         errors = (state or {}).get("errors") or []
         attempts = (state or {}).get("provider_attempts") or []
         latest_date = events[0]["effective_event_date"] if events else None
-        latest_components = [row for row in events if row["effective_event_date"] == latest_date] if latest_date else []
-        canonical_source = events[0].get("source") if events else None
+        latest_components = [
+            row for row in events
+            if row["effective_event_date"] == latest_date
+        ] if latest_date else []
+        canonical_sources = sorted({row.get("source") for row in events if row.get("source")})
+        canonical_source = canonical_sources[0] if len(canonical_sources) == 1 else (
+            "MIXED_FALLBACK_CANONICAL" if canonical_sources else None
+        )
         return {
             "ok": True,
             "symbol": symbol,
@@ -401,7 +530,8 @@ class SqliteDividendService:
             "events": events,
             "event_count": len(events),
             "canonical_source": canonical_source,
-            "deduplication_policy": "SINGLE_CANONICAL_SOURCE_PLUS_ECONOMIC_EVENT_DEDUPE",
+            "canonical_sources": canonical_sources,
+            "deduplication_policy": "CANONICAL_EVENT_FAMILY_PLUS_PARSER_ARTIFACT_SUPPRESSION",
             "source_counts": source_counts,
             "errors": errors,
             "provider_attempts": attempts,
@@ -430,11 +560,15 @@ class SqliteDividendService:
         end = (today + timedelta(days=366 * max(0, int(years_forward)))).isoformat()
         state = self._fetch_state(symbol)
         if state is not None and not force_refresh:
-            return self._response(symbol, origin="SQLITE_CACHE", state=state, start=start, end=end)
+            return self._response(
+                symbol, origin="SQLITE_CACHE", state=state, start=start, end=end,
+            )
 
         self._fetch_from_providers(symbol, start, end)
         state = self._fetch_state(symbol)
-        return self._response(symbol, origin="PROVIDER_REFRESH", state=state, start=start, end=end)
+        return self._response(
+            symbol, origin="PROVIDER_REFRESH", state=state, start=start, end=end,
+        )
 
     def latest(self, symbol: str, *, force_refresh: bool = False) -> dict:
         return self.history(symbol, force_refresh=force_refresh)
