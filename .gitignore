@@ -10,7 +10,8 @@ __pycache__/
 .venv/
 venv/
 
-# Generated results & artifacts
+# Generated runtime data/results
+python/data/
 python/results/
 
 # OS

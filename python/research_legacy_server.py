@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-<<<<<<< HEAD
 """Serve SSR frontend + joint/fixed allocation optimizer APIs."""
 
 from __future__ import annotations
@@ -108,7 +107,6 @@ MIME = {
 }
 
 _ssr_proc: subprocess.Popen | None = None
-_ssr_lock = threading.Lock()
 
 
 def _ssr_health() -> bool:
@@ -120,39 +118,29 @@ def _ssr_health() -> bool:
 
 
 def _ensure_ssr_worker() -> None:
-    """Start (or restart) the Node SSR renderer.
-
-    Called at server startup AND lazily before every SSR render, so a worker that
-    died mid-session is automatically respawned instead of the page failing with
-    'connection refused'. Guarded by a lock for the threaded server.
-    """
     global _ssr_proc
     if _ssr_health():
         return
-    with _ssr_lock:
+    if not os.path.isfile(os.path.join(FRONTEND_DIR, "dist-ssr", "ssr-entry.mjs")):
+        raise RuntimeError("SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr")
+    if not os.path.isfile(os.path.join(DIST_DIR, "assets", "client.js")):
+        raise RuntimeError("Client bundle not built. Run: cd frontend && npm run build")
+    env = dict(os.environ, SSR_PORT=str(SSR_PORT), SSR_HOST=SSR_HOST)
+    _ssr_proc = subprocess.Popen(
+        ["node", NODE_SSR],
+        cwd=FRONTEND_DIR,
+        env=env,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    for _ in range(50):
         if _ssr_health():
             return
-        if not os.path.isfile(os.path.join(FRONTEND_DIR, "dist-ssr", "ssr-entry.mjs")):
-            raise RuntimeError("SSR bundle not built. Run: cd frontend && npm run build && npm run build:ssr")
-        if not os.path.isfile(os.path.join(DIST_DIR, "assets", "client.js")):
-            raise RuntimeError("Client bundle not built. Run: cd frontend && npm run build")
-        env = dict(os.environ, SSR_PORT=str(SSR_PORT), SSR_HOST=SSR_HOST)
-        _ssr_proc = subprocess.Popen(
-            ["node", NODE_SSR],
-            cwd=FRONTEND_DIR,
-            env=env,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-        for _ in range(50):
-            if _ssr_health():
-                return
-            time.sleep(0.1)
-        raise RuntimeError("Node SSR worker failed to start.")
+        time.sleep(0.1)
+    raise RuntimeError("Node SSR worker failed to start.")
 
 
 def _ssr_render(page: str, props: dict) -> str:
-    _ensure_ssr_worker()
     body = json.dumps({"page": page, "props": props}).encode("utf-8")
     req = urllib.request.Request(
         f"{SSR_URL}/render",
@@ -825,35 +813,6 @@ def main():
     finally:
         if _ssr_proc:
             _ssr_proc.terminate()
-=======
-"""Primary QPort server entrypoint.
-
-The operational product is the buy-and-hold portfolio information system.
-Legacy optimizer/backtest HTTP behavior lives in `research_legacy_server.py` and
-is exposed only through the Research boundary by `buyhold_server.Handler`.
-"""
-
-from buyhold_server import Handler, main
-from research_legacy_server import (
-    MAX_ALLOCATIONS,
-    MAX_FIXED_SYMBOLS,
-    MIN_ALLOCATIONS,
-    MIN_FIXED_SYMBOLS,
-    VALID_UNIVERSES,
-    _normalise_symbols,
-)
-
-__all__ = [
-    "Handler",
-    "main",
-    "MIN_FIXED_SYMBOLS",
-    "MAX_FIXED_SYMBOLS",
-    "MIN_ALLOCATIONS",
-    "MAX_ALLOCATIONS",
-    "VALID_UNIVERSES",
-    "_normalise_symbols",
-]
->>>>>>> 0dfe8eee60eba59f8832731b06ef607f730d67dc
 
 
 if __name__ == "__main__":
