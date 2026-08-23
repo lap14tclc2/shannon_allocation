@@ -2,55 +2,44 @@ import React from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { useI18n } from '../i18n.js';
 
-const STEPS = [
-  ['guide.step1', 'guide.step1_body'],
-  ['guide.step2', 'guide.step2_body'],
-  ['guide.step3', 'guide.step3_body'],
-  ['guide.step4', 'guide.step4_body'],
-  ['guide.step5', 'guide.step5_body'],
-  ['guide.step6', 'guide.step6_body'],
-  ['guide.step7', 'guide.step7_body'],
-  ['guide.step8', 'guide.step8_body'],
-  ['guide.step9', 'guide.step9_body'],
-  ['guide.step10', 'guide.step10_body'],
-];
+const STEPS=[['guide.step1','guide.step1_body'],['guide.step2','guide.step2_body'],['guide.step3','guide.step3_body'],['guide.step4','guide.step4_body'],['guide.step5','guide.step5_body'],['guide.step6','guide.step6_body'],['guide.step7','guide.step7_body'],['guide.step8','guide.step8_body'],['guide.step9','guide.step9_body'],['guide.step10','guide.step10_body']];
+const WARNINGS=['guide.warning_1','guide.warning_2','guide.warning_3'];
 
-const WARNINGS = ['guide.warning_1', 'guide.warning_2', 'guide.warning_3'];
+export default function GuidePage({locale='en'}){
+  const {t}=useI18n(locale); const text=(en,vi)=>locale==='vi'?vi:en;
+  return <div className="page">
+    <AppNav active="guide" locale={locale}/>
+    <header className="page-head"><div><h1>{t('guide.title')}</h1><p className="muted">{t('guide.subtitle')}</p></div></header>
+    <div className="card guide-principle"><h3>{t('guide.principle')}</h3><p>{text('QPort is a Buy & Hold institutional-lite portfolio book. Only explicit ledger actions change shares/cash. Market data, risk, recommendations and corporate-action discovery never create trades automatically.','QPort là sổ danh mục Buy & Hold institutional-lite. Chỉ hành động ledger rõ ràng mới đổi cổ phiếu/tiền. Market data, risk, recommendation và corporate-action discovery không bao giờ tự tạo giao dịch.')}</p></div>
+    <div className="card"><h3>{t('guide.quick_start')}</h3><pre className="guide-code"><code>{`cd frontend\nnpm ci\nnpm run build\nnpm run build:ssr\n\ncd ../python\npip install -r requirements.txt\n# Optional Vnstock + corporate actions:\n# pip install -r requirements-vnstock.txt\npython serve.py`}</code></pre></div>
+    <div className="guide-steps">{STEPS.map(([a,b])=><section className="card" key={a}><h3>{t(a)}</h3><p>{t(b)}</p></section>)}</div>
 
-export default function GuidePage({ locale = 'en' }) {
-  const { t } = useI18n(locale);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  return (
-    <div className="page">
-      <AppNav active="guide" locale={locale} />
-      <header className="page-head"><div><h1>{t('guide.title')}</h1><p className="muted">{t('guide.subtitle')}</p></div></header>
+    <div className="card"><h3>{text('Institutional-lite daily workflow','Quy trình institutional-lite hàng ngày')}</h3><pre className="guide-code"><code>{text(`Record/import trade\n      ↓\nTrade-date position\n      ↓\nConfirm settlement\n      ↓\nReconcile broker cash + quantities\n      ↓\nReview corporate actions\n      ↓\nVerify with VSDC / HOSE / HNX\n      ↓\nRecord actual entitlement receipt\n      ↓\nExplicitly post reconciled receipt to ledger\n      ↓\nReview exceptions\n      ↓\nLock official NAV`,`Ghi/import giao dịch\n      ↓\nVị thế theo ngày giao dịch\n      ↓\nXác nhận settlement\n      ↓\nĐối soát tiền + số lượng với broker\n      ↓\nReview quyền doanh nghiệp\n      ↓\nXác minh bằng VSDC / HOSE / HNX\n      ↓\nGhi thực nhận quyền\n      ↓\nChủ động post thực nhận đã đối soát vào ledger\n      ↓\nReview ngoại lệ\n      ↓\nKhóa NAV chính thức`)}</code></pre></div>
 
-      <div className="card guide-principle"><h3>{t('guide.principle')}</h3><p>{text('QPort is a Buy & Hold portfolio information system. Only explicit ledger events change shares or cash. Market prices, risk metrics and calendar time never create trades.', 'QPort là hệ thống thông tin danh mục Buy & Hold. Chỉ các sự kiện sổ cái rõ ràng mới thay đổi cổ phiếu hoặc tiền mặt. Giá thị trường, chỉ số rủi ro và thời gian không bao giờ tự tạo giao dịch.')}</p></div>
+    <div className="card"><h3>{text('What Operations means','Trang Vận hành dùng để làm gì')}</h3><div className="rule-list">
+      <div>✓ {text('Tax lots: the underlying accounting book keeps acquisition lots and uses FIFO for SELL; average cost is only a display metric.','Tax lot: sổ kế toán giữ từng lot mua và SELL dùng FIFO; giá vốn bình quân chỉ là metric hiển thị.')}</div>
+      <div>✓ {text('Settlement: positions are recognized on trade date. Cash is split into settled, receivable/payable and projected cash. Blank settlement dates are only estimated T+2 weekdays until confirmed.','Settlement: vị thế ghi nhận theo ngày giao dịch. Tiền được tách settled, receivable/payable và projected cash. Ngày settlement để trống chỉ được ước tính T+2 ngày làm việc đến khi xác nhận.')}</div>
+      <div>✓ {text('Reconciliation: compare QPort with broker settled cash and quantities. A mismatch creates an exception and never silently changes the ledger.','Reconciliation: đối chiếu QPort với tiền settled và số lượng theo broker. Sai lệch tạo exception và không bao giờ âm thầm sửa ledger.')}</div>
+      <div>✓ {text('Corporate actions: Vnstock is discovery only. VERIFIED requires an authoritative VSDC/HOSE/HNX URL. Actual receipt must be reconciled before the user may post it to the ledger.','Corporate action: Vnstock chỉ dùng để phát hiện. VERIFIED yêu cầu URL authoritative VSDC/HOSE/HNX. Thực nhận phải được đối soát trước khi user được post vào ledger.')}</div>
+      <div>✓ {text('NAV controls: historical corrections can mark later NAVs as RESTATEMENT_REQUIRED. Resolve only after reviewing the rebuilt book.','Kiểm soát NAV: correction lịch sử có thể đánh dấu NAV sau đó là RESTATEMENT_REQUIRED. Chỉ resolve sau khi review sổ đã rebuild.')}</div>
+      <div>✓ {text('Exception queue: treat it like a back-office work queue. Clear data/settlement/reconciliation/restatement exceptions before relying on the book.','Exception queue: dùng như hàng đợi back-office. Xử lý ngoại lệ data/settlement/reconciliation/restatement trước khi tin vào sổ.')}</div>
+    </div></div>
 
-      <div className="card"><div className="section-head"><div><h3>{t('guide.quick_start')}</h3><div className="muted">QPort operational workflow</div></div></div><pre className="guide-code"><code>{`cd frontend\nnpm ci\nnpm run build\nnpm run build:ssr\n\ncd ../python\npip install -r requirements.txt\npython serve.py`}</code></pre></div>
+    <div className="card"><h3>{text('Data integrity rules','Quy tắc giữ dữ liệu sạch')}</h3><div className="rule-list">
+      <div>✓ {text('Prices use full VND/share: 72,000, not 72.','Giá dùng VND đầy đủ/cổ phiếu: 72.000, không phải 72.')}</div>
+      <div>✓ {text('BUY/SELL event_date is the trade date; optional settlement_date cannot be earlier than it.','event_date của BUY/SELL là ngày giao dịch; settlement_date nếu có không được sớm hơn.')}</div>
+      <div>✓ {text('Edit/Delete is append-only correction. Original rows remain auditable and the full chronological ledger is revalidated.','Sửa/Xóa là correction append-only. Dòng gốc vẫn audit được và toàn bộ ledger theo thời gian được validate lại.')}</div>
+      <div>✓ {text('A historical correction does not silently rewrite a previously official book: it opens NAV restatement control when applicable.','Correction lịch sử không âm thầm viết lại sổ đã official: nó mở kiểm soát restatement NAV khi có liên quan.')}</div>
+      <div>✓ {text('Reference weights must cover all current holdings and total 100%; no equal-weight policy is invented.','Tỷ trọng tham chiếu phải bao phủ mọi vị thế và tổng 100%; QPort không tự bịa chính sách equal-weight.')}</div>
+    </div></div>
 
-      <div className="guide-steps">{STEPS.map(([titleKey, bodyKey]) => <section className="card" key={titleKey}><h3>{t(titleKey)}</h3><p>{t(bodyKey)}</p></section>)}</div>
+    <div className="card"><h3>{text('Performance and AI export','Hiệu suất và AI export')}</h3><div className="rule-list">
+      <div>✓ {text('MONITOR is not HOLD. Missing drawdown/TWR/XIRR evidence stays N/A, never false zero.','MONITOR không phải HOLD. Thiếu bằng chứng drawdown/TWR/XIRR thì giữ N/A, không giả thành 0.')}</div>
+      <div>✓ {text('Opening imports establish current holdings/cost basis but do not prove historical investor cash-flow dates.','Opening import xác lập vị thế/giá vốn hiện tại nhưng không chứng minh ngày dòng tiền lịch sử.')}</div>
+      <div>✓ {text('Export for AI now includes institutional book data: lots, settlement, reconciliation, corporate actions, NAV controls, exceptions and correction audit.','Xuất dữ liệu cho AI giờ gồm dữ liệu institutional book: lots, settlement, reconciliation, corporate actions, NAV controls, exceptions và correction audit.')}</div>
+    </div></div>
 
-      <div className="card"><h3>{text('Data integrity rules', 'Quy tắc giữ dữ liệu sạch')}</h3><div className="rule-list">
-        <div>✓ {text('Trade/import prices use full VND per share: enter 72,000, not 72. Suspicious sub-1,000 VND values are rejected.', 'Giá giao dịch/nhập vị thế dùng VND đầy đủ mỗi cổ phiếu: nhập 72.000, không phải 72. Giá đáng ngờ dưới 1.000 VND sẽ bị từ chối.')}</div>
-        <div>✓ {text('Future-dated ledger events are rejected. Quantity, price, cash amount and split ratio must be positive when required.', 'Sự kiện sổ cái ở ngày tương lai bị từ chối. Số lượng, giá, số tiền và tỷ lệ split phải lớn hơn 0 khi được yêu cầu.')}</div>
-        <div>✓ {text('Ticker symbols are normalized to uppercase letters/digits; notes are limited to 500 characters; irrelevant form fields are discarded before writing the ledger.', 'Mã cổ phiếu được chuẩn hóa thành chữ hoa/số; ghi chú tối đa 500 ký tự; các field không liên quan bị loại trước khi ghi ledger.')}</div>
-        <div>✓ {text('Reference weights must cover every current holding and total exactly 100%.', 'Tỷ trọng tham chiếu phải bao phủ toàn bộ mã đang nắm giữ và cộng đúng 100%.')}</div>
-        <div>✓ {text('If you entered a transaction incorrectly, use Edit or Delete on Transactions. QPort never mutates the original source row: it appends a correction with a required reason, revalidates the full effective ledger, and keeps the original in the Correction audit log.', 'Nếu nhập sai giao dịch, dùng Sửa hoặc Xóa tại trang Giao dịch. QPort không thay đổi dòng gốc: hệ thống ghi thêm correction có lý do bắt buộc, kiểm tra lại toàn bộ ledger hiệu lực và giữ dữ liệu gốc trong Nhật ký correction.')}</div>
-      </div></div>
-
-      <div className="card"><h3>{text('Understand MONITOR, cash and performance', 'Hiểu THEO DÕI, tiền mặt và hiệu suất')}</h3><div className="rule-list">
-        <div>✓ {text('MONITOR means no explicit strategic target is configured. It is not a HOLD recommendation.', 'THEO DÕI nghĩa là chưa có mục tiêu chiến lược rõ ràng. Đây không phải khuyến nghị GIỮ.')}</div>
-        <div>✓ {text('Available cash is not automatically deployable. QPort only computes deployable cash after you explicitly set a strategic cash reserve and target weights. Enter reserve 0 only if that is intentional.', 'Tiền mặt khả dụng không tự động là tiền có thể phân bổ. QPort chỉ tính tiền có thể phân bổ sau khi bạn đặt rõ mức dự trữ tiền mặt và tỷ trọng mục tiêu. Chỉ đặt dự trữ 0 khi đó là chủ ý.')}</div>
-        <div>✓ {text('If there are fewer than two official snapshots, drawdown is N/A — never a false 0%.', 'Nếu có ít hơn hai snapshot chính thức, drawdown là N/A — không bao giờ giả thành 0%.')}</div>
-        <div>✓ {text('Opening-position imports establish current shares/cost basis, but do not prove historical cash-flow dates. XIRR remains unavailable until cash-flow history is trustworthy.', 'Nhập vị thế ban đầu xác lập số cổ phiếu/giá vốn hiện tại nhưng không chứng minh ngày dòng tiền lịch sử. XIRR chưa được tính cho đến khi lịch sử dòng tiền đáng tin cậy.')}</div>
-      </div></div>
-
-      <div className="card"><h3>{text('Three actions new users usually miss', 'Ba thao tác người dùng mới thường bỏ sót')}</h3><div className="rule-list"><div>✓ {text('Record portfolio cash on the Portfolio page or as a Cash deposit event. Without it, BUY transactions correctly fail for insufficient cash.', 'Ghi số tiền mặt của danh mục ngay trên trang Danh mục hoặc bằng sự kiện Nạp tiền. Nếu chưa có tiền, giao dịch MUA sẽ bị từ chối đúng quy tắc.')}</div><div>✓ {text('After importing holdings, run Sync. Performance tracking starts only from valid market sessions on or after the ledger effective date; QPort does not invent pre-import performance history.', 'Sau khi nhập vị thế, chạy Đồng bộ. Theo dõi hiệu suất chỉ bắt đầu từ phiên thị trường hợp lệ bằng hoặc sau ngày hiệu lực trong ledger; QPort không bịa lịch sử hiệu suất trước ngày nhập.')}</div><div>✓ {text('When you want an AI to review the portfolio, click “Export for AI” on Portfolio. Upload the generated Markdown file instead of sending screenshots. Schema v2 includes separate portfolio/market/performance dates, methodology, data lineage, correction audit and machine-readable JSON.', 'Khi muốn AI đánh giá danh mục, bấm “Xuất dữ liệu cho AI” trên trang Danh mục. Tải file Markdown lên AI thay vì gửi screenshot. Schema v2 tách ngày trạng thái danh mục/dữ liệu thị trường/hiệu suất, kèm methodology, data lineage, correction audit và JSON machine-readable.')}</div></div></div>
-
-      <div className="card warning-card"><h3>{t('guide.warning_title')}</h3><div className="rule-list">{WARNINGS.map((key) => <div key={key}>✓ {t(key)}</div>)}</div></div>
-
-      <div className="card"><h3>{t('guide.full_docs')}</h3><div className="button-row"><a className="btn-export" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_EN.md">{t('guide.english_doc')}</a><a className="btn-variant" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_VI.md">{t('guide.vietnamese_doc')}</a></div></div>
-    </div>
-  );
+    <div className="card warning-card"><h3>{t('guide.warning_title')}</h3><div className="rule-list">{WARNINGS.map(k=><div key={k}>✓ {t(k)}</div>)}</div></div>
+    <div className="card"><h3>{t('guide.full_docs')}</h3><div className="button-row"><a className="btn-export" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_EN.md">{t('guide.english_doc')}</a><a className="btn-variant" href="https://github.com/lap14tclc2/shannon_allocation/blob/refactor-buy-hold/docs/USER_GUIDE_VI.md">{t('guide.vietnamese_doc')}</a></div></div>
+  </div>;
 }
