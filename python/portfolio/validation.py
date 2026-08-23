@@ -136,9 +136,10 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
 
     fee = 0.0
     tax = 0.0
+    if event_type in {EventType.BUY, EventType.SELL, EventType.CASH_DIVIDEND}:
+        tax = _finite_number(payload.get("tax"), "tax", minimum=0, maximum=MAX_MONEY_VND)
     if event_type in {EventType.BUY, EventType.SELL}:
         fee = _finite_number(payload.get("fee"), "fee", minimum=0, maximum=MAX_MONEY_VND)
-        tax = _finite_number(payload.get("tax"), "tax", minimum=0, maximum=MAX_MONEY_VND)
         gross = quantity * price
         if fee + tax > gross:
             raise InputValidationError("COSTS_EXCEED_GROSS", "fee + tax cannot exceed the gross trade value.", "fee")
@@ -156,6 +157,9 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     else:
         for key in ("trade_date", "settlement_date", "settlement_confirmed", "settlement_status"):
             metadata.pop(key, None)
+
+    if event_type == EventType.CASH_DIVIDEND and tax > amount:
+        raise InputValidationError("COSTS_EXCEED_GROSS", "cash-dividend tax cannot exceed the gross dividend amount.", "tax")
 
     return {
         "event_type": event_type,
