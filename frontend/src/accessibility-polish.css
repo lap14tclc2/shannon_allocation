@@ -1,0 +1,321 @@
+/* Readability-first terminal polish. This file is intentionally loaded last. */
+
+:root,
+:root[data-theme="dark"] {
+  --text-secondary: #b3bcb3;
+  --muted: #8e988e;
+  --border: #222822;
+  --border-strong: #3a433a;
+}
+
+:root[data-theme="light"] {
+  --text-secondary: #4f584e;
+  --muted: #687167;
+  --border: #d9ddd5;
+  --border-strong: #aeb6aa;
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+button,
+input,
+textarea,
+select {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Primary reading hierarchy. Monospace stays; tiny text does not. */
+.app-nav-links a {
+  font-size: 13px;
+}
+
+.brand-copy strong {
+  font-size: 15px;
+}
+
+.brand-copy small,
+.live-badge,
+.theme-toggle,
+.language-switch,
+.nav-user,
+.nav-logout {
+  font-size: 12px;
+}
+
+.portfolio-hero h1,
+.page-head h1 {
+  font-size: clamp(27px, 4vw, 34px);
+  line-height: 1.18;
+}
+
+.section-head h2,
+.card > h2 {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.section-head h3,
+.card > h3,
+.assessment-depth-head h3 {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.assessment-depth-block h4 {
+  font-size: 13px;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: .015em;
+}
+
+/* Uppercase is reserved for command/navigation/table semantics, not prose headings. */
+.app-nav-links a,
+.eyebrow,
+.metric-label,
+.ranking th,
+.status-pill,
+.signal,
+.source-count-badge {
+  text-transform: uppercase;
+  letter-spacing: .045em;
+}
+
+.eyebrow,
+.metric-label,
+.ranking th,
+.status-pill,
+.source-count-badge {
+  font-size: 11.5px;
+}
+
+.muted,
+.section-head p,
+.assessment-copy,
+.assessment-flag p,
+.run-message,
+.info-callout,
+.metric-note,
+.holding-source-state,
+.assessment-depth-note,
+.assessment-build-lead {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.ranking td,
+.holding-source-table td,
+.dividend-history-table td,
+.received-dividend-table td {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ranking th,
+.holding-source-table th,
+.dividend-history-table th,
+.received-dividend-table th {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.metric-value,
+.assessment-metrics b,
+.diag-row b {
+  font-size: 14px;
+}
+
+.diag-row {
+  min-height: 38px;
+  padding: 8px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.diag-row span {
+  color: var(--text-secondary);
+}
+
+/* Reduce visual noise: keep card outlines, soften row separators. */
+.assessment-depth-block,
+.card,
+.dividend-symbol-node,
+.received-dividend-node {
+  border-color: var(--border-strong);
+}
+
+.diag-row,
+.ranking td,
+.ranking th {
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+/* Semantic color discipline. Neutral explanatory copy is not accent-green. */
+.section-foot .muted,
+.assessment-depth-note,
+.assessment-build-lead,
+.assessment-copy {
+  color: var(--text-secondary);
+}
+
+.text-link,
+.app-nav-links a.active,
+.holding-expand-icon,
+.brand-prompt {
+  color: var(--accent);
+}
+
+.status-partial,
+.market-history-syncing,
+.market-history-building,
+.market-history-partial {
+  color: var(--warning);
+}
+
+.status-valid,
+.market-history-ready {
+  color: var(--success);
+}
+
+.market-history-error {
+  color: var(--danger);
+}
+
+/* Portfolio information hierarchy: owned assets before diagnostics. */
+.page:has(> .holdings-card) {
+  display: flex;
+  flex-direction: column;
+}
+
+.page:has(> .holdings-card) > * {
+  order: 20;
+}
+
+.page:has(> .holdings-card) > .app-nav { order: 0; }
+.page:has(> .holdings-card) > .portfolio-hero { order: 10; }
+.page:has(> .holdings-card) > .banner-message { order: 15; }
+.page:has(> .holdings-card) > .overview-metrics { order: 20; }
+.page:has(> .holdings-card) > .holdings-card { order: 30; }
+.page:has(> .holdings-card) > .dividend-card { order: 40; }
+.page:has(> .holdings-card) > .portfolio-assessment-card { order: 50; }
+
+/* D1 market-history status: compact but unmistakable. */
+.market-history-indicator {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.market-history-indicator b {
+  color: currentColor;
+  font-size: 11.5px;
+  letter-spacing: .035em;
+}
+
+.market-history-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.market-history-provider {
+  color: var(--muted);
+}
+
+.market-history-indicator button {
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: currentColor;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.market-history-syncing .market-history-dot {
+  animation: qport-history-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes qport-history-pulse {
+  from { opacity: .35; }
+  to { opacity: 1; }
+}
+
+/* Evidence-building mode: show progress and useful structure, not twenty dashes. */
+.assessment-building-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.assessment-build-primary {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border-strong));
+}
+
+.assessment-build-lead {
+  margin: 0 0 10px;
+}
+
+.evidence-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 0 8px;
+}
+
+.evidence-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.evidence-progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--warning);
+}
+
+.evidence-progress b {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+/* More breathing room for users who enlarge the page or have reduced acuity. */
+.card,
+.portfolio-assessment-card,
+.holdings-card,
+.dividend-card {
+  scroll-margin-top: 76px;
+}
+
+@media (min-width: 720px) {
+  body { font-size: 14px; }
+  .assessment-building-grid {
+    grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  body { font-size: 13.5px; }
+  .page { padding-inline: 16px; }
+  .market-history-indicator { width: 100%; }
+  .ranking td { font-size: 12.5px; }
+}
