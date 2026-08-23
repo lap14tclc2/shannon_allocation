@@ -1,85 +1,131 @@
 # QPort — Buy & Hold Portfolio Information System
 
-QPort is a rule-based portfolio tracker for Vietnamese cash equities.
+QPort is a bilingual (EN/VI), rule-based portfolio tracker for Vietnamese cash equities.
 
-The operational product is deliberately **not an optimizer**. The user owns the
-investment decisions; QPort owns the information, accounting, daily market-data
-sync, portfolio snapshots, performance measurement and risk diagnostics.
-
-Operational UI languages:
+QPort is intentionally a **portfolio information system**, not a stock-selection,
+optimization, allocation-timing or automatic-trading engine.
 
 ```text
-English (EN)
-Vietnamese / Tiếng Việt (VI)
-```
-
-The selected language is persisted in the browser with the `qport_lang` cookie.
-
-```text
-USER portfolio events
+explicit portfolio events
         ↓
 immutable ledger
         ↓
-current holdings + cash
+holdings + available cash
         ↑
-VNDIRECT / optional Vnstock daily prices
+Vnstock / VNDIRECT D1 prices
         ↓
-daily snapshot
+daily historical snapshots
         ↓
-NAV · P/L · TWR · XIRR · drawdown · volatility · concentration · risk contribution
+NAV · P/L · TWR · XIRR · drawdown · risk · portfolio health
         ↓
-HOLD / ADD / REVIEW information
+information for the user
 ```
 
 ## Core invariants
 
 - Price movement never changes shares.
-- A model/risk signal never changes shares.
-- Time, year-end, or a schedule never changes shares.
-- Only explicit ledger events change holdings or cash.
-- Research results cannot write to the operational portfolio ledger.
-- Market-data failure is visible as stale/missing data; the system does not invent a fresh NAV.
+- Risk calculations never create BUY/SELL events.
+- Calendar time/year-end never changes the portfolio.
+- Only explicit ledger events change shares or cash.
+- Market-data failures are visible as `STALE` / `MISSING` rather than fabricated fresh values.
+- Vietnamese equity prices are stored as canonical **full VND per share**.
 
-## Operational event types
+## What the system provides
 
-- `POSITION_IMPORT` — migration/opening holding; adds shares/cost basis without fake historical cash trading.
-- `BUY` / `SELL` — actual user-recorded executions.
-- `CASH_DEPOSIT` / `CASH_WITHDRAW`.
-- `CASH_DIVIDEND` / `STOCK_DIVIDEND`.
-- `SPLIT`.
-- `FEE`.
+### Portfolio
 
-The application exposes no normal update/delete API for ledger history. Verify
-ledger entries carefully and keep database backups before bulk migration.
+- Current NAV, equity and available cash.
+- Cost value and market value per holding.
+- Live unrealized P/L and total portfolio P/L.
+- Position weights and risk contribution.
+- Quick cash deposit/withdraw recording.
+- Rich Portfolio Health diagnostics.
+
+### Performance
+
+After the first market sync QPort reconstructs daily history from the immutable
+ledger and stored D1 prices. It provides:
+
+- NAV history;
+- daily / MTD / YTD return;
+- TWR and annualized TWR;
+- XIRR from actual dated investor cash flows;
+- current/max drawdown;
+- best/worst day and positive-day ratio;
+- realized/unrealized P/L, dividends, fees/taxes and contributions.
+
+### Risk
+
+Risk is information only. The page includes:
+
+- 63D / 252D realized volatility;
+- concentration and HHI;
+- effective number of positions;
+- average/max correlation;
+- diversification ratio;
+- risk contribution and equal-risk (ERC) reference;
+- historical daily VaR/CVaR 95%;
+- downside volatility and worst observed day;
+- data-history coverage.
+
+### Daily snapshots
+
+Snapshots are generated automatically from:
+
+```text
+ledger state + daily market prices
+```
+
+`OFFICIAL` means every active holding has a price for the same trading date.
+Stale snapshots remain visible for diagnosis but are excluded from official
+performance calculations.
+
+## Ledger event types
+
+```text
+POSITION_IMPORT
+CASH_DEPOSIT
+CASH_WITHDRAW
+BUY
+SELL
+CASH_DIVIDEND
+STOCK_DIVIDEND
+SPLIT
+FEE
+```
+
+`POSITION_IMPORT` is for migrating an existing holding with shares and cost basis
+without pretending that a historical cash BUY occurred inside QPort.
+
+The application exposes no normal update/delete API for ledger history. Keep a
+backup of the SQLite database before bulk migration.
 
 ## Market data
 
-Daily market data is normalized behind a provider contract:
+Provider policy:
 
-1. Vnstock when installed and reachable.
-2. VNDIRECT public dchart fallback.
-3. Last stored price remains visible with a stale/missing quality flag if live sync fails.
+```text
+optional Vnstock
+      ↓ fallback
+VNDIRECT public D1 data
+      ↓ failure
+last stored value + STALE/MISSING status
+```
 
-Vietnamese equity prices are normalized to canonical **full VND per share** before
-portfolio valuation.
-
-Base installation works with VNDIRECT:
+Base installation:
 
 ```bash
 cd python
 pip install -r requirements.txt
 ```
 
-To enable Vnstock too:
+Optional Vnstock:
 
 ```bash
 pip install -r requirements-vnstock.txt
 ```
 
-The provider pattern is adapted from the separate `dnse_bot` project, but the
-portfolio core contains no provider-specific dependency.
-
-## Run
+## Start
 
 ```bash
 cd frontend
@@ -100,52 +146,42 @@ http://127.0.0.1:8080/
 Navigation:
 
 ```text
-Portfolio | Transactions | Performance | Risk | Snapshots | Settings | Guide | Research
+Portfolio | Transactions | Performance | Risk | Snapshots | Settings | Guide
 ```
 
-The server starts an idempotent EOD market sync at **15:30 Asia/Ho_Chi_Minh** on
-weekdays. Override with `PORTFOLIO_SYNC_TIME=HH:MM` or run with
-`python serve.py --no-daily-sync`.
+The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays.
+You can also sync manually from Portfolio, Performance or Snapshots.
 
-For Windows Task Scheduler / cron instead of a continuously running server:
+For Windows Task Scheduler / cron:
 
 ```bash
 python -m portfolio.cli sync
 ```
 
+## First-use workflow
+
+1. Open **Transactions** and import each existing position with the real share count and cost basis.
+2. Record existing available cash with **Cash deposit**, or use the cash box on **Portfolio**.
+3. Return to **Portfolio** and click **Sync daily prices** once.
+4. QPort fetches D1 history and rebuilds daily snapshots from the ledger dates.
+5. Verify Cost Value, Market Value, P/L and NAV against your broker.
+6. Review **Performance**, **Risk** and **Snapshots** only after the accounting values match.
+
+## Languages
+
+Operational UI:
+
+```text
+EN — English
+VI — Tiếng Việt
+```
+
+The language is stored in the `qport_lang` browser cookie.
+
 ## Complete guides
 
-English:
+- English: [`docs/USER_GUIDE_EN.md`](docs/USER_GUIDE_EN.md)
+- Vietnamese: [`docs/USER_GUIDE_VI.md`](docs/USER_GUIDE_VI.md)
+- In-app: `/guide`
 
-[`docs/USER_GUIDE_EN.md`](docs/USER_GUIDE_EN.md)
-
-Vietnamese / Tiếng Việt:
-
-[`docs/USER_GUIDE_VI.md`](docs/USER_GUIDE_VI.md)
-
-The same start-to-finish workflow is also available inside the application at:
-
-```text
-/guide
-```
-
-## Research boundary
-
-All previous ERC/Shannon backtests, Dynamic Alpha, NSGA-II, surrogate search and
-optimizer experiments are retained under **Research Lab**:
-
-```text
-/research
-/research/optimizer
-```
-
-They are evidence/proposal tools only. The old HTTP/CLI implementation is kept in
-`research_legacy_server.py`, `research_main.py`, `optimize_main.py` and
-`backtest/`; the primary operational server does not allow research output to
-mutate the portfolio ledger.
-
-Legacy optimizer/detail research screens may retain English-only labels. The
-operational Buy & Hold product and Research landing page support EN/VI.
-
-See [`BUY_AND_HOLD_SYSTEM_SPEC.md`](BUY_AND_HOLD_SYSTEM_SPEC.md) and
-[`user-guide.md`](user-guide.md).
+See also [`BUY_AND_HOLD_SYSTEM_SPEC.md`](BUY_AND_HOLD_SYSTEM_SPEC.md).
