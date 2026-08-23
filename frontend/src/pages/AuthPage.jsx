@@ -4,6 +4,7 @@ import { loginUser, registerUser } from '../lib/api.js';
 export default function AuthPage({ locale = 'en' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const [username, setUsername] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
   const [password, setPassword] = useState('');
   const [missingUser, setMissingUser] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -19,6 +20,7 @@ export default function AuthPage({ locale = 'en' }) {
       window.location.assign(result.user?.role === 'ADMIN' ? '/admin' : '/');
     } catch (err) {
       if (err.code === 'USER_NOT_REGISTERED') {
+        setRegisterUsername(username.trim());
         setMissingUser(true);
         setMessage(text('This username is not registered yet.', 'Username này chưa được đăng ký.'));
       } else {
@@ -34,7 +36,7 @@ export default function AuthPage({ locale = 'en' }) {
     setBusy(true);
     setMessage('');
     try {
-      await registerUser(username);
+      await registerUser(registerUsername);
       window.location.assign('/');
     } catch (err) {
       setMessage(err.message);
@@ -91,15 +93,24 @@ export default function AuthPage({ locale = 'en' }) {
         {message && <div className={`auth-message ${missingUser ? 'info' : 'error'}`}>{message}</div>}
 
         {missingUser && (
-          <form className="register-panel" onSubmit={register}>
-            <div>
+          <form className="register-panel register-panel-form" onSubmit={register}>
+            <div className="register-copy">
               <strong>{text('New user?', 'User mới?')}</strong>
               <p>{text(
-                `Register “${username.trim()}” and create a fresh private portfolio database.`,
-                `Đăng ký “${username.trim()}” và tạo database danh mục riêng, sạch.`
+                'Choose the username to register. A fresh private portfolio database will be created for it.',
+                'Chọn username để đăng ký. Hệ thống sẽ tạo một database danh mục riêng, sạch cho user này.'
               )}</p>
             </div>
-            <button className="btn-secondary" type="submit" disabled={busy || !username.trim()}>
+            <label className="register-field">
+              <span>{text('Register username', 'Username đăng ký')}</span>
+              <input
+                value={registerUsername}
+                onChange={e => setRegisterUsername(e.target.value)}
+                maxLength={32}
+                required
+              />
+            </label>
+            <button className="btn-secondary" type="submit" disabled={busy || !registerUsername.trim()}>
               {text('Register username', 'Đăng ký username')}
             </button>
           </form>
