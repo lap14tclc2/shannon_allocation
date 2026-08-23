@@ -1,24 +1,9 @@
-# Shannon Allocation — User Guide
+# QPort — Buy & Hold User Guide
 
-This guide describes the current production/research workflow.
+This guide covers the operational portfolio product. Optimizers and Dynamic Alpha
+are available only inside **Research Lab**.
 
-The default product mode is now **Dynamic Alpha + Allocation**. The machine no longer tries to find one static stock combination that must survive every market regime. Instead, at each recalibration it re-ranks the configured universe using only information that existed before that signal, selects the strongest diversified names, and then lets ERC/risk/Shannon manage the portfolio.
-
-The execution core remains:
-
-```text
-strictly-past alpha selection
-→ ERC relative risk weights
-→ optional absolute-volatility exposure overlay
-→ Shannon drift bands
-→ transaction costs / execution lag
-```
-
-ERC still owns relative portfolio weights. The alpha layer selects membership; it does not optimize arbitrary weights.
-
----
-
-## 1. Start the application
+## 1. Start QPort
 
 ```bash
 git checkout main
@@ -34,320 +19,512 @@ pip install -r requirements.txt
 python serve.py
 ```
 
-The optimizer is the application start page:
+Open:
 
 ```text
 http://127.0.0.1:8080/
 ```
 
-`/optimizer` remains an alias.
+Optional Vnstock support:
+
+```bash
+pip install -r requirements-vnstock.txt
+```
+
+Without Vnstock, QPort can still use VNDIRECT as its market-data source.
 
 ---
 
-## 2. Default workflow: Dynamic Alpha
+## 2. What QPort does
+
+QPort follows a Buy & Hold information-system model:
 
 ```text
-Universe (All / VN100 / VN50 / VN30)
-        ↓
-At each recalibration use STRICTLY PAST prices only
-        ↓
-3M momentum
-6M momentum
-12M momentum
-trend
-52-week drawdown quality
-short-horizon volatility penalty
-        ↓
-cross-sectional Alpha Score
-        ↓
-correlation diversification filter
-        ↓
-select N active stocks
-        ↓
-ERC relative weights
-        ↓
-volatility exposure overlay
-        ↓
-Shannon daily drift management
-        ↓
-optimize 1–6 recalibrations/year + timing
-        ↓
-rolling OOS validation
-        ↓
-recent pre-holdout validation
-        ↓
-FINAL HOLDOUT: PASS / REJECT ONLY
+real portfolio events
+→ immutable ledger
+→ current holdings + cash
+→ daily market prices
+→ portfolio snapshot
+→ NAV / P&L / performance / risk
+→ HOLD / ADD / REVIEW information
 ```
 
-Default active portfolio size is **7 stocks**. Five to seven stocks is the intended growth-concentration range; 8–10 remains available when more diversification is desired.
+QPort does not automatically choose stocks, sell holdings, reduce exposure, or
+rebalance at year-end.
 
-The stock list may change at every recalibration. For example:
-
-```text
-Event 1: A B C D E F G
-Event 2: A C D H I J K
-Event 3: C H I L M N O
-```
-
-This is intentional. Market leadership is allowed to change instead of forcing one static combination through every regime.
+Only events you explicitly record can change holdings/cash.
 
 ---
 
-## 3. Alpha Score methodology
+## 3. First-time portfolio migration
 
-The alpha rule is deliberately fixed and transparent. Its coefficients are **not optimizer genes** and are not tuned against the final holdout.
-
-For each eligible ticker, strictly before the signal date, the engine computes cross-sectional normalized features and combines them approximately as:
+Go to:
 
 ```text
-20%  3M momentum
-25%  6M momentum
-30%  12M momentum
-15%  trend
-10%  drawdown quality
--10% volatility penalty
+Transactions
 ```
 
-Longer-horizon features that are unavailable early in history are neutral rather than treated as positive signals.
-
-A ticker must also have a fresh observation immediately before selection. Stale/suspended names are not eligible for a new allocation.
-
-After ranking, the engine applies a correlation filter. The primary maximum pair-correlation threshold is 0.80. If the universe cannot fill the requested portfolio, the selector relaxes the threshold deterministically rather than silently returning too few stocks.
-
-The selector answers only:
-
-> Which stocks should be active now?
-
-ERC then answers:
-
-> How should risk be distributed among those active stocks?
-
----
-
-## 4. Optional fixed-combination mode
-
-Choose **Use my own combination** when you want to own the symbol-selection decision.
-
-You may select or import 5–10 symbols, for example:
+For every existing holding, choose:
 
 ```text
-ACB, FPT, REE, VCB, VNM
+Opening position import
 ```
-
-The fixed-combination health check evaluates research-only:
-
-- data coverage;
-- 63D / 252D correlation;
-- correlation clusters;
-- diversification ratio;
-- ERC feasibility.
-
-Suggestions never auto-replace a ticker. The user must explicitly apply a suggestion. After approval, symbols remain fixed and only recalibration frequency/timing are optimized.
-
----
-
-## 5. Capital plan
 
 Enter:
 
-- **Initial balance (VND)**;
-- **Money added each year (VND)**.
+- date;
+- ticker;
+- current shares;
+- average/cost basis per share.
 
-Annual contributions are external cash flows. Performance measurement neutralizes those flows so deposits do not create fake investment returns.
-
-Reports distinguish:
+Example:
 
 ```text
-cash contribution
-≠
-actual equity deployment
+FPT
+3,000 shares
+average cost 73,980 VND
 ```
 
-and record BUY cash deployed, SELL cash released and remaining cash.
+Use the real acquisition date when practical, especially if you want meaningful
+XIRR from the beginning of the investment. If only the current consolidated cost
+basis is known, record the migration honestly rather than inventing historical
+trades.
+
+An opening-position import adds shares and cost basis without consuming portfolio
+cash.
+
+If you have available cash, record a separate:
+
+```text
+Cash deposit
+```
 
 ---
 
-## 6. Risk policy
+## 4. Recording real activity
 
-Normal controls are:
+Transactions are the source of truth.
 
-- **Target volatility**;
-- **Maximum OOS drawdown**;
-- **Maximum single-stock weight**.
-
-The default strategic minimum market exposure is **0%**. Therefore a valid volatility estimate may de-risk all the way to cash.
-
-The advanced **Strategic minimum market exposure** setting is optional. It applies only when risk estimation is valid.
-
-Missing/invalid risk data is a different state:
+Supported events:
 
 ```text
-valid risk estimate
-→ volatility target determines exposure
-→ optional strategic floor may apply
-
-risk estimate unavailable
-→ strategic floor does NOT override safety
-→ fail closed to 0% equity
+Opening position import
+Cash deposit
+Buy execution
+Sell execution
+Cash withdrawal
+Cash dividend
+Stock dividend
+Stock split
+Standalone fee
 ```
 
-Allocation diagnostics distinguish these states explicitly.
+### BUY
+Record the actual broker execution:
+
+```text
+symbol
+shares
+execution price
+fee
+tax if applicable
+execution date
+```
+
+QPort requires enough previously recorded cash.
+
+### SELL
+Record the actual execution. QPort will not allow selling more shares than the
+ledger owns.
+
+### Cash dividend
+Record the amount actually credited to the portfolio. It remains investment
+return unless you later record a cash withdrawal.
+
+### Stock dividend
+Record the new shares credited. Cost basis is unchanged and average cost falls
+mechanically.
+
+### Split
+Record the share multiplication ratio. For a 2:1 split, enter `2`.
+
+Existing ledger events are not edited/deleted through the application. A mistake
+should be corrected with explicit compensating portfolio events so the audit trail
+remains visible.
 
 ---
 
-## 7. Initial deployment and recalibration timing
+## 5. Daily market monitoring
 
-The optimized 1–6 events are **recalibrations**, not permission to leave a new portfolio in cash until the first optimized date.
-
-Initial deployment is independent:
+When the server stays running, QPort attempts its daily market sync at:
 
 ```text
-historical warm-up
-        ↓
-alpha selection becomes feasible
-        ↓
-ERC solves successfully
-        ↓
-risk target is deployable
-        ↓
-INITIAL DEPLOYMENT
-        ↓
-1–6 optimized RECALIBRATIONS/year
+15:30 Asia/Ho_Chi_Minh
 ```
 
-This prevents a late timing gene such as `[221]` from receiving artificially low TRAIN drawdown just because the portfolio waited in cash.
+on weekdays.
 
-Between recalibrations, Shannon drift checks and risk refreshes continue normally.
+You can also press:
 
-Partial calendar years do not clamp missing event indices onto the final available date. Missing events are skipped and reported.
+```text
+Sync daily prices
+```
 
-Quarterly `[1, ~61, ~122, ~183]` remains a simple benchmark only.
+from the Portfolio page.
+
+Or use Windows Task Scheduler / cron:
+
+```bash
+cd python
+python -m portfolio.cli sync
+```
+
+Provider policy:
+
+```text
+Vnstock when installed/reachable
+        ↓ fallback
+VNDIRECT public daily data
+        ↓ failure
+last stored price + STALE/MISSING warning
+```
+
+A market-data failure never changes your shares.
 
 ---
 
-## 8. Growth ranking and live eligibility
+## 6. Portfolio Dashboard
 
-Research is **growth-first**, but risk is not removed.
+The start page is now the actual portfolio, not an optimizer.
 
-The current pre-holdout policy separates hard failures from smooth quality:
-
-### Hard gates
+It shows:
 
 ```text
-rolling OOS P10 return must be non-negative
-rolling OOS drawdown must stay inside the configured MDD ceiling
-recent pre-holdout return must not be catastrophically below -5%
+NAV
+Equity value
+Cash
+Total P/L
+Current drawdown
+252D volatility
 ```
 
-### Soft risk/reward quality
-
-These are no longer binary cliffs:
+For each holding:
 
 ```text
-TRAIN Calmar
-validation median return / worst drawdown
-recent Calmar
+Ticker
+Shares
+Average cost
+Latest price
+Market value
+Portfolio weight
+Unrealized P/L
+Risk contribution
+HOLD / ADD / REVIEW status
+Price date/source
 ```
 
-They form an explainable 0–100 quality score. A candidate with Calmar 0.34 is therefore not categorically different from one with 0.36.
-
-The soft score weights evidence approximately:
-
-```text
-20% TRAIN quality
-45% rolling OOS quality
-35% recent quality
-```
-
-For Dynamic Alpha, the frozen pre-holdout winner is ranked using growth evidence plus this quality score. The final holdout is not part of that ranking.
+If no portfolio has been entered, QPort shows an empty state. It never creates a
+sample or synthetic holding in the operational database.
 
 ---
 
-## 9. Research integrity
+## 7. Data freshness
 
-The global final holdout is reserved before research selection:
-
-```text
-TRAIN / timing search
-        ↓
-rolling OOS validation
-        ↓
-recent pre-holdout validation
-        ↓
-freeze winner
-════════════════════════════
-FINAL HOLDOUT
-════════════════════════════
-PASS / REJECT ONLY
-```
-
-If the frozen winner fails the holdout, the system rejects it. It must **not** switch to another candidate simply because that candidate happened to perform better after the holdout was inspected.
-
-The alpha coefficients are also fixed methodology rather than optimizer variables. This reduces the degrees of freedom available for backtest overfitting.
-
-Because previously observed historical holdouts have already been inspected during development, do not treat repeated success on those same dates as fresh proof of future performance. New unseen market data is the meaningful next validation source.
-
----
-
-## 10. Search quality
-
-Dynamic Alpha no longer searches millions of static symbol combinations. Membership is determined by the alpha rule, so the optimizer mainly explores recalibration frequency/timing.
-
-Presets:
-
-- **Fast** — quick timing exploration;
-- **Balanced** — recommended default;
-- **Thorough** — wider frequency/timing coverage.
-
-The optimizer may choose 1, 2, 3, 4, 5 or 6 recalibrations per year, subject to cyclic spacing constraints.
-
-Multi-process candidate evaluation remains available automatically.
-
----
-
-## 11. Results and audit files
-
-After completion:
+A daily portfolio snapshot can be:
 
 ```text
-/optimizer/<experiment_id>
+OFFICIAL
+STALE
+MISSING
 ```
 
-Results include:
+`OFFICIAL` requires all active holdings to have the same latest trading date and
+no provider error during the current sync.
 
-- selected recalibration count and trading-session positions;
-- TRAIN metrics;
-- rolling OOS metrics;
-- recent pre-holdout validation;
-- final assessment holdout;
-- soft live-quality score;
-- transaction costs and turnover;
-- equity exposure;
-- initial deployment diagnostics;
-- Dynamic Alpha selection history;
-- unique symbols touched;
-- membership turnover;
-- maximum selected correlation where available;
-- quarterly benchmark comparison.
+Example:
 
-Use **Download all data (ZIP)** for full audit.
+```text
+ACB  2026-08-21
+FPT  2026-08-21
+REE  2026-08-20
+```
 
-Dynamic Alpha reports label the portfolio as `DYNAMIC_ALPHA`; an empty static symbol field does **not** mean a zero-stock portfolio. `n_symbols` represents the active portfolio size, and membership history records the actual tickers selected at each event.
+The portfolio can still show an estimated NAV, but it is not considered an
+official performance snapshot until the data is coherent.
+
+This prevents one stale holding from silently becoming part of a supposedly
+fresh NAV.
 
 ---
 
-## 12. Core invariants
+## 8. Performance
 
-The growth refactor changes symbol selection, not the execution theory:
+Go to:
 
-- alpha selection uses strictly-past market data;
-- ERC remains deterministic and covariance-driven;
-- alpha does not assign arbitrary weights;
-- risk overlay remains explicit;
-- Shannon drift logic remains rule-based;
-- transaction costs and execution lag remain modeled;
-- recommendation is not execution;
-- missing risk data fails closed;
-- final holdout never generates or re-ranks candidates.
+```text
+Performance
+```
 
-Dynamic Alpha is a research framework for pursuing stronger persistent growth; it does **not** guarantee a target CAGR or x3/x4 capital outcome.
+QPort reports:
+
+```text
+Daily return
+MTD
+YTD
+TWR since inception
+XIRR
+NAV history
+Realized P/L
+Dividend income
+Fees/taxes
+Net external contributions
+```
+
+### TWR
+Time-weighted return removes the effect of deposits/withdrawals from portfolio
+performance.
+
+A 100M deposit therefore cannot create a fake +100M investment gain.
+
+### XIRR
+XIRR uses the dates of investor cash flows plus the latest official NAV. It is the
+money-weighted investor experience and can differ materially from TWR.
+
+Only official snapshots enter the displayed performance series.
+
+---
+
+## 9. Risk page
+
+Risk is information, not execution.
+
+QPort currently reports:
+
+```text
+63D volatility
+252D volatility
+largest position weight
+HHI concentration
+risk contribution by ticker
+ERC reference weight
+history coverage / missing data
+```
+
+A high-risk result means:
+
+```text
+REVIEW
+```
+
+It does not mean:
+
+```text
+automatically sell
+automatically lower equity exposure
+automatically rebalance
+```
+
+ERC is retained because it is useful for understanding how portfolio risk is
+distributed. It is no longer a mandatory portfolio target.
+
+---
+
+## 10. HOLD / ADD / REVIEW
+
+These statuses are intentionally simple.
+
+### Without strategic reference weights
+The system primarily reports the actual portfolio. Cash-deployment suggestions
+may use equal-weight deficits as a neutral baseline.
+
+### With optional strategic reference weights
+A reference weight is a long-lived user preference, not an annual target.
+
+Example:
+
+```text
+ACB 25%
+DGC 20%
+FPT 30%
+REE 25%
+```
+
+The references remain unchanged until you change them.
+
+Status policy:
+
+```text
+current < 80% of reference  → ADD
+current > 120% of reference → REVIEW
+otherwise                   → HOLD
+```
+
+No status creates a broker order.
+
+---
+
+## 11. Deploying new cash
+
+If the portfolio contains unused cash, QPort may show:
+
+```text
+Deploy existing cash
+```
+
+This is **BUY-only information**.
+
+QPort calculates positive deficits relative to your strategic references, or to
+an equal-weight baseline when no references exist.
+
+Example:
+
+```text
+Available cash: 50M
+
+FPT  +30M
+REE  +20M
+```
+
+The system deliberately does not sell an overweight winner merely to satisfy
+this suggestion.
+
+If you actually buy, record the real broker fill as a `BUY` transaction afterward.
+
+---
+
+## 12. Daily snapshots
+
+Go to:
+
+```text
+Snapshots
+```
+
+Every snapshot contains the portfolio state used for that date:
+
+```text
+NAV
+cash
+equity
+daily P/L
+daily return
+drawdown
+volatility
+positions
+data quality
+```
+
+Historical snapshot values remain audit records of what QPort knew/used on that
+date.
+
+---
+
+## 13. Research Lab
+
+All advanced quant work remains available at:
+
+```text
+/research
+```
+
+This includes legacy:
+
+```text
+Dynamic Alpha
+combination search
+NSGA-II
+surrogate models
+allocation timing
+walk-forward testing
+holdout reports
+ERC/Shannon backtests
+```
+
+But Research has a hard boundary:
+
+```text
+research result
+→ proposal/evidence
+→ user decides
+→ user performs a real trade
+→ explicit ledger event
+```
+
+Research cannot apply a candidate directly to the operational portfolio.
+
+Old `/optimizer` URLs remain compatibility aliases into Research Lab; they are no
+longer the product home.
+
+---
+
+## 14. Operational CLI
+
+Current portfolio status:
+
+```bash
+python -m portfolio.cli status
+```
+
+Daily market sync:
+
+```bash
+python -m portfolio.cli sync
+```
+
+Performance:
+
+```bash
+python -m portfolio.cli performance
+```
+
+The old random ranking CLI now lives at:
+
+```bash
+python research_main.py ...
+```
+
+and the optimizer CLI remains research-only:
+
+```bash
+python optimize_main.py ...
+```
+
+---
+
+## 15. Backup
+
+The operational database is local SQLite:
+
+```text
+python/data/portfolio.sqlite3
+```
+
+It is intentionally excluded from Git.
+
+Back it up separately. The database contains the actual portfolio ledger and is
+more important operationally than generated optimizer artifacts.
+
+Override its path with:
+
+```text
+PORTFOLIO_DB=<path>
+```
+
+---
+
+## 16. Core mental model
+
+When in doubt, use this rule:
+
+```text
+PRICE MOVEMENT        does not change shares
+MODEL OUTPUT          does not change shares
+RISK WARNING          does not change shares
+YEAR END              does not change shares
+RESEARCH RESULT       does not change shares
+
+ONLY A REAL PORTFOLIO EVENT
+changes shares or cash.
+```
+
+That is the operating philosophy of QPort Buy & Hold.
