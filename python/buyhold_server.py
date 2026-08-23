@@ -11,10 +11,11 @@ import sys
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from portfolio.correctable_service import CorrectablePortfolioService
-from portfolio.dividends import DividendLookupError, LatestDividendService
+from portfolio.dividend_store import SqliteDividendService
+from portfolio.dividends import DividendLookupError
 from portfolio.locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
 from portfolio.validation import InputValidationError
@@ -32,7 +33,7 @@ MIME = {".html":"text/html; charset=utf-8",".js":"application/javascript; charse
 _css_url = None
 _ssr_proc: subprocess.Popen | None = None
 _service: CorrectablePortfolioService | None = None
-_dividend_service: LatestDividendService | None = None
+_dividend_service: SqliteDividendService | None = None
 
 
 def _portfolio() -> CorrectablePortfolioService:
@@ -42,10 +43,10 @@ def _portfolio() -> CorrectablePortfolioService:
     return _service
 
 
-def _dividends() -> LatestDividendService:
+def _dividends() -> SqliteDividendService:
     global _dividend_service
     if _dividend_service is None:
-        _dividend_service = LatestDividendService()
+        _dividend_service = SqliteDividendService(_portfolio().store)
     return _dividend_service
 
 
@@ -137,19 +138,24 @@ class Handler(BaseHTTPRequestHandler):
         if page not in data: return self._json(404,{"error":"Page not found."})
         props,en,vi = data[page]; props={**props,"locale":locale}; return self._bytes(200,_build_document(page,props,vi if locale=="vi" else en),"text/html; charset=utf-8")
 
-    def _api_get(self, parts):
+    def _api_get(self, parts, query=""):
         svc=_portfolio()
         if tuple(parts)==("dividends","health"):
             return self._json(200,_dividends().health())
         if len(parts)==3 and parts[:2]==["dividends","latest"]:
             symbol=parts[2].upper().strip()
+            refresh=str((parse_qs(query).get("refresh") or ["0"])[0]).lower() in {"1","true","yes"}
             try:
-                result=_dividends().latest(symbol)
+                result=_dividends().latest(symbol,force_refresh=refresh)
                 svc._log(
-                    "USER","local","CORPORATE_ACTION","LATEST_DIVIDEND_LOOKUP",
-                    f"Looked up latest dividend for {symbol}: {'FOUND' if result.get('found') else 'NOT_FOUND'}.",
+                    "USER","local","CORPORATE_ACTION","DIVIDEND_HISTORY_LOOKUP",
+                    f"Loaded dividend history for {symbol}: {'FOUND' if result.get('found') else 'NOT_FOUND'} ({result.get('data_origin')}).",
                     entity_type="SECURITY",entity_id=symbol,
-                    details={"found":result.get("found"),"latest":result.get("latest"),"source_counts":result.get("source_counts"),"errors":result.get("errors")},
+                    details={
+                        "found":result.get("found"),"event_count":result.get("event_count"),
+                        "latest":result.get("latest"),"data_origin":result.get("data_origin"),
+                        "source_counts":result.get("source_counts"),"errors":result.get("errors")
+                    },
                     status="SUCCESS" if result.get("found") else "PARTIAL",
                 )
                 return self._json(200,result)
@@ -174,8 +180,8 @@ class Handler(BaseHTTPRequestHandler):
         fn=routes.get(tuple(parts)); return self._json(200,fn()) if fn else self._json(404,{"error":"Portfolio endpoint not found."})
 
     def do_GET(self):
-        path=urlparse(self.path).path
-        if path.startswith("/api/portfolio"): return self._api_get(self._parts(path)[2:])
+        parsed=urlparse(self.path); path=parsed.path
+        if path.startswith("/api/portfolio"): return self._api_get(self._parts(path)[2:],parsed.query)
         if path.startswith("/assets/"):
             target=os.path.realpath(os.path.join(DIST_DIR,path.lstrip("/"))); root=os.path.realpath(DIST_DIR)
             if not (target==root or target.startswith(root+os.sep)) or not os.path.isfile(target): return self._json(404,{"error":"Asset not found."})
