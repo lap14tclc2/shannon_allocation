@@ -31,8 +31,10 @@ if(existsSync(ssrEntry)){
   const portfolioHtml=renderPage('portfolio',{dashboard,locale:'en'});
   check('portfolio renders live accounting and AI export',portfolioHtml.includes('Total portfolio')&&portfolioHtml.includes('1,000,000 VND')&&portfolioHtml.includes('Export for AI'));
   check('portfolio renders simple user metrics',portfolioHtml.includes('Cost basis')&&portfolioHtml.includes('Dividend income')&&portfolioHtml.includes('Holdings')&&portfolioHtml.includes('Dividends'));
-  check('portfolio hides advanced navigation',!portfolioHtml.includes('href="/operations"')&&!portfolioHtml.includes('href="/logs"')&&!portfolioHtml.includes('href="/snapshots"')&&!portfolioHtml.includes('href="/risk"')&&!portfolioHtml.includes('href="/settings"'));
-  check('portfolio removes confusing diagnostic sections',!portfolioHtml.includes('Portfolio health')&&!portfolioHtml.includes('Cash &amp; deployment')&&!portfolioHtml.includes('Where your equity sits')&&!portfolioHtml.includes('Risk contrib.'));
+  check('portfolio renders information-only assessment',portfolioHtml.includes('Portfolio assessment')&&portfolioHtml.includes('252D volatility')&&portfolioHtml.includes('Daily CVaR 95%')&&portfolioHtml.includes('no BUY/SELL action'));
+  check('portfolio keeps advanced areas out of primary navigation',!portfolioHtml.includes('href="/operations"')&&!portfolioHtml.includes('href="/logs"')&&!portfolioHtml.includes('href="/snapshots"')&&!portfolioHtml.includes('href="/settings"'));
+  check('portfolio exposes risk only as contextual progressive disclosure',portfolioHtml.includes('href="/risk"')&&portfolioHtml.includes('Advanced risk details'));
+  check('portfolio removes obsolete diagnostic clutter',!portfolioHtml.includes('Portfolio health')&&!portfolioHtml.includes('Cash &amp; deployment')&&!portfolioHtml.includes('Where your equity sits')&&!portfolioHtml.includes('Risk contrib.'));
   check('portfolio has no research navigation',!portfolioHtml.includes('Research Lab')&&!portfolioHtml.includes('Optimizer'));
   const perfHtml=renderPage('performance',{performance,locale:'en'});
   check('performance renders simple overview',perfHtml.includes('Total P/L')&&perfHtml.includes('Since inception')&&perfHtml.includes('Year to date')&&perfHtml.includes('P/L breakdown'));
