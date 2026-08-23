@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 from portfolio.correctable_service import CorrectablePortfolioService
+from portfolio.dividends import DividendLookupError, LatestDividendService
 from portfolio.locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
 from portfolio.validation import InputValidationError
@@ -31,6 +32,7 @@ MIME = {".html":"text/html; charset=utf-8",".js":"application/javascript; charse
 _css_url = None
 _ssr_proc: subprocess.Popen | None = None
 _service: CorrectablePortfolioService | None = None
+_dividend_service: LatestDividendService | None = None
 
 
 def _portfolio() -> CorrectablePortfolioService:
@@ -38,6 +40,13 @@ def _portfolio() -> CorrectablePortfolioService:
     if _service is None:
         _service = CorrectablePortfolioService()
     return _service
+
+
+def _dividends() -> LatestDividendService:
+    global _dividend_service
+    if _dividend_service is None:
+        _dividend_service = LatestDividendService()
+    return _dividend_service
 
 
 def _client_css_url() -> str:
@@ -129,7 +138,28 @@ class Handler(BaseHTTPRequestHandler):
         props,en,vi = data[page]; props={**props,"locale":locale}; return self._bytes(200,_build_document(page,props,vi if locale=="vi" else en),"text/html; charset=utf-8")
 
     def _api_get(self, parts):
-        svc=_portfolio(); routes={
+        svc=_portfolio()
+        if tuple(parts)==("dividends","health"):
+            return self._json(200,_dividends().health())
+        if len(parts)==3 and parts[:2]==["dividends","latest"]:
+            symbol=parts[2].upper().strip()
+            try:
+                result=_dividends().latest(symbol)
+                svc._log(
+                    "USER","local","CORPORATE_ACTION","LATEST_DIVIDEND_LOOKUP",
+                    f"Looked up latest dividend for {symbol}: {'FOUND' if result.get('found') else 'NOT_FOUND'}.",
+                    entity_type="SECURITY",entity_id=symbol,
+                    details={"found":result.get("found"),"latest":result.get("latest"),"source_counts":result.get("source_counts"),"errors":result.get("errors")},
+                    status="SUCCESS" if result.get("found") else "PARTIAL",
+                )
+                return self._json(200,result)
+            except DividendLookupError as exc:
+                svc.log_failure(method="GET",path=f"/api/portfolio/dividends/latest/{symbol}",error=str(exc),code="INVALID_TICKER")
+                return self._json(400,{"error":str(exc),"code":"INVALID_TICKER","field":"symbol"})
+            except Exception as exc:
+                svc.log_failure(method="GET",path=f"/api/portfolio/dividends/latest/{symbol}",error=str(exc),code="DIVIDEND_LOOKUP_FAILED")
+                return self._json(502,{"error":str(exc),"code":"DIVIDEND_LOOKUP_FAILED","field":None})
+        routes={
             ():svc.dashboard,
             ("transactions",):lambda:{"transactions":svc.transactions()},
             ("transaction-audit",):lambda:{"corrections":svc.transaction_audit()},
