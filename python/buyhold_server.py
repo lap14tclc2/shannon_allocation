@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import subprocess
@@ -38,14 +39,31 @@ NODE_SSR = os.path.join(FRONTEND_DIR, "ssr", "server.mjs")
 CLIENT_JS = "/assets/client.js"
 CLIENT_CSS_DEFAULT = "/assets/entry-client.css"
 SESSION_COOKIE = "qport_session"
+MAX_REQUEST_BODY = int(os.environ.get("QPORT_MAX_REQUEST_BODY", str(1024 * 1024)))
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 MIME = {".html":"text/html; charset=utf-8",".js":"application/javascript; charset=utf-8",".mjs":"application/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8",".png":"image/png",".svg":"image/svg+xml",".ico":"image/x-icon"}
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
+}
+ADMIN_RATE_WINDOW_SECONDS = 15 * 60
+ADMIN_RATE_MAX_FAILURES = 5
 
 _css_url = None
 _ssr_proc: subprocess.Popen | None = None
 _auth_store: AuthStore | None = None
 _services: dict[int, CorrectablePortfolioService] = {}
 _dividend_services: dict[int, SqliteDividendService] = {}
+_admin_failures: dict[str, list[float]] = {}
+_admin_failure_lock = threading.Lock()
 
 
 def _auth() -> AuthStore:
@@ -136,7 +154,13 @@ def _build_document(page: str, props: dict, title: str) -> bytes:
     html = _ssr_render(page, props)
     serialized = json.dumps({"page":page,"props":props}, ensure_ascii=False).replace("<", "\\u003c")
     lang = "vi" if props.get("locale") == "vi" else "en"
-    return (f"<!doctype html><html lang='{lang}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title><link rel='stylesheet' href='{_client_css_url()}'></head><body><div id='root'>{html}</div><script>window.__PAGE__={serialized};</script><script type='module' crossorigin src='{CLIENT_JS}'></script></body></html>").encode()
+    return (
+        f"<!doctype html><html lang='{lang}'><head><meta charset='utf-8'>"
+        f"<meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>"
+        f"<link rel='stylesheet' href='{_client_css_url()}'></head><body><div id='root'>{html}</div>"
+        f"<script id='qport-page-data' type='application/json'>{serialized}</script>"
+        f"<script type='module' crossorigin src='{CLIENT_JS}'></script></body></html>"
+    ).encode()
 
 
 def _bind_with_fallback(host, port, handler, attempts=20):
@@ -147,6 +171,50 @@ def _bind_with_fallback(host, port, handler, attempts=20):
             if offset == 0:
                 print(f"Port {port} unavailable: {exc}", flush=True)
     raise SystemExit("Could not bind server port.")
+
+
+def _is_loopback_host(host: str) -> bool:
+    value = str(host or "").strip().lower()
+    if value == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _secure_cookie_enabled() -> bool:
+    return str(os.environ.get("QPORT_SECURE_COOKIES", "0")).lower() in {"1", "true", "yes"}
+
+
+def _admin_rate_key(client_address) -> str:
+    return str((client_address or ("unknown",))[0] or "unknown")
+
+
+def _admin_rate_limited(key: str) -> bool:
+    now = time.monotonic()
+    cutoff = now - ADMIN_RATE_WINDOW_SECONDS
+    with _admin_failure_lock:
+        recent = [stamp for stamp in _admin_failures.get(key, []) if stamp >= cutoff]
+        if recent:
+            _admin_failures[key] = recent
+        else:
+            _admin_failures.pop(key, None)
+        return len(recent) >= ADMIN_RATE_MAX_FAILURES
+
+
+def _record_admin_failure(key: str) -> None:
+    now = time.monotonic()
+    cutoff = now - ADMIN_RATE_WINDOW_SECONDS
+    with _admin_failure_lock:
+        recent = [stamp for stamp in _admin_failures.get(key, []) if stamp >= cutoff]
+        recent.append(now)
+        _admin_failures[key] = recent[-ADMIN_RATE_MAX_FAILURES:]
+
+
+def _clear_admin_failures(key: str) -> None:
+    with _admin_failure_lock:
+        _admin_failures.pop(key, None)
 
 
 class MultiUserDailySyncScheduler:
@@ -198,6 +266,8 @@ class MultiUserDailySyncScheduler:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    server_version = "QPort"
+    sys_version = ""
 
     def log_message(self, fmt, *args):
         pass
@@ -216,12 +286,17 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
             pass
 
+    def _security_headers(self):
+        for key, value in SECURITY_HEADERS.items():
+            self.send_header(key, value)
+
     def _json(self, status, payload, headers: dict | None = None):
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._security_headers()
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
@@ -231,18 +306,50 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if str(content_type).startswith("text/html"):
+            self.send_header("Cache-Control", "no-store")
+        self._security_headers()
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
         self._write(body)
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._json(400, {"error":"Invalid Content-Length.", "code":"INVALID_CONTENT_LENGTH", "field":None})
+            return None
+        if n < 0 or n > MAX_REQUEST_BODY:
+            self._json(413, {"error":"Request body is too large.", "code":"REQUEST_TOO_LARGE", "field":None})
+            return None
         raw = self.rfile.read(n) if n else b"{}"
         try:
-            return json.loads(raw.decode() or "{}")
+            data = json.loads(raw.decode() or "{}")
         except Exception:
-            return {}
+            self._json(400, {"error":"Request body must be valid JSON.", "code":"INVALID_JSON", "field":None})
+            return None
+        if not isinstance(data, dict):
+            self._json(400, {"error":"Request body must be a JSON object.", "code":"INVALID_JSON_OBJECT", "field":None})
+            return None
+        return data
+
+    def _require_same_origin_request(self) -> bool:
+        if self.headers.get("X-QPort-Request") != "1":
+            self._json(403, {"error":"Same-origin request marker is required.", "code":"CROSS_ORIGIN_REQUEST_BLOCKED", "field":None})
+            return False
+        fetch_site = str(self.headers.get("Sec-Fetch-Site") or "").lower()
+        if fetch_site and fetch_site not in {"same-origin", "none"}:
+            self._json(403, {"error":"Cross-site request blocked.", "code":"CROSS_ORIGIN_REQUEST_BLOCKED", "field":None})
+            return False
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed = urlparse(origin)
+            request_host = str(self.headers.get("Host") or "").lower()
+            if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != request_host:
+                self._json(403, {"error":"Request origin does not match QPort.", "code":"CROSS_ORIGIN_REQUEST_BLOCKED", "field":None})
+                return False
+        return True
 
     def _session_token(self) -> str | None:
         cookie = SimpleCookie()
@@ -259,11 +366,13 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _session_cookie(token: str) -> str:
         max_age = SESSION_DAYS * 24 * 60 * 60
-        return f"{SESSION_COOKIE}={token}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax"
+        secure = "; Secure" if _secure_cookie_enabled() else ""
+        return f"{SESSION_COOKIE}={token}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}"
 
     @staticmethod
     def _clear_session_cookie() -> str:
-        return f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+        secure = "; Secure" if _secure_cookie_enabled() else ""
+        return f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax{secure}"
 
     def _require_user(self) -> dict | None:
         user = self._current_user()
@@ -326,7 +435,18 @@ class Handler(BaseHTTPRequestHandler):
     def _api_auth_post(self, path, parts, body):
         try:
             if path == "/api/auth/login":
-                user, token = _auth().login(body.get("username"), body.get("password"))
+                username = str(body.get("username") or "").strip()
+                rate_key = _admin_rate_key(self.client_address)
+                if username.lower() == "admin" and _admin_rate_limited(rate_key):
+                    return self._json(429, {"error":"Too many failed admin login attempts. Try again later.", "code":"ADMIN_RATE_LIMITED", "field":"password"})
+                try:
+                    user, token = _auth().login(username, body.get("password"))
+                except AuthError as exc:
+                    if username.lower() == "admin" and exc.code == "INVALID_ADMIN_PASSWORD":
+                        _record_admin_failure(rate_key)
+                    raise
+                if user.get("role") == "ADMIN":
+                    _clear_admin_failures(rate_key)
                 return self._json(200, {"ok":True, "user":user}, {"Set-Cookie":self._session_cookie(token)})
             if path == "/api/auth/register":
                 user = _auth().register(body.get("username"))
@@ -346,6 +466,8 @@ class Handler(BaseHTTPRequestHandler):
             status = 404 if exc.code == "USER_NOT_REGISTERED" else 400
             if exc.code in {"INVALID_ADMIN_PASSWORD"}:
                 status = 401
+            if exc.code == "ADMIN_NOT_CONFIGURED":
+                status = 503
             return self._json(status, exc.as_dict())
         return self._json(404, {"error":"Auth endpoint not found."})
 
@@ -372,6 +494,8 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[:2] == ["dividends", "latest"]:
             symbol = parts[2].upper().strip()
             refresh = str((parse_qs(query).get("refresh") or ["0"])[0]).lower() in {"1","true","yes"}
+            if refresh and not self._require_same_origin_request():
+                return
             try:
                 result = _dividends(user).latest(symbol, force_refresh=refresh)
                 svc._log(
@@ -444,8 +568,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if not self._require_same_origin_request():
+            return
         parts = self._parts(path)
         body = self._body()
+        if body is None:
+            return
         if path.startswith("/api/auth"):
             return self._api_auth_post(path, parts[2:], body)
 
@@ -468,15 +596,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/portfolio/corporate-actions/sync":
                 return self._json(200, svc.sync_corporate_actions(body.get("start"), body.get("end")))
             if path == "/api/portfolio/corporate-actions/post":
-                return self._json(200, svc.post_corporate_action_receipt(int(body.get("action_id"))))
+                return self._json(200, svc.post_corporate_action_receipt(int(body.get("action_id")), created_by=actor))
             if path == "/api/portfolio/securities/resolve":
                 return self._json(200, svc.resolve_all_securities())
             if path == "/api/portfolio/activity":
                 return self._json(201, svc.log_client_activity(body.get("action"), body.get("details") or {}))
             if len(parts) == 5 and parts[:3] == ["api","portfolio","corporate-actions"] and parts[4] == "verify":
-                return self._json(200, svc.verify_corporate_action(int(parts[3]), body.get("source_url")))
+                return self._json(200, svc.verify_corporate_action(int(parts[3]), body.get("source_url"), verified_by=actor))
             if len(parts) == 5 and parts[:3] == ["api","portfolio","corporate-actions"] and parts[4] == "receipt":
-                return self._json(200, svc.record_corporate_action_receipt(int(parts[3]), body))
+                return self._json(200, svc.record_corporate_action_receipt(int(parts[3]), body, created_by=actor))
             if len(parts) == 5 and parts[:3] == ["api","portfolio","settlements"] and parts[4] == "confirm":
                 return self._json(200, svc.confirm_settlement(int(parts[3]), body.get("note") or ""))
             if len(parts) == 5 and parts[:3] == ["api","portfolio","nav"] and parts[4] == "lock":
@@ -503,31 +631,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         path = urlparse(self.path).path
+        if not self._require_same_origin_request():
+            return
         user = self._require_user()
         if user is None:
+            return
+        body = self._body()
+        if body is None:
             return
         eid = self._tx_id(path)
         svc = _portfolio(user)
         if eid is None:
             return self._json(404, {"error":"Transaction endpoint not found."})
         try:
-            return self._json(200, svc.update_event(eid, self._body(), created_by=user["username"]))
+            return self._json(200, svc.update_event(eid, body, created_by=user["username"]))
         except Exception as exc:
             return self._fail(svc, path, exc, getattr(exc, "code", "PORTFOLIO_ERROR"))
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+        if not self._require_same_origin_request():
+            return
         if path.startswith("/api/auth"):
+            body = self._body()
+            if body is None:
+                return
             return self._api_auth_delete(self._parts(path)[2:])
         user = self._require_user()
         if user is None:
+            return
+        body = self._body()
+        if body is None:
             return
         eid = self._tx_id(path)
         svc = _portfolio(user)
         if eid is None:
             return self._json(404, {"error":"Transaction endpoint not found."})
         try:
-            return self._json(200, svc.delete_event(eid, self._body().get("reason"), created_by=user["username"]))
+            return self._json(200, svc.delete_event(eid, body.get("reason"), created_by=user["username"]))
         except Exception as exc:
             return self._fail(svc, path, exc, getattr(exc, "code", "PORTFOLIO_ERROR"))
 
@@ -537,7 +678,18 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--no-daily-sync", action="store_true")
+    parser.add_argument(
+        "--allow-trusted-network",
+        action="store_true",
+        help="Allow a non-loopback bind. Username-only normal-user login is intended only for a trusted network.",
+    )
     args = parser.parse_args()
+
+    if not _is_loopback_host(args.host) and not args.allow_trusted_network:
+        raise SystemExit(
+            "Refusing non-loopback bind: normal users authenticate by username only. "
+            "Keep QPort on localhost, or explicitly pass --allow-trusted-network behind appropriate network/TLS controls."
+        )
 
     removed = _cleanup_legacy_database()
     auth = _auth()
@@ -553,7 +705,9 @@ def main():
     if removed:
         print(f"Legacy DB    : removed {len(removed)} file(s); fresh authenticated storage active", flush=True)
     print(f"Daily sync   : {'disabled' if args.no_daily_sync else scheduler.hhmm+' Asia/Ho_Chi_Minh'}", flush=True)
-    print("Default admin: admin / abc123", flush=True)
+    print(f"Admin auth   : {'configured' if auth.admin_configured() else 'NOT CONFIGURED — run python -m portfolio.cli setup-admin'}", flush=True)
+    if not _is_loopback_host(args.host):
+        print("SECURITY     : trusted-network override enabled; use HTTPS and QPORT_SECURE_COOKIES=1", flush=True)
     port, server = _bind_with_fallback(args.host, args.port, Handler)
     print(f"Open http://{args.host}:{port}\nMode: AUTHENTICATED BUY & HOLD portfolio book", flush=True)
     try:
