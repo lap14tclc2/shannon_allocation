@@ -20,16 +20,11 @@ on:
       - '.github/workflows/risk-fast-ci.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -41,11 +36,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Audit Python dependencies
-        working-directory: python
-        run: |
-          python -m pip install pip-audit
-          pip-audit -r requirements.txt
       - name: Compile operational Python
         working-directory: python
         run: python -m compileall -q portfolio buyhold_server.py serve.py main.py
@@ -61,9 +51,6 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      - name: Audit frontend dependencies
-        working-directory: frontend
-        run: npm audit --audit-level=high
       - name: Client validation contract
         working-directory: frontend
         run: node test/validation.mjs

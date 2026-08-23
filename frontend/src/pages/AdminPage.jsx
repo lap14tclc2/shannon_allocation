@@ -128,13 +128,13 @@ export default function AdminPage({ locale = 'en' }) {
           <div className="eyebrow">{text('Admin security', 'Bảo mật admin')}</div>
           <h2>{text('Update admin password', 'Đổi password admin')}</h2>
           <p className="muted">{text(
-            'QPort never displays or stores the plaintext admin password. Updating it invalidates existing admin sessions.',
-            'QPort không bao giờ hiển thị hoặc lưu plaintext password admin. Khi đổi password, các session admin hiện tại sẽ bị vô hiệu hóa.'
+            'The default password is abc123. Change it after first login. Updating the password signs out existing admin sessions.',
+            'Password mặc định là abc123. Nên đổi sau lần đăng nhập đầu tiên. Khi đổi password, các session admin hiện tại sẽ bị đăng xuất.'
           )}</p>
           <form className="admin-password-form" onSubmit={updatePassword}>
-            <label><span>{text('Current password', 'Password hiện tại')}</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required /></label>
-            <label><span>{text('New password', 'Password mới')}</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={12} maxLength={128} required /></label>
-            <label><span>{text('Confirm new password', 'Xác nhận password mới')}</span><input type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={12} maxLength={128} required /></label>
+            <label><span>{text('Current password', 'Password hiện tại')}</span><input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required /></label>
+            <label><span>{text('New password', 'Password mới')}</span><input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
+            <label><span>{text('Confirm new password', 'Xác nhận password mới')}</span><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
             <button className="btn-primary" type="submit">{text('Update password', 'Cập nhật password')}</button>
           </form>
         </section>

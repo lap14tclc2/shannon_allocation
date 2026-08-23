@@ -24,11 +24,6 @@ export default function AuthPage({ locale = 'en' }) {
         setRegisterUsername(username.trim());
         setMissingUser(true);
         setMessage(text('This username is not registered yet.', 'Username này chưa được đăng ký.'));
-      } else if (err.code === 'ADMIN_NOT_CONFIGURED') {
-        setMessage(text(
-          'Admin access is not configured yet. Configure it locally with: python -m portfolio.cli setup-admin',
-          'Admin chưa được cấu hình. Hãy cấu hình cục bộ bằng: python -m portfolio.cli setup-admin'
-        ));
       } else {
         setMessage(err.message);
       }
@@ -63,8 +58,8 @@ export default function AuthPage({ locale = 'en' }) {
           <div className="eyebrow">{text('Portfolio access', 'Truy cập danh mục')}</div>
           <h1>{text('Sign in with your username', 'Đăng nhập bằng username')}</h1>
           <p>{text(
-            'Normal users use their unique username. Administrative credentials are configured locally and are never displayed by QPort.',
-            'User thường dùng username duy nhất. Thông tin đăng nhập admin được cấu hình cục bộ và QPort không bao giờ hiển thị credential.'
+            'Normal users only need a unique username. Admin requires a password.',
+            'User thường chỉ cần username duy nhất. Admin cần thêm password.'
           )}</p>
         </div>
 
@@ -124,6 +119,11 @@ export default function AuthPage({ locale = 'en' }) {
             </button>
           </form>
         )}
+
+        <div className="auth-footnote">
+          <span>{text('Default admin', 'Admin mặc định')}</span>
+          <code>admin / abc123</code>
+        </div>
       </section>
     </main>
   );

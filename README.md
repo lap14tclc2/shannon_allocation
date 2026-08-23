@@ -25,19 +25,15 @@ NAV · P/L · TWR · XIRR · drawdown · risk · portfolio health
 information for the user
 ```
 
-## Authentication and security model
+## Authentication and data isolation
 
 QPort uses a deliberately small local authentication model:
 
 - Normal users register a **unique username** and sign in with username only.
-- The admin username is `admin`, but **no admin password is embedded in source, UI, docs or logs**.
-- Configure the admin password once, locally, with `python -m portfolio.cli setup-admin`.
-- Admin passwords are stored only as salted PBKDF2-HMAC-SHA256 hashes.
-- Admin can update the password from `/admin`; rotation invalidates active admin sessions.
+- The built-in admin account is `admin` with default password `abc123`.
+- Admin can update the password from `/admin`.
 - Admin can remove a normal user; removal also deletes that user's sessions and entire portfolio database.
 - Every user gets a separate SQLite portfolio file. Transactions, prices, snapshots, dividends, operations, logs and settings are therefore isolated by authenticated user.
-
-> **Important:** username-only normal-user login is intended for localhost or a trusted private network. It is not strong authentication for an untrusted/public network.
 
 Default runtime storage:
 
@@ -46,21 +42,7 @@ python/data/auth-v1/auth.sqlite3
 python/data/auth-v1/users/user-<id>.sqlite3
 ```
 
-The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the authenticated server starts.
-
-### HTTP protections
-
-The authenticated server also applies:
-
-- HttpOnly + SameSite session cookies;
-- optional Secure cookies with `QPORT_SECURE_COOKIES=1` behind HTTPS;
-- same-origin request markers and Origin/Sec-Fetch-Site checks for mutations;
-- Content Security Policy and anti-clickjacking headers;
-- request-body size limits;
-- admin login throttling;
-- localhost-only binding by default.
-
-A non-loopback bind is refused unless `--allow-trusted-network` is explicitly supplied.
+The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the authenticated server starts. The authenticated namespace therefore starts clean instead of silently inheriting old single-user data.
 
 ## Core invariants
 
@@ -80,13 +62,13 @@ A non-loopback bind is refused unless `--allow-trusted-network` is explicitly su
 - Cost value and market value per holding.
 - Live unrealized P/L and total portfolio P/L.
 - Position weights.
-- Expandable broker/account breakdown for each consolidated holding.
 - Concise portfolio-level risk/health assessment.
 - Dividend latest event with expandable stored history for every current holding.
 
 ### Performance
 
-After the first market sync QPort reconstructs daily history from the immutable ledger and stored D1 prices. It provides:
+After the first market sync QPort reconstructs daily history from the immutable
+ledger and stored D1 prices. It provides:
 
 - NAV history;
 - YTD and since-inception performance in the normal view;
@@ -108,6 +90,18 @@ Risk is information only. The advanced route includes:
 - downside volatility and worst observed day;
 - data-history coverage.
 
+### Daily snapshots
+
+Snapshots are generated automatically from:
+
+```text
+ledger state + daily market prices
+```
+
+`OFFICIAL` means every active holding has a price for the same trading date.
+Stale snapshots remain visible for diagnosis but are excluded from official
+performance calculations.
+
 ## Ledger event types
 
 ```text
@@ -122,7 +116,8 @@ SPLIT
 FEE
 ```
 
-`POSITION_IMPORT` is for migrating an existing holding with shares and cost basis without pretending that a historical cash BUY occurred inside QPort.
+`POSITION_IMPORT` is for migrating an existing holding with shares and cost basis
+without pretending that a historical cash BUY occurred inside QPort.
 
 ## Market data
 
@@ -138,7 +133,7 @@ last stored value + STALE/MISSING status
 
 Dividend provider results are persisted in the logged-in user's SQLite DB. Normal page loads use SQLite first; providers are contacted only on cache miss or explicit refresh.
 
-## Install
+Base installation:
 
 ```bash
 cd python
@@ -151,27 +146,15 @@ Optional Vnstock:
 pip install -r requirements-vnstock.txt
 ```
 
-Frontend:
+## Start
 
 ```bash
 cd frontend
 npm ci
 npm run build
 npm run build:ssr
-```
 
-## First secure start
-
-Configure admin locally. The password is prompted without appearing in shell history or the process list:
-
-```bash
-cd python
-python -m portfolio.cli setup-admin
-```
-
-Then start QPort:
-
-```bash
+cd ../python
 python serve.py
 ```
 
@@ -191,11 +174,11 @@ Portfolio | Transactions | Performance | Guide
 
 Advanced routes remain available for operational diagnostics. Admin gets an additional **Admin** link after login.
 
-The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for every user database that exists.
+The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for every user database that exists. You can also sync manually from the portfolio UI.
 
 ## CLI
 
-CLI operations use the same per-user database mapping as the web app.
+CLI operations are authenticated and use the same per-user database mapping as the web app.
 
 Normal user:
 
@@ -204,38 +187,23 @@ python -m portfolio.cli --username alice sync
 python -m portfolio.cli --username alice status
 ```
 
-Admin commands prompt for the password interactively:
+Admin:
 
 ```bash
-python -m portfolio.cli --username admin status
+python -m portfolio.cli --username admin --password abc123 status
 ```
 
-Do not pass admin passwords as command-line arguments.
+The CLI does not keep a browser session alive after credential verification.
 
-## Trusted-network deployment
+## First-use workflow
 
-QPort defaults to loopback binding because normal users authenticate with username only. If you intentionally run it on a trusted private network:
-
-```bash
-python serve.py --host 192.168.1.10 --allow-trusted-network
-```
-
-When HTTPS is provided by a reverse proxy, also enable secure cookies:
-
-```text
-QPORT_SECURE_COOKIES=1
-```
-
-Do not expose the current username-only normal-user model directly to the public Internet.
-
-## First-use portfolio workflow
-
-1. Register/sign in with the intended username.
-2. Open **Transactions** and import each existing position with the real share count, cost basis, broker and account where known.
+1. Open QPort and register a unique username, or sign in if already registered.
+2. Open **Transactions** and import each existing position with the real share count and cost basis.
 3. Record existing available cash with **Cash deposit**.
 4. Return to **Portfolio** and refresh market data once.
 5. Verify Cost Value, Market Value, P/L and NAV against your broker.
 6. Review the Portfolio assessment and Performance only after accounting values match.
+7. Admin should sign in as `admin / abc123` and change the default password from `/admin`.
 
 ## Languages
 

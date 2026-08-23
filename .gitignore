@@ -14,15 +14,6 @@ venv/
 python/data/
 python/results/
 
-# Local secrets / credentials
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-*.pfx
-
 # OS
 .DS_Store
 Thumbs.db
