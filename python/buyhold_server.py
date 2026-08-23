@@ -6,10 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 import research_legacy_server as legacy
+from portfolio.scheduler import DailySyncScheduler
 from portfolio.service import PortfolioService
 
 _service: PortfolioService | None = None
@@ -23,12 +23,7 @@ def _portfolio() -> PortfolioService:
 
 
 class Handler(legacy.Handler):
-    """Operational handler.
-
-    Portfolio APIs are first-class. Legacy optimizer/backtest handlers are only
-    reachable through the explicit research boundary (plus compatibility aliases
-    for old saved URLs).
-    """
+    """Operational handler with an explicit research-only legacy boundary."""
 
     def _portfolio_api(self, parts):
         svc = _portfolio()
@@ -60,10 +55,7 @@ class Handler(legacy.Handler):
         if not parts:
             return self._send_page(
                 "research",
-                {
-                    "experiments": self._list_optimizer_experiments(),
-                    "runs": self._runs(),
-                },
+                {"experiments": self._list_optimizer_experiments(), "runs": self._runs()},
                 "Research Lab · QPort",
             )
         if parts[0] == "optimizer":
@@ -128,7 +120,7 @@ class Handler(legacy.Handler):
             parts = [unquote(p) for p in path.split("/") if p][1:]
             return self._research_page(parts)
 
-        # Compatibility: old optimizer URLs now render the same Research pages.
+        # Compatibility: old optimizer URLs render the same Research pages.
         if path == "/optimizer" or path.startswith("/optimizer/"):
             parts = ["optimizer", *[unquote(p) for p in path.split("/") if p][1:]]
             return self._research_page(parts)
@@ -179,12 +171,20 @@ def main():
     parser = argparse.ArgumentParser(description="Serve QPort buy-and-hold portfolio information system")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--no-daily-sync", action="store_true", help="Disable the in-process EOD market sync scheduler")
     args = parser.parse_args()
 
     legacy._ensure_ssr_worker()
+    service = _portfolio()
+    scheduler = None
+    if not args.no_daily_sync:
+        scheduler = DailySyncScheduler(service)
+        scheduler.start()
+
     print(f"SSR renderer : {legacy.SSR_URL}", flush=True)
-    print(f"Portfolio DB : {_portfolio().store.path}", flush=True)
+    print(f"Portfolio DB : {service.store.path}", flush=True)
     print(f"Research dir : {legacy.RESULTS_DIR}", flush=True)
+    print(f"Daily sync   : {'disabled' if args.no_daily_sync else scheduler.hhmm + ' Asia/Ho_Chi_Minh'}", flush=True)
 
     port, server = legacy._bind_with_fallback(args.host, args.port, Handler)
     print(f"Open http://{args.host}:{port}", flush=True)
@@ -194,6 +194,8 @@ def main():
     except KeyboardInterrupt:
         print("\nShutting down.")
     finally:
+        if scheduler:
+            scheduler.stop()
         if legacy._ssr_proc:
             legacy._ssr_proc.terminate()
 
