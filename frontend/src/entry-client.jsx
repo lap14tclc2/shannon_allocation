@@ -13,6 +13,7 @@ import GuidePage from './pages/GuidePage.jsx';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
+import './portfolio-insights.css';
 
 const PAGES = {
   portfolio: PortfolioDashboardPage,
