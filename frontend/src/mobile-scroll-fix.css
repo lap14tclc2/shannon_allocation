@@ -1,0 +1,65 @@
+/* Mobile scrolling contract.
+   Keep the document itself as the vertical scroller. Fixed app chrome must never
+   turn #root or .page into a viewport-height scroll trap. */
+
+@media (max-width: 719px) {
+  html {
+    height: auto !important;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto;
+  }
+
+  body {
+    position: static;
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  #root {
+    position: static;
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .page {
+    position: relative;
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  /* Account sheet is the only state allowed to lock document scrolling. */
+  body:not(.mobile-sheet-open) {
+    overflow-y: auto !important;
+  }
+
+  body.mobile-sheet-open {
+    overflow: hidden !important;
+    touch-action: none;
+  }
+
+  /* Fixed application chrome handles taps; the document beneath keeps pan-y. */
+  .app-nav,
+  .mobile-tab-bar,
+  .mobile-account-sheet,
+  .mobile-nav-backdrop {
+    touch-action: manipulation;
+  }
+
+  /* Horizontal data scrollers should not steal a primarily vertical gesture. */
+  .table-scroll,
+  .holding-source-scroll,
+  .chart {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+}
