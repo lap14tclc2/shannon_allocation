@@ -46,7 +46,7 @@ def _portfolio() -> CorrectablePortfolioService:
 def _dividends() -> SqliteDividendService:
     global _dividend_service
     if _dividend_service is None:
-        _dividend_service = SqliteDividendService(_portfolio().store)
+        _dividend_service = SqliteDividendService(_portfolio().store, stop_on_first_data=False)
     return _dividend_service
 
 
