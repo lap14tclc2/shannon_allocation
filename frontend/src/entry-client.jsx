@@ -23,6 +23,7 @@ import './ui-polish.css';
 import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';
+import './cream-light-theme.css';
 
 const PAGES = {
   auth: AuthPage,
