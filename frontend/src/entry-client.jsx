@@ -33,5 +33,10 @@ const PAGES = {
 };
 
 const page = window.__PAGE__ || { page: 'auth', props: { locale: 'en' } };
-const C = PAGES[page.page] || AuthPage;
-hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
+
+if (page.props?.currentUser?.role === 'ADMIN' && page.page !== 'admin') {
+  window.location.replace('/admin');
+} else {
+  const C = PAGES[page.page] || AuthPage;
+  hydrateRoot(document.getElementById('root'), React.createElement(C, page.props || {}));
+}
