@@ -36,9 +36,12 @@ class Handler(legacy.Handler):
         return vi if self._locale() == "vi" else en
 
     def _send_page(self, page, props, title):
+        locale = self._locale()
         localized = dict(props or {})
-        localized["locale"] = self._locale()
-        return super()._send_page(page, localized, title)
+        localized["locale"] = locale
+        body = legacy._build_document(page, localized, title)
+        body = body.replace(b"<html lang='en'>", f"<html lang='{locale}'>".encode("utf-8"), 1)
+        return self._send_bytes(200, body, "text/html; charset=utf-8")
 
     def _portfolio_api(self, parts):
         svc = _portfolio()
