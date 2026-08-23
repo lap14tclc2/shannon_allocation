@@ -18,10 +18,8 @@ class DailySyncScheduler:
 
     At the configured time (15:30 Asia/Ho_Chi_Minh by default):
       * trading weekdays: sync D1 prices and rebuild snapshots;
-      * every calendar day: discover corporate actions for current holdings.
-
-    Discovery never posts dividends/shares to the source ledger. Receipt and
-    posting remain explicit user actions after verification/reconciliation.
+      * every calendar day: discover corporate actions for current holdings;
+      * every calendar day: auto-post due dividend entitlements when supported.
     """
 
     def __init__(self, service: PortfolioService, hhmm: str | None = None) -> None:
@@ -64,17 +62,31 @@ class DailySyncScheduler:
             log.exception("Could not append corporate-action scheduler activity")
         return result
 
+    def _auto_post_dividends(self, day: str) -> dict | None:
+        method = getattr(self.service, "auto_post_due_dividends", None)
+        if not callable(method):
+            return None
+        return method(as_of=day, created_by="system:scheduler")
+
     def run_once(self, now: datetime | None = None) -> dict:
         now = now or datetime.now(VN_TZ)
         weekday = now.weekday() < 5
-        result: dict = {"date": now.date().isoformat(), "scheduled_time": self.hhmm, "market": None, "corporate_actions": None}
+        result: dict = {
+            "date": now.date().isoformat(),
+            "scheduled_time": self.hhmm,
+            "market": None,
+            "corporate_actions": None,
+            "auto_dividends": None,
+        }
         if weekday:
             result["market"] = self.service.sync_daily()
         try:
             result["corporate_actions"] = self._sync_corporate_actions()
+            result["auto_dividends"] = self._auto_post_dividends(result["date"])
         except Exception as exc:
-            result["corporate_actions"] = {"ok": False, "error": str(exc)}
-            log.exception("Scheduled corporate-action sync failed")
+            result["corporate_actions"] = result["corporate_actions"] or {"ok": False, "error": str(exc)}
+            result["auto_dividends"] = {"ok": False, "error": str(exc)}
+            log.exception("Scheduled corporate-action/dividend automation failed")
         return result
 
     def _loop(self) -> None:
@@ -88,10 +100,12 @@ class DailySyncScheduler:
                     result = self.run_once(now)
                     market = result.get("market") or {}
                     ca = result.get("corporate_actions") or {}
+                    auto = result.get("auto_dividends") or {}
                     log.info(
-                        "Daily QPort sync: market=%s corporate_actions=%s",
+                        "Daily QPort sync: market=%s corporate_actions=%s auto_dividends=%s",
                         market.get("message") or ("skipped-weekend" if now.weekday() >= 5 else "done"),
                         ca.get("discovered", ca.get("error", "n/a")),
+                        auto.get("created_count", auto.get("error", "n/a")),
                     )
                 except Exception:
                     log.exception("Daily QPort sync failed")
