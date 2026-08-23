@@ -6,7 +6,9 @@ import { BROKERS } from '../lib/brokers.js';
 import { validateTransactionForm } from '../lib/validation.js';
 import { useI18n } from '../i18n.js';
 
-const TYPE_VALUES = ['POSITION_IMPORT','CASH_DEPOSIT','BUY','SELL','CASH_WITHDRAW','CASH_DIVIDEND','STOCK_DIVIDEND','SPLIT','FEE'];
+// Dividend events are system/corporate-action records, not manual transaction input.
+const TYPE_VALUES = ['POSITION_IMPORT','CASH_DEPOSIT','BUY','SELL','CASH_WITHDRAW','SPLIT','FEE'];
+const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
 const EMPTY_FORM = (today = '') => ({
   event_date: today, symbol: '', quantity: '', price: '', amount: '', ratio: '', fee: '', tax: '', note: '',
   settlement_date: '', broker_code: 'UNASSIGNED', account_id: 'PRIMARY',
@@ -33,10 +35,10 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const [deleteReason, setDeleteReason] = useState('');
 
   const requirements = useMemo(() => ({
-    symbol: ['POSITION_IMPORT','BUY','SELL','STOCK_DIVIDEND','SPLIT','CASH_DIVIDEND'].includes(type),
-    quantity: ['POSITION_IMPORT','BUY','SELL','STOCK_DIVIDEND'].includes(type),
+    symbol: ['POSITION_IMPORT','BUY','SELL','SPLIT'].includes(type),
+    quantity: ['POSITION_IMPORT','BUY','SELL'].includes(type),
     price: ['POSITION_IMPORT','BUY','SELL'].includes(type),
-    amount: ['CASH_DEPOSIT','CASH_WITHDRAW','CASH_DIVIDEND','FEE'].includes(type),
+    amount: ['CASH_DEPOSIT','CASH_WITHDRAW','FEE'].includes(type),
     ratio: type === 'SPLIT',
     trade: ['BUY','SELL'].includes(type),
   }), [type]);
@@ -62,6 +64,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   function startEdit(row) {
+    if (DIVIDEND_TYPES.has(row.event_type)) return;
     setEditingId(row.id);
     setType(row.event_type);
     setCorrectionReason('');
@@ -113,6 +116,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   async function confirmDelete(row) {
+    if (DIVIDEND_TYPES.has(row.event_type)) return;
     if (!deleteReason.trim()) {
       setMessage(text('Deletion reason is required.', 'Bắt buộc nhập lý do xóa.'));
       return;
@@ -131,7 +135,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     <header className="page-head">
       <div>
         <h1>{t('transactions.title')}</h1>
-        <p className="muted">{text('Record what actually happened in your portfolio. Holdings are derived from this ledger immediately after every create/edit/delete.', 'Ghi lại những gì thực sự xảy ra trong danh mục. Holdings được derive từ ledger này ngay sau mỗi create/edit/delete.')}</p>
+        <p className="muted">{text('Record user-originated portfolio events. Cash/stock dividends are created by the corporate-action workflow and are read-only here.', 'Ghi các sự kiện danh mục do user thực hiện. Cổ tức tiền/cổ phiếu được tạo bởi corporate-action workflow và chỉ đọc tại đây.')}</p>
       </div>
     </header>
 
@@ -139,7 +143,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       <div className="section-head">
         <div>
           <h3>{editingId ? text(`Edit transaction #${editingId}`, `Sửa giao dịch #${editingId}`) : t('transactions.record_event')}</h3>
-          <p className="muted">{text('Choose the event and enter only the fields that apply.', 'Chọn loại sự kiện và chỉ nhập các trường liên quan.')}</p>
+          <p className="muted">{text('Choose the event and enter only the fields that apply. Dividend event types are intentionally not available for manual entry.', 'Chọn loại sự kiện và chỉ nhập các trường liên quan. Các loại transaction cổ tức được chủ động loại khỏi phần nhập tay.')}</p>
         </div>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>{text('Cancel edit','Hủy sửa')}</button>}
       </div>
@@ -149,6 +153,13 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           {TYPE_VALUES.map(v => <option key={v} value={v}>{eventType(v)}</option>)}
         </select>
       </label>
+
+      {type === 'BUY' && <div className="info-callout transaction-buy-note">
+        {text(
+          'Use BUY for a normal market purchase or a paid rights/new-issue subscription. Enter the actual subscribed shares, paid price, broker and account; QPort will add them to the same holding ledger.',
+          'Dùng BUY cho mua trên thị trường hoặc mua cổ phiếu phát hành thêm/quyền mua có trả tiền. Nhập số cổ phiếu thực nhận, giá thực trả, broker và tài khoản; QPort sẽ cộng vào cùng holding ledger.'
+        )}
+      </div>}
 
       <div className="form-grid">
         <label>{requirements.trade ? text('Trade date','Ngày giao dịch') : t('transactions.date')}
@@ -243,10 +254,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             const account = row.metadata?.account_id || 'PRIMARY';
             const stockDividendTax = Number(row.metadata?.stock_dividend_sale_tax || 0);
             const cashDividendTax = Number(row.metadata?.cash_dividend_withholding_tax || 0);
+            const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
             return <tr key={row.id}>
               <td>{row.event_date}</td>
               <td><b>{eventType(row.event_type)}</b>{row.correction && <div className="muted">{text('Corrected','Đã sửa')}</div>}{row.metadata?.auto_generated && <div className="muted">AUTO</div>}</td>
-              <td>{row.symbol || '-'}</td>
+              <td className="transaction-symbol">{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
               <td>{securityEvent ? broker : '-'}</td>
               <td>{securityEvent ? account : '-'}</td>
               <td>{row.quantity ? shares(row.quantity) : '-'}</td>
@@ -257,7 +269,9 @@ export default function TransactionsPage({ transactions: initialTransactions = [
                 {cashDividendTax > 0 && <div className="muted">{text('cash withholding 5%', 'khấu trừ tiền 5%')}: {money(cashDividendTax)}</div>}
               </> : '-'}</td>
               <td>{row.note || '-'}</td>
-              <td>{deleting ? <div className="inline-delete">
+              <td>{dividendEvent ? (
+                <span className="status-pill">{row.metadata?.auto_generated ? text('AUTO · read only', 'AUTO · chỉ đọc') : text('Dividend · read only', 'Cổ tức · chỉ đọc')}</span>
+              ) : deleting ? <div className="inline-delete">
                 <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder={text('Reason for delete','Lý do xóa')}/>
                 <div className="row-actions">
                   <button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>{text('Confirm','Xác nhận')}</button>
