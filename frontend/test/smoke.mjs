@@ -91,7 +91,7 @@ if (existsSync(ssrEntry)) {
   check('Vietnamese performance renders', viPerf.includes('Hiệu suất') && viPerf.includes('Lãi/lỗ tổng'));
 
   const riskHtml = renderPage('risk', { risk, locale: 'en' });
-  check('risk renders equity concentration and tail risk', riskHtml.includes('Equity HHI') && riskHtml.includes('Daily CVaR 95%') && riskHtml.includes('Risk concentration'));
+  check('risk renders equity concentration and tail risk', riskHtml.includes('Equity HHI') && riskHtml.includes('Daily CVaR 95%') && riskHtml.includes('Largest risk contribution'));
   const viRisk = renderPage('risk', { risk, locale: 'vi' });
   check('Vietnamese risk renders expanded diagnostics', viRisk.includes('HHI phần cổ phiếu') && viRisk.includes('Chẩn đoán rủi ro đuôi'));
 
@@ -109,7 +109,7 @@ if (existsSync(ssrEntry)) {
   check('transactions render validation guidance', txHtml.includes('validated twice') && txHtml.includes('Full VND/share'));
   check('transactions still render immutable ledger', txHtml.includes('Immutable event history') && txHtml.includes('Opening position import'));
   const guideHtml = renderPage('guide', { locale: 'en' });
-  check('guide explains first sync and cash', guideHtml.includes('Record portfolio cash') && guideHtml.includes('run Sync once'));
+  check('guide explains data integrity', guideHtml.includes('Data integrity rules') && guideHtml.includes('MONITOR means no explicit strategic target'));
   check('removed research page cannot render', renderPage('research', { locale: 'en' }) === '');
   check('removed optimizer page cannot render', renderPage('optimizer_list', { locale: 'en' }) === '');
 }
