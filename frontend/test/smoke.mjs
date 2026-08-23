@@ -14,6 +14,7 @@ const dashboard = {
     equity_value: 14000000,
     nav: 24000000,
     realized_pnl: 0,
+    reference_weights: { FPT: 1 },
     positions: [{
       symbol: 'FPT', shares: 200, average_cost: 65000, price: 70000,
       price_date: '2026-08-21', price_source: 'vnstock', market_value: 14000000,
@@ -28,7 +29,7 @@ const dashboard = {
   },
   risk: { status: 'VALID', volatility_63: 0.21, volatility_252: 0.24, max_position_weight: 0.5833, hhi: 0.34 },
   market_data: { status: 'VALID', provider: { provider: 'auto' } },
-  contribution_suggestions: { available_cash: 10000000, policy: 'EQUAL_WEIGHT_DEFICITS', suggestions: [] },
+  contribution_suggestions: { available_cash: 10000000, policy: 'REFERENCE_WEIGHT_DEFICITS', suggestions: [] },
   invariants: ['price movement never changes shares', 'only explicit ledger events change holdings or cash'],
 };
 
@@ -75,6 +76,9 @@ if (existsSync(ssrEntry)) {
 
   const snapshotsHtml = renderPage('snapshots', { snapshots: fixtures.snapshots });
   check('snapshot SSR renders official state', snapshotsHtml.includes('OFFICIAL') && snapshotsHtml.includes('2026-08-21'));
+
+  const settingsHtml = renderPage('settings', { dashboard });
+  check('settings SSR is strategic-only', settingsHtml.includes('Strategic reference weights') && settingsHtml.includes('no annual allocation'));
 
   const researchHtml = renderPage('research', { experiments: [], runs: [] });
   check('research SSR shows hard boundary', researchHtml.includes('Research Lab') && researchHtml.includes('Proposal only'));
