@@ -56,28 +56,31 @@ export default function ReceivedDividendsPanel({ locale = 'en' }) {
   const totalCashTax = rows.reduce((sum, row) => sum + cashTax(row), 0);
   const totalStock = rows.filter(row => row.event_type === 'STOCK_DIVIDEND').reduce((sum, row) => sum + Number(row.quantity || 0), 0);
 
-  return <section className="card received-dividends-card">
-    <div className="section-head">
-      <div>
-        <div className="eyebrow">{text('Ledger income', 'Thu nhập đã ghi sổ')}</div>
-        <h2>{text('Dividends received', 'Cổ tức đã nhận')}</h2>
-        <p className="muted">{text(
-          'Only dividend transactions already posted to the ledger appear here. Cash dividends show gross entitlement, 5% withholding and actual net cash received.',
-          'Chỉ cổ tức đã post vào ledger mới xuất hiện ở đây. Cổ tức tiền mặt hiển thị quyền gross, thuế khấu trừ 5% và tiền net thực nhận.'
-        )}</p>
-      </div>
-      <div className="received-dividend-totals">
-        <span>{text('Gross cash', 'Tiền gross')}: <b>{money(totalCashGross)}</b></span>
-        <span>{text('Withholding tax', 'Thuế khấu trừ')}: <b>{money(totalCashTax)}</b></span>
-        <span>{text('Net cash', 'Tiền net')}: <b>{money(totalCashNet)}</b></span>
-        <span>{text('Stock shares', 'CP nhận')}: <b>{shares(totalStock)}</b></span>
-      </div>
-    </div>
+  // Do not reserve any visual space until a real ledger receipt exists.
+  // An API failure is different from an empty ledger, so keep that visible.
+  if (loading) return null;
+  if (!error && groups.length === 0) return null;
 
-    {loading ? <div className="loading-line"><span className="spinner" />{text('Loading received dividends…', 'Đang tải cổ tức đã nhận…')}</div> :
-      error ? <div className="run-message">{error}</div> :
-      groups.length === 0 ? <div className="empty-state">{text('No received dividend has been posted yet.', 'Chưa có cổ tức đã nhận nào được post vào ledger.')}</div> :
-      <div className="received-dividend-list">
+  return <div className="page portfolio-received-supplement">
+    <section className="card received-dividends-card">
+      <div className="section-head">
+        <div>
+          <div className="eyebrow">{text('Ledger income', 'Thu nhập đã ghi sổ')}</div>
+          <h2>{text('Dividends received', 'Cổ tức đã nhận')}</h2>
+          <p className="muted">{text(
+            'Only dividend transactions already posted to the ledger appear here. Cash dividends show gross entitlement, 5% withholding and actual net cash received.',
+            'Chỉ cổ tức đã post vào ledger mới xuất hiện ở đây. Cổ tức tiền mặt hiển thị quyền gross, thuế khấu trừ 5% và tiền net thực nhận.'
+          )}</p>
+        </div>
+        {!error && <div className="received-dividend-totals">
+          <span>{text('Gross cash', 'Tiền gross')}: <b>{money(totalCashGross)}</b></span>
+          <span>{text('Withholding tax', 'Thuế khấu trừ')}: <b>{money(totalCashTax)}</b></span>
+          <span>{text('Net cash', 'Tiền net')}: <b>{money(totalCashNet)}</b></span>
+          <span>{text('Stock shares', 'CP nhận')}: <b>{shares(totalStock)}</b></span>
+        </div>}
+      </div>
+
+      {error ? <div className="run-message">{error}</div> : <div className="received-dividend-list">
         {groups.map(group => <details className="received-dividend-node" key={group.symbol}>
           <summary>
             <div><b>{group.symbol}</b><span className="muted">{group.rows.length} {text('receipts', 'lần nhận')}</span></div>
@@ -99,7 +102,7 @@ export default function ReceivedDividendsPanel({ locale = 'en' }) {
                 <th>{text('Source', 'Nguồn')}</th>
                 <th>ID</th>
               </tr></thead>
-              <tbody>{group.rows.sort((a,b) => String(b.event_date || '').localeCompare(String(a.event_date || '')) || Number(b.id || 0) - Number(a.id || 0)).map(row => {
+              <tbody>{[...group.rows].sort((a,b) => String(b.event_date || '').localeCompare(String(a.event_date || '')) || Number(b.id || 0) - Number(a.id || 0)).map(row => {
                 const meta = row.metadata || {};
                 const automatic = Boolean(meta.auto_generated);
                 const isCash = row.event_type === 'CASH_DIVIDEND';
@@ -120,5 +123,6 @@ export default function ReceivedDividendsPanel({ locale = 'en' }) {
           </div>
         </details>)}
       </div>}
-  </section>;
+    </section>
+  </div>;
 }
