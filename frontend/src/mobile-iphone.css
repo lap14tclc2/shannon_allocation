@@ -1,22 +1,39 @@
-/* iPhone-style mobile shell.
-   IMPORTANT: every product-layout override is scoped below 720px so desktop remains unchanged. */
+/* QPort iPhone mobile shell.
+   All product-layout overrides stay below 720px so tablet/desktop keep the existing UI. */
 
+.mobile-tab-bar,
 .mobile-tab-icon,
-.mobile-nav-backdrop {
+.mobile-nav-backdrop,
+.mobile-account-sheet {
   display: none;
 }
 
 @media (max-width: 719px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
   html {
     min-height: 100%;
+    overflow-x: hidden;
     background: var(--bg);
     -webkit-text-size-adjust: 100%;
   }
 
   body {
     min-height: 100dvh;
-    overscroll-behavior-y: none;
+    margin: 0;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  body.mobile-sheet-open {
+    overflow: hidden;
   }
 
   body,
@@ -29,42 +46,45 @@
     touch-action: manipulation;
   }
 
-  /* ---------- Native-like application frame ---------- */
+  /* ---------- Application frame ---------- */
   .page {
     width: 100%;
     max-width: 100%;
     min-height: 100dvh;
     margin: 0;
     padding:
-      calc(64px + env(safe-area-inset-top, 0px))
+      calc(70px + env(safe-area-inset-top, 0px))
       12px
       calc(92px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* Top app bar only. Mobile tabs and account sheet are portaled to body. */
   .app-nav,
   .app-nav.nav-open {
+    position: fixed;
     inset: 0 0 auto 0;
-    height: calc(54px + env(safe-area-inset-top, 0px));
+    z-index: 380;
+    width: 100%;
+    height: calc(58px + env(safe-area-inset-top, 0px));
     padding-top: env(safe-area-inset-top, 0px);
     border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    background: color-mix(in srgb, var(--bg) 84%, transparent);
-    backdrop-filter: blur(22px) saturate(135%);
-    -webkit-backdrop-filter: blur(22px) saturate(135%);
+    background: color-mix(in srgb, var(--bg) 96%, var(--panel));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .nav-shell {
     width: 100%;
-    height: 54px;
+    max-width: 100%;
+    height: 58px;
     padding: 0 14px;
     display: block;
     background: transparent;
   }
 
   .app-nav-head {
-    position: relative;
-    z-index: 230;
     width: 100%;
-    height: 54px;
+    height: 58px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -72,7 +92,7 @@
   }
 
   .brand {
-    max-width: calc(100% - 54px);
+    max-width: calc(100% - 56px);
     gap: 7px;
   }
 
@@ -86,11 +106,12 @@
   }
 
   .brand-copy small,
-  .live-badge {
-    display: none;
+  .live-badge,
+  .desktop-nav-links,
+  .desktop-nav-footer {
+    display: none !important;
   }
 
-  /* Ellipsis button opens the account / appearance sheet. */
   .nav-toggle {
     display: flex;
     align-items: center;
@@ -102,12 +123,13 @@
     height: 44px;
     min-height: 44px;
     padding: 0;
-    border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+    border: 1px solid var(--border-strong);
     border-radius: 50%;
-    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    background: var(--panel);
   }
 
   .nav-toggle span {
+    display: block;
     width: 3px;
     height: 3px;
     border-radius: 50%;
@@ -123,64 +145,49 @@
     background: var(--accent);
   }
 
-  /* ---------- Persistent iPhone-style tab bar ---------- */
-  .app-nav-links.user-nav-links,
-  .nav-open .app-nav-links.user-nav-links {
+  /* ---------- True viewport-fixed bottom tabs ---------- */
+  .mobile-tab-bar {
     position: fixed;
-    z-index: 210;
+    z-index: 400;
     left: 0;
     right: 0;
     bottom: 0;
     width: 100%;
-    min-height: calc(68px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(70px + env(safe-area-inset-bottom, 0px));
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
     padding: 5px 6px calc(5px + env(safe-area-inset-bottom, 0px));
-    border: 0;
     border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    background: color-mix(in srgb, var(--bg) 94%, var(--panel));
+    box-shadow: 0 -10px 28px color-mix(in srgb, #000 18%, transparent);
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
   }
 
-  .app-nav-links.admin-nav-links,
-  .nav-open .app-nav-links.admin-nav-links {
-    display: none;
-  }
-
-  .app-nav-links.user-nav-links a,
-  .nav-open .app-nav-links.user-nav-links a {
-    width: 100%;
+  .mobile-tab-bar a {
     min-width: 0;
-    min-height: 56px;
-    padding: 5px 3px 4px;
+    min-height: 58px;
+    padding: 5px 2px 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 12px;
     background: transparent;
     color: var(--muted);
-    font-size: 11.5px;
-    font-weight: 650;
-    line-height: 1.08;
-    letter-spacing: -.01em;
-    text-transform: none;
+    text-decoration: none;
     text-align: center;
   }
 
-  .app-nav-links.user-nav-links a.active,
-  .nav-open .app-nav-links.user-nav-links a.active {
+  .mobile-tab-bar a.active {
     color: var(--accent);
-    border: 0;
-    background: transparent;
   }
 
-  .app-nav-links.user-nav-links a:active {
-    background: color-mix(in srgb, var(--text) 6%, transparent);
+  .mobile-tab-bar a:active {
+    background: color-mix(in srgb, var(--text) 7%, transparent);
   }
 
   .mobile-tab-icon {
@@ -196,22 +203,23 @@
     height: 22px;
   }
 
-  .app-nav-links.user-nav-links .nav-prefix {
-    display: none;
-  }
-
-  .nav-label {
+  .mobile-tab-label {
     display: block;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: currentColor;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -.015em;
   }
 
-  /* ---------- Account / appearance sheet ---------- */
+  /* ---------- Account / appearance bottom sheet ---------- */
   .mobile-nav-backdrop {
     position: fixed;
-    z-index: 180;
+    z-index: 500;
     inset: 0;
     display: block;
     width: 100%;
@@ -219,95 +227,115 @@
     padding: 0;
     border: 0;
     border-radius: 0;
-    background: color-mix(in srgb, #000 38%, transparent);
+    background: rgba(0, 0, 0, .52);
   }
 
-  .app-nav-footer,
-  .nav-open .app-nav-footer {
+  .mobile-account-sheet {
     position: fixed;
-    z-index: 220;
+    z-index: 520;
     left: 10px;
     right: 10px;
-    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     width: auto;
-    max-height: min(430px, calc(100dvh - 120px - env(safe-area-inset-top, 0px)));
-    overflow: visible;
-    display: none;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    padding: 14px;
-    border: 1px solid var(--border-strong);
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--panel) 96%, var(--bg));
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-  }
-
-  .nav-open .app-nav-footer {
     display: grid;
+    gap: 8px;
+    padding: 9px 14px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 22px;
+    background: color-mix(in srgb, var(--panel) 97%, var(--bg));
+    box-shadow: 0 22px 70px rgba(0,0,0,.44);
   }
 
-  .nav-user {
-    min-height: 48px;
+  .mobile-sheet-grabber {
+    width: 38px;
+    height: 4px;
+    margin: 0 auto 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+  }
+
+  .mobile-sheet-user,
+  .mobile-sheet-setting {
+    min-height: 58px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border);
+    padding: 8px 2px;
   }
 
-  .nav-user-name {
-    max-width: 65vw;
-    font-size: 14px;
+  .mobile-sheet-user,
+  .mobile-sheet-setting + .mobile-sheet-setting {
+    border-top: 1px solid var(--border);
   }
 
-  .nav-logout {
-    min-height: 40px;
-    padding: 6px 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+  .mobile-sheet-user > div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .mobile-sheet-caption,
+  .mobile-sheet-setting > span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .mobile-sheet-user strong {
+    max-width: 62vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .mobile-sheet-logout {
+    min-width: 88px;
+    min-height: 42px;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--border));
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--danger) 7%, transparent);
     color: var(--danger);
     font-size: 13px;
+    font-weight: 700;
   }
 
-  .appearance-control,
-  .appearance-toggle {
-    width: 100%;
+  .mobile-sheet-setting .appearance-control {
+    width: auto;
   }
 
-  .appearance-toggle {
-    min-height: 48px;
-    justify-content: flex-start;
-    padding: 10px 12px;
-    border-radius: 12px;
-    font-size: 13.5px;
+  .mobile-sheet-setting .appearance-toggle {
+    width: auto;
+    min-height: 42px;
+    padding: 8px 11px;
+    border-radius: 11px;
     text-transform: none;
   }
 
-  .language-switch {
-    width: 100%;
-    min-height: 48px;
-    justify-content: center;
-    border-radius: 12px;
+  .mobile-sheet-setting .language-switch {
+    width: auto;
+    min-height: 42px;
+    padding: 4px 7px;
+    border-radius: 11px;
+  }
+
+  .mobile-sheet-setting .language-switch button {
+    min-width: 42px;
+    min-height: 32px;
     font-size: 13px;
   }
 
-  .language-switch button {
-    min-width: 52px;
-    min-height: 38px;
-    border-radius: 9px;
-    font-size: 13px;
-  }
-
-  /* Appearance itself behaves like a mobile bottom sheet. */
+  /* Appearance panel becomes a full-width secondary sheet above the account sheet. */
   .appearance-popover {
+    z-index: 560;
     top: auto;
     left: 8px;
     right: 8px;
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     width: auto;
-    max-height: calc(100dvh - 98px - env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
     padding: 16px;
     border-radius: 20px;
   }
@@ -327,7 +355,108 @@
     border-radius: 11px;
   }
 
-  /* ---------- iOS grouped-content visual rhythm ---------- */
+  /* ---------- Portfolio: mobile hierarchy ---------- */
+  .portfolio-hero {
+    margin: 0 0 12px;
+    padding: 8px 2px 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .portfolio-hero h1 {
+    max-width: 100%;
+    margin: 4px 0 7px;
+    overflow: hidden;
+    color: var(--text);
+    font-size: clamp(27px, 7.5vw, 34px);
+    line-height: 1.04;
+    letter-spacing: -.065em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .hero-return {
+    gap: 6px 10px;
+  }
+
+  .hero-return strong {
+    font-size: 14px;
+  }
+
+  .hero-return span,
+  .hero-meta > span {
+    font-size: 12px;
+  }
+
+  .hero-meta {
+    margin-top: 11px;
+    gap: 7px 12px;
+  }
+
+  .hero-actions {
+    width: 100%;
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .hero-actions > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .portfolio-hero .hero-actions > .btn-ghost {
+    display: none;
+  }
+
+  /* Overview becomes an iOS-style list so long VND values do not wrap in narrow cards. */
+  .overview-metrics {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    margin-bottom: 12px;
+  }
+
+  .overview-metrics .metric-card {
+    min-height: 72px;
+    padding: 11px 13px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label value"
+      "note value";
+    align-items: center;
+    gap: 3px 12px;
+    border-radius: 14px;
+  }
+
+  .overview-metrics .metric-label {
+    grid-area: label;
+    margin: 0;
+    font-size: 11px;
+  }
+
+  .overview-metrics .metric-value {
+    grid-area: value;
+    max-width: 58vw;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: right;
+    font-size: clamp(15px, 4.1vw, 18px);
+  }
+
+  .overview-metrics .metric-note {
+    grid-area: note;
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
+  /* ---------- General mobile content ---------- */
   .page-head,
   .portfolio-head {
     margin-bottom: 12px;
@@ -342,68 +471,81 @@
   }
 
   .page-head p,
-  .portfolio-head p {
+  .portfolio-head p,
+  .section-head p {
     font-size: 13.5px;
     line-height: 1.58;
-  }
-
-  .portfolio-hero {
-    margin-bottom: 10px;
-    padding: 10px 2px 16px;
-    gap: 12px;
-  }
-
-  .portfolio-hero h1 {
-    font-size: clamp(30px, 10vw, 40px);
-    line-height: 1;
   }
 
   .card,
   .metric-card,
   .risk-plain-card,
   .guide-step-card,
-  .guide-page-card {
+  .guide-page-card,
+  details,
+  .disclosure-card,
+  .dividend-symbol-node {
     border-radius: 14px;
   }
 
   .card {
-    margin-bottom: 10px;
-    padding: 15px;
+    min-width: 0;
+    margin-bottom: 11px;
+    padding: 14px;
   }
 
-  .metric-grid {
+  .metric-grid:not(.overview-metrics) {
     gap: 8px;
     margin-bottom: 10px;
   }
 
   .metric-card {
-    min-height: 92px;
+    min-width: 0;
     padding: 13px;
   }
 
   .metric-label,
   .eyebrow {
-    font-size: 11.5px;
+    font-size: 11px;
     line-height: 1.25;
   }
 
   .metric-value {
-    font-size: 19px;
+    font-size: 18px;
   }
 
-  .metric-note,
-  .hero-meta > span,
-  .hero-return span {
-    font-size: 12px;
+  .metric-note {
+    font-size: 11.5px;
   }
 
-  @media (min-width: 360px) {
-    .metric-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+  /* The Holdings header stays compact: search + status share one row. */
+  .holdings-head {
+    gap: 10px;
   }
 
-  /* Buttons and fields should feel tappable, not like tiny desktop controls. */
+  .holdings-head .table-tools {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .holdings-head .table-tools .search-input {
+    width: 100%;
+  }
+
+  .holdings-head .table-tools .status-pill {
+    width: auto;
+    min-width: 76px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 10px;
+  }
+
+  /* Buttons and inputs use iOS-safe touch sizing. */
   button,
   .btn-primary,
   .btn-secondary,
@@ -415,7 +557,7 @@
     min-height: 44px;
     border-radius: 10px;
     padding: 9px 12px;
-    font-size: 13.5px;
+    font-size: 13px;
     line-height: 1.2;
     text-transform: none;
   }
@@ -429,30 +571,39 @@
     font-size: 16px;
   }
 
-  details,
-  .disclosure-card,
-  .dividend-symbol-node {
-    border-radius: 14px;
-  }
-
   details > summary,
   .disclosure-card > summary,
   .dividend-symbol-node > summary {
     min-height: 48px;
   }
 
-  /* Horizontal data remains auditable without crushing columns. */
+  /* Keep wide audit tables inside their own horizontal scroller, never the page. */
   .table-scroll,
   .holding-source-scroll {
-    margin-inline: -4px;
-    padding-inline: 4px;
-    scroll-snap-type: x proximity;
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
     scrollbar-width: none;
   }
 
   .table-scroll::-webkit-scrollbar,
   .holding-source-scroll::-webkit-scrollbar {
     display: none;
+  }
+
+  .ranking,
+  .portfolio-table-core,
+  .transaction-table,
+  .inline-ledger-table,
+  .corporate-action-table,
+  .activity-table,
+  .dividend-overview-table {
+    width: max-content;
+    min-width: 100%;
   }
 
   .ranking th,
@@ -470,13 +621,13 @@
     background: var(--panel);
   }
 
-  /* Forms read as grouped app forms. */
   .form-grid,
   .reference-grid,
   .guide-steps,
   .expand-grid,
   .dashboard-grid,
   .health-grid {
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
 
@@ -506,9 +657,11 @@
     padding-block: 10px;
   }
 
-  /* Charts occupy the device width and scroll only when a component truly needs it. */
   .chart {
+    width: 100%;
+    max-width: 100%;
     min-height: 220px;
+    overflow-x: auto;
     border-radius: 12px;
   }
 
@@ -523,6 +676,8 @@
   }
 
   .auth-card {
+    width: 100%;
+    max-width: 560px;
     margin-top: 12px;
     padding: 22px 17px;
     border-radius: 20px;
@@ -542,10 +697,10 @@
   }
 
   .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
 
-  /* Avoid a modal keyboard being hidden behind the bottom tab bar. */
   :focus-visible {
     scroll-margin-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
   }
