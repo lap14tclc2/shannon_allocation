@@ -99,7 +99,6 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _parts(path): return [unquote(p) for p in path.split("/") if p]
     def _locale(self): return resolve_locale(cookie_header=self.headers.get("Cookie"), accept_language=self.headers.get("Accept-Language"))
-    def _title(self, en, vi): return vi if self._locale() == "vi" else en
     def _write(self, body):
         try: self.wfile.write(body); self.wfile.flush()
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError): pass
@@ -109,9 +108,10 @@ class Handler(BaseHTTPRequestHandler):
     def _bytes(self, status, body, content_type):
         self.send_response(status); self.send_header("Content-Type",content_type); self.send_header("Content-Length",str(len(body))); self.end_headers(); self._write(body)
     def _body(self):
-        raw = self.rfile.read(int(self.headers.get("Content-Length",0) or 0)) if int(self.headers.get("Content-Length",0) or 0) else b"{}"
+        n = int(self.headers.get("Content-Length",0) or 0); raw = self.rfile.read(n) if n else b"{}"
         try: return json.loads(raw.decode() or "{}")
         except Exception: return {}
+
     def _page(self, page):
         svc = _portfolio(); locale = self._locale()
         data = {
@@ -121,17 +121,27 @@ class Handler(BaseHTTPRequestHandler):
             "risk":({"risk":svc.risk()},"Risk · QPort","Rủi ro · QPort"),
             "snapshots":({"snapshots":svc.snapshots()},"Snapshots · QPort","Snapshot · QPort"),
             "operations":({"operations":svc.institutional_overview(),"today":svc.today_vn()},"Operations · QPort","Vận hành · QPort"),
+            "logs":({"activity":svc.activity_log(limit=1000)},"Activity Log · QPort","Nhật ký hoạt động · QPort"),
             "settings":({"dashboard":svc.dashboard()},"Settings · QPort","Cài đặt · QPort"),
             "guide":({},"Guide · QPort","Hướng dẫn · QPort"),
         }
         if page not in data: return self._json(404,{"error":"Page not found."})
         props,en,vi = data[page]; props={**props,"locale":locale}; return self._bytes(200,_build_document(page,props,vi if locale=="vi" else en),"text/html; charset=utf-8")
+
     def _api_get(self, parts):
         svc=_portfolio(); routes={
-            ():svc.dashboard,("transactions",):lambda:{"transactions":svc.transactions()},("transaction-audit",):lambda:{"corrections":svc.transaction_audit()},
-            ("performance",):svc.performance,("risk",):svc.risk,("snapshots",):lambda:{"snapshots":svc.snapshots()},("market",):lambda:svc.dashboard().get("market_data") or {},
-            ("preferences",):svc.preferences,("operations",):svc.institutional_overview,
-        }; fn=routes.get(tuple(parts)); return self._json(200,fn()) if fn else self._json(404,{"error":"Portfolio endpoint not found."})
+            ():svc.dashboard,
+            ("transactions",):lambda:{"transactions":svc.transactions()},
+            ("transaction-audit",):lambda:{"corrections":svc.transaction_audit()},
+            ("performance",):svc.performance,
+            ("risk",):svc.risk,
+            ("snapshots",):lambda:{"snapshots":svc.snapshots()},
+            ("market",):lambda:svc.dashboard().get("market_data") or {},
+            ("preferences",):svc.preferences,
+            ("operations",):svc.institutional_overview,
+            ("logs",):lambda:svc.activity_log(limit=1000),
+        }
+        fn=routes.get(tuple(parts)); return self._json(200,fn()) if fn else self._json(404,{"error":"Portfolio endpoint not found."})
 
     def do_GET(self):
         path=urlparse(self.path).path
@@ -142,28 +152,35 @@ class Handler(BaseHTTPRequestHandler):
             with open(target,"rb") as fh: body=fh.read()
             return self._bytes(200,body,MIME.get(os.path.splitext(target)[1].lower(),"application/octet-stream"))
         if path in {"","/"}: return self._page("portfolio")
-        routes={f"/{p}":p for p in ("transactions","performance","risk","snapshots","operations","settings","guide")}
+        routes={f"/{p}":p for p in ("transactions","performance","risk","snapshots","operations","logs","settings","guide")}
         return self._page(routes[path]) if path in routes else self._json(404,{"error":"Not found."})
     do_HEAD=do_GET
+
+    def _fail(self, svc, path, exc, code="PORTFOLIO_ERROR"):
+        svc.log_failure(method=self.command, path=path, error=str(exc), code=code)
+        if isinstance(exc, InputValidationError): return self._json(400,exc.as_dict())
+        return self._json(400,{"error":str(exc),"code":code,"field":None})
 
     def do_POST(self):
         path=urlparse(self.path).path; parts=self._parts(path); body=self._body(); svc=_portfolio()
         try:
             if path=="/api/portfolio/transactions": return self._json(201,svc.append_event(body))
-            if path=="/api/portfolio/sync": return self._json(200,svc.sync_daily())
+            if path=="/api/portfolio/sync": return self._json(200,svc.sync_daily(actor_type="USER",actor_id="local"))
             if path=="/api/portfolio/reference-weights": return self._json(200,svc.set_reference_weights(body.get("weights") or {}))
             if path=="/api/portfolio/cash-reserve": return self._json(200,svc.set_cash_reserve(body.get("amount")))
             if path=="/api/portfolio/reconciliation": return self._json(201,svc.reconcile_broker(body))
             if path=="/api/portfolio/corporate-actions/sync": return self._json(200,svc.sync_corporate_actions(body.get("start"),body.get("end")))
             if path=="/api/portfolio/corporate-actions/post": return self._json(200,svc.post_corporate_action_receipt(int(body.get("action_id"))))
+            if path=="/api/portfolio/securities/resolve": return self._json(200,svc.resolve_all_securities())
+            if path=="/api/portfolio/activity": return self._json(201,svc.log_client_activity(body.get("action"),body.get("details") or {}))
             if len(parts)==5 and parts[:3]==["api","portfolio","corporate-actions"] and parts[4]=="verify": return self._json(200,svc.verify_corporate_action(int(parts[3]),body.get("source_url")))
             if len(parts)==5 and parts[:3]==["api","portfolio","corporate-actions"] and parts[4]=="receipt": return self._json(200,svc.record_corporate_action_receipt(int(parts[3]),body))
             if len(parts)==5 and parts[:3]==["api","portfolio","settlements"] and parts[4]=="confirm": return self._json(200,svc.confirm_settlement(int(parts[3]),body.get("note") or ""))
             if len(parts)==5 and parts[:3]==["api","portfolio","nav"] and parts[4]=="lock": return self._json(200,svc.lock_nav(parts[3]))
             if len(parts)==5 and parts[:3]==["api","portfolio","restatements"] and parts[4]=="resolve": return self._json(200,svc.resolve_restatement(int(parts[3])))
+            if len(parts)==5 and parts[:3]==["api","portfolio","securities"] and parts[4]=="resolve": return self._json(200,svc.resolve_security(parts[3]))
             if len(parts)==4 and parts[:3]==["api","portfolio","securities"]: return self._json(200,svc.update_security(parts[3],body))
-        except InputValidationError as exc: return self._json(400,exc.as_dict())
-        except Exception as exc: return self._json(400,{"error":str(exc),"code":"PORTFOLIO_ERROR","field":None})
+        except Exception as exc: return self._fail(svc,path,exc,getattr(exc,"code","PORTFOLIO_ERROR"))
         return self._json(404,{"error":"Not found."})
 
     @staticmethod
@@ -173,18 +190,18 @@ class Handler(BaseHTTPRequestHandler):
             try:return int(p[3])
             except ValueError:return None
         return None
+
     def do_PATCH(self):
-        eid=self._tx_id(urlparse(self.path).path)
+        path=urlparse(self.path).path; eid=self._tx_id(path); svc=_portfolio()
         if eid is None:return self._json(404,{"error":"Transaction endpoint not found."})
-        try:return self._json(200,_portfolio().update_event(eid,self._body()))
-        except InputValidationError as exc:return self._json(400,exc.as_dict())
-        except Exception as exc:return self._json(400,{"error":str(exc),"code":"PORTFOLIO_ERROR","field":None})
+        try:return self._json(200,svc.update_event(eid,self._body()))
+        except Exception as exc:return self._fail(svc,path,exc,getattr(exc,"code","PORTFOLIO_ERROR"))
+
     def do_DELETE(self):
-        eid=self._tx_id(urlparse(self.path).path)
+        path=urlparse(self.path).path; eid=self._tx_id(path); svc=_portfolio()
         if eid is None:return self._json(404,{"error":"Transaction endpoint not found."})
-        try:return self._json(200,_portfolio().delete_event(eid,self._body().get("reason")))
-        except InputValidationError as exc:return self._json(400,exc.as_dict())
-        except Exception as exc:return self._json(400,{"error":str(exc),"code":"PORTFOLIO_ERROR","field":None})
+        try:return self._json(200,svc.delete_event(eid,self._body().get("reason")))
+        except Exception as exc:return self._fail(svc,path,exc,getattr(exc,"code","PORTFOLIO_ERROR"))
 
 
 def main():
