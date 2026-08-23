@@ -16,6 +16,7 @@ MAX_PRICE_VND = 10_000_000.0
 MIN_EQUITY_PRICE_VND = 1_000.0
 MAX_MONEY_VND = 10_000_000_000_000_000.0
 MAX_RATIO = 100.0
+CLIENT_FORBIDDEN_IDENTITY_FIELDS = {"created_by", "actor_id", "user_id", "role"}
 
 
 class InputValidationError(ValueError):
@@ -85,9 +86,21 @@ def normalize_account(value) -> str:
 
 
 def normalize_event_payload(payload: dict, *, today: str) -> dict:
-    """Validate and canonicalize one ledger event request."""
+    """Validate and canonicalize one ledger event request.
+
+    Audit identity belongs to the trusted server/CLI context. A client must never
+    be able to impersonate another user by supplying ``created_by`` or equivalent
+    identity keys in either the top-level payload or free-form metadata.
+    """
     if not isinstance(payload, dict):
         raise InputValidationError("INVALID_PAYLOAD", "Request body must be an object.")
+    for field in CLIENT_FORBIDDEN_IDENTITY_FIELDS:
+        if field in payload:
+            raise InputValidationError(
+                "FORBIDDEN_IDENTITY_FIELD",
+                f"{field} is server-managed and cannot be supplied by the client.",
+                field,
+            )
     try:
         event_type = EventType(str(payload.get("event_type") or "").strip().upper())
     except ValueError as exc:
@@ -106,6 +119,8 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     if not isinstance(metadata_raw, dict):
         raise InputValidationError("INVALID_METADATA", "metadata must be an object.", "metadata")
     metadata = dict(metadata_raw)
+    for field in CLIENT_FORBIDDEN_IDENTITY_FIELDS:
+        metadata.pop(field, None)
     metadata["broker_code"] = normalize_broker(payload.get("broker_code") or metadata.get("broker_code"))
     metadata["account_id"] = normalize_account(payload.get("account_id") or metadata.get("account_id"))
 
