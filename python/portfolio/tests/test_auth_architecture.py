@@ -72,6 +72,8 @@ def test_cli_cannot_bypass_authenticated_user_database_routing():
     source = (PORTFOLIO_DIR / "cli.py").read_text(encoding="utf-8")
     assert 'parser.add_argument("--username", required=True' in source
     assert "AuthStore()" in source
+    assert 'if user.get("role") == "ADMIN":' in source
+    assert "Admin is administration-only" in source
     assert 'PortfolioStore(auth.portfolio_db_path(user["id"]))' in source
     assert "PortfolioService()" not in source
 
