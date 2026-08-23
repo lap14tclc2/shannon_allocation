@@ -19,6 +19,7 @@ import './portfolio-insights.css';
 import './received-dividends.css';
 import './table-alignment.css';
 import './auth.css';
+import './ui-polish.css';
 
 const PAGES = {
   auth: AuthPage,
