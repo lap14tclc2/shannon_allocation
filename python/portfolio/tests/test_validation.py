@@ -76,6 +76,8 @@ def test_reference_weights_must_match_holdings_and_total_100():
     assert validate_reference_weights({"AAA": 0.6, "BBB": 0.4}, holdings={"AAA", "BBB"}) == {"AAA": 0.6, "BBB": 0.4}
 
 
-def test_cash_reserve_accepts_explicit_zero_and_rejects_negative():
+def test_cash_reserve_must_be_explicit_and_nonnegative():
+    assert_code("CASH_RESERVE_REQUIRED", lambda: validate_cash_reserve(None))
+    assert_code("CASH_RESERVE_REQUIRED", lambda: validate_cash_reserve(""))
     assert validate_cash_reserve(0) == 0
     assert_code("VALUE_TOO_SMALL", lambda: validate_cash_reserve(-1))
