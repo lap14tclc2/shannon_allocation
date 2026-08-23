@@ -46,19 +46,36 @@ def test_institutional_book_is_operational_but_not_an_auto_trader():
     assert "reconciliation_runs" in institutional
     assert "corporate_actions" in institutional
     assert "nav_restatements" in institutional
-    # Corporate-action discovery itself never writes the source ledger.
     ca_source=(PORTFOLIO_DIR/"corporate_actions.py").read_text(encoding="utf-8").lower()
     assert "append_event" not in ca_source
-    # Posting exists only as an explicit user-facing service action.
     assert "post_corporate_action_receipt" in correction
     assert "user_confirmed_only" in correction
 
 
-def test_primary_server_exposes_operations_and_no_research_routes():
+def test_activity_log_is_append_only_and_hash_chained():
+    source=(PORTFOLIO_DIR/"activity.py").read_text(encoding="utf-8").lower()
+    assert "prev_hash" in source and "record_hash" in source and "sha256" in source
+    assert "def append_activity" in source
+    assert "def verify_activity_chain" in source
+    assert "def update_activity" not in source
+    assert "def delete_activity" not in source
+
+
+def test_isin_is_resolved_not_generated_from_ticker():
+    source=(PORTFOLIO_DIR/"security_reference.py").read_text(encoding="utf-8").lower()
+    assert "isin" in source
+    assert "unresolved" in source
+    assert "not mathematically" in source
+    assert "vn000000" not in source  # no ticker-to-ISIN hard-coded fabrication table
+
+
+def test_primary_server_exposes_operations_logs_and_no_research_routes():
     source=(PYTHON_DIR/"buyhold_server.py").read_text(encoding="utf-8").lower()
     assert "from portfolio.locale import resolve_locale" in source
     assert "/api/portfolio" in source
     assert '"operations"' in source
+    assert '"logs"' in source
+    assert "securities/resolve" in source
     assert "corporate-actions" in source
     assert "reconciliation" in source
     assert "/research" not in source
@@ -67,14 +84,23 @@ def test_primary_server_exposes_operations_and_no_research_routes():
     assert "backtest" not in source
 
 
-def test_frontend_runtime_has_operations_and_no_research_or_optimizer_pages():
+def test_frontend_runtime_has_operations_logs_and_no_research_or_optimizer_pages():
     client=(FRONTEND_SRC/"entry-client.jsx").read_text(encoding="utf-8").lower()
     ssr=(FRONTEND_SRC/"ssr-entry.jsx").read_text(encoding="utf-8").lower()
     nav=(FRONTEND_SRC/"components"/"AppNav.jsx").read_text(encoding="utf-8").lower()
     for source in (client,ssr,nav):
         assert "operations" in source
+        assert "logs" in source
         assert "optimizer" not in source
         assert "research" not in source
+
+
+def test_transactions_no_longer_use_prompt_or_confirm_for_row_corrections():
+    source=(FRONTEND_SRC/"pages"/"TransactionsPage.jsx").read_text(encoding="utf-8")
+    assert "window.prompt" not in source
+    assert "window.confirm" not in source
+    assert "Save broker" in source
+    assert "inline-delete" in source
 
 
 def test_scheduler_never_writes_transactions_or_corporate_actions():
