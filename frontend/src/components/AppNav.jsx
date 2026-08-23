@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n.js';
 import { getCurrentUser, logoutUser } from '../lib/api.js';
+import AppearanceControls from './AppearanceControls.jsx';
 
 const LINKS = [
   ['/', 'portfolio', 'nav.portfolio'],
@@ -9,38 +10,16 @@ const LINKS = [
   ['/guide', 'guide', 'nav.guide'],
 ];
 
-function preferredTheme() {
-  if (typeof window === 'undefined') return 'dark';
-  try {
-    const stored = window.localStorage.getItem('qport-theme');
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch { /* storage may be disabled */ }
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-}
-
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
   const { t, setLanguage } = useI18n(locale);
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState('dark');
   const [currentUser, setCurrentUser] = useState(null);
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const adminMode = active === 'admin' || currentUser?.role === 'ADMIN';
 
   useEffect(() => {
-    const current = preferredTheme();
-    setTheme(current);
-    document.documentElement.dataset.theme = current;
-    document.documentElement.style.colorScheme = current;
     getCurrentUser().then(result => setCurrentUser(result.user || null)).catch(() => setCurrentUser(null));
   }, []);
-
-  function toggleTheme() {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
-    document.documentElement.style.colorScheme = next;
-    try { window.localStorage.setItem('qport-theme', next); } catch { /* storage may be disabled */ }
-  }
 
   async function logout() {
     try { await logoutUser(); } catch { /* cookie is cleared server-side when possible */ }
@@ -100,16 +79,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
             </div>
           )}
 
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? text('Use light theme', 'Dùng giao diện sáng') : text('Use dark theme', 'Dùng giao diện tối')}
-            aria-label={theme === 'dark' ? text('Use light theme', 'Dùng giao diện sáng') : text('Use dark theme', 'Dùng giao diện tối')}
-          >
-            <span aria-hidden="true">{theme === 'dark' ? '☼' : '☾'}</span>
-            <span>{theme === 'dark' ? text('light', 'sáng') : text('dark', 'tối')}</span>
-          </button>
+          <AppearanceControls locale={locale} />
 
           <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
             <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
