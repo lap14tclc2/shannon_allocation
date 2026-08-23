@@ -8,6 +8,7 @@ const LINKS = [
   ['/risk', 'risk', 'nav.risk'],
   ['/snapshots', 'snapshots', 'nav.snapshots'],
   ['/operations', 'operations', null, 'Operations', 'Vận hành'],
+  ['/logs', 'logs', null, 'Logs', 'Nhật ký'],
   ['/settings', 'settings', 'nav.settings'],
   ['/guide', 'guide', 'nav.guide'],
 ];
