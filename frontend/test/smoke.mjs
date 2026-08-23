@@ -34,7 +34,10 @@ if(existsSync(ssrEntry)){
   check('portfolio hides advanced navigation',!portfolioHtml.includes('href="/operations"')&&!portfolioHtml.includes('href="/logs"')&&!portfolioHtml.includes('href="/snapshots"')&&!portfolioHtml.includes('href="/risk"')&&!portfolioHtml.includes('href="/settings"'));
   check('portfolio removes confusing diagnostic sections',!portfolioHtml.includes('Portfolio health')&&!portfolioHtml.includes('Cash &amp; deployment')&&!portfolioHtml.includes('Where your equity sits')&&!portfolioHtml.includes('Risk contrib.'));
   check('portfolio has no research navigation',!portfolioHtml.includes('Research Lab')&&!portfolioHtml.includes('Optimizer'));
-  const perfHtml=renderPage('performance',{performance,locale:'en'}); check('performance renders controlled history',perfHtml.includes('Total P/L')&&perfHtml.includes('Current drawdown')&&perfHtml.includes('History quality'));
+  const perfHtml=renderPage('performance',{performance,locale:'en'});
+  check('performance renders simple overview',perfHtml.includes('Total P/L')&&perfHtml.includes('Since inception')&&perfHtml.includes('Year to date')&&perfHtml.includes('P/L breakdown'));
+  check('performance hides noisy day statistics',!perfHtml.includes('Best day')&&!perfHtml.includes('Worst day')&&!perfHtml.includes('Positive days'));
+  check('performance keeps methodology behind disclosure',perfHtml.includes('Performance methodology')&&perfHtml.includes('XIRR')&&perfHtml.includes('Current / max drawdown'));
   const riskHtml=renderPage('risk',{risk,locale:'en'}); check('risk advanced route still renders concentration and tail risk',riskHtml.includes('Equity HHI')&&riskHtml.includes('Daily CVaR 95%'));
   const snapshotHtml=renderPage('snapshots',{snapshots,locale:'en'}); check('snapshots advanced route still renders official checkpoints',snapshotHtml.includes('OFFICIAL'));
   const settingsHtml=renderPage('settings',{dashboard,locale:'en'}); check('settings advanced route still renders cash policy',settingsHtml.includes('Cash policy')&&settingsHtml.includes('Strategic cash reserve'));
