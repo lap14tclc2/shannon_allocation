@@ -10,9 +10,9 @@ authenticated user
         ↓
 private SQLite portfolio book
         ↓
-explicit portfolio events
+validated user/system portfolio events
         ↓
-immutable ledger
+immutable/correctable ledger
         ↓
 holdings + available cash
         ↑
@@ -50,10 +50,11 @@ The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the aut
 - Price movement never changes shares.
 - Risk calculations never create BUY/SELL events.
 - Calendar time/year-end never changes the portfolio.
-- Only explicit ledger events change shares or cash.
+- Only validated ledger events change shares or cash. This includes user transactions and due corporate-action events posted by the dividend automation.
 - Market-data failures are visible as `STALE` / `MISSING` rather than fabricated fresh values.
 - Vietnamese equity prices are stored as canonical **full VND per share**.
 - A portfolio API request must have an authenticated normal-user session before any user portfolio database is opened.
+- Holdings, Transactions and derived history share one effective ledger; a transaction create/edit/delete is reflected in Holdings on the next render without a second holdings source of truth.
 
 ## What the system provides
 
@@ -63,9 +64,11 @@ The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the aut
 - Cost value and market value per holding.
 - Live unrealized P/L and total portfolio P/L.
 - Position weights.
-- Concise portfolio-level risk/health assessment.
-- Dividend latest event with expandable stored history for every current holding.
+- Concise portfolio-level risk/health assessment with explicit data-readiness messages.
+- Dividend announcement/history tracking for every current holding.
+- A separate expandable **Dividends received** ledger view with gross cash, withholding tax, net cash and stock shares received.
 - Expandable holding rows with broker/account source breakdown from open tax lots.
+- Full-width working tables on tablet/desktop while retaining horizontal scrolling on narrow mobile screens.
 
 ### Performance
 
@@ -73,24 +76,43 @@ After the first market sync QPort reconstructs daily history from the immutable
 ledger and stored D1 prices. It provides:
 
 - NAV history;
-- YTD and since-inception performance in the normal view;
-- TWR / XIRR and detailed methodology behind progressive disclosure;
-- current/max drawdown;
-- realized/unrealized P/L, dividends, fees/taxes and contributions.
+- daily, MTD, YTD and since-inception performance;
+- TWR / annualized TWR / XIRR and cash-flow-quality status;
+- current/max drawdown, best/worst day and positive-day ratio;
+- realized/unrealized P/L, dividends, fees/taxes and contributions;
+- gross cash-dividend income, 5% withholding, net cash-dividend income and stock-dividend tax paid on sale;
+- history-readiness milestones so missing statistics are not mistaken for zero risk/return.
 
 ### Risk
 
 Risk is information only. The advanced route includes:
 
-- 63D / 252D realized volatility;
+- 63D / 252D realized volatility and short-vs-long volatility regime;
 - concentration and HHI;
 - effective number of positions;
-- average/max correlation;
+- average/max correlation and interpretation;
 - diversification ratio;
-- risk contribution and equal-risk (ERC) reference;
+- risk contribution and equal-risk (ERC) diagnostic reference;
 - historical daily VaR/CVaR 95%;
 - downside volatility and worst observed day;
-- data-history coverage.
+- data-history coverage, eligible/missing symbols and explicit readiness messaging.
+
+Initial market sync backfills roughly **550 calendar days** of D1 history when needed so risk analytics are not limited to only a few days around the first portfolio import. Once a symbol has enough stored history, later syncs are incremental.
+
+### Dividend automation and tax
+
+Corporate-action discovery remains provider-driven and idempotent. For a supported cash/stock dividend with a known `payment_date`, QPort automatically creates the matching ledger event when the payment date is due. A mixed event such as cash + stock creates separate `CASH_DIVIDEND` and `STOCK_DIVIDEND` transactions.
+
+Entitlement quantity is calculated from the portfolio state before the ex-date (record date is the fallback when ex-date is unavailable). Automatic posting is protected by `corporate_action_postings`, so the same component is not posted twice.
+
+QPort applies the configured Vietnamese individual dividend-tax policy used by this system:
+
+- cash dividend: record the **gross** entitlement, withhold **5%**, add only the **net** amount to cash, and keep the withholding in `fees_and_taxes`;
+- stock dividend: no investment-income tax is charged when shares are received;
+- when taxable stock-dividend shares are later sold, QPort adds **5% investment-income tax** using VND 10,000 par value per taxable share, or the lower transfer price when the share is sold below par;
+- ordinary securities-transfer tax is a separate tax. Any user-entered SELL tax remains additive to the stock-dividend tax.
+
+The stock-dividend tax engine tracks an outstanding taxable-share pool and consumes it on later transfers until the dividend-share quantity has been exhausted.
 
 ### Daily snapshots
 
@@ -176,11 +198,11 @@ Portfolio | Transactions | Performance | Guide
 
 Advanced routes remain available for normal-user operational diagnostics. Admin has an administration-only page and is always routed to `/admin`.
 
-The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for normal-user databases that exist. You can also sync manually from the portfolio UI.
+The scheduler runs at **15:30 Asia/Ho_Chi_Minh**. D1 market sync/rebuild is performed on weekdays; corporate-action discovery and due-dividend posting are checked every calendar day for normal-user databases. You can also sync manually from the portfolio UI.
 
 ## CLI
 
-CLI operations are authenticated and use the same per-user database mapping as the web app.
+CLI operations are authenticated, use the same per-user database mapping as the web app, and use the same dividend-aware service/tax policy.
 
 Normal user:
 
@@ -194,12 +216,13 @@ Do not put admin passwords in documentation, scripts or shell examples.
 ## First-use workflow
 
 1. Open QPort and register a unique username, or sign in if already registered.
-2. Open **Transactions** and import each existing position with the real share count and cost basis.
+2. Open **Transactions** and import each existing position with the real share count and cost basis; include broker/account when known.
 3. Record existing available cash with **Cash deposit**.
-4. Return to **Portfolio** and refresh market data once.
+4. Return to **Portfolio** and refresh market data once. QPort backfills enough D1 history for meaningful risk diagnostics where the provider can supply it.
 5. Verify Cost Value, Market Value, P/L and NAV against your broker.
-6. Review the Portfolio assessment and Performance only after accounting values match.
-7. Admin signs in separately and remains on `/admin` for user management and password changes only.
+6. Review the Portfolio assessment, advanced Risk and Performance only after accounting values match.
+7. Keep the server/scheduler running so market data and due dividend events remain current.
+8. Admin signs in separately and remains on `/admin` for user management and password changes only.
 
 ## Languages
 
