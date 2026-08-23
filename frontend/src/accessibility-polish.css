@@ -16,7 +16,7 @@
 }
 
 body {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.62;
 }
 
@@ -24,17 +24,17 @@ button,
 input,
 textarea,
 select {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
 /* Primary reading hierarchy. Monospace stays; tiny text does not. */
 .app-nav-links a {
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .brand-copy strong {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .brand-copy small,
@@ -43,30 +43,30 @@ select {
 .language-switch,
 .nav-user,
 .nav-logout {
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .portfolio-hero h1,
 .page-head h1 {
-  font-size: clamp(27px, 4vw, 34px);
+  font-size: clamp(28px, 4vw, 36px);
   line-height: 1.18;
 }
 
 .section-head h2,
 .card > h2 {
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1.3;
 }
 
 .section-head h3,
 .card > h3,
 .assessment-depth-head h3 {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.35;
 }
 
 .assessment-depth-block h4 {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   text-transform: none;
   letter-spacing: .015em;
@@ -89,7 +89,7 @@ select {
 .ranking th,
 .status-pill,
 .source-count-badge {
-  font-size: 11.5px;
+  font-size: 12.5px;
 }
 
 .muted,
@@ -103,7 +103,7 @@ select {
 .assessment-depth-note,
 .assessment-build-lead {
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -111,7 +111,7 @@ select {
 .holding-source-table td,
 .dividend-history-table td,
 .received-dividend-table td {
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.5;
 }
 
@@ -119,20 +119,20 @@ select {
 .holding-source-table th,
 .dividend-history-table th,
 .received-dividend-table th {
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.4;
 }
 
 .metric-value,
 .assessment-metrics b,
 .diag-row b {
-  font-size: 14px;
+  font-size: 14.5px;
 }
 
 .diag-row {
-  min-height: 38px;
-  padding: 8px 0;
-  font-size: 12.5px;
+  min-height: 40px;
+  padding: 9px 0;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -208,27 +208,27 @@ select {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  min-height: 28px;
-  padding: 3px 8px;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 9px;
   border: 1px solid var(--border-strong);
   border-radius: 2px;
   background: var(--bg-elevated);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.35;
 }
 
 .market-history-indicator b {
   color: currentColor;
-  font-size: 11.5px;
+  font-size: 12.5px;
   letter-spacing: .035em;
 }
 
 .market-history-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   border-radius: 50%;
   background: currentColor;
 }
@@ -238,12 +238,12 @@ select {
 }
 
 .market-history-indicator button {
-  min-height: 24px;
-  padding: 2px 7px;
+  min-height: 26px;
+  padding: 3px 8px;
   border: 1px solid currentColor;
   background: transparent;
   color: currentColor;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -260,7 +260,7 @@ select {
 .assessment-building-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 
 .assessment-build-primary {
@@ -273,14 +273,14 @@ select {
 
 .evidence-progress {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   align-items: center;
-  gap: 9px;
-  margin: 4px 0 8px;
+  gap: 10px;
+  margin: 5px 0 9px;
 }
 
 .evidence-progress-track {
-  height: 6px;
+  height: 7px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   background: var(--bg-elevated);
@@ -294,7 +294,7 @@ select {
 
 .evidence-progress b {
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 12.5px;
   text-align: right;
 }
 
@@ -307,15 +307,15 @@ select {
 }
 
 @media (min-width: 720px) {
-  body { font-size: 14px; }
+  body { font-size: 15px; }
   .assessment-building-grid {
     grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 719px) {
-  body { font-size: 13.5px; }
+  body { font-size: 14px; }
   .page { padding-inline: 16px; }
   .market-history-indicator { width: 100%; }
-  .ranking td { font-size: 12.5px; }
+  .ranking td { font-size: 13px; }
 }
