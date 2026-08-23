@@ -148,10 +148,23 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 continue
 
             event_id = int(result["event_id"])
+            actual_cash = float(payload.get("amount") or 0)
+            actual_shares = float(payload.get("quantity") or 0)
             with self.store.connect() as db:
                 db.execute(
                     "INSERT OR IGNORE INTO corporate_action_postings(action_id,posting_type,event_id,created_by,created_at) VALUES (?,?,?,?,datetime('now'))",
                     (action_id, posting_type, event_id, created_by),
+                )
+                db.execute(
+                    """
+                    INSERT OR IGNORE INTO corporate_action_receipts(
+                        action_id,received_date,actual_cash,actual_shares,note,created_by,created_at
+                    ) VALUES (?,?,?,?,?,?,datetime('now'))
+                    """,
+                    (
+                        action_id, payment_date, actual_cash, actual_shares,
+                        f"Automatically calculated from {entitled_shares:g} entitled shares.", created_by,
+                    ),
                 )
             posted.add((action_id, posting_type))
             created.append({
