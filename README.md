@@ -6,6 +6,10 @@ QPort is intentionally a **portfolio information system**, not a stock-selection
 optimization, allocation-timing or automatic-trading engine.
 
 ```text
+authenticated user
+        ↓
+private SQLite portfolio book
+        ↓
 explicit portfolio events
         ↓
 immutable ledger
@@ -21,6 +25,25 @@ NAV · P/L · TWR · XIRR · drawdown · risk · portfolio health
 information for the user
 ```
 
+## Authentication and data isolation
+
+QPort uses a deliberately small local authentication model:
+
+- Normal users register a **unique username** and sign in with username only.
+- The built-in admin account is `admin` with default password `abc123`.
+- Admin can update the password from `/admin`.
+- Admin can remove a normal user; removal also deletes that user's sessions and entire portfolio database.
+- Every user gets a separate SQLite portfolio file. Transactions, prices, snapshots, dividends, operations, logs and settings are therefore isolated by authenticated user.
+
+Default runtime storage:
+
+```text
+python/data/auth-v1/auth.sqlite3
+python/data/auth-v1/users/user-<id>.sqlite3
+```
+
+The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the authenticated server starts. The authenticated namespace therefore starts clean instead of silently inheriting old single-user data.
+
 ## Core invariants
 
 - Price movement never changes shares.
@@ -29,6 +52,7 @@ information for the user
 - Only explicit ledger events change shares or cash.
 - Market-data failures are visible as `STALE` / `MISSING` rather than fabricated fresh values.
 - Vietnamese equity prices are stored as canonical **full VND per share**.
+- A portfolio API request must have an authenticated session before any user portfolio database is opened.
 
 ## What the system provides
 
@@ -37,9 +61,9 @@ information for the user
 - Current NAV, equity and available cash.
 - Cost value and market value per holding.
 - Live unrealized P/L and total portfolio P/L.
-- Position weights and risk contribution.
-- Quick cash deposit/withdraw recording.
-- Rich Portfolio Health diagnostics.
+- Position weights.
+- Concise portfolio-level risk/health assessment.
+- Dividend latest event with expandable stored history for every current holding.
 
 ### Performance
 
@@ -47,16 +71,14 @@ After the first market sync QPort reconstructs daily history from the immutable
 ledger and stored D1 prices. It provides:
 
 - NAV history;
-- daily / MTD / YTD return;
-- TWR and annualized TWR;
-- XIRR from actual dated investor cash flows;
+- YTD and since-inception performance in the normal view;
+- TWR / XIRR and detailed methodology behind progressive disclosure;
 - current/max drawdown;
-- best/worst day and positive-day ratio;
 - realized/unrealized P/L, dividends, fees/taxes and contributions.
 
 ### Risk
 
-Risk is information only. The page includes:
+Risk is information only. The advanced route includes:
 
 - 63D / 252D realized volatility;
 - concentration and HHI;
@@ -97,9 +119,6 @@ FEE
 `POSITION_IMPORT` is for migrating an existing holding with shares and cost basis
 without pretending that a historical cash BUY occurred inside QPort.
 
-The application exposes no normal update/delete API for ledger history. Keep a
-backup of the SQLite database before bulk migration.
-
 ## Market data
 
 Provider policy:
@@ -111,6 +130,8 @@ VNDIRECT public D1 data
       ↓ failure
 last stored value + STALE/MISSING status
 ```
+
+Dividend provider results are persisted in the logged-in user's SQLite DB. Normal page loads use SQLite first; providers are contacted only on cache miss or explicit refresh.
 
 Base installation:
 
@@ -143,29 +164,46 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-Navigation:
+The start page asks for username. If the username is unknown, QPort shows the registration field. Normal users need no password. Entering `admin` reveals the admin password field.
+
+Primary navigation:
 
 ```text
-Portfolio | Transactions | Performance | Risk | Snapshots | Settings | Guide
+Portfolio | Transactions | Performance | Guide
 ```
 
-The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays.
-You can also sync manually from Portfolio, Performance or Snapshots.
+Advanced routes remain available for operational diagnostics. Admin gets an additional **Admin** link after login.
 
-For Windows Task Scheduler / cron:
+The server runs an idempotent EOD sync at **15:30 Asia/Ho_Chi_Minh** on weekdays for every user database that exists. You can also sync manually from the portfolio UI.
+
+## CLI
+
+CLI operations are authenticated and use the same per-user database mapping as the web app.
+
+Normal user:
 
 ```bash
-python -m portfolio.cli sync
+python -m portfolio.cli --username alice sync
+python -m portfolio.cli --username alice status
 ```
+
+Admin:
+
+```bash
+python -m portfolio.cli --username admin --password abc123 status
+```
+
+The CLI does not keep a browser session alive after credential verification.
 
 ## First-use workflow
 
-1. Open **Transactions** and import each existing position with the real share count and cost basis.
-2. Record existing available cash with **Cash deposit**, or use the cash box on **Portfolio**.
-3. Return to **Portfolio** and click **Sync daily prices** once.
-4. QPort fetches D1 history and rebuilds daily snapshots from the ledger dates.
+1. Open QPort and register a unique username, or sign in if already registered.
+2. Open **Transactions** and import each existing position with the real share count and cost basis.
+3. Record existing available cash with **Cash deposit**.
+4. Return to **Portfolio** and refresh market data once.
 5. Verify Cost Value, Market Value, P/L and NAV against your broker.
-6. Review **Performance**, **Risk** and **Snapshots** only after the accounting values match.
+6. Review the Portfolio assessment and Performance only after accounting values match.
+7. Admin should sign in as `admin / abc123` and change the default password from `/admin`.
 
 ## Languages
 
