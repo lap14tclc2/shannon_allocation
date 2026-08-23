@@ -11,17 +11,18 @@ const risk={status:'VALID',volatility_63:.21,volatility_252:.24,volatility_ratio
 const health={status:'HEALTHY',flags:[],accounting_return:1/23,performance_history_status:'SUFFICIENT',current_drawdown:-.02,max_drawdown:-.08,effective_positions:1,effective_position_ratio:1,equity_hhi:1,max_equity_weight:1,largest_risk_symbol:'FPT',largest_risk_contribution:1,risk_coverage:1,daily_var_95:-.021,daily_cvar_95:-.031,official_snapshot_count:118,cash_weight:10/24};
 const dashboard={philosophy:'BUY_AND_HOLD_INFORMATION_SYSTEM',today:'2026-08-23',portfolio:{cash:10000000,equity_value:14000000,nav:24000000,cost_value:13000000,total_pnl:1000000,accounting_return:1/23,unrealized_pnl:1000000,realized_pnl:0,reference_weights:{FPT:1},positions:[position]},preferences:{cash_reserve_configured:true,cash_reserve:5000000,reference_weights:{FPT:1}},performance_summary:performance,risk,health,market_data:{status:'VALID',market_date:'2026-08-21',aligned:true,calendar_age_days:2,provider:{provider:'auto'}},data_lineage:{analytics:{status:'UNVERIFIED'}},contribution_suggestions:{available_cash:10000000,strategic_cash_reserve:5000000,deployable_cash:0,policy:'EXPLICIT_REFERENCE_WEIGHT_DEFICITS',suggestions:[]}};
 const snapshots=[{snapshot_date:'2026-08-21',official:true,data_quality:'VALID',nav:24000000,cash:10000000,equity_value:14000000,daily_pnl:200000,daily_return:.0084,current_drawdown:-.02,volatility_252:.24,positions:[position]}];
-const transactions=[{id:1,event_date:'2026-01-02',event_type:'POSITION_IMPORT',symbol:'FPT',quantity:200,price:65000,fee:0,tax:0,amount:0,created_by:'local',metadata:{}}];
+const transactions=[{id:1,event_date:'2026-01-02',event_type:'POSITION_IMPORT',symbol:'FPT',quantity:200,price:65000,fee:0,tax:0,amount:0,created_by:'local',metadata:{broker_code:'TCBS',account_id:'PRIMARY'}}];
 const operations={
-  book_type:'INSTITUTIONAL_LITE_IBOR', accounting_cost_method:'FIFO_TAX_LOTS', position_recognition:'TRADE_DATE',
+  book_type:'INSTITUTIONAL_LITE_IBOR', accounting_cost_method:'FIFO_TAX_LOTS', position_recognition:'TRADE_DATE', activity_integrity:{status:'VERIFIED',records:3},
   settlement:{settled_cash:10000000,projected_cash:10000000,unsettled_receivable:0,unsettled_payable:0,strategic_reserve:5000000,available_to_invest:5000000,trades:[]},
   exceptions:[{severity:'INFO',code:'NO_RECONCILIATION',message:'No broker reconciliation has been recorded yet.'}],
-  tax_lots:[{lot_id:'FPT:1',symbol:'FPT',acquisition_date:'2026-01-02',original_quantity:200,remaining_quantity:200,unit_cost:65000,cost_basis:13000000,account_id:'PRIMARY'}],
-  reconciliations:[], corporate_action_provider:{provider:'vnstock_data',available:false}, corporate_actions:[],
-  securities:[{security_id:'VN-EQ-FPT',symbol:'FPT',exchange:'HOSE',isin:null,currency:'VND',asset_type:'EQUITY',lot_size:100}],
+  tax_lots:[{lot_id:'FPT:1',symbol:'FPT',broker_code:'TCBS',account_id:'PRIMARY',acquisition_date:'2026-01-02',original_quantity:200,remaining_quantity:200,unit_cost:65000,cost_basis:13000000}],
+  reconciliations:[], corporate_action_provider:{provider:'vnstock',available:true}, corporate_actions:[], security_reference_provider:{provider:'vnstock',available:true},
+  securities:[{security_id:'VN-EQ-FPT',symbol:'FPT',name:'FPT Corporation',exchange:'HOSE',isin:'VN000000FPT1',currency:'VND',asset_type:'EQUITY',lot_size:100,master_data_source:'vnstock',master_data_status:'RESOLVED'}],
   nav_controls:[{...snapshots[0],nav_status:'OFFICIAL'}], restatements:[],
   pnl_attribution:[{symbol:'FPT',unrealized_pnl:1000000,realized_pnl:0,dividend_income:200000,total_contribution_vnd:1200000}],
 };
+const activity={integrity:{status:'VERIFIED',records:3,head_hash:'abcdef1234567890'},logs:[{id:3,occurred_at:'2026-08-23T07:00:00Z',actor_type:'USER',actor_id:'local',category:'LEDGER',action:'TRANSACTION_CORRECTED',entity_type:'TRANSACTION',entity_id:'1',status:'SUCCESS',summary:'Corrected transaction #1.',details:{broker_code:'TCBS'}}]};
 
 let pass=true; function check(name,ok){console.log(`${ok?'PASS':'FAIL'}  ${name}`);if(!ok)pass=false;}
 const ssrEntry=join(root,'dist-ssr','ssr-entry.mjs'); check('SSR bundle exists',existsSync(ssrEntry)); let renderPage=null;
@@ -29,17 +30,22 @@ if(existsSync(ssrEntry)){
   ({renderPage}=await import(`file://${ssrEntry.replace(/\\/g,'/')}`));
   const portfolioHtml=renderPage('portfolio',{dashboard,locale:'en'});
   check('portfolio renders live accounting and AI export',portfolioHtml.includes('Total P/L')&&portfolioHtml.includes('1,000,000 VND')&&portfolioHtml.includes('Export for AI'));
-  check('portfolio has Operations navigation',portfolioHtml.includes('Operations'));
+  check('portfolio has Operations and Logs navigation',portfolioHtml.includes('Operations')&&portfolioHtml.includes('Logs'));
   check('portfolio has no research navigation',!portfolioHtml.includes('Research Lab')&&!portfolioHtml.includes('Optimizer'));
   const perfHtml=renderPage('performance',{performance,locale:'en'}); check('performance renders controlled history',perfHtml.includes('Total P/L')&&perfHtml.includes('Current drawdown')&&perfHtml.includes('History quality'));
   const riskHtml=renderPage('risk',{risk,locale:'en'}); check('risk renders concentration and tail risk',riskHtml.includes('Equity HHI')&&riskHtml.includes('Daily CVaR 95%'));
   const snapshotHtml=renderPage('snapshots',{snapshots,locale:'en'}); check('snapshots render official checkpoints',snapshotHtml.includes('OFFICIAL'));
   const settingsHtml=renderPage('settings',{dashboard,locale:'en'}); check('settings render cash policy',settingsHtml.includes('Cash policy')&&settingsHtml.includes('Strategic cash reserve'));
   const txHtml=renderPage('transactions',{transactions,corrections:[],today:'2026-08-23',locale:'en'});
-  check('transactions explain trade/settlement split',txHtml.includes('Settlement is a separate operational control')&&txHtml.includes('FIFO'));
+  check('transactions expose inline broker controls',txHtml.includes('Broker')&&txHtml.includes('TCBS')&&txHtml.includes('Inline edits create audited corrections'));
+  check('transactions do not render browser prompt text',!txHtml.includes('Why should transaction'));
   const opsHtml=renderPage('operations',{operations,today:'2026-08-23',locale:'en'});
   check('operations renders institutional book',opsHtml.includes('Operations &amp; Book Controls')&&opsHtml.includes('Settlement book')&&opsHtml.includes('Tax lots · FIFO')&&opsHtml.includes('Broker reconciliation')&&opsHtml.includes('Corporate actions')&&opsHtml.includes('NAV controls &amp; restatement'));
+  check('operations renders automatic master resolution',opsHtml.includes('Resolve all master data')&&opsHtml.includes('VN000000FPT1')&&opsHtml.includes('ISIN is not calculated from ticker'));
+  const logsHtml=renderPage('logs',{activity,locale:'en'});
+  check('logs page renders audit integrity and records',logsHtml.includes('Activity Log')&&logsHtml.includes('VERIFIED')&&logsHtml.includes('TRANSACTION_CORRECTED')&&logsHtml.includes('hash chain'));
   const viOps=renderPage('operations',{operations,today:'2026-08-23',locale:'vi'}); check('Vietnamese operations renders',viOps.includes('Vận hành')&&viOps.includes('Đối soát broker'));
+  const viLogs=renderPage('logs',{activity,locale:'vi'}); check('Vietnamese logs renders',viLogs.includes('Nhật ký hoạt động')&&viLogs.includes('Toàn vẹn'));
   const guideHtml=renderPage('guide',{locale:'en'}); check('guide still renders',guideHtml.includes('Data integrity rules'));
   check('removed research page cannot render',renderPage('research',{locale:'en'})==='');
   check('removed optimizer page cannot render',renderPage('optimizer_list',{locale:'en'})==='');
