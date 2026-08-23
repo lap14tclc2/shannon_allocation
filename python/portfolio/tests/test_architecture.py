@@ -84,23 +84,34 @@ def test_primary_server_exposes_operations_logs_and_no_research_routes():
     assert "backtest" not in source
 
 
-def test_frontend_runtime_has_operations_logs_and_no_research_or_optimizer_pages():
+def test_frontend_keeps_advanced_routes_but_hides_them_from_primary_navigation():
     client=(FRONTEND_SRC/"entry-client.jsx").read_text(encoding="utf-8").lower()
     ssr=(FRONTEND_SRC/"ssr-entry.jsx").read_text(encoding="utf-8").lower()
     nav=(FRONTEND_SRC/"components"/"AppNav.jsx").read_text(encoding="utf-8").lower()
-    for source in (client,ssr,nav):
+    for source in (client, ssr):
         assert "operations" in source
         assert "logs" in source
+        assert "risk" in source
+        assert "snapshots" in source
+        assert "settings" in source
         assert "optimizer" not in source
         assert "research" not in source
+    for hidden in ("operations", "logs", "risk", "snapshots", "settings"):
+        assert hidden not in nav
+    for primary in ("portfolio", "transactions", "performance", "guide"):
+        assert primary in nav
 
 
-def test_transactions_no_longer_use_prompt_or_confirm_for_row_corrections():
+def test_transactions_use_simple_history_and_advanced_optional_fields():
     source=(FRONTEND_SRC/"pages"/"TransactionsPage.jsx").read_text(encoding="utf-8")
     assert "window.prompt" not in source
     assert "window.confirm" not in source
-    assert "Save broker" in source
+    assert "Advanced details" in source
+    assert "Broker" in source
     assert "inline-delete" in source
+    assert "Save broker" not in source
+    assert "Institutional ledger rules" not in source
+    assert "Correction audit log" not in source
 
 
 def test_scheduler_never_writes_transactions_or_corporate_actions():

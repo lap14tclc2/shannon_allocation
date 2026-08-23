@@ -1,31 +1,11 @@
 import React, { useState } from 'react';
 import { useI18n } from '../i18n.js';
 
-const GROUPS = [
-  {
-    en: 'Portfolio', vi: 'Danh mục',
-    links: [
-      ['/', 'portfolio', 'nav.portfolio', '◫'],
-      ['/transactions', 'transactions', 'nav.transactions', '↕'],
-      ['/performance', 'performance', 'nav.performance', '⌁'],
-      ['/risk', 'risk', 'nav.risk', '◇'],
-    ],
-  },
-  {
-    en: 'Records', vi: 'Dữ liệu',
-    links: [
-      ['/snapshots', 'snapshots', 'nav.snapshots', '▤'],
-      ['/operations', 'operations', null, 'Operations', 'Vận hành', '⚙'],
-      ['/logs', 'logs', null, 'Activity', 'Nhật ký', '≡'],
-    ],
-  },
-  {
-    en: 'System', vi: 'Hệ thống',
-    links: [
-      ['/settings', 'settings', 'nav.settings', '⚒'],
-      ['/guide', 'guide', 'nav.guide', '?'],
-    ],
-  },
+const LINKS = [
+  ['/', 'portfolio', 'nav.portfolio', '◫'],
+  ['/transactions', 'transactions', 'nav.transactions', '↕'],
+  ['/performance', 'performance', 'nav.performance', '⌁'],
+  ['/guide', 'guide', 'nav.guide', '?'],
 ];
 
 export default function AppNav({ active = 'portfolio', locale = 'en' }) {
@@ -57,26 +37,19 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
       </div>
 
       <div className="app-nav-links">
-        {GROUPS.map(group => (
-          <div className="nav-group" key={group.en}>
-            <div className="nav-group-label">{text(group.en, group.vi)}</div>
-            {group.links.map(([href, key, labelKey, en, vi, icon]) => {
-              const label = labelKey ? t(labelKey) : text(en, vi);
-              const itemIcon = icon || en || '•';
-              return (
-                <a
-                  key={href}
-                  href={href}
-                  className={active === key ? 'active' : ''}
-                  aria-current={active === key ? 'page' : undefined}
-                >
-                  <span className="nav-icon" aria-hidden="true">{itemIcon}</span>
-                  <span>{label}</span>
-                </a>
-              );
-            })}
-          </div>
-        ))}
+        <div className="nav-group">
+          {LINKS.map(([href, key, labelKey, icon]) => (
+            <a
+              key={href}
+              href={href}
+              className={active === key ? 'active' : ''}
+              aria-current={active === key ? 'page' : undefined}
+            >
+              <span className="nav-icon" aria-hidden="true">{icon}</span>
+              <span>{t(labelKey)}</span>
+            </a>
+          ))}
+        </div>
       </div>
 
       <div className="app-nav-footer">
