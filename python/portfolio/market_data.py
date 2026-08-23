@@ -9,6 +9,8 @@ from typing import Protocol
 import pandas as pd
 import requests
 
+from .vnstock_isolated import run_vnstock_task, vnstock_available
+
 log = logging.getLogger(__name__)
 THOUSAND_VND_SOURCES = {"vndirect", "vnstock"}
 
@@ -66,26 +68,20 @@ class VndirectProvider:
 
 
 class VnstockProvider:
-    """Optional vnstock D1 adapter supporting Unified UI v4 and legacy UI."""
+    """Optional Vnstock D1 adapter isolated from the QPort server process."""
     name = "vnstock"
 
     def __init__(self, chunk_days: int = 150, request_delay: float = .15) -> None:
-        self.chunk_days=int(chunk_days); self.request_delay=float(request_delay); self.api_mode="unknown"
-        try:
-            from vnstock import Market  # type: ignore
-            self._Market=Market; self.api_mode="unified_v4"
-        except Exception:
-            try:
-                from vnstock.ui import Market  # type: ignore
-                self._Market=Market; self.api_mode="legacy_ui"
-            except Exception as exc:
-                raise MarketDataError(f"vnstock is not installed/importable: {exc}") from exc
+        if not vnstock_available():
+            raise MarketDataError("vnstock is not installed/importable")
+        self.chunk_days=int(chunk_days); self.request_delay=float(request_delay); self.api_mode="isolated_spawn"
 
     @staticmethod
     def _normalize(raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
         if raw is None or raw.empty: return pd.DataFrame()
         out=raw.copy()
         if "time" in out.columns: ts=pd.to_datetime(out["time"])
+        elif "ts" in out.columns: ts=pd.to_datetime(out["ts"])
         elif out.index.name: ts=pd.to_datetime(out.index)
         else: raise MarketDataError(f"vnstock returned no timestamp column for {symbol}")
         out["ts"]=pd.DatetimeIndex(ts).normalize(); required=["open","high","low","close","volume"]
@@ -96,22 +92,16 @@ class VnstockProvider:
         out=out.dropna(subset=["close"]).drop_duplicates("ts",keep="last").set_index("ts").sort_index(); out["source"]="vnstock"
         return out
 
-    def _ohlcv(self, market, symbol: str, start: str, end: str):
-        equity = market.equity
-        # Unified UI v4: Market().equity.ohlcv(symbol=...).
-        if hasattr(equity, "ohlcv"):
-            return equity.ohlcv(symbol=symbol.upper(), start=start, end=end, interval="1D")
-        # Legacy UI: Market().equity(symbol).ohlcv(...).
-        if callable(equity):
-            return equity(symbol.upper()).ohlcv(start=start, end=end, interval="1D")
-        raise MarketDataError("Unsupported vnstock Market.equity interface")
-
     def daily_history(self, symbol: str, start: str, end: str) -> pd.DataFrame:
-        start_date=date.fromisoformat(start); end_date=date.fromisoformat(end); frames=[]; current=start_date; market=self._Market()
+        start_date=date.fromisoformat(start); end_date=date.fromisoformat(end); frames=[]; current=start_date
         while current <= end_date:
             chunk_end=min(end_date,current+timedelta(days=self.chunk_days-1))
-            try: raw=self._ohlcv(market,symbol,current.isoformat(),chunk_end.isoformat())
-            except Exception as exc: raise MarketDataError(f"vnstock failed for {symbol} {current}..{chunk_end}: {exc}") from exc
+            try:
+                result=run_vnstock_task("ohlcv", {"symbol":symbol.upper(),"start":current.isoformat(),"end":chunk_end.isoformat()})
+                self.api_mode=str(result.get("api_variant") or self.api_mode)
+                raw=pd.DataFrame(result.get("data") or [])
+            except Exception as exc:
+                raise MarketDataError(f"vnstock failed for {symbol} {current}..{chunk_end}: {exc}") from exc
             normalized=self._normalize(raw,symbol)
             if not normalized.empty: frames.append(normalized)
             current=chunk_end+timedelta(days=1)
@@ -119,7 +109,8 @@ class VnstockProvider:
         if not frames: raise MarketDataError(f"vnstock returned no data for {symbol}")
         out=pd.concat(frames).sort_index(); return out[~out.index.duplicated(keep="last")]
 
-    def health(self) -> dict: return {"provider":self.name,"available":True,"auth_required":False,"api_mode":self.api_mode}
+    def health(self) -> dict:
+        return {"provider":self.name,"available":True,"auth_required":False,"api_mode":self.api_mode,"isolation":"CHILD_PROCESS"}
 
 
 class AutoMarketData:
