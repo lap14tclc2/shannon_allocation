@@ -33,15 +33,79 @@ function number(value, field, locale, { min = null, max = null, positive = false
   return n;
 }
 
+/**
+ * Parse a human-entered VND amount into canonical integer VND.
+ *
+ * Supported examples:
+ *   20000000      -> 20,000,000
+ *   20,000,000    -> 20,000,000
+ *   20.000.000    -> 20,000,000
+ *   20 000 000    -> 20,000,000
+ *   20m / 20M     -> 20,000,000
+ *   20tr / 20TR   -> 20,000,000
+ *   20.5m         -> 20,500,000
+ *   20,5tr        -> 20,500,000
+ *
+ * For plain values without a suffix, dots/commas are treated as grouping
+ * separators. This deliberately avoids locale-dependent Number parsing.
+ */
+export function parseVndMoneyInput(value, field = 'amount', locale = 'en') {
+  const original = String(value ?? '').trim();
+  if (!original) {
+    throw new FormValidationError(field, `${field} is required.`, `${field} là bắt buộc.`, locale);
+  }
+
+  let text = original.toLowerCase().replace(/\s+/g, '');
+  let multiplier = 1;
+  let hasSuffix = false;
+  if (/(triệu|tr|m)$/.test(text)) {
+    text = text.replace(/(triệu|tr|m)$/, '');
+    multiplier = 1_000_000;
+    hasSuffix = true;
+  }
+
+  if (!text) {
+    throw new FormValidationError(field, 'Enter a valid VND amount.', 'Nhập số tiền VND hợp lệ.', locale);
+  }
+
+  let normalized;
+  if (hasSuffix) {
+    // With an explicit million suffix, one comma or dot may be decimal.
+    if (!/^\d+(?:[.,]\d+)?$/.test(text)) {
+      throw new FormValidationError(field, 'Enter a valid VND amount, for example 20m or 20,000,000.', 'Nhập số tiền VND hợp lệ, ví dụ 20tr hoặc 20.000.000.', locale);
+    }
+    normalized = text.replace(',', '.');
+  } else {
+    if (!/^[\d.,]+$/.test(text)) {
+      throw new FormValidationError(field, 'Enter a valid VND amount, for example 20m or 20,000,000.', 'Nhập số tiền VND hợp lệ, ví dụ 20tr hoặc 20.000.000.', locale);
+    }
+    // No suffix: separators are grouping separators, never decimal VND.
+    normalized = text.replace(/[.,]/g, '');
+  }
+
+  const n = Number(normalized) * multiplier;
+  if (!Number.isFinite(n) || n < 0 || n > MAX_MONEY) {
+    throw new FormValidationError(field, 'VND amount is outside the allowed range.', 'Số tiền VND vượt phạm vi cho phép.', locale);
+  }
+  if (!Number.isInteger(n)) {
+    throw new FormValidationError(field, 'VND amount must resolve to a whole number of đồng.', 'Số tiền VND phải quy đổi thành số nguyên đồng.', locale);
+  }
+  return n;
+}
+
 export function validateCashAmount(value, locale = 'en') {
-  return number(value, 'amount', locale, { positive: true, max: MAX_MONEY });
+  const n = parseVndMoneyInput(value, 'amount', locale);
+  if (n <= 0) {
+    throw new FormValidationError('amount', 'amount must be greater than 0.', 'amount phải lớn hơn 0.', locale);
+  }
+  return n;
 }
 
 export function validateCashReserveInput(value, locale = 'en') {
   if (String(value ?? '').trim() === '') {
     throw new FormValidationError('cash_reserve', 'Enter a cash reserve. Use 0 if you intentionally want no reserve.', 'Nhập mức tiền mặt dự trữ. Dùng 0 nếu bạn chủ động không giữ dự trữ.', locale);
   }
-  return number(value, 'cash_reserve', locale, { min: 0, max: MAX_MONEY });
+  return parseVndMoneyInput(value, 'cash_reserve', locale);
 }
 
 export function validateTransactionForm(type, form, today, locale = 'en') {
@@ -68,7 +132,7 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
     throw new FormValidationError('price', 'Enter the full VND price per share, for example 72,000 instead of 72.', 'Nhập giá đầy đủ theo VND/cổ phiếu, ví dụ 72.000 thay vì 72.', locale);
   }
 
-  const amount = requiredAmount ? number(form.amount, 'amount', locale, { positive: true, max: MAX_MONEY }) : 0;
+  const amount = requiredAmount ? validateCashAmount(form.amount, locale) : 0;
   const ratio = type === 'SPLIT' ? number(form.ratio, 'ratio', locale, { positive: true, max: 100 }) : 0;
   const fee = ['BUY', 'SELL'].includes(type) && String(form.fee || '').trim() !== '' ? number(form.fee, 'fee', locale, { min: 0, max: MAX_MONEY }) : 0;
   const tax = ['BUY', 'SELL'].includes(type) && String(form.tax || '').trim() !== '' ? number(form.tax, 'tax', locale, { min: 0, max: MAX_MONEY }) : 0;
