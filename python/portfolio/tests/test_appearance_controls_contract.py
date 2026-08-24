@@ -29,14 +29,14 @@ def test_default_is_dark_and_custom_palette_is_persisted():
     assert "color-mix" in source
 
 
-def test_custom_palette_is_applied_before_hydration_and_css_loaded_last():
-    entry = (FRONTEND / "entry-client.jsx").read_text(encoding="utf-8")
+def test_custom_palette_is_applied_before_spa_boot_and_css_order_is_preserved():
+    entry = (FRONTEND / "entry-vercel.jsx").read_text(encoding="utf-8")
     assert "applyStoredAppearance" in entry
     assert "applyStoredAppearance();" in entry
     assert "cream-light-theme.css" not in entry
     assert "import './appearance-controls.css';" in entry
     assert entry.index("import './accessibility-polish.css';") < entry.index("import './appearance-controls.css';")
-    assert entry.index("applyStoredAppearance();") < entry.index("const PAGES")
+    assert entry.index("applyStoredAppearance();") < entry.index("const root = createRoot")
 
 
 def test_overlay_exposes_background_and_semantic_text_colors():
