@@ -4,26 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "${1:-}" == "--with-db" ]]; then
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker was requested with --with-db but docker is not installed or not on PATH." >&2
-    echo "Omit --with-db and export DATABASE_URL for an external PostgreSQL database." >&2
-    exit 1
-  fi
-  docker compose -f docker-compose.vercel.yml up -d --wait postgres
-  export DATABASE_URL="${DATABASE_URL:-postgresql://qport:qport@127.0.0.1:5432/qport}"
-fi
-
 if [[ -z "${DATABASE_URL:-}" ]]; then
   cat >&2 <<'EOF'
 DATABASE_URL is required.
 
-Without Docker:
-  export DATABASE_URL='postgresql://USER:PASSWORD@HOST/DB?sslmode=require'
+Example:
+  export DATABASE_URL='postgresql://USER:PASSWORD@HOST/DB'
   ./scripts/dev-vercel.sh
-
-Docker remains optional:
-  ./scripts/dev-vercel.sh --with-db
 EOF
   exit 1
 fi
