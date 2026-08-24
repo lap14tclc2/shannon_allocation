@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
-import { getLatestDividend, syncPortfolio } from '../lib/api.js';
+import { getDividendHistory, syncPortfolio } from '../lib/api.js';
 
 function pct(value, digits = 2) {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
@@ -9,6 +9,11 @@ function pct(value, digits = 2) {
 
 function money(value, locale = 'vi') {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
+}
+
+function signedMoney(value, locale = 'vi') {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
 }
 
 function Metric({ label, value, note, tone = '' }) {
@@ -19,28 +24,35 @@ function Metric({ label, value, note, tone = '' }) {
   </div>;
 }
 
-function latestEventDate(result) {
-  const latest = result?.latest || result?.latest_components?.[0] || null;
-  return result?.latest_event_date || latest?.effective_event_date || latest?.record_date || latest?.ex_date || latest?.announcement_date || latest?.payment_date || '-';
+function currentVietnamYear() {
+  return Number(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric' }).format(new Date()));
+}
+
+function eventDate(event) {
+  return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || null;
 }
 
 function HoldingMobileCard({ row, locale }) {
-  const pnl = Number(row.unrealized_pnl || 0);
-  const positive = pnl >= 0;
+  const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
+  const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
+  const positive = pnl == null ? null : pnl >= 0;
   const symbol = String(row.symbol || '').toUpperCase();
+  const sharesText = formatShares(row.shares, locale);
   return <article className="holding-mobile-card">
     <div className="holding-mobile-head">
       <div className="holding-mobile-symbol">
         <strong>{symbol}</strong>
-        <span>{row.price_date ? `Giá ngày ${row.price_date}` : 'Giá gần nhất'}</span>
+        <span>{row.price_date ? `Giá ngày ${row.price_date}` : 'Giá chưa cập nhật'}</span>
       </div>
       <div className="holding-mobile-value">
         <strong>{money(row.market_value, locale)}</strong>
-        <span className={positive ? 'pos' : 'neg'}>{positive ? '+' : ''}{money(row.unrealized_pnl, locale)} · {pct(row.unrealized_return)}</span>
+        <span className={positive == null ? '' : positive ? 'pos' : 'neg'}>
+          {signedMoney(row.unrealized_pnl, locale)} · {pct(row.unrealized_return)}
+        </span>
       </div>
     </div>
     <div className="holding-mobile-facts">
-      <div><span>Số lượng</span><b>{formatShares(row.shares, locale)} CP</b></div>
+      <div><span>Số lượng</span><b>{sharesText === '-' ? '-' : `${sharesText} CP`}</b></div>
       <div><span>Giá vốn</span><b>{money(row.average_cost, locale)}</b></div>
       <div><span>Giá hiện tại</span><b>{money(row.price, locale)}</b></div>
       <div><span>Tỷ trọng</span><b>{formatWeight(row.weight)}</b></div>
@@ -62,6 +74,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const market = dashboard.market_data || {};
   const risk = dashboard.risk || {};
   const health = dashboard.health || {};
+  const currentYear = currentVietnamYear();
 
   const visiblePositions = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -80,6 +93,19 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     }
     return items;
   }, [health, risk.max_equity_weight, market.status]);
+
+  const currentYearDividendEvents = useMemo(() => {
+    const rows = [];
+    for (const item of dividends) {
+      for (const event of item.result?.events || []) {
+        const dateValue = eventDate(event);
+        if (dateValue && String(dateValue).startsWith(`${currentYear}-`)) rows.push({ symbol: item.symbol, ...event, display_date: dateValue });
+      }
+    }
+    return rows.sort((a, b) => String(b.display_date || '').localeCompare(String(a.display_date || '')) || String(a.symbol).localeCompare(String(b.symbol)));
+  }, [dividends, currentYear]);
+
+  const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
 
   async function sync() {
     setSyncing(true);
@@ -102,9 +128,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
       const batch = symbols.slice(i, i + 4);
       const batchRows = await Promise.all(batch.map(async symbol => {
         try {
-          return { symbol, result: await getLatestDividend(symbol, { refresh }), error: null };
+          return { symbol, result: await getDividendHistory(symbol, { refresh }), error: null };
         } catch (error) {
-          return { symbol, result: null, error: error.message };
+          return { symbol, result: null, error: error.message || 'Không thể tải dữ liệu cổ tức.' };
         }
       }));
       rows.push(...batchRows);
@@ -118,9 +144,11 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions.map(row => row.symbol).join('|')]);
 
-  const totalPnl = Number(portfolio.total_pnl || 0);
-  const totalPositive = totalPnl >= 0;
-  const dividendIncome = Number(performance.net_dividend_income ?? performance.dividend_income ?? 0);
+  const hasTotalPnl = portfolio.total_pnl != null && Number.isFinite(Number(portfolio.total_pnl));
+  const totalPnl = hasTotalPnl ? Number(portfolio.total_pnl) : null;
+  const totalPositive = totalPnl == null ? null : totalPnl >= 0;
+  const dividendIncome = performance.net_dividend_income ?? performance.dividend_income ?? null;
+  const hasCashRatio = portfolio.cash != null && portfolio.nav != null && Number(portfolio.nav) !== 0;
 
   return <div className="page investor-dashboard">
     <AppNav active="portfolio" locale={locale} />
@@ -128,14 +156,14 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     <header className="portfolio-hero investor-hero">
       <div className="hero-primary">
         <div className="eyebrow">Tổng tài sản</div>
-        <h1>{money(portfolio.nav || 0, locale)}</h1>
-        <div className={`hero-return ${totalPositive ? 'pos' : 'neg'}`}>
-          <strong>{totalPositive ? '+' : ''}{money(totalPnl, locale)}</strong>
+        <h1>{money(portfolio.nav, locale)}</h1>
+        <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
+          <strong>{signedMoney(totalPnl, locale)}</strong>
           <span>{pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận</span>
         </div>
         <div className="hero-meta">
           <span>{positions.length} mã cổ phiếu</span>
-          {market.market_date && <span>Dữ liệu giá đến {market.market_date}</span>}
+          <span>{market.market_date ? `Dữ liệu giá đến ${market.market_date}` : 'Dữ liệu giá: -'}</span>
         </div>
       </div>
       <div className="hero-actions">
@@ -147,9 +175,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     {message && <div className="run-message banner-message">{message}</div>}
 
     <div className="metric-grid portfolio-metrics overview-metrics investor-overview">
-      <Metric label="Cổ phiếu" value={money(portfolio.equity_value || 0, locale)} note={`${positions.length} mã đang nắm giữ`} />
-      <Metric label="Tiền mặt" value={money(portfolio.cash || 0, locale)} note={portfolio.nav ? `${pct((portfolio.cash || 0) / portfolio.nav)} tổng tài sản` : undefined} />
-      <Metric label="Tổng giá vốn" value={money(portfolio.cost_value || 0, locale)} note="Giá vốn các cổ phiếu hiện có" />
+      <Metric label="Cổ phiếu" value={money(portfolio.equity_value, locale)} note={`${positions.length} mã đang nắm giữ`} />
+      <Metric label="Tiền mặt" value={money(portfolio.cash, locale)} note={hasCashRatio ? `${pct(Number(portfolio.cash) / Number(portfolio.nav))} tổng tài sản` : undefined} />
+      <Metric label="Tổng giá vốn" value={money(portfolio.cost_value, locale)} note="Giá vốn các cổ phiếu hiện có" />
       <Metric label="Cổ tức thực nhận" value={money(dividendIncome, locale)} note="Tiền mặt sau thuế đã ghi nhận" tone="income-metric" />
     </div>
 
@@ -194,7 +222,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
               <th className="num">Tỷ trọng</th>
             </tr></thead>
             <tbody>{visiblePositions.map(row => {
-              const pnl = Number(row.unrealized_pnl || 0);
+              const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
+              const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
+              const hasReturn = row.unrealized_return != null && Number.isFinite(Number(row.unrealized_return));
               const symbol = String(row.symbol || '').toUpperCase();
               return <tr key={symbol}>
                 <td><b>{symbol}</b>{row.price_date && <div className="muted">{row.price_date}</div>}</td>
@@ -202,8 +232,8 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
                 <td className="num">{money(row.average_cost, locale)}</td>
                 <td className="num">{money(row.price, locale)}</td>
                 <td className="num emphasis">{money(row.market_value, locale)}</td>
-                <td className={`num ${pnl >= 0 ? 'pos' : 'neg'}`}>{pnl >= 0 ? '+' : ''}{money(row.unrealized_pnl, locale)}</td>
-                <td className={`num ${Number(row.unrealized_return || 0) >= 0 ? 'pos' : 'neg'}`}>{pct(row.unrealized_return)}</td>
+                <td className={`num ${pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}`}>{signedMoney(row.unrealized_pnl, locale)}</td>
+                <td className={`num ${!hasReturn ? '' : Number(row.unrealized_return) >= 0 ? 'pos' : 'neg'}`}>{pct(row.unrealized_return)}</td>
                 <td className="num">{formatWeight(row.weight)}</td>
               </tr>;
             })}</tbody>
@@ -216,33 +246,37 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
       <div className="section-head">
         <div>
           <div className="eyebrow">Cổ tức & quyền</div>
-          <h2>Thông tin gần nhất</h2>
-          <p className="muted">Theo dõi cổ tức tiền mặt, cổ phiếu và các ngày quan trọng của những mã đang sở hữu.</p>
+          <h2>Sự kiện cổ tức năm {currentYear}</h2>
+          <p className="muted">Hiển thị tất cả sự kiện cổ tức trong năm hiện tại của các mã đang nắm giữ.</p>
         </div>
-        <button className="btn-secondary" type="button" onClick={() => loadDividends(true)} disabled={dividendLoading}>{dividendLoading ? 'Đang cập nhật…' : 'Cập nhật cổ tức'}</button>
+        <div className="section-actions">
+          <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>
+          <button className="btn-secondary" type="button" onClick={() => loadDividends(true)} disabled={dividendLoading}>{dividendLoading ? 'Đang cập nhật…' : 'Cập nhật cổ tức'}</button>
+        </div>
       </div>
 
-      {dividends.length === 0 && dividendLoading ? <div className="loading-line"><span className="spinner" />Đang tải thông tin cổ tức…</div> : <div className="dividend-symbol-list">
-        {dividends.filter(row => row.result?.found).map(row => {
-          const result = row.result || {};
-          const components = result.latest_components?.length ? result.latest_components : (result.latest ? [result.latest] : []);
-          const cash = components.find(item => item.dividend_type === 'CASH_DIVIDEND');
-          const stock = components.find(item => item.dividend_type === 'STOCK_DIVIDEND');
-          const first = components[0] || {};
-          return <details className="dividend-symbol-node" key={row.symbol}>
-            <summary>
-              <div className="dividend-node-symbol"><b>{row.symbol}</b><span className="muted">Sự kiện {latestEventDate(result)}</span></div>
-              <div className="dividend-node-stat"><span>Tiền/CP</span><b>{cash?.cash_per_share != null ? money(cash.cash_per_share, locale) : '-'}</b></div>
-              <div className="dividend-node-stat"><span>Cổ phiếu</span><b>{stock?.stock_ratio_percent != null ? `${Number(stock.stock_ratio_percent).toFixed(2)}%` : '-'}</b></div>
-              <div className="dividend-node-stat"><span>Thanh toán</span><b>{first.payment_date || '-'}</b></div>
-            </summary>
-            <div className="dividend-history-body">
-              <p className="muted">Ngày GDKHQ: <b>{first.ex_date || '-'}</b> · Đăng ký cuối cùng: <b>{first.record_date || '-'}</b> · Nguồn: <b>{result.canonical_source || first.source || '-'}</b></p>
-            </div>
-          </details>;
-        })}
-        {!dividendLoading && dividends.length > 0 && dividends.every(row => !row.result?.found) && <div className="empty-state compact-empty">Chưa tìm thấy lịch sử cổ tức cho các mã hiện tại.</div>}
+      {dividendErrors.length > 0 && <div className="data-error-message" role="alert">
+        Không thể tải dữ liệu cổ tức cho <b>{dividendErrors.map(row => row.symbol).join(', ')}</b>. Hãy thử cập nhật lại sau. Dữ liệu của các mã khác vẫn được giữ nguyên nếu tải thành công.
       </div>}
+
+      {dividendLoading && dividends.length === 0 ? <div className="dividend-year-list is-loading">
+        {positions.map(row => <div className="dividend-year-event" key={String(row.symbol || '').toUpperCase()}>
+          <div><strong>{String(row.symbol || '').toUpperCase()}</strong><span>-</span></div>
+          <div><span>Loại</span><b>-</b></div>
+          <div><span>Giá trị</span><b>-</b></div>
+          <div><span>Thanh toán</span><b>-</b></div>
+        </div>)}
+      </div> : currentYearDividendEvents.length > 0 ? <div className="dividend-year-list">
+        {currentYearDividendEvents.map((event, index) => {
+          const cash = event.dividend_type === 'CASH_DIVIDEND';
+          return <div className="dividend-year-event" key={`${event.symbol}-${event.display_date}-${event.dividend_type}-${event.source_event_id || index}`}>
+            <div><strong>{event.symbol}</strong><span>{event.display_date || '-'}</span></div>
+            <div><span>Loại</span><b>{cash ? 'Tiền mặt' : 'Cổ phiếu'}</b></div>
+            <div><span>{cash ? 'Tiền/CP' : 'Tỷ lệ'}</span><b>{cash ? money(event.cash_per_share, locale) : event.stock_ratio_percent != null ? `${Number(event.stock_ratio_percent).toFixed(2)}%` : '-'}</b></div>
+            <div><span>Thanh toán</span><b>{event.payment_date || '-'}</b></div>
+          </div>;
+        })}
+      </div> : !dividendLoading && <div className="empty-state compact-empty">Chưa có sự kiện cổ tức nào trong năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
   </div>;
 }
