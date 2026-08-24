@@ -2,7 +2,7 @@
 -- Run once from the repository root with:
 --   psql -U postgres -f scripts/setup-postgres-native.sql
 --
--- Development-only credentials intentionally match docker-compose.vercel.yml:
+-- Development-only credentials:
 --   user: qport
 --   password: qport
 --   database: qport
