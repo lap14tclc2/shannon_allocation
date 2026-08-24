@@ -330,6 +330,23 @@ button,
   font-weight: 700;
 }
 
+.transaction-mobile-note {
+  margin: 12px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.transaction-mobile-actions {
+  margin-top: 12px;
+}
+
+.transaction-mobile-actions .row-actions {
+  justify-content: flex-end;
+}
+
 .investor-dividend-card .dividend-symbol-node {
   border-color: var(--border);
 }
@@ -445,6 +462,23 @@ button,
 
   .holding-mobile-card {
     box-shadow: none;
+  }
+
+  .transaction-mobile-card .holding-mobile-head {
+    gap: 10px;
+  }
+
+  .transaction-mobile-card .holding-mobile-symbol strong {
+    font-size: 16px;
+  }
+
+  .transaction-mobile-card .holding-mobile-value > strong {
+    font-size: 14px;
+  }
+
+  .transaction-mobile-actions .row-actions,
+  .transaction-mobile-actions .inline-delete {
+    width: 100%;
   }
 
   .investor-attention-card .section-head > a {
