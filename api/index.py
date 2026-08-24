@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 from pathlib import Path
@@ -217,7 +218,6 @@ def auth_logout(qport_session: str | None = Cookie(default=None)):
     response = JSONResponse(status_code=200, content={"ok": True})
     _clear_session_cookie(response)
     return response
-
 
 @app.get("/api/auth/users")
 def auth_users(qport_session: str | None = Cookie(default=None)):
@@ -549,13 +549,21 @@ def portfolio_activity(
 # ---------------------------------------------------------------------------
 # Vercel Cron: once per day on Hobby. Schedule it after VN market close.
 # ---------------------------------------------------------------------------
+def _require_cron_authorization(request: Request) -> None:
+    """Fail closed so a missing deployment secret can never expose a global sync."""
+    secret = str(os.environ.get("CRON_SECRET") or "").strip()
+    if not secret:
+        raise ApiError(503, "CRON_SECRET is not configured.", "CRON_NOT_CONFIGURED")
+
+    expected = f"Bearer {secret}"
+    provided = str(request.headers.get("authorization") or "")
+    if not hmac.compare_digest(provided, expected):
+        raise ApiError(401, "Invalid cron authorization.", "CRON_UNAUTHORIZED")
+
+
 @app.get("/api/cron/daily-sync")
 def cron_daily_sync(request: Request):
-    secret = str(os.environ.get("CRON_SECRET") or "").strip()
-    if secret:
-        expected = f"Bearer {secret}"
-        if request.headers.get("authorization") != expected:
-            raise ApiError(401, "Invalid cron authorization.", "CRON_UNAUTHORIZED")
+    _require_cron_authorization(request)
 
     results: list[dict[str, Any]] = []
     for user in auth().list_users():
