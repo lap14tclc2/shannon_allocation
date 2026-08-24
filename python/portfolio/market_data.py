@@ -9,10 +9,12 @@ from typing import Protocol
 import pandas as pd
 import requests
 
+from .external_cache import cached_external_call, ttl_from_env
 from .vnstock_isolated import run_vnstock_task, vnstock_available
 
 log = logging.getLogger(__name__)
 THOUSAND_VND_SOURCES = {"vndirect", "vnstock"}
+MARKET_CACHE_TTL_SECONDS = ttl_from_env("QPORT_MARKET_CACHE_TTL_SECONDS", 300)
 
 
 class MarketDataError(RuntimeError):
@@ -121,23 +123,46 @@ class AutoMarketData:
         try: resolved.append(VnstockProvider())
         except MarketDataError as exc: log.info("vnstock provider unavailable: %s",exc)
         resolved.append(VndirectProvider()); self.providers=resolved
+
+    @staticmethod
+    def _clone_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        return frame.copy(deep=True)
+
+    def _provider_history(self, provider: MarketDataProvider, symbol: str, start: str, end: str) -> pd.DataFrame:
+        key = (provider.name, symbol.upper(), start, end)
+        return cached_external_call(
+            "market-history",
+            key,
+            lambda: provider.daily_history(symbol, start, end),
+            ttl_seconds=MARKET_CACHE_TTL_SECONDS,
+            clone=self._clone_frame,
+        )
+
     def daily_history(self,symbol,start,end):
         errors=[]
         for provider in self.providers:
             try:
-                df=provider.daily_history(symbol,start,end)
+                df=self._provider_history(provider,symbol,start,end)
                 if not df.empty:return df
             except Exception as exc: errors.append(f"{provider.name}: {exc}")
         raise MarketDataError(f"All providers failed for {symbol}: {' | '.join(errors)}")
+
     def daily_history_with_source(self,symbol,start,end):
         errors=[]
         for provider in self.providers:
             try:
-                df=provider.daily_history(symbol,start,end)
+                df=self._provider_history(provider,symbol,start,end)
                 if not df.empty:return df,provider.name
             except Exception as exc: errors.append(f"{provider.name}: {exc}")
         raise MarketDataError(f"All providers failed for {symbol}: {' | '.join(errors)}")
-    def health(self): return {"provider":"auto","policy":[p.name for p in self.providers],"providers":[p.health() for p in self.providers]}
+
+    def health(self):
+        return {
+            "provider":"auto",
+            "policy":[p.name for p in self.providers],
+            "providers":[p.health() for p in self.providers],
+            "warm_cache_ttl_seconds": MARKET_CACHE_TTL_SECONDS,
+        }
 
 
 def frame_to_price_rows(symbol: str, df: pd.DataFrame, source: str | None=None) -> list[dict]:
