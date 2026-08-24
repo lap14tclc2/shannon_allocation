@@ -8,8 +8,7 @@ function safeNextPath() {
   return raw;
 }
 
-export default function AuthPage({ locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+export default function AuthPage() {
   const [username, setUsername] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -20,9 +19,6 @@ export default function AuthPage({ locale = 'en' }) {
   const [sessionExpired, setSessionExpired] = useState(false);
   const isAdmin = username.trim().toLowerCase() === 'admin';
 
-  // Keep the first browser render identical to SSR. URL-derived state is
-  // applied only after hydration, which avoids React hydration mismatches on
-  // /login?reason=session_expired&next=...
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -38,13 +34,13 @@ export default function AuthPage({ locale = 'en' }) {
     try {
       const result = await loginUser(username, isAdmin ? password : '');
       window.location.replace(result.user?.role === 'ADMIN' ? '/admin' : nextPath);
-    } catch (err) {
-      if (err.code === 'USER_NOT_REGISTERED') {
+    } catch (error) {
+      if (error.code === 'USER_NOT_REGISTERED') {
         setRegisterUsername(username.trim());
         setMissingUser(true);
-        setMessage(text('This username is not registered yet.', 'Username này chưa được đăng ký.'));
+        setMessage('Tên đăng nhập này chưa tồn tại. Bạn có thể tạo danh mục mới bên dưới.');
       } else {
-        setMessage(err.message);
+        setMessage(error.message);
       }
     } finally {
       setBusy(false);
@@ -58,92 +54,55 @@ export default function AuthPage({ locale = 'en' }) {
     try {
       await registerUser(registerUsername);
       window.location.replace(nextPath);
-    } catch (err) {
-      setMessage(err.message);
+    } catch (error) {
+      setMessage(error.message);
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <main className="auth-shell">
-      <section className="auth-card">
-        <div className="auth-brand">
-          <span className="brand-prompt" aria-hidden="true">$</span>
-          <div><strong>qport</strong><small>/ buy & hold portfolio</small></div>
-        </div>
+  return <main className="auth-shell">
+    <section className="auth-card">
+      <div className="auth-brand">
+        <span className="brand-prompt" aria-hidden="true">$</span>
+        <div><strong>qport</strong><small>/ quản lý danh mục cổ phiếu</small></div>
+      </div>
 
-        <div className="auth-copy">
-          <div className="eyebrow">{text('Portfolio access', 'Truy cập danh mục')}</div>
-          <h1>{text('Sign in with your username', 'Đăng nhập bằng username')}</h1>
-          <p>{text(
-            'Normal users only need a unique username. Admin requires a password.',
-            'User thường chỉ cần username duy nhất. Admin cần thêm password.'
-          )}</p>
-        </div>
+      <div className="auth-copy">
+        <div className="eyebrow">Danh mục của bạn</div>
+        <h1>Đăng nhập vào QPort</h1>
+        <p>Nhập tên tài khoản để mở danh mục đã lưu. Tài khoản quản trị cần thêm mật khẩu.</p>
+      </div>
 
-        {sessionExpired && <div className="auth-message info" role="status">{text(
-          'Your session expired. Sign in again to continue where you left off.',
-          'Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục trang đang xem.'
-        )}</div>}
+      {sessionExpired && <div className="auth-message info" role="status">Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại để tiếp tục.</div>}
 
-        <form className="auth-form" onSubmit={login}>
-          <label>
-            <span>{text('Username', 'Username')}</span>
-            <input
-              autoFocus
-              autoComplete="username"
-              value={username}
-              onChange={e => { setUsername(e.target.value); setMissingUser(false); setMessage(''); if (e.target.value.trim().toLowerCase() !== 'admin') setPassword(''); }}
-              placeholder={text('Enter username', 'Nhập username')}
-              maxLength={32}
-              required
-            />
-          </label>
-          {isAdmin && (
-            <label>
-              <span>{text('Admin password', 'Password admin')}</span>
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder={text('Enter admin password', 'Nhập password admin')}
-                required
-              />
-            </label>
-          )}
-          <button className="btn-primary auth-submit" type="submit" disabled={busy || !username.trim() || (isAdmin && !password)}>
-            {busy ? text('Signing in…', 'Đang đăng nhập…') : text('Sign in', 'Đăng nhập')}
-          </button>
-        </form>
+      <form className="auth-form" onSubmit={login}>
+        <label>
+          <span>Tên đăng nhập</span>
+          <input
+            autoFocus
+            autoComplete="username"
+            value={username}
+            onChange={event => { setUsername(event.target.value); setMissingUser(false); setMessage(''); if (event.target.value.trim().toLowerCase() !== 'admin') setPassword(''); }}
+            placeholder="Nhập tên đăng nhập"
+            maxLength={32}
+            required
+          />
+        </label>
+        {isAdmin && <label>
+          <span>Mật khẩu quản trị</span>
+          <input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Nhập mật khẩu" required />
+        </label>}
+        <button className="btn-primary auth-submit" type="submit" disabled={busy || !username.trim() || (isAdmin && !password)}>{busy ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
+      </form>
 
-        {message && <div className={`auth-message ${missingUser ? 'info' : 'error'}`}>{message}</div>}
+      {message && <div className={`auth-message ${missingUser ? 'info' : 'error'}`}>{message}</div>}
 
-        {missingUser && (
-          <form className="register-panel register-panel-form" onSubmit={register}>
-            <div className="register-copy">
-              <strong>{text('New user?', 'User mới?')}</strong>
-              <p>{text(
-                'Choose the username to register. A fresh private portfolio database will be created for it.',
-                'Chọn username để đăng ký. Hệ thống sẽ tạo một database danh mục riêng, sạch cho user này.'
-              )}</p>
-            </div>
-            <label className="register-field">
-              <span>{text('Register username', 'Username đăng ký')}</span>
-              <input
-                value={registerUsername}
-                onChange={e => setRegisterUsername(e.target.value)}
-                maxLength={32}
-                required
-              />
-            </label>
-            <button className="btn-secondary" type="submit" disabled={busy || !registerUsername.trim()}>
-              {text('Register username', 'Đăng ký username')}
-            </button>
-          </form>
-        )}
-      </section>
-    </main>
-  );
+      {missingUser && <form className="register-panel register-panel-form" onSubmit={register}>
+        <div className="register-copy"><strong>Tạo danh mục mới</strong><p>QPort sẽ tạo một không gian danh mục riêng cho tên đăng nhập này.</p></div>
+        <label className="register-field"><span>Tên đăng nhập mới</span><input value={registerUsername} onChange={event => setRegisterUsername(event.target.value)} maxLength={32} required /></label>
+        <button className="btn-secondary" type="submit" disabled={busy || !registerUsername.trim()}>Tạo danh mục</button>
+      </form>}
+    </section>
+  </main>;
 }
