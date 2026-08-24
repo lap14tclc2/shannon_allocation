@@ -39,7 +39,7 @@ def test_risk_building_state_hides_low_value_dash_grid():
 
 def test_readability_layer_sets_accessible_minimums_and_semantic_colors():
     source = (FRONTEND / "accessibility-polish.css").read_text(encoding="utf-8")
-    client = (FRONTEND / "entry-client.jsx").read_text(encoding="utf-8")
+    client = (FRONTEND / "entry-vercel.jsx").read_text(encoding="utf-8")
     assert "font-size: 14px" in source
     assert "font-size: 13px" in source
     assert "font-size: 12.5px" in source
