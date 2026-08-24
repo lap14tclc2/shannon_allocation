@@ -110,6 +110,10 @@
   line-height: 1.65;
 }
 
+.risk-plain-copy > p {
+  margin: 0;
+}
+
 .risk-plain-footer {
   margin-top: 13px;
   padding-top: 10px;
@@ -117,6 +121,36 @@
   color: var(--text-secondary);
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+.risk-worst-card {
+  grid-column: 1 / -1;
+}
+
+.risk-worst-summary {
+  max-width: 920px;
+}
+
+.risk-worst-days {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.risk-worst-day-row {
+  display: grid;
+  grid-template-columns: 34px minmax(100px, .8fr) minmax(80px, .65fr) minmax(130px, 1fr) minmax(180px, 1.25fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-worst-day-row > :first-child {
+  color: var(--text-secondary);
 }
 
 .risk-driver-card {
@@ -161,6 +195,72 @@
   display: block;
   height: 100%;
   background: var(--accent);
+}
+
+.risk-symbol-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.risk-symbol-card {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.risk-symbol-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.risk-symbol-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.risk-symbol-head strong {
+  font-size: 18px;
+}
+
+.risk-symbol-head > div > span {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.risk-symbol-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.risk-symbol-metrics > div {
+  display: grid;
+  gap: 2px;
+}
+
+.risk-symbol-metrics span {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.risk-symbol-metrics b {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-symbol-card > p {
+  margin: 13px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.62;
 }
 
 .risk-technical-details {
@@ -235,14 +335,16 @@
 }
 
 @media (max-width: 860px) {
-  .risk-plain-grid {
+  .risk-plain-grid,
+  .risk-symbol-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 620px) {
   .risk-picture-main,
-  .risk-plain-head {
+  .risk-plain-head,
+  .risk-symbol-head {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -255,6 +357,20 @@
 
   .risk-plain-copy {
     font-size: 13.5px;
+  }
+
+  .risk-worst-day-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 5px 9px;
+  }
+
+  .risk-worst-day-row > :nth-child(4),
+  .risk-worst-day-row > :nth-child(5) {
+    grid-column: 2 / -1;
+  }
+
+  .risk-symbol-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .risk-technical-details > summary {
