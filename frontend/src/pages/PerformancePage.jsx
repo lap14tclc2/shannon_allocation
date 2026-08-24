@@ -9,7 +9,7 @@ function pct(value, digits = 2) {
 }
 
 function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} VND`;
+  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
 }
 
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
@@ -34,7 +34,7 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
   const totalPositive = totalPnl >= 0;
   const historyCount = Number(performance.official_snapshot_count || 0);
 
-  return <div className="page">
+  return <div className="page investor-performance-page">
     <AppNav active="performance" locale={locale} />
 
     <header className="page-head portfolio-head">
@@ -48,26 +48,26 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
 
     {message && <div className="run-message">{message}</div>}
 
-    <div className="metric-grid portfolio-metrics overview-metrics">
+    <div className="metric-grid portfolio-metrics overview-metrics investor-overview">
       <div className="metric-card">
         <div className="metric-label">Giá trị hiện tại</div>
         <div className="metric-value">{money(performance.nav, locale)}</div>
-        <div className="muted">{performance.latest_date || 'Định giá hiện tại'}</div>
+        <div className="metric-note">{performance.latest_date || 'Định giá hiện tại'}</div>
       </div>
       <div className={`metric-card ${totalPositive ? 'positive-card' : 'negative-card'}`}>
         <div className="metric-label">Tổng lãi/lỗ</div>
         <div className="metric-value">{totalPositive ? '+' : ''}{money(totalPnl, locale)}</div>
-        <div className="muted">{pct(performance.accounting_return)} trên vốn đã ghi nhận</div>
+        <div className="metric-note">{pct(performance.accounting_return)} trên vốn đã ghi nhận</div>
       </div>
       <div className="metric-card">
         <div className="metric-label">Từ đầu năm</div>
         <div className="metric-value">{pct(returns.ytd)}</div>
-        <div className="muted">Lợi suất YTD</div>
+        <div className="metric-note">Lợi suất từ đầu năm</div>
       </div>
       <div className="metric-card">
         <div className="metric-label">Mức giảm từ đỉnh</div>
         <div className="metric-value">{pct(performance.current_drawdown)}</div>
-        <div className="muted">Lớn nhất: {pct(performance.max_drawdown)}</div>
+        <div className="metric-note">Lớn nhất: {pct(performance.max_drawdown)}</div>
       </div>
     </div>
 
