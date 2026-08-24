@@ -7,6 +7,18 @@
       "maxDuration": 300
     }
   },
+  "rewrites": [
+    { "source": "/login", "destination": "/" },
+    { "source": "/admin", "destination": "/" },
+    { "source": "/transactions", "destination": "/" },
+    { "source": "/performance", "destination": "/" },
+    { "source": "/risk", "destination": "/" },
+    { "source": "/snapshots", "destination": "/" },
+    { "source": "/operations", "destination": "/" },
+    { "source": "/logs", "destination": "/" },
+    { "source": "/settings", "destination": "/" },
+    { "source": "/guide", "destination": "/" }
+  ],
   "crons": [
     {
       "path": "/api/cron/daily-sync",
