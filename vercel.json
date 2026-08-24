@@ -7,6 +7,7 @@
       "main": true
     }
   },
+  "ignoreCommand": "test \"$VERCEL_GIT_COMMIT_REF\" != \"main\"",
   "buildCommand": "cd frontend && npm ci && npm run build",
   "functions": {
     "app/vercel.py": {
