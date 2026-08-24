@@ -13,15 +13,11 @@ Browser
 Vite / React SPA
   │ same-origin /api/*
   ▼
-Vercel Python Function
-FastAPI · api/index.py
+FastAPI
   │
-  ▼
-PostgreSQL
-  ├── qport_auth
-  ├── qport_user_2
-  ├── qport_user_3
-  └── ...
+  ├── Windows local → native PostgreSQL
+  │
+  └── Vercel → Neon PostgreSQL
 
 Vercel Cron (daily after VN market close)
   └── /api/cron/daily-sync
@@ -38,9 +34,8 @@ The Vercel version changes the infrastructure boundary while preserving QPort's 
 - **Persistence:** PostgreSQL through `DATABASE_URL`.
 - **Isolation:** one PostgreSQL schema per normal user, preserving the old one-database-per-user isolation model.
 - **Scheduling:** one Vercel Cron invocation per day; no forever-running scheduler thread.
-- **Windows local development:** native PostgreSQL is the default.
-- **Docker local development:** remains available as an optional equivalent PostgreSQL runtime.
-- **Vercel production/preview:** use Neon PostgreSQL through `DATABASE_URL`.
+- **Windows local development:** native PostgreSQL only.
+- **Vercel preview/production:** Neon PostgreSQL through `DATABASE_URL`.
 
 ## Non-negotiable portfolio invariants
 
@@ -120,24 +115,22 @@ Health check:
 GET /api/health
 ```
 
-## Local development
+## Local development — Windows native PostgreSQL
 
 Requirements:
 
 - Python 3.12+
 - Node.js 22+
-- PostgreSQL 16+ for native Windows development, or Docker for the optional container path
+- PostgreSQL 16+ installed natively on Windows
 
 Install application dependencies once:
 
-```bash
+```powershell
 pip install -r python/requirements.txt
 cd frontend
 npm ci
 cd ..
 ```
-
-### Windows — native PostgreSQL (default)
 
 Install PostgreSQL for Windows and ensure the PostgreSQL service and `psql` are available.
 
@@ -147,7 +140,7 @@ Initialize the QPort development role/database once from the repository root:
 psql -U postgres -f scripts/setup-postgres-native.sql
 ```
 
-The bootstrap creates the same development database contract used by Docker:
+The bootstrap creates the local development database:
 
 ```text
 user:     qport
@@ -157,13 +150,13 @@ host:     127.0.0.1
 port:     5432
 ```
 
-Then start QPort normally:
+Start QPort:
 
 ```powershell
 .\scripts\dev-vercel.ps1
 ```
 
-The Windows launcher defaults to:
+The launcher defaults to:
 
 ```text
 postgresql://qport:qport@127.0.0.1:5432/qport
@@ -171,35 +164,13 @@ postgresql://qport:qport@127.0.0.1:5432/qport
 
 It performs a PostgreSQL connectivity check before starting FastAPI and Vite, so a stopped PostgreSQL service or missing QPort database fails early with setup guidance.
 
-To use a different native PostgreSQL instance:
+To use another native/local PostgreSQL instance:
 
 ```powershell
 .\scripts\dev-vercel.ps1 -DatabaseUrl "postgresql://USER:PASSWORD@HOST/DB"
 ```
 
-### Docker PostgreSQL — optional, unchanged
-
-Docker remains available when preferred. It uses the same local development credentials and database URL as native Windows PostgreSQL.
-
-Windows:
-
-```powershell
-.\scripts\dev-vercel.ps1 -StartDatabase
-```
-
-Linux:
-
-```bash
-./scripts/dev-vercel.sh --with-db
-```
-
-The Docker path starts `docker-compose.vercel.yml` and waits for PostgreSQL health before starting the application.
-
-### Run against another PostgreSQL database
-
-`DATABASE_URL` always overrides the default local connection. This is useful for custom PostgreSQL installations or temporary development databases.
-
-Open the local application at:
+Open:
 
 ```text
 http://localhost:3000
@@ -209,10 +180,10 @@ The Vite dev server proxies `/api/*` to FastAPI on `127.0.0.1:8000`.
 
 ## Environment variables
 
-Copy `.env.vercel.example` as a reference. Production needs at least:
+Copy `.env.vercel.example` as a reference. Vercel needs at least:
 
 ```text
-DATABASE_URL=postgresql://...
+DATABASE_URL=<Neon PostgreSQL URL>
 QPORT_ADMIN_PASSWORD=<strong first-deploy password>
 CRON_SECRET=<long random value>
 ```
@@ -232,7 +203,7 @@ QPORT_COOKIE_SECURE=0
 
 For Vercel, use the Neon PostgreSQL connection string for `DATABASE_URL`; use the pooled connection string when Neon recommends it for serverless workloads.
 
-Local native PostgreSQL and Docker should remain development-only databases. Do not point normal local development at the production Neon database.
+Local native PostgreSQL is development-only. Do not point normal local development at the production Neon database.
 
 ## Migrate existing SQLite data
 
@@ -343,10 +314,12 @@ Admin remains blocked from portfolio CLI operations.
 Branch CI runs:
 
 - the existing deterministic portfolio/accounting regression suite;
-- a real PostgreSQL 16 service;
+- a real PostgreSQL 16 service on the GitHub Actions runner;
 - PostgreSQL auth/user-schema/isolation smoke tests;
 - frontend validation and AI-export contracts;
 - Vite production build.
+
+The CI PostgreSQL service is test infrastructure on GitHub Actions, not a supported local Docker runtime.
 
 The migration is not considered validated merely because source files compile; PostgreSQL integration evidence is required.
 
