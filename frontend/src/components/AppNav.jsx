@@ -36,8 +36,8 @@ function MobileTabIcon({ name }) {
   return <svg {...common}><path d="M5 5.5A3.5 3.5 0 0 1 8.5 2H12v18H8.5A3.5 3.5 0 0 0 5 23Z" /><path d="M19 5.5A3.5 3.5 0 0 0 15.5 2H12v18h3.5A3.5 3.5 0 0 1 19 23Z" /></svg>;
 }
 
-export default function AppNav({ active = 'portfolio', locale = 'en' }) {
-  const { t, setLanguage } = useI18n(locale);
+export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
+  const { t } = useI18n(locale);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -60,7 +60,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
     try {
       await logoutUser();
     } catch {
-      // Navigation still proceeds so an expired/broken session can recover on the sign-in route.
+      // Vẫn điều hướng về trang đăng nhập để phiên hết hạn hoặc lỗi có thể tự phục hồi.
     }
     window.location.replace('/login?logged_out=1');
   }
@@ -103,14 +103,6 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
           <span>{text('Appearance', 'Giao diện')}</span>
           <AppearanceControls locale={locale} />
         </div>
-        <div className="mobile-sheet-setting">
-          <span>{text('Language', 'Ngôn ngữ')}</span>
-          <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
-            <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
-            <span>/</span>
-            <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>vi</button>
-          </div>
-        </div>
       </aside>}
     </>,
     document.body,
@@ -121,13 +113,13 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
       <nav className={`app-nav ${open ? 'nav-open' : ''}`} aria-label={t('nav.primary')}>
         <div className="nav-shell">
           <div className="app-nav-head">
-            <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'QPort admin home' : 'QPort portfolio home'}>
+            <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'Trang quản trị QPort' : 'Trang danh mục QPort'}>
               <span className="brand-prompt" aria-hidden="true">$</span>
               <span className="brand-copy">
                 <strong>qport</strong>
-                <small>{adminMode ? '/ admin' : '/ portfolio'}</small>
+                <small>{adminMode ? '/ quản trị' : '/ danh mục'}</small>
               </span>
-              <span className="live-badge"><span className="status-dot" />{text('live', 'live')}</span>
+              <span className="live-badge"><span className="status-dot" />hoạt động</span>
             </a>
 
             <button
@@ -147,7 +139,7 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
             {adminMode ? (
               <a href="/admin" className="active" aria-current="page">
                 <span className="nav-prefix" aria-hidden="true">›</span>
-                <span>{text('Admin', 'Admin')}</span>
+                <span>Quản trị</span>
               </a>
             ) : LINKS.map(([href, key, labelKey]) => (
               <a
@@ -171,12 +163,6 @@ export default function AppNav({ active = 'portfolio', locale = 'en' }) {
             )}
 
             <AppearanceControls locale={locale} />
-
-            <div className="language-switch" aria-label={`${t('lang.english')} / ${t('lang.vietnamese')}`}>
-              <button type="button" className={locale === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} title={t('lang.english')}>en</button>
-              <span>/</span>
-              <button type="button" className={locale === 'vi' ? 'active' : ''} onClick={() => setLanguage('vi')} title={t('lang.vietnamese')}>vi</button>
-            </div>
           </div>
         </div>
       </nav>
