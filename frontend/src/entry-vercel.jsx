@@ -6,6 +6,7 @@ import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
+import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
@@ -63,8 +64,8 @@ function LoadingScreen() {
   return <main className="auth-shell vercel-boot-shell" aria-busy="true">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Đang tải danh mục…</h1>
-      <p className="muted">Đang kết nối đến hệ thống dữ liệu danh mục.</p>
+      <h1>Đang tải dữ liệu…</h1>
+      <p className="muted">Các giá trị thực sẽ hiển thị sau khi dữ liệu tải xong.</p>
     </section>
   </main>;
 }
@@ -73,8 +74,8 @@ function ErrorScreen({ error }) {
   return <main className="auth-shell vercel-boot-shell">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Không thể tải ứng dụng</h1>
-      <p className="error">{error?.message || 'Ứng dụng hiện không thể tải dữ liệu.'}</p>
+      <h1>Không thể tải dữ liệu</h1>
+      <p className="error">{error?.message || 'Ứng dụng hiện không thể tải dữ liệu. Vui lòng thử lại.'}</p>
       <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Thử lại</button>
     </section>
   </main>;
@@ -129,6 +130,8 @@ async function loadPage(pathname, locale) {
       return { Page: PerformancePage, props: { ...common, performance: await getPortfolioPerformance() } };
     case '/risk':
       return { Page: RiskPage, props: { ...common, risk: await getPortfolioRisk() } };
+    case '/dividends':
+      return { Page: DividendHistoryPage, props: { ...common, dashboard: await getPortfolioDashboard() } };
     case '/snapshots':
       return { Page: SnapshotsPage, props: { ...common, snapshots: await listPortfolioSnapshots() } };
     case '/operations':
