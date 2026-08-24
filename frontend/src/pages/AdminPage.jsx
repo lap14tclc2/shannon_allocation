@@ -60,7 +60,7 @@ export default function AdminPage({ locale = 'en' }) {
     try {
       const result = await changeAdminPassword(currentPassword, newPassword);
       setMessage(result.message || text('Admin password updated.', 'Đã cập nhật password admin.'));
-      setTimeout(() => window.location.assign('/'), 600);
+      setTimeout(() => window.location.assign('/login'), 600);
     } catch (err) {
       setMessage(err.message);
     }
@@ -74,8 +74,8 @@ export default function AdminPage({ locale = 'en' }) {
           <div className="eyebrow">{text('Administration', 'Quản trị')}</div>
           <h1>{text('Users & access', 'User & truy cập')}</h1>
           <p className="muted">{text(
-            'Manage registered usernames and the admin password. Each user owns an isolated SQLite portfolio database.',
-            'Quản lý username đã đăng ký và password admin. Mỗi user có một SQLite database danh mục riêng.'
+            'Manage registered usernames and the admin password. Each user owns an isolated PostgreSQL portfolio schema.',
+            'Quản lý username đã đăng ký và password admin. Mỗi user có một PostgreSQL schema danh mục riêng.'
           )}</p>
         </div>
       </header>
