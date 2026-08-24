@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from api.index import ApiError, _require_cron_authorization  # noqa: E402
+from app.main import ApiError, _require_cron_authorization  # noqa: E402
 
 
 class _Request:
