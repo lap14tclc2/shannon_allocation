@@ -32,6 +32,13 @@ function eventDate(event) {
   return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || null;
 }
 
+function eventYear(event) {
+  const dateValue = eventDate(event);
+  if (!dateValue) return null;
+  const year = Number(String(dateValue).slice(0, 4));
+  return Number.isInteger(year) && year >= 1900 ? year : null;
+}
+
 function HoldingMobileCard({ row, locale }) {
   const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
   const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
@@ -94,15 +101,27 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     return items;
   }, [health, risk.max_equity_weight, market.status]);
 
-  const currentYearDividendEvents = useMemo(() => {
-    const rows = [];
+  const latestDividendWindow = useMemo(() => {
+    const allEvents = [];
+    let latestYear = null;
+
     for (const item of dividends) {
       for (const event of item.result?.events || []) {
+        const year = eventYear(event);
+        if (year == null || year > currentYear) continue;
         const dateValue = eventDate(event);
-        if (dateValue && String(dateValue).startsWith(`${currentYear}-`)) rows.push({ symbol: item.symbol, ...event, display_date: dateValue });
+        allEvents.push({ symbol: item.symbol, ...event, display_date: dateValue, display_year: year });
+        if (latestYear == null || year > latestYear) latestYear = year;
       }
     }
-    return rows.sort((a, b) => String(b.display_date || '').localeCompare(String(a.display_date || '')) || String(a.symbol).localeCompare(String(b.symbol)));
+
+    const events = latestYear == null
+      ? []
+      : allEvents
+          .filter(event => event.display_year === latestYear)
+          .sort((a, b) => String(b.display_date || '').localeCompare(String(a.display_date || '')) || String(a.symbol).localeCompare(String(b.symbol)));
+
+    return { year: latestYear, events };
   }, [dividends, currentYear]);
 
   const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
@@ -246,8 +265,12 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
       <div className="section-head">
         <div>
           <div className="eyebrow">Cổ tức & quyền</div>
-          <h2>Sự kiện cổ tức năm {currentYear}</h2>
-          <p className="muted">Hiển thị tất cả sự kiện cổ tức trong năm hiện tại của các mã đang nắm giữ.</p>
+          <h2>{latestDividendWindow.year != null ? `Sự kiện cổ tức năm ${latestDividendWindow.year}` : 'Sự kiện cổ tức gần nhất'}</h2>
+          <p className="muted">
+            {latestDividendWindow.year != null
+              ? `Hiển thị tất cả sự kiện cổ tức của năm gần nhất có dữ liệu (${latestDividendWindow.year}) cho các mã đang nắm giữ.`
+              : 'QPort sẽ tự chọn năm gần nhất có dữ liệu cổ tức của các mã đang nắm giữ.'}
+          </p>
         </div>
         <div className="section-actions">
           <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>
@@ -266,8 +289,8 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
           <div><span>Giá trị</span><b>-</b></div>
           <div><span>Thanh toán</span><b>-</b></div>
         </div>)}
-      </div> : currentYearDividendEvents.length > 0 ? <div className="dividend-year-list">
-        {currentYearDividendEvents.map((event, index) => {
+      </div> : latestDividendWindow.events.length > 0 ? <div className="dividend-year-list">
+        {latestDividendWindow.events.map((event, index) => {
           const cash = event.dividend_type === 'CASH_DIVIDEND';
           return <div className="dividend-year-event" key={`${event.symbol}-${event.display_date}-${event.dividend_type}-${event.source_event_id || index}`}>
             <div><strong>{event.symbol}</strong><span>{event.display_date || '-'}</span></div>
@@ -276,7 +299,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
             <div><span>Thanh toán</span><b>{event.payment_date || '-'}</b></div>
           </div>;
         })}
-      </div> : !dividendLoading && <div className="empty-state compact-empty">Chưa có sự kiện cổ tức nào trong năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
+      </div> : !dividendLoading && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
   </div>;
 }
