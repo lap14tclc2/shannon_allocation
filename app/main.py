@@ -14,14 +14,17 @@ PYTHON_DIR = ROOT / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
+from portfolio.accounting import derive_state  # noqa: E402
 from portfolio.auth import AuthError, SESSION_DAYS  # noqa: E402
 from portfolio.automated_service import AutomatedPortfolioService  # noqa: E402
+from portfolio.corrections import effective_events  # noqa: E402
 from portfolio.dividend_store import SqliteDividendService  # noqa: E402
 from portfolio.dividends import DividendLookupError  # noqa: E402
-from portfolio.postgres import PostgresAuthStore, PostgresPortfolioStore  # noqa: E402
+from portfolio.postgres import PostgresAuthStore, PostgresPortfolioStore, drop_user_schema  # noqa: E402
 from portfolio.validation import InputValidationError  # noqa: E402
 
 SESSION_COOKIE = "qport_session"
+PORTFOLIO_DELETE_CONFIRMATION = "XOA DANH MUC"
 
 app = FastAPI(
     title="QPort API",
@@ -84,7 +87,7 @@ def require_portfolio_user(token: str | None) -> dict:
     if user.get("role") == "ADMIN":
         raise ApiError(
             403,
-            "Admin accounts do not access portfolio data.",
+            "Admin accounts do not access portfolio data through user routes.",
             "ADMIN_PORTFOLIO_FORBIDDEN",
         )
     return user
@@ -95,6 +98,20 @@ def require_admin(token: str | None) -> dict:
     if user.get("role") != "ADMIN":
         raise ApiError(403, "Admin access is required.", "ADMIN_REQUIRED")
     return user
+
+
+def admin_target_user(user_id: int) -> dict:
+    row = auth().user_by_id(int(user_id))
+    if row is None:
+        raise ApiError(404, "User does not exist.", "USER_NOT_FOUND", "user_id")
+    if row.get("role") == "ADMIN":
+        raise ApiError(400, "Admin account has no user portfolio.", "ADMIN_TARGET_FORBIDDEN", "user_id")
+    return {
+        "id": int(row["id"]),
+        "username": row["username"],
+        "role": row["role"],
+        "created_at": row["created_at"],
+    }
 
 
 def portfolio(user: dict) -> AutomatedPortfolioService:
@@ -174,7 +191,6 @@ def api_root():
 
 @app.get("/api/health")
 def health():
-    # Initializing auth also verifies DATABASE_URL connectivity and schema access.
     store = auth()
     return {
         "ok": True,
@@ -185,7 +201,7 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Authentication
+# Authentication / admin
 # ---------------------------------------------------------------------------
 @app.get("/api/auth/me")
 def auth_me(qport_session: str | None = Cookie(default=None)):
@@ -219,6 +235,7 @@ def auth_logout(qport_session: str | None = Cookie(default=None)):
     _clear_session_cookie(response)
     return response
 
+
 @app.get("/api/auth/users")
 def auth_users(qport_session: str | None = Cookie(default=None)):
     require_admin(qport_session)
@@ -230,6 +247,18 @@ def auth_delete_user(user_id: int, qport_session: str | None = Cookie(default=No
     require_admin(qport_session)
     clear_user_runtime(user_id)
     return auth().delete_user(user_id)
+
+
+@app.get("/api/admin/users/{user_id}/portfolio")
+def admin_user_portfolio(user_id: int, qport_session: str | None = Cookie(default=None)):
+    require_admin(qport_session)
+    target = admin_target_user(user_id)
+    return {
+        "ok": True,
+        "read_only": True,
+        "user": target,
+        "dashboard": portfolio(target).dashboard(),
+    }
 
 
 @app.post("/api/auth/admin/password")
@@ -254,6 +283,19 @@ def auth_change_admin_password(
 @app.get("/api/portfolio")
 def portfolio_dashboard(qport_session: str | None = Cookie(default=None)):
     return portfolio(require_portfolio_user(qport_session)).dashboard()
+
+
+@app.get("/api/portfolio/holding-symbols")
+def portfolio_holding_symbols(qport_session: str | None = Cookie(default=None)):
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    state = derive_state(effective_events(svc.store))
+    symbols = sorted(
+        str(symbol).upper()
+        for symbol, position in state.positions.items()
+        if float(position.shares or 0) > 0
+    )
+    return {"ok": True, "symbols": symbols}
 
 
 @app.get("/api/portfolio/transactions")
@@ -357,6 +399,32 @@ def portfolio_latest_dividend(
 # ---------------------------------------------------------------------------
 # Portfolio writes
 # ---------------------------------------------------------------------------
+@app.delete("/api/portfolio")
+def portfolio_delete_all(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    if str(body.get("confirmation") or "").strip() != PORTFOLIO_DELETE_CONFIRMATION:
+        raise ApiError(
+            400,
+            f'Type "{PORTFOLIO_DELETE_CONFIRMATION}" to confirm portfolio deletion.',
+            "PORTFOLIO_DELETE_CONFIRMATION_REQUIRED",
+            "confirmation",
+        )
+    user_id = int(user["id"])
+    clear_user_runtime(user_id)
+    removed = drop_user_schema(user_id)
+    PostgresPortfolioStore(user_id)
+    clear_user_runtime(user_id)
+    return {
+        "ok": True,
+        "portfolio_deleted": True,
+        "portfolio_data_removed": removed,
+        "account_preserved": True,
+    }
+
+
 @app.post("/api/portfolio/transactions")
 def portfolio_create_transaction(
     request: Request,
