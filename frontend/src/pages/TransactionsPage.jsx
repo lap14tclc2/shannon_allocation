@@ -39,7 +39,7 @@ function FieldError({ error }) {
 }
 
 export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'vi' }) {
-  const money = value => value == null ? '-' : `${formatMoney(value, false, locale)} VND`;
+  const money = value => value == null ? '-' : `${formatMoney(value, false, locale)} ₫`;
   const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
   const [type, setType] = useState('POSITION_IMPORT');
@@ -147,7 +147,24 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     }
   }
 
-  return <div className="page">
+  function rowActions(row) {
+    const deleting = deleteRowId === row.id;
+    const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
+    if (dividendEvent) return <span className="status-pill">Chỉ đọc</span>;
+    if (deleting) return <div className="inline-delete">
+      <input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Lý do xóa" />
+      <div className="row-actions">
+        <button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>Xác nhận</button>
+        <button className="btn-small" type="button" onClick={() => { setDeleteRowId(null); setDeleteReason(''); }}>Hủy</button>
+      </div>
+    </div>;
+    return <div className="row-actions">
+      <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>
+      <button className="btn-danger btn-small" type="button" onClick={() => { setDeleteRowId(row.id); setDeleteReason(''); }}>Xóa</button>
+    </div>;
+  }
+
+  return <div className="page investor-transactions-page">
     <AppNav active="transactions" locale={locale} />
 
     <header className="page-head">
@@ -238,35 +255,61 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       {message && <div className="run-message">{message}</div>}
     </form>
 
-    <section className="card">
+    <section className="card investor-transaction-history">
       <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận</div></div></div>
-      {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <div className="table-scroll">
-        <table className="ranking transaction-table">
-          <thead><tr>
-            <th>Ngày</th><th>Loại</th><th>Mã</th><th>CTCK</th><th>Tài khoản</th><th>SL</th><th>Giá / Số tiền</th><th>Phí / Thuế</th><th>Ghi chú</th><th>Thao tác</th>
-          </tr></thead>
-          <tbody>{transactions.map(row => {
-            const deleting = deleteRowId === row.id;
+      {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <>
+        <div className="holding-mobile-list transaction-mobile-list">
+          {transactions.map(row => {
             const hasSymbol = Boolean(row.symbol);
-            const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
-            return <tr key={row.id}>
-              <td>{row.event_date}</td>
-              <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
-              <td>{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
-              <td>{hasSymbol ? (row.metadata?.broker_code || '-') : '-'}</td>
-              <td>{hasSymbol ? (row.metadata?.account_id || '-') : '-'}</td>
-              <td>{row.quantity ? shares(row.quantity) : '-'}</td>
-              <td>{row.price ? money(row.price) : row.amount ? money(row.amount) : '-'}</td>
-              <td>{Number(row.fee || 0) || Number(row.tax || 0) ? `${money(Number(row.fee || 0))} / ${money(Number(row.tax || 0))}` : '-'}</td>
-              <td>{row.note || '-'}</td>
-              <td>{dividendEvent ? <span className="status-pill">Chỉ đọc</span> : deleting ? <div className="inline-delete">
-                <input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Lý do xóa" />
-                <div className="row-actions"><button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>Xác nhận</button><button className="btn-small" type="button" onClick={() => { setDeleteRowId(null); setDeleteReason(''); }}>Hủy</button></div>
-              </div> : <div className="row-actions"><button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button><button className="btn-danger btn-small" type="button" onClick={() => { setDeleteRowId(row.id); setDeleteReason(''); }}>Xóa</button></div>}</td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>}
+            const symbol = row.symbol ? String(row.symbol).toUpperCase() : '';
+            const mainValue = row.amount ? money(row.amount) : row.price ? `${money(row.price)}/CP` : row.quantity ? `${shares(row.quantity)} CP` : '-';
+            return <article className="holding-mobile-card transaction-mobile-card" key={`mobile-${row.id}`}>
+              <div className="holding-mobile-head">
+                <div className="holding-mobile-symbol">
+                  <strong>{symbol || TYPE_LABELS[row.event_type] || row.event_type}</strong>
+                  <span>{row.event_date} · {TYPE_LABELS[row.event_type] || row.event_type}</span>
+                </div>
+                <div className="holding-mobile-value">
+                  <strong>{mainValue}</strong>
+                  {row.correction && <span>Đã chỉnh sửa</span>}
+                  {row.metadata?.auto_generated && <span>Tự động ghi nhận</span>}
+                </div>
+              </div>
+              <div className="holding-mobile-facts">
+                <div><span>Số lượng</span><b>{row.quantity ? `${shares(row.quantity)} CP` : '-'}</b></div>
+                <div><span>CTCK / Tài khoản</span><b>{hasSymbol ? `${row.metadata?.broker_code || '-'} · ${row.metadata?.account_id || '-'}` : '-'}</b></div>
+                <div><span>Phí</span><b>{Number(row.fee || 0) ? money(Number(row.fee || 0)) : '-'}</b></div>
+                <div><span>Thuế</span><b>{Number(row.tax || 0) ? money(Number(row.tax || 0)) : '-'}</b></div>
+              </div>
+              {row.note && <p className="transaction-mobile-note">{row.note}</p>}
+              <div className="transaction-mobile-actions">{rowActions(row)}</div>
+            </article>;
+          })}
+        </div>
+
+        <div className="table-scroll portfolio-table-desktop">
+          <table className="ranking transaction-table">
+            <thead><tr>
+              <th>Ngày</th><th>Loại</th><th>Mã</th><th>CTCK</th><th>Tài khoản</th><th>SL</th><th>Giá / Số tiền</th><th>Phí / Thuế</th><th>Ghi chú</th><th>Thao tác</th>
+            </tr></thead>
+            <tbody>{transactions.map(row => {
+              const hasSymbol = Boolean(row.symbol);
+              return <tr key={row.id}>
+                <td>{row.event_date}</td>
+                <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
+                <td>{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
+                <td>{hasSymbol ? (row.metadata?.broker_code || '-') : '-'}</td>
+                <td>{hasSymbol ? (row.metadata?.account_id || '-') : '-'}</td>
+                <td>{row.quantity ? shares(row.quantity) : '-'}</td>
+                <td>{row.price ? money(row.price) : row.amount ? money(row.amount) : '-'}</td>
+                <td>{Number(row.fee || 0) || Number(row.tax || 0) ? `${money(Number(row.fee || 0))} / ${money(Number(row.tax || 0))}` : '-'}</td>
+                <td>{row.note || '-'}</td>
+                <td>{rowActions(row)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </>}
     </section>
   </div>;
 }
