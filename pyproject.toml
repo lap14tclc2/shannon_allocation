@@ -1,0 +1,18 @@
+[project]
+name = "qport-vercel"
+version = "2.0.0"
+description = "QPort Buy & Hold portfolio API for Vercel"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "fastapi>=0.141.1,<1",
+  "psycopg[binary]>=3.2.9,<4",
+  "numpy>=1.26,<3",
+  "pandas>=2.2,<3",
+  "requests>=2.31,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "uvicorn>=0.35,<1",
+]
