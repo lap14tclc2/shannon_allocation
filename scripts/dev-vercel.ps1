@@ -22,8 +22,6 @@ if (-not $env:CRON_SECRET) {
   $env:CRON_SECRET = 'qport-local-dev-only'
 }
 
-# Fail early with a useful message instead of letting the first API request
-# discover that native PostgreSQL is unavailable or the qport database was not set up.
 $probe = @'
 import os
 import psycopg
@@ -58,7 +56,7 @@ Write-Host '  Database mode: native PostgreSQL'
 Write-Host "  DATABASE_URL: $env:DATABASE_URL"
 
 $api = Start-Process -FilePath 'python' -ArgumentList @(
-  '-m', 'uvicorn', 'api.index:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
+  '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
 ) -PassThru -NoNewWindow
 
 try {
