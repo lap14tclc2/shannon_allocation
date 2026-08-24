@@ -122,15 +122,10 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         events,
         error: item.error,
         loading: item.loading,
-        latestYear,
       };
     })
     .sort((a, b) => String(a.symbol).localeCompare(String(b.symbol))), [dividends, currentYear]);
 
-  const latestDividendEventCount = useMemo(
-    () => latestDividendTreeRows.reduce((sum, row) => sum + row.events.length, 0),
-    [latestDividendTreeRows],
-  );
   const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
 
   async function sync() {
@@ -285,7 +280,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
 
       {latestDividendTreeRows.length > 0 ? (
         <DividendTree rows={latestDividendTreeRows} locale={locale} root="symbol" openLatest />
-      ) : dividendLoading ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : latestDividendEventCount === 0 && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
+      ) : dividendLoading ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
   </div>;
 }
