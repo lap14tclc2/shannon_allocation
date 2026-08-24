@@ -23,7 +23,6 @@ import {
   listPortfolioTransactions,
 } from './lib/api.js';
 import { applyStoredAppearance } from './lib/appearance.js';
-import { normalizeLocale } from './i18n.js';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
@@ -41,23 +40,13 @@ import './guide-friendly.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 
+const APP_LOCALE = 'vi';
+
 applyStoredAppearance();
 document.body.classList.remove('mobile-sheet-open');
+document.documentElement.lang = APP_LOCALE;
 
 const root = createRoot(document.getElementById('root'));
-
-function cookieValue(name) {
-  const prefix = `${name}=`;
-  for (const raw of String(document.cookie || '').split(';')) {
-    const item = raw.trim();
-    if (item.startsWith(prefix)) return decodeURIComponent(item.slice(prefix.length));
-  }
-  return '';
-}
-
-function currentLocale() {
-  return normalizeLocale(cookieValue('qport_lang') || navigator.language || 'en');
-}
 
 function todayVn() {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -74,8 +63,8 @@ function LoadingScreen() {
   return <main className="auth-shell vercel-boot-shell" aria-busy="true">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Loading portfolio…</h1>
-      <p className="muted">Connecting to the portfolio API.</p>
+      <h1>Đang tải danh mục…</h1>
+      <p className="muted">Đang kết nối đến hệ thống dữ liệu danh mục.</p>
     </section>
   </main>;
 }
@@ -84,9 +73,9 @@ function ErrorScreen({ error }) {
   return <main className="auth-shell vercel-boot-shell">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Unable to load</h1>
-      <p className="error">{error?.message || 'The application could not load.'}</p>
-      <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Retry</button>
+      <h1>Không thể tải ứng dụng</h1>
+      <p className="error">{error?.message || 'Ứng dụng hiện không thể tải dữ liệu.'}</p>
+      <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Thử lại</button>
     </section>
   </main>;
 }
@@ -100,7 +89,7 @@ async function loadPage(pathname, locale) {
         return null;
       }
     } catch {
-      // Unauthenticated is the normal login-page state.
+      // Chưa đăng nhập là trạng thái bình thường của trang đăng nhập.
     }
     return { Page: AuthPage, props: { locale } };
   }
@@ -164,7 +153,7 @@ async function loadPage(pathname, locale) {
 async function boot() {
   root.render(<LoadingScreen />);
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-  const locale = currentLocale();
+  const locale = APP_LOCALE;
   try {
     const loaded = await loadPage(pathname, locale);
     if (!loaded) return;
