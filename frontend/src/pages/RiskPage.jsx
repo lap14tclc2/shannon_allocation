@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import { listPortfolioSnapshots } from '../lib/api.js';
 import { formatMoney } from '../lib/format.js';
 
 function pct(value, digits = 2) {
@@ -85,7 +86,8 @@ function symbolComment(symbol, metric) {
   return notes.join(' ');
 }
 
-export default function RiskPage({ risk = {}, snapshots = [], locale = 'vi' }) {
+export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], locale = 'vi' }) {
+  const [snapshots, setSnapshots] = useState(initialSnapshots);
   const quality = risk.quality || {};
   const coverage = Number(quality.coverage_weight || 0);
   const observations = Number(risk.return_observations || 0);
@@ -100,6 +102,15 @@ export default function RiskPage({ risk = {}, snapshots = [], locale = 'vi' }) {
   const volatilityRatio = vol63 != null && vol252 ? vol63 / vol252 : null;
   const volatilityChange = volatilityRatio == null ? null : volatilityRatio - 1;
   const symbolMetrics = risk.symbol_metrics || {};
+
+  useEffect(() => {
+    if (initialSnapshots.length) return undefined;
+    let active = true;
+    listPortfolioSnapshots()
+      .then(rows => { if (active) setSnapshots(rows || []); })
+      .catch(() => { if (active) setSnapshots([]); });
+    return () => { active = false; };
+  }, [initialSnapshots]);
 
   const historicalWorstDays = useMemo(() => (snapshots || [])
     .filter(row => row?.official && row.daily_return != null && Number.isFinite(Number(row.daily_return)))
