@@ -68,7 +68,7 @@ async function sendJSON(url, method, body) {
 }
 
 // Authentication
-export const getCurrentUser = () => getJSON('/api/auth/me');
+export const getCurrentUser = () => getJSONCached('/api/auth/me', 60_000);
 export const loginUser = (username, password = '') => sendJSON('/api/auth/login', 'POST', { username, password });
 export const registerUser = (username) => sendJSON('/api/auth/register', 'POST', { username });
 export const logoutUser = () => sendJSON('/api/auth/logout', 'POST', {});
