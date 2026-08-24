@@ -1,4 +1,5 @@
 let authRedirectInProgress = false;
+const getCache = new Map();
 
 function apiError(data, fallback) {
   const err = new Error(data?.error || fallback);
@@ -36,6 +37,26 @@ async function getJSON(url, signal) {
   return handleResponse(res, url);
 }
 
+async function getJSONCached(url, ttlMs = 60_000, { bypass = false } = {}) {
+  const now = Date.now();
+  const cached = getCache.get(url);
+  if (!bypass && cached && cached.expiresAt > now) return cached.value;
+
+  // Reuse one in-flight request so multiple components do not fan out the same call.
+  if (!bypass && cached?.promise) return cached.promise;
+  const promise = getJSON(url)
+    .then(value => {
+      getCache.set(url, { value, expiresAt: Date.now() + Math.max(0, ttlMs), promise: null });
+      return value;
+    })
+    .catch(error => {
+      getCache.delete(url);
+      throw error;
+    });
+  getCache.set(url, { value: cached?.value, expiresAt: cached?.expiresAt || 0, promise });
+  return promise;
+}
+
 async function sendJSON(url, method, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
   return handleResponse(res, url);
@@ -70,10 +91,14 @@ export const logClientActivity = (action, details = {}) => sendJSON('/api/portfo
 export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
 export const reconcileBroker = (payload) => sendJSON('/api/portfolio/reconciliation', 'POST', payload);
 export const syncCorporateActions = (payload = {}) => sendJSON('/api/portfolio/corporate-actions/sync', 'POST', payload);
-export const getLatestDividend = (symbol, options = {}) => {
-  const refresh = options?.refresh ? '?refresh=1' : '';
-  return getJSON(`/api/portfolio/dividends/latest/${encodeURIComponent(String(symbol || '').toUpperCase())}${refresh}`);
+export const getDividendHistory = (symbol, options = {}) => {
+  const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
+  const refresh = Boolean(options?.refresh);
+  const url = `/api/portfolio/dividends/latest/${ticker}${refresh ? '?refresh=1' : ''}`;
+  return refresh ? getJSON(url) : getJSONCached(url, 5 * 60_000);
 };
+// Backward-compatible name. The backend response already contains the full history.
+export const getLatestDividend = getDividendHistory;
 export const getDividendProviderHealth = () => getJSON('/api/portfolio/dividends/health');
 export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
 export const recordCorporateActionReceipt = (id, payload) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/receipt`, 'POST', payload);
