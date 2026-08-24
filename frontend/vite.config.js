@@ -1,18 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Client build: produce a hydration bundle with stable asset names so the
-// Python server can reference them without knowing the hashed filenames.
+// Vercel migration: the browser app is a normal static Vite SPA. Python owns
+// only /api/* through api/index.py; there is no runtime Node SSR worker.
 export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
-    rollupOptions: {
-      input: 'src/entry-client.jsx',
-      output: {
-        entryFileNames: 'assets/client.js',
-        chunkFileNames: 'assets/[name].js',
-        assetFileNames: 'assets/[name][extname]',
+    emptyOutDir: true,
+  },
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
       },
     },
   },

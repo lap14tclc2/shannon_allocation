@@ -3,12 +3,14 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parents[3]
 PYTHON_DIR = REPO_DIR / "python"
 FRONTEND_SRC = REPO_DIR / "frontend" / "src"
+API = REPO_DIR / "api" / "index.py"
 
 
-def test_primary_server_uses_automated_portfolio_service():
-    source = (PYTHON_DIR / "serve.py").read_text(encoding="utf-8")
+def test_vercel_runtime_uses_automated_portfolio_service():
+    source = API.read_text(encoding="utf-8")
     assert "AutomatedPortfolioService" in source
-    assert "buyhold_server.CorrectablePortfolioService = AutomatedPortfolioService" in source
+    assert "PostgresPortfolioStore" in source
+    assert "svc = AutomatedPortfolioService(store=PostgresPortfolioStore(user_id))" in source
 
 
 def test_dividend_automation_is_payment_date_driven_and_idempotent():
@@ -40,7 +42,7 @@ def test_cash_percentage_fallback_supports_vietnamese_percent_announcements():
 def test_received_dividend_ui_and_transaction_sources_are_visible():
     received = (FRONTEND_SRC / "components" / "ReceivedDividendsPanel.jsx").read_text(encoding="utf-8")
     transactions = (FRONTEND_SRC / "pages" / "TransactionsPage.jsx").read_text(encoding="utf-8")
-    entry = (FRONTEND_SRC / "entry-client.jsx").read_text(encoding="utf-8")
+    entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
     assert "Dividends received" in received
     assert "CASH_DIVIDEND" in received and "STOCK_DIVIDEND" in received
     assert "AUTO corporate action" in received
