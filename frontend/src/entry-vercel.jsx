@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
@@ -14,8 +15,10 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import {
   getActivityLog,
+  getAdminUserPortfolio,
   getCurrentUser,
   getPortfolioDashboard,
+  getPortfolioHoldingSymbols,
   getPortfolioOperations,
   getPortfolioPerformance,
   getPortfolioRisk,
@@ -102,16 +105,25 @@ async function loadPage(pathname, locale) {
     window.location.replace('/login');
     return null;
   }
-  if (user.role === 'ADMIN' && pathname !== '/admin') {
+
+  const isAdminPath = pathname === '/admin' || /^\/admin\/users\/\d+$/.test(pathname);
+  if (user.role === 'ADMIN' && !isAdminPath) {
     window.location.replace('/admin');
     return null;
   }
-  if (user.role !== 'ADMIN' && pathname === '/admin') {
+  if (user.role !== 'ADMIN' && isAdminPath) {
     window.location.replace('/');
     return null;
   }
 
   const common = { locale, currentUser: user };
+
+  const adminUserMatch = pathname.match(/^\/admin\/users\/(\d+)$/);
+  if (adminUserMatch) {
+    const payload = await getAdminUserPortfolio(Number(adminUserMatch[1]));
+    return { Page: AdminUserPortfolioPage, props: { ...common, payload } };
+  }
+
   switch (pathname) {
     case '/': {
       const dashboard = await getPortfolioDashboard();
@@ -132,7 +144,7 @@ async function loadPage(pathname, locale) {
     case '/risk':
       return { Page: RiskPage, props: { ...common, risk: await getPortfolioRisk() } };
     case '/dividends':
-      return { Page: DividendHistoryPage, props: { ...common, dashboard: await getPortfolioDashboard() } };
+      return { Page: DividendHistoryPage, props: { ...common, symbols: await getPortfolioHoldingSymbols() } };
     case '/snapshots':
       return { Page: SnapshotsPage, props: { ...common, snapshots: await listPortfolioSnapshots() } };
     case '/operations':
@@ -149,8 +161,8 @@ async function loadPage(pathname, locale) {
     case '/admin':
       return { Page: AdminPage, props: common };
     default:
-      window.history.replaceState({}, '', '/');
-      return loadPage('/', locale);
+      window.history.replaceState({}, '', user.role === 'ADMIN' ? '/admin' : '/');
+      return loadPage(user.role === 'ADMIN' ? '/admin' : '/', locale);
   }
 }
 
