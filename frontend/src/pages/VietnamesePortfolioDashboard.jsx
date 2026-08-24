@@ -102,38 +102,35 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     return items;
   }, [health, risk.max_equity_weight, market.status]);
 
-  const latestDividendWindow = useMemo(() => {
-    const allEvents = [];
-    let latestYear = null;
+  const latestDividendTreeRows = useMemo(() => dividends
+    .map(item => {
+      const validEvents = (item.result?.events || [])
+        .map(event => ({ event, year: eventYear(event) }))
+        .filter(row => row.year != null && row.year <= currentYear);
+      const latestYear = validEvents.reduce(
+        (latest, row) => latest == null || row.year > latest ? row.year : latest,
+        null,
+      );
+      const events = latestYear == null
+        ? []
+        : validEvents
+            .filter(row => row.year === latestYear)
+            .map(row => row.event)
+            .sort((a, b) => String(eventDate(b) || '').localeCompare(String(eventDate(a) || '')));
+      return {
+        symbol: item.symbol,
+        events,
+        error: item.error,
+        loading: item.loading,
+        latestYear,
+      };
+    })
+    .sort((a, b) => String(a.symbol).localeCompare(String(b.symbol))), [dividends, currentYear]);
 
-    for (const item of dividends) {
-      for (const event of item.result?.events || []) {
-        const year = eventYear(event);
-        if (year == null || year > currentYear) continue;
-        const dateValue = eventDate(event);
-        allEvents.push({ symbol: item.symbol, ...event, display_date: dateValue, display_year: year });
-        if (latestYear == null || year > latestYear) latestYear = year;
-      }
-    }
-
-    const events = latestYear == null
-      ? []
-      : allEvents
-          .filter(event => event.display_year === latestYear)
-          .sort((a, b) => String(b.display_date || '').localeCompare(String(a.display_date || '')) || String(a.symbol).localeCompare(String(b.symbol)));
-
-    return { year: latestYear, events };
-  }, [dividends, currentYear]);
-
-  const latestDividendTreeRows = useMemo(() => {
-    if (latestDividendWindow.year == null) return [];
-    const symbols = [...new Set(latestDividendWindow.events.map(event => event.symbol))].sort();
-    return symbols.map(symbol => ({
-      symbol,
-      events: latestDividendWindow.events.filter(event => event.symbol === symbol),
-    }));
-  }, [latestDividendWindow]);
-
+  const latestDividendEventCount = useMemo(
+    () => latestDividendTreeRows.reduce((sum, row) => sum + row.events.length, 0),
+    [latestDividendTreeRows],
+  );
   const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
 
   async function sync() {
@@ -273,12 +270,8 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
       <div className="section-head">
         <div>
           <div className="eyebrow">Cổ tức & quyền</div>
-          <h2>{latestDividendWindow.year != null ? `Sự kiện cổ tức năm ${latestDividendWindow.year}` : 'Sự kiện cổ tức gần nhất'}</h2>
-          <p className="muted">
-            {latestDividendWindow.year != null
-              ? `Năm gần nhất có dữ liệu là ${latestDividendWindow.year}. Mở từng mã để xem các sự kiện trong năm này.`
-              : 'QPort sẽ tự chọn năm gần nhất có dữ liệu cổ tức của các mã đang nắm giữ.'}
-          </p>
+          <h2>Cổ tức gần nhất theo từng mã</h2>
+          <p className="muted">Mỗi mã tự chọn năm gần nhất có dữ liệu đến {currentYear}. Ví dụ mã có dữ liệu 2026 sẽ hiện 2026; mã mới nhất chỉ có 2025 vẫn hiện đầy đủ các sự kiện 2025.</p>
         </div>
         <div className="section-actions">
           <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>
@@ -290,9 +283,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         Không thể tải dữ liệu cổ tức cho <b>{dividendErrors.map(row => row.symbol).join(', ')}</b>. Hãy thử cập nhật lại sau. Dữ liệu của các mã khác vẫn được giữ nguyên nếu tải thành công.
       </div>}
 
-      {dividendLoading && latestDividendWindow.events.length === 0 ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : latestDividendTreeRows.length > 0 ? (
-        <DividendTree rows={latestDividendTreeRows} locale={locale} root="year" openLatest />
-      ) : !dividendLoading && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
+      {latestDividendTreeRows.length > 0 ? (
+        <DividendTree rows={latestDividendTreeRows} locale={locale} root="symbol" openLatest />
+      ) : dividendLoading ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : latestDividendEventCount === 0 && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
   </div>;
 }
