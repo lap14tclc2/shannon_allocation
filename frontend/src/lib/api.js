@@ -41,9 +41,8 @@ async function getJSONCached(url, ttlMs = 60_000, { bypass = false } = {}) {
   const now = Date.now();
   const cached = getCache.get(url);
   if (!bypass && cached && cached.expiresAt > now) return cached.value;
-
-  // Reuse one in-flight request so multiple components do not fan out the same call.
   if (!bypass && cached?.promise) return cached.promise;
+
   const promise = getJSON(url)
     .then(value => {
       getCache.set(url, { value, expiresAt: Date.now() + Math.max(0, ttlMs), promise: null });
@@ -57,9 +56,15 @@ async function getJSONCached(url, ttlMs = 60_000, { bypass = false } = {}) {
   return promise;
 }
 
+function clearGetCache() {
+  getCache.clear();
+}
+
 async function sendJSON(url, method, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
-  return handleResponse(res, url);
+  const data = await handleResponse(res, url);
+  if (method !== 'GET') clearGetCache();
+  return data;
 }
 
 // Authentication
@@ -70,13 +75,19 @@ export const logoutUser = () => sendJSON('/api/auth/logout', 'POST', {});
 export const listUsers = () => getJSON('/api/auth/users');
 export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)}`, 'DELETE', {});
 export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
+export const getAdminUserPortfolio = (userId) => getJSON(`/api/admin/users/${Number(userId)}/portfolio`);
 
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
+export async function getPortfolioHoldingSymbols() {
+  const data = await getJSON('/api/portfolio/holding-symbols');
+  return data.symbols || [];
+}
 export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
 export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
 export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
 export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
 export const deletePortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+export const deletePortfolio = (confirmation) => sendJSON('/api/portfolio', 'DELETE', { confirmation });
 export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
 export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');
 export const getPortfolioRisk = () => getJSON('/api/portfolio/risk');
@@ -97,7 +108,32 @@ export const getDividendHistory = (symbol, options = {}) => {
   const url = `/api/portfolio/dividends/latest/${ticker}${refresh ? '?refresh=1' : ''}`;
   return refresh ? getJSON(url) : getJSONCached(url, 5 * 60_000);
 };
-// Backward-compatible name. The backend response already contains the full history.
+
+export async function getDividendHistories(symbols, options = {}) {
+  const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
+  const concurrency = Math.max(1, Math.min(Number(options.concurrency) || 6, 10));
+  const results = new Array(unique.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= unique.length) return;
+      const symbol = unique[index];
+      try {
+        results[index] = { symbol, result: await getDividendHistory(symbol, { refresh: Boolean(options.refresh) }), error: null };
+      } catch (error) {
+        results[index] = { symbol, result: null, error: error.message || 'Không thể tải dữ liệu cổ tức.' };
+      }
+      if (typeof options.onResult === 'function') options.onResult(results[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
+  return results;
+}
+
 export const getLatestDividend = getDividendHistory;
 export const getDividendProviderHealth = () => getJSON('/api/portfolio/dividends/health');
 export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
