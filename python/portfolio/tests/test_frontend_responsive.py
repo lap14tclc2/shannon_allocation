@@ -8,11 +8,13 @@ def _responsive_css() -> str:
     return (FRONTEND_SRC / "responsive.css").read_text(encoding="utf-8")
 
 
-def test_mobile_first_styles_are_loaded_last():
-    entry = (FRONTEND_SRC / "entry-client.jsx").read_text(encoding="utf-8")
+def test_mobile_first_styles_are_loaded_before_mobile_overrides():
+    entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
     assert "import './buyhold.css';" in entry
     assert "import './responsive.css';" in entry
+    assert "import './mobile-iphone.css';" in entry
     assert entry.index("import './responsive.css';") > entry.index("import './buyhold.css';")
+    assert entry.index("import './mobile-iphone.css';") > entry.index("import './responsive.css';")
 
 
 def test_responsive_contract_is_mobile_first():
