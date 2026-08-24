@@ -2,10 +2,12 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
+import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
@@ -13,8 +15,10 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import {
   getActivityLog,
+  getAdminUserPortfolio,
   getCurrentUser,
   getPortfolioDashboard,
+  getPortfolioHoldingSymbols,
   getPortfolioOperations,
   getPortfolioPerformance,
   getPortfolioRisk,
@@ -23,7 +27,6 @@ import {
   listPortfolioTransactions,
 } from './lib/api.js';
 import { applyStoredAppearance } from './lib/appearance.js';
-import { normalizeLocale } from './i18n.js';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
@@ -38,26 +41,17 @@ import './accessibility-polish.css';
 import './appearance-controls.css';
 import './risk-readable.css';
 import './guide-friendly.css';
+import './dividend-history.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 
+const APP_LOCALE = 'vi';
+
 applyStoredAppearance();
 document.body.classList.remove('mobile-sheet-open');
+document.documentElement.lang = APP_LOCALE;
 
 const root = createRoot(document.getElementById('root'));
-
-function cookieValue(name) {
-  const prefix = `${name}=`;
-  for (const raw of String(document.cookie || '').split(';')) {
-    const item = raw.trim();
-    if (item.startsWith(prefix)) return decodeURIComponent(item.slice(prefix.length));
-  }
-  return '';
-}
-
-function currentLocale() {
-  return normalizeLocale(cookieValue('qport_lang') || navigator.language || 'en');
-}
 
 function todayVn() {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -74,8 +68,8 @@ function LoadingScreen() {
   return <main className="auth-shell vercel-boot-shell" aria-busy="true">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Loading portfolio…</h1>
-      <p className="muted">Connecting to the portfolio API.</p>
+      <h1>Đang tải dữ liệu…</h1>
+      <p className="muted">Các giá trị thực sẽ hiển thị sau khi dữ liệu tải xong.</p>
     </section>
   </main>;
 }
@@ -84,9 +78,9 @@ function ErrorScreen({ error }) {
   return <main className="auth-shell vercel-boot-shell">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Unable to load</h1>
-      <p className="error">{error?.message || 'The application could not load.'}</p>
-      <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Retry</button>
+      <h1>Không thể tải dữ liệu</h1>
+      <p className="error">{error?.message || 'Ứng dụng hiện không thể tải dữ liệu. Vui lòng thử lại.'}</p>
+      <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Thử lại</button>
     </section>
   </main>;
 }
@@ -100,7 +94,7 @@ async function loadPage(pathname, locale) {
         return null;
       }
     } catch {
-      // Unauthenticated is the normal login-page state.
+      // Chưa đăng nhập là trạng thái bình thường của trang đăng nhập.
     }
     return { Page: AuthPage, props: { locale } };
   }
@@ -111,16 +105,25 @@ async function loadPage(pathname, locale) {
     window.location.replace('/login');
     return null;
   }
-  if (user.role === 'ADMIN' && pathname !== '/admin') {
+
+  const isAdminPath = pathname === '/admin' || /^\/admin\/users\/\d+$/.test(pathname);
+  if (user.role === 'ADMIN' && !isAdminPath) {
     window.location.replace('/admin');
     return null;
   }
-  if (user.role !== 'ADMIN' && pathname === '/admin') {
+  if (user.role !== 'ADMIN' && isAdminPath) {
     window.location.replace('/');
     return null;
   }
 
   const common = { locale, currentUser: user };
+
+  const adminUserMatch = pathname.match(/^\/admin\/users\/(\d+)$/);
+  if (adminUserMatch) {
+    const payload = await getAdminUserPortfolio(Number(adminUserMatch[1]));
+    return { Page: AdminUserPortfolioPage, props: { ...common, payload } };
+  }
+
   switch (pathname) {
     case '/': {
       const dashboard = await getPortfolioDashboard();
@@ -140,6 +143,8 @@ async function loadPage(pathname, locale) {
       return { Page: PerformancePage, props: { ...common, performance: await getPortfolioPerformance() } };
     case '/risk':
       return { Page: RiskPage, props: { ...common, risk: await getPortfolioRisk() } };
+    case '/dividends':
+      return { Page: DividendHistoryPage, props: { ...common, symbols: await getPortfolioHoldingSymbols() } };
     case '/snapshots':
       return { Page: SnapshotsPage, props: { ...common, snapshots: await listPortfolioSnapshots() } };
     case '/operations':
@@ -156,15 +161,15 @@ async function loadPage(pathname, locale) {
     case '/admin':
       return { Page: AdminPage, props: common };
     default:
-      window.history.replaceState({}, '', '/');
-      return loadPage('/', locale);
+      window.history.replaceState({}, '', user.role === 'ADMIN' ? '/admin' : '/');
+      return loadPage(user.role === 'ADMIN' ? '/admin' : '/', locale);
   }
 }
 
 async function boot() {
   root.render(<LoadingScreen />);
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-  const locale = currentLocale();
+  const locale = APP_LOCALE;
   try {
     const loaded = await loadPage(pathname, locale);
     if (!loaded) return;

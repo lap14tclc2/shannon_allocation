@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { changeAdminPassword, getCurrentUser, listUsers, removeUser } from '../lib/api.js';
 
-export default function AdminPage({ locale = 'en' }) {
+export default function AdminPage({ locale = 'vi' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -71,12 +71,9 @@ export default function AdminPage({ locale = 'en' }) {
       <AppNav active="admin" locale={locale} />
       <header className="page-header admin-header">
         <div>
-          <div className="eyebrow">{text('Administration', 'Quản trị')}</div>
-          <h1>{text('Users & access', 'User & truy cập')}</h1>
-          <p className="muted">{text(
-            'Manage registered usernames and the admin password. Each user owns an isolated PostgreSQL portfolio schema.',
-            'Quản lý username đã đăng ký và password admin. Mỗi user có một PostgreSQL schema danh mục riêng.'
-          )}</p>
+          <div className="eyebrow">Quản trị</div>
+          <h1>User & truy cập</h1>
+          <p className="muted">Admin có thể xem danh mục của từng user ở chế độ chỉ đọc. Mỗi user vẫn dùng một PostgreSQL schema riêng.</p>
         </div>
       </header>
 
@@ -86,37 +83,35 @@ export default function AdminPage({ locale = 'en' }) {
         <section className="card admin-users-card">
           <div className="section-head">
             <div>
-              <div className="eyebrow">{text('User board', 'Bảng user')}</div>
-              <h2>{text('Registered users', 'User đã đăng ký')}</h2>
-              <p className="muted">{text(
-                'Removing a user also removes all portfolio data and sessions belonging to that user.',
-                'Xóa user sẽ đồng thời xóa toàn bộ portfolio data và session của user đó.'
-              )}</p>
+              <div className="eyebrow">Bảng user</div>
+              <h2>User đã đăng ký</h2>
+              <p className="muted">“Xem danh mục” là read-only. Xóa user vẫn xóa cả account, session và toàn bộ dữ liệu danh mục của user đó.</p>
             </div>
             <button className="btn-secondary" type="button" onClick={refreshUsers} disabled={loading}>
-              {loading ? text('Loading…', 'Đang tải…') : text('Refresh', 'Làm mới')}
+              {loading ? 'Đang tải…' : 'Làm mới'}
             </button>
           </div>
 
           <div className="table-scroll">
             <table className="ranking admin-user-table">
               <thead><tr>
-                <th>{text('Username', 'Username')}</th>
-                <th>{text('Role', 'Role')}</th>
-                <th>{text('Created', 'Ngày tạo')}</th>
-                <th className="num">{text('Action', 'Thao tác')}</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Ngày tạo</th>
+                <th className="num">Thao tác</th>
               </tr></thead>
               <tbody>{users.map(user => (
                 <tr key={user.id}>
-                  <td><b>{user.username}</b>{currentUser?.id === user.id && <span className="user-self">{text('you', 'bạn')}</span>}</td>
+                  <td><b>{user.username}</b>{currentUser?.id === user.id && <span className="user-self">bạn</span>}</td>
                   <td><span className={`status-pill ${user.role === 'ADMIN' ? 'status-attention' : 'status-valid'}`}>{user.role}</span></td>
                   <td>{String(user.created_at || '').replace('T', ' ').slice(0, 19) || '-'}</td>
                   <td className="num">
-                    {user.role === 'ADMIN' ? <span className="muted">{text('Protected', 'Được bảo vệ')}</span> : (
+                    {user.role === 'ADMIN' ? <span className="muted">Được bảo vệ</span> : <div className="admin-row-actions">
+                      <a className="btn-secondary btn-small" href={`/admin/users/${Number(user.id)}`}>Xem danh mục</a>
                       <button className="btn-danger-small" type="button" onClick={() => remove(user)} disabled={removingId === user.id}>
-                        {removingId === user.id ? text('Removing…', 'Đang xóa…') : text('Remove user + data', 'Xóa user + data')}
+                        {removingId === user.id ? 'Đang xóa…' : 'Xóa user + data'}
                       </button>
-                    )}
+                    </div>}
                   </td>
                 </tr>
               ))}</tbody>
@@ -125,17 +120,14 @@ export default function AdminPage({ locale = 'en' }) {
         </section>
 
         <section className="card admin-password-card">
-          <div className="eyebrow">{text('Admin security', 'Bảo mật admin')}</div>
-          <h2>{text('Update admin password', 'Đổi password admin')}</h2>
-          <p className="muted">{text(
-            'Use this form to change the admin password. Updating it signs out existing admin sessions.',
-            'Dùng form này để đổi password admin. Khi đổi password, các session admin hiện tại sẽ bị đăng xuất.'
-          )}</p>
+          <div className="eyebrow">Bảo mật admin</div>
+          <h2>Đổi password admin</h2>
+          <p className="muted">Khi đổi password, các session admin hiện tại sẽ bị đăng xuất.</p>
           <form className="admin-password-form" onSubmit={updatePassword}>
-            <label><span>{text('Current password', 'Password hiện tại')}</span><input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required /></label>
-            <label><span>{text('New password', 'Password mới')}</span><input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
-            <label><span>{text('Confirm new password', 'Xác nhận password mới')}</span><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
-            <button className="btn-primary" type="submit">{text('Update password', 'Cập nhật password')}</button>
+            <label><span>Password hiện tại</span><input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required /></label>
+            <label><span>Password mới</span><input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
+            <label><span>Xác nhận password mới</span><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={6} maxLength={128} required /></label>
+            <button className="btn-primary" type="submit">Cập nhật password</button>
           </form>
         </section>
       </div>

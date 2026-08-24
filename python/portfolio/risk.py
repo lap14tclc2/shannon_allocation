@@ -13,6 +13,12 @@ def concentration_metrics(position_rows: list[dict]) -> dict:
     hhi = sum(w * w for w in equity_weights) if equity_weights else 0.0
     effective = (1.0 / hhi) if hhi > 1e-12 else 0.0
     n = len(equity_weights)
+    largest_index = int(np.argmax(equity_weights)) if equity_weights else None
+    largest_symbol = (
+        str(position_rows[largest_index].get("symbol") or "").upper()
+        if largest_index is not None
+        else None
+    )
     return {
         "hhi": hhi,
         "equity_hhi": hhi,
@@ -20,6 +26,7 @@ def concentration_metrics(position_rows: list[dict]) -> dict:
         "effective_position_ratio": (effective / n) if n else 0.0,
         "max_position_weight": max(nav_weights) if nav_weights else 0.0,
         "max_equity_weight": max(equity_weights) if equity_weights else 0.0,
+        "largest_position_symbol": largest_symbol or None,
         "equity_weight_sum": equity_total,
         "n_positions": n,
     }
@@ -70,6 +77,13 @@ def _vol_for_window(returns: pd.DataFrame, symbols: list[str], weights: np.ndarr
         return None
     variance = float(weights @ cov @ weights)
     return math.sqrt(max(0.0, variance))
+
+
+def _series_volatility(series: pd.Series, days: int, min_periods: int) -> float | None:
+    values = series.dropna().tail(days)
+    if len(values) < min_periods:
+        return None
+    return float(values.std(ddof=1) * math.sqrt(252.0))
 
 
 def _solve_erc(cov: np.ndarray) -> np.ndarray | None:
@@ -123,6 +137,7 @@ def _portfolio_return_metrics(returns: pd.DataFrame, symbols: list[str], weights
             "daily_var_95": None,
             "daily_cvar_95": None,
             "max_daily_loss": None,
+            "max_daily_loss_date": None,
             "downside_volatility": None,
             "positive_day_ratio": None,
             "return_observations": int(len(frame)),
@@ -131,15 +146,74 @@ def _portfolio_return_metrics(returns: pd.DataFrame, symbols: list[str], weights
     var95 = float(np.quantile(p, 0.05))
     tail = p[p <= var95]
     downside = p[p < 0]
+    worst_index = int(np.argmin(p))
     downside_vol = float(np.std(downside, ddof=1) * math.sqrt(252)) if len(downside) >= 2 else None
     return {
         "daily_var_95": var95,
         "daily_cvar_95": float(np.mean(tail)) if len(tail) else var95,
-        "max_daily_loss": float(np.min(p)),
+        "max_daily_loss": float(p[worst_index]),
+        "max_daily_loss_date": str(frame.index[worst_index]),
         "downside_volatility": downside_vol,
         "positive_day_ratio": float(np.mean(p > 0)),
         "return_observations": int(len(p)),
     }
+
+
+def _symbol_metrics(
+    position_rows: list[dict],
+    returns: pd.DataFrame,
+    eligible: list[str],
+    risk_contrib: dict[str, float],
+) -> dict[str, dict]:
+    total_value = sum(max(0.0, float(p.get("market_value") or 0)) for p in position_rows)
+    corr = (
+        returns[eligible].tail(252).corr(min_periods=40)
+        if len(eligible) >= 2
+        else pd.DataFrame()
+    )
+    metrics: dict[str, dict] = {}
+
+    for row in position_rows:
+        symbol = str(row.get("symbol") or "").upper()
+        value = max(0.0, float(row.get("market_value") or 0))
+        series = returns[symbol] if symbol in returns.columns else pd.Series(dtype=float)
+        vol63 = _series_volatility(series, 63, 20)
+        vol252 = _series_volatility(series, 252, 40)
+        ratio = (vol63 / vol252) if vol63 is not None and vol252 and vol252 > 0 else None
+
+        avg_corr = None
+        max_corr = None
+        if symbol in corr.columns:
+            peers = [
+                float(corr.loc[symbol, peer])
+                for peer in corr.columns
+                if peer != symbol and pd.notna(corr.loc[symbol, peer])
+            ]
+            if peers:
+                avg_corr = float(np.mean(peers))
+                max_corr = max(peers)
+
+        recent = series.dropna().tail(252)
+        worst_return = None
+        worst_date = None
+        if len(recent):
+            worst_date = str(recent.idxmin())
+            worst_return = float(recent.min())
+
+        metrics[symbol] = {
+            "equity_weight": (value / total_value) if total_value > 0 else None,
+            "risk_contribution": risk_contrib.get(symbol),
+            "volatility_63": vol63,
+            "volatility_252": vol252,
+            "volatility_ratio": ratio,
+            "average_correlation_to_others": avg_corr,
+            "max_correlation_to_others": max_corr,
+            "worst_daily_return": worst_return,
+            "worst_daily_return_date": worst_date,
+            "return_observations": int(series.count()) if symbol in returns.columns else 0,
+        }
+
+    return metrics
 
 
 def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) -> dict:
@@ -151,6 +225,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "volatility_252": None,
         "volatility_ratio": None,
         "risk_contributions": {},
+        "symbol_metrics": {},
         "risk_contribution_hhi": None,
         "largest_risk_symbol": None,
         "largest_risk_contribution": None,
@@ -163,6 +238,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "daily_var_95": None,
         "daily_cvar_95": None,
         "max_daily_loss": None,
+        "max_daily_loss_date": None,
         "downside_volatility": None,
         "positive_day_ratio": None,
         "return_observations": 0,
@@ -183,10 +259,17 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     requested = [p["symbol"] for p in position_rows]
     missing = sorted(set(requested) - set(eligible))
     if cov is None:
+        symbol_metrics = _symbol_metrics(position_rows, returns, [], {})
         return {
             **empty_payload,
+            "symbol_metrics": symbol_metrics,
             "status": "UNAVAILABLE",
-            "quality": {**quality, "requested_symbols": len(requested), "missing_symbols": missing, "coverage_weight": 0.0},
+            "quality": {
+                **quality,
+                "requested_symbols": len(requested),
+                "missing_symbols": missing,
+                "coverage_weight": 0.0,
+            },
         }
 
     eligible_values = np.array([value_by_symbol[s] for s in eligible], dtype=float)
@@ -217,6 +300,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
 
     corr_metrics = _correlation_metrics(returns, eligible)
     return_metrics = _portfolio_return_metrics(returns, eligible, weights)
+    symbol_metrics = _symbol_metrics(position_rows, returns, eligible, risk_contrib)
 
     status = "VALID" if not missing else "PARTIAL"
     return {
@@ -228,6 +312,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "volatility_252": vol252,
         "volatility_ratio": (vol63 / vol252) if vol63 is not None and vol252 and vol252 > 0 else None,
         "risk_contributions": risk_contrib,
+        "symbol_metrics": symbol_metrics,
         "risk_contribution_hhi": rc_hhi,
         "largest_risk_symbol": largest_risk_symbol,
         "largest_risk_contribution": largest_risk_contribution,

@@ -3,105 +3,119 @@ import AppNav from '../components/AppNav.jsx';
 import { setCashReserve, setReferenceWeights } from '../lib/api.js';
 import { formatMoney } from '../lib/format.js';
 import { validateCashReserveInput, validateReferenceWeightInputs } from '../lib/validation.js';
-import { useI18n } from '../i18n.js';
 
 function FieldError({ error }) {
   return error ? <span className="field-error">{error}</span> : null;
 }
 
-export default function SettingsPage({ dashboard = {}, locale = 'en' }) {
-  const { t } = useI18n(locale);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+export default function SettingsPage({ dashboard = {}, locale = 'vi' }) {
   const positions = dashboard.portfolio?.positions || [];
   const current = dashboard.portfolio?.reference_weights || {};
   const prefs = dashboard.preferences || {};
   const [enabled, setEnabled] = useState(Object.keys(current).length > 0);
-  const [weights, setWeights] = useState(() => Object.fromEntries(positions.map((p) => [p.symbol, current[p.symbol] != null ? Number(current[p.symbol]) * 100 : ''])));
+  const [weights, setWeights] = useState(() => Object.fromEntries(positions.map(position => [position.symbol, current[position.symbol] != null ? Number(current[position.symbol]) * 100 : ''])));
   const [cashReserve, setCashReserveValue] = useState(prefs.cash_reserve_configured ? String(Number(prefs.cash_reserve || 0)) : '');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const total = useMemo(() => Object.values(weights).reduce((sum, v) => sum + (v === '' ? 0 : Number(v || 0)), 0), [weights]);
+  const total = useMemo(() => Object.values(weights).reduce((sum, value) => sum + (value === '' ? 0 : Number(value || 0)), 0), [weights]);
 
   const reservePreview = useMemo(() => {
     if (String(cashReserve ?? '').trim() === '') return null;
-    try { return validateCashReserveInput(cashReserve, locale); } catch { return null; }
-  }, [cashReserve, locale]);
+    try { return validateCashReserveInput(cashReserve, 'vi'); } catch { return null; }
+  }, [cashReserve]);
 
-  async function save(e) {
-    e.preventDefault();
+  function setWeight(symbol, value) {
+    setWeights(currentWeights => ({ ...currentWeights, [symbol]: value }));
+    setFieldErrors(currentErrors => ({ ...currentErrors, [symbol]: undefined, weights: undefined }));
+  }
+
+  async function save(event) {
+    event.preventDefault();
     setSaving(true);
     setMessage('');
     setFieldErrors({});
     try {
-      const reserve = validateCashReserveInput(cashReserve, locale);
+      const reserve = validateCashReserveInput(cashReserve, 'vi');
       let normalizedWeights = {};
       if (enabled) {
-        if (positions.length === 0) throw new Error(text('Add holdings before enabling target-weight guidance.', 'Hãy thêm cổ phiếu trước khi bật tham chiếu tỷ trọng.'));
-        normalizedWeights = validateReferenceWeightInputs(weights, positions.map((p) => p.symbol), locale);
+        if (!positions.length) throw new Error('Hãy thêm cổ phiếu vào danh mục trước khi đặt tỷ trọng tham chiếu.');
+        normalizedWeights = validateReferenceWeightInputs(weights, positions.map(position => position.symbol), 'vi');
       }
       const reserveResult = await setCashReserve(reserve);
       await setReferenceWeights(normalizedWeights);
-      const persistedReserve = Number(reserveResult?.cash_reserve);
-      if (!Number.isFinite(persistedReserve) || persistedReserve !== reserve) {
-        throw new Error(text(
-          `Cash reserve verification failed. Expected ${reserve.toLocaleString('en-US')} VND but backend returned ${String(reserveResult?.cash_reserve)}.`,
-          `Xác minh tiền dự trữ thất bại. Dự kiến ${reserve.toLocaleString('vi-VN')} VND nhưng backend trả về ${String(reserveResult?.cash_reserve)}.`,
-        ));
-      }
-      setCashReserveValue(String(persistedReserve));
-      setMessage(text(
-        `Preferences saved. Strategic cash reserve confirmed at ${formatMoney(persistedReserve, false, locale)} VND. Cash is only considered deployable above this reserve and when explicit target weights are enabled.`,
-        `Đã lưu tùy chọn. Tiền mặt dự trữ được xác nhận là ${formatMoney(persistedReserve, false, locale)} VND. Tiền mặt chỉ được coi là có thể phân bổ khi vượt mức này và đã bật tỷ trọng mục tiêu rõ ràng.`,
-      ));
-      setSaving(false);
-    } catch (err) {
-      if (err.field) setFieldErrors({ [err.field]: err.message });
-      setMessage(err.message);
+      const savedReserve = Number(reserveResult?.cash_reserve);
+      if (!Number.isFinite(savedReserve)) throw new Error('Không thể xác nhận số tiền dự trữ đã lưu.');
+      setCashReserveValue(String(savedReserve));
+      setMessage(`Đã lưu cài đặt. Tiền mặt muốn giữ lại: ${formatMoney(savedReserve, false, locale)} VND.`);
+    } catch (error) {
+      if (error.field) setFieldErrors({ [error.field]: error.message });
+      setMessage(error.message);
+    } finally {
       setSaving(false);
     }
   }
 
-  function setWeight(symbol, value) {
-    setWeights((x) => ({ ...x, [symbol]: value }));
-    setFieldErrors((x) => ({ ...x, [symbol]: undefined, weights: undefined }));
-  }
+  return <div className="page">
+    <AppNav active="settings" locale={locale} />
 
-  return (
-    <div className="page">
-      <AppNav active="settings" locale={locale} />
-      <header className="page-head"><div><h1>{t('settings.title')}</h1><p className="muted">{text('QPort keeps settings intentionally small. Accounting and Buy & Hold rules are fixed; only explicit guidance preferences belong here.', 'QPort cố ý giữ cài đặt ở mức tối thiểu. Quy tắc hạch toán và Buy & Hold là cố định; chỉ các tùy chọn hướng dẫn rõ ràng nằm ở đây.')}</p></div></header>
+    <header className="page-head">
+      <div>
+        <div className="eyebrow">Tùy chọn cá nhân</div>
+        <h1>Cài đặt</h1>
+        <p className="muted">Chỉ hiển thị những gì bạn thực sự có thể thay đổi. Các quy tắc hạch toán và cập nhật dữ liệu do hệ thống tự quản lý.</p>
+      </div>
+    </header>
 
-      <div className="expand-grid">
-        <div className="card"><h3>{text('System policy', 'Chính sách hệ thống')}</h3><div className="diag-row"><span>{text('Investment mode', 'Chế độ đầu tư')}</span><b>BUY &amp; HOLD</b></div><div className="diag-row"><span>{text('Automatic trading', 'Giao dịch tự động')}</span><b>{text('OFF', 'TẮT')}</b></div><div className="diag-row"><span>{text('Portfolio changes', 'Thay đổi danh mục')}</span><b>{text('Ledger events only', 'Chỉ từ sự kiện sổ cái')}</b></div><div className="diag-row"><span>{text('Daily tracking', 'Theo dõi hàng ngày')}</span><b>{text('ON', 'BẬT')}</b></div><p className="muted">{text('These are product invariants, not tunable parameters.', 'Đây là nguyên tắc bất biến của sản phẩm, không phải tham số để tối ưu.')}</p></div>
-        <div className="card"><h3>{text('Market data', 'Dữ liệu thị trường')}</h3><div className="diag-row"><span>{text('Mode', 'Chế độ')}</span><b>AUTO</b></div><div className="diag-row"><span>{text('Primary when installed', 'Nguồn ưu tiên khi có')}</span><b>Vnstock</b></div><div className="diag-row"><span>{text('Fallback', 'Nguồn dự phòng')}</span><b>VNDIRECT</b></div><div className="diag-row"><span>{text('Scheduled EOD sync', 'Đồng bộ cuối ngày')}</span><b>15:30 Asia/Ho_Chi_Minh</b></div><p className="muted">{text('Provider failure becomes stale/missing information; it never changes holdings.', 'Lỗi nguồn dữ liệu chỉ trở thành thông tin CŨ/THIẾU; nó không bao giờ thay đổi danh mục.')}</p></div>
+    <form className="card" onSubmit={save} noValidate>
+      <div className="section-head">
+        <div>
+          <h2>Tiền mặt muốn giữ lại</h2>
+          <p className="muted">Nếu bạn dùng tính năng tham chiếu tỷ trọng, QPort chỉ coi phần tiền mặt vượt mức này là có thể dùng để mua thêm. Nếu chỉ theo dõi danh mục, bạn có thể để 0.</p>
+        </div>
       </div>
 
-      <form className="card" onSubmit={save} noValidate>
-        <div className="section-head"><div><h3>{text('Cash policy', 'Chính sách tiền mặt')}</h3><p className="muted">{text('Available cash is not automatically deployable. Set the amount you intentionally want to keep untouched. Enter 0 only if you explicitly want no reserve.', 'Tiền mặt khả dụng không tự động đồng nghĩa có thể phân bổ. Hãy đặt số tiền bạn chủ động muốn giữ nguyên. Chỉ nhập 0 nếu bạn thực sự không muốn giữ dự trữ.')}</p></div></div>
-        <label>{text('Strategic cash reserve (VND)', 'Tiền mặt dự trữ chiến lược (VND)')}
-          <input
-            type="text"
-            inputMode="decimal"
-            value={cashReserve}
-            onChange={(e) => { setCashReserveValue(e.target.value); setFieldErrors((x) => ({ ...x, cash_reserve: undefined })); }}
-            placeholder={text('20m or 20,000,000', '20tr hoặc 20.000.000')}
-            aria-invalid={!!fieldErrors.cash_reserve}
-            autoComplete="off"
-          />
-          <span className="muted">{text('Accepted: 20000000 · 20,000,000 · 20.000.000 · 20m · 20tr', 'Chấp nhận: 20000000 · 20,000,000 · 20.000.000 · 20m · 20tr')}</span>
-          {reservePreview != null && <span className="money-preview"><b>{text('Will save', 'Sẽ lưu')}:</b> {formatMoney(reservePreview, false, locale)} VND</span>}
-          <FieldError error={fieldErrors.cash_reserve} />
-        </label>
+      <label>Số tiền dự trữ (VND)
+        <input
+          type="text"
+          inputMode="decimal"
+          value={cashReserve}
+          onChange={event => { setCashReserveValue(event.target.value); setFieldErrors(current => ({ ...current, cash_reserve: undefined })); }}
+          placeholder="20tr hoặc 20.000.000"
+          aria-invalid={!!fieldErrors.cash_reserve}
+          autoComplete="off"
+        />
+        <span className="muted">Có thể nhập: 20000000 · 20.000.000 · 20tr</span>
+        {reservePreview != null && <span className="money-preview"><b>Sẽ lưu:</b> {formatMoney(reservePreview, false, locale)} VND</span>}
+        <FieldError error={fieldErrors.cash_reserve} />
+      </label>
 
-        <hr className="soft-rule" />
-        <div className="section-head"><div><h3>{text('Optional target-weight guidance', 'Tham chiếu tỷ trọng không bắt buộc')}</h3><p className="muted">{text('Enable only if these percentages represent your deliberate long-term portfolio policy. Without them QPort shows MONITOR and will not invent an equal-weight ADD recommendation.', 'Chỉ bật khi các tỷ lệ này thực sự là chính sách danh mục dài hạn của bạn. Nếu chưa cấu hình, QPort sẽ hiển thị THEO DÕI và không tự tạo gợi ý MUA THÊM theo equal-weight.')}</p></div><label className="toggle-row"><input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); setMessage(''); setFieldErrors({}); }} /><span>{enabled ? text('Enabled', 'Đang bật') : text('Disabled — pure Buy & Hold', 'Đang tắt — Buy & Hold thuần')}</span></label></div>
+      <details className="disclosure-card" open={enabled}>
+        <summary>
+          <div><b>Tỷ trọng tham chiếu</b><span className="muted">Tùy chọn nâng cao cho người muốn định hướng tiền mua thêm</span></div>
+        </summary>
+        <div className="section-head">
+          <div>
+            <p className="muted">Đây không phải cơ chế tái cân bằng tự động. Chỉ bật nếu bạn có chủ đích đặt tỷ trọng dài hạn cho từng mã.</p>
+          </div>
+          <label className="toggle-row"><input type="checkbox" checked={enabled} onChange={event => { setEnabled(event.target.checked); setMessage(''); setFieldErrors({}); }} /><span>{enabled ? 'Đang bật' : 'Đang tắt'}</span></label>
+        </div>
 
-        {enabled && (positions.length === 0 ? <p className="muted">{t('settings.add_first')}</p> : <><div className="reference-grid">{positions.map((p) => <label key={p.symbol}><span><b>{p.symbol}</b> <span className="muted">{text('current NAV weight', 'tỷ trọng NAV hiện tại')} {(Number(p.weight || 0) * 100).toFixed(1)}%</span></span><div className="reference-input"><input type="number" min="0.01" max="100" step="0.01" value={weights[p.symbol] ?? ''} onChange={(e) => setWeight(p.symbol, e.target.value)} aria-invalid={!!fieldErrors[p.symbol]} /><span>%</span></div><FieldError error={fieldErrors[p.symbol]} /></label>)}</div><div className="diag-row"><span>{text('Target total', 'Tổng mục tiêu')}</span><b className={Math.abs(total - 100) < .001 ? 'pos' : 'neg'}>{Number.isFinite(total) ? total.toFixed(2) : '—'}%</b></div><FieldError error={fieldErrors.weights} /></>)}
+        {enabled && (positions.length === 0 ? <p className="muted">Chưa có cổ phiếu để đặt tỷ trọng.</p> : <>
+          <div className="reference-grid">
+            {positions.map(position => <label key={position.symbol}>
+              <span><b>{position.symbol}</b> <span className="muted">hiện tại {(Number(position.weight || 0) * 100).toFixed(1)}%</span></span>
+              <div className="reference-input"><input type="number" min="0.01" max="100" step="0.01" value={weights[position.symbol] ?? ''} onChange={event => setWeight(position.symbol, event.target.value)} aria-invalid={!!fieldErrors[position.symbol]} /><span>%</span></div>
+              <FieldError error={fieldErrors[position.symbol]} />
+            </label>)}
+          </div>
+          <div className="diag-row"><span>Tổng tỷ trọng</span><b className={Math.abs(total - 100) < .001 ? 'pos' : 'neg'}>{Number.isFinite(total) ? total.toFixed(2) : '—'}%</b></div>
+          <FieldError error={fieldErrors.weights} />
+        </>)}
+      </details>
 
-        <div className="button-row"><button className="btn-export" type="submit" disabled={saving}>{saving ? t('settings.saving') : text('Save preferences', 'Lưu tùy chọn')}</button></div>
-        {message && <div className="run-message" style={{ marginTop: 10 }}>{message}</div>}
-      </form>
-    </div>
-  );
+      <div className="button-row"><button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu cài đặt'}</button></div>
+      {message && <div className="run-message" style={{ marginTop: 10 }}>{message}</div>}
+    </form>
+  </div>;
 }

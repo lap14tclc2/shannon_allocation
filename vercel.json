@@ -1,6 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastapi",
+  "git": {
+    "deploymentEnabled": {
+      "*": false,
+      "main": true
+    }
+  },
+  "ignoreCommand": "test \"$VERCEL_GIT_COMMIT_REF\" != \"main\"",
   "buildCommand": "cd frontend && npm ci && npm run build",
   "functions": {
     "app/vercel.py": {
@@ -10,9 +17,11 @@
   "rewrites": [
     { "source": "/login", "destination": "/" },
     { "source": "/admin", "destination": "/" },
+    { "source": "/admin/:path*", "destination": "/" },
     { "source": "/transactions", "destination": "/" },
     { "source": "/performance", "destination": "/" },
     { "source": "/risk", "destination": "/" },
+    { "source": "/dividends", "destination": "/" },
     { "source": "/snapshots", "destination": "/" },
     { "source": "/operations", "destination": "/" },
     { "source": "/logs", "destination": "/" },

@@ -1,0 +1,286 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import AppNav from '../components/AppNav.jsx';
+import DividendTree from '../components/DividendTree.jsx';
+import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
+import { getDividendHistories, syncPortfolio } from '../lib/api.js';
+
+function pct(value, digits = 2) {
+  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
+}
+
+function money(value, locale = 'vi') {
+  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
+}
+
+function signedMoney(value, locale = 'vi') {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
+}
+
+function Metric({ label, value, note, tone = '' }) {
+  return <div className={`metric-card overview-metric ${tone}`}>
+    <div className="metric-label">{label}</div>
+    <div className="metric-value">{value}</div>
+    {note && <div className="metric-note">{note}</div>}
+  </div>;
+}
+
+function currentVietnamYear() {
+  return Number(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric' }).format(new Date()));
+}
+
+function eventDate(event) {
+  return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || null;
+}
+
+function eventYear(event) {
+  const dateValue = eventDate(event);
+  if (!dateValue) return null;
+  const year = Number(String(dateValue).slice(0, 4));
+  return Number.isInteger(year) && year >= 1900 ? year : null;
+}
+
+function HoldingMobileCard({ row, locale }) {
+  const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
+  const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
+  const positive = pnl == null ? null : pnl >= 0;
+  const symbol = String(row.symbol || '').toUpperCase();
+  const sharesText = formatShares(row.shares, locale);
+  return <article className="holding-mobile-card">
+    <div className="holding-mobile-head">
+      <div className="holding-mobile-symbol">
+        <strong>{symbol}</strong>
+        <span>{row.price_date ? `Giá ngày ${row.price_date}` : 'Giá chưa cập nhật'}</span>
+      </div>
+      <div className="holding-mobile-value">
+        <strong>{money(row.market_value, locale)}</strong>
+        <span className={positive == null ? '' : positive ? 'pos' : 'neg'}>
+          {signedMoney(row.unrealized_pnl, locale)} · {pct(row.unrealized_return)}
+        </span>
+      </div>
+    </div>
+    <div className="holding-mobile-facts">
+      <div><span>Số lượng</span><b>{sharesText === '-' ? '-' : `${sharesText} CP`}</b></div>
+      <div><span>Giá vốn</span><b>{money(row.average_cost, locale)}</b></div>
+      <div><span>Giá hiện tại</span><b>{money(row.price, locale)}</b></div>
+      <div><span>Tỷ trọng</span><b>{formatWeight(row.weight)}</b></div>
+    </div>
+  </article>;
+}
+
+export default function VietnamesePortfolioDashboard({ dashboard: initialDashboard = {}, locale = 'vi' }) {
+  const [dashboard] = useState(initialDashboard);
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [query, setQuery] = useState('');
+  const [dividends, setDividends] = useState([]);
+  const [dividendLoading, setDividendLoading] = useState(false);
+
+  const portfolio = dashboard.portfolio || {};
+  const positions = portfolio.positions || [];
+  const performance = dashboard.performance_summary || {};
+  const market = dashboard.market_data || {};
+  const risk = dashboard.risk || {};
+  const health = dashboard.health || {};
+  const currentYear = currentVietnamYear();
+
+  const visiblePositions = useMemo(() => {
+    const q = query.trim().toUpperCase();
+    return q ? positions.filter(row => String(row.symbol || '').toUpperCase().includes(q)) : positions;
+  }, [positions, query]);
+
+  const attentionItems = useMemo(() => {
+    const items = [];
+    const warnings = (health.flags || []).filter(flag => flag.level === 'WARNING');
+    for (const flag of warnings.slice(0, 2)) items.push(flag.message);
+    if (!warnings.length && risk.max_equity_weight != null && Number(risk.max_equity_weight) >= 0.40) {
+      items.push(`Một mã đang chiếm ${pct(risk.max_equity_weight)} phần cổ phiếu của danh mục. Hãy kiểm tra mức tập trung này có còn phù hợp với kế hoạch đầu tư hay không.`);
+    }
+    if (market.status && !['VALID', 'READY', 'OK'].includes(String(market.status).toUpperCase())) {
+      items.push('Dữ liệu giá hiện chưa đầy đủ hoặc chưa đồng bộ. Giá trị danh mục có thể chưa phản ánh phiên gần nhất.');
+    }
+    return items;
+  }, [health, risk.max_equity_weight, market.status]);
+
+  const latestDividendTreeRows = useMemo(() => dividends
+    .map(item => {
+      const validEvents = (item.result?.events || [])
+        .map(event => ({ event, year: eventYear(event) }))
+        .filter(row => row.year != null && row.year <= currentYear);
+      const latestYear = validEvents.reduce(
+        (latest, row) => latest == null || row.year > latest ? row.year : latest,
+        null,
+      );
+      const events = latestYear == null
+        ? []
+        : validEvents
+            .filter(row => row.year === latestYear)
+            .map(row => row.event)
+            .sort((a, b) => String(eventDate(b) || '').localeCompare(String(eventDate(a) || '')));
+      return {
+        symbol: item.symbol,
+        events,
+        error: item.error,
+        loading: item.loading,
+      };
+    })
+    .sort((a, b) => String(a.symbol).localeCompare(String(b.symbol))), [dividends, currentYear]);
+
+  const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
+
+  async function sync() {
+    setSyncing(true);
+    setMessage('');
+    try {
+      await syncPortfolio();
+      window.location.reload();
+    } catch (error) {
+      setMessage(`Không thể cập nhật dữ liệu: ${error.message}`);
+      setSyncing(false);
+    }
+  }
+
+  async function loadDividends(refresh = false) {
+    const symbols = positions.map(row => String(row.symbol || '').toUpperCase()).filter(Boolean);
+    if (!symbols.length) return;
+    setDividendLoading(true);
+    setDividends(symbols.map(symbol => ({ symbol, result: null, error: null, loading: true })));
+    try {
+      await getDividendHistories(symbols, {
+        refresh,
+        concurrency: 6,
+        onResult: completed => {
+          setDividends(current => current.map(row => row.symbol === completed.symbol ? { ...completed, loading: false } : row));
+        },
+      });
+    } finally {
+      setDividendLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (positions.length) loadDividends(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions.map(row => row.symbol).join('|')]);
+
+  const hasTotalPnl = portfolio.total_pnl != null && Number.isFinite(Number(portfolio.total_pnl));
+  const totalPnl = hasTotalPnl ? Number(portfolio.total_pnl) : null;
+  const totalPositive = totalPnl == null ? null : totalPnl >= 0;
+  const dividendIncome = performance.net_dividend_income ?? performance.dividend_income ?? null;
+  const hasCashRatio = portfolio.cash != null && portfolio.nav != null && Number(portfolio.nav) !== 0;
+
+  return <div className="page investor-dashboard">
+    <AppNav active="portfolio" locale={locale} />
+
+    <header className="portfolio-hero investor-hero">
+      <div className="hero-primary">
+        <div className="eyebrow">Tổng tài sản</div>
+        <h1>{money(portfolio.nav, locale)}</h1>
+        <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
+          <strong>{signedMoney(totalPnl, locale)}</strong>
+          <span>{pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận</span>
+        </div>
+        <div className="hero-meta">
+          <span>{positions.length} mã cổ phiếu</span>
+          <span>{market.market_date ? `Dữ liệu giá đến ${market.market_date}` : 'Dữ liệu giá: -'}</span>
+        </div>
+      </div>
+      <div className="hero-actions">
+        <a className="btn-primary" href="/transactions">+ Thêm giao dịch</a>
+        <button className="btn-secondary" type="button" onClick={sync} disabled={syncing}>{syncing ? 'Đang cập nhật…' : '↻ Cập nhật dữ liệu'}</button>
+      </div>
+    </header>
+
+    {message && <div className="run-message banner-message">{message}</div>}
+
+    <div className="metric-grid portfolio-metrics overview-metrics investor-overview">
+      <Metric label="Cổ phiếu" value={money(portfolio.equity_value, locale)} note={`${positions.length} mã đang nắm giữ`} />
+      <Metric label="Tiền mặt" value={money(portfolio.cash, locale)} note={hasCashRatio ? `${pct(Number(portfolio.cash) / Number(portfolio.nav))} tổng tài sản` : undefined} />
+      <Metric label="Tổng giá vốn" value={money(portfolio.cost_value, locale)} note="Giá vốn các cổ phiếu hiện có" />
+      <Metric label="Cổ tức thực nhận" value={money(dividendIncome, locale)} note="Tiền mặt sau thuế đã ghi nhận" tone="income-metric" />
+    </div>
+
+    {attentionItems.length > 0 && <section className="card portfolio-assessment-card investor-attention-card">
+      <div className="section-head">
+        <div><div className="eyebrow">Cần chú ý</div><h2>Danh mục có điểm cần xem lại</h2></div>
+        <a className="text-link" href="/risk">Xem phân tích →</a>
+      </div>
+      <div className="assessment-flags">
+        {attentionItems.map((item, index) => <div className="assessment-flag warn-flag" key={index}><span aria-hidden="true">!</span><div><p>{item}</p></div></div>)}
+      </div>
+    </section>}
+
+    <section className="card holdings-card investor-holdings-card">
+      <div className="section-head holdings-head">
+        <div>
+          <div className="eyebrow">Danh mục hiện tại</div>
+          <h2>Cổ phiếu đang nắm giữ</h2>
+          <p className="muted">Theo dõi số lượng, giá vốn, giá hiện tại và lãi/lỗ của từng mã.</p>
+        </div>
+        {positions.length > 6 && <input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu…" aria-label="Tìm mã cổ phiếu" />}
+      </div>
+
+      {positions.length === 0 ? <div className="empty-state">
+        <h3>Chưa có cổ phiếu trong danh mục</h3>
+        <p>Hãy nhập danh mục hiện có hoặc ghi giao dịch mua đầu tiên.</p>
+        <a className="btn-primary" href="/transactions">Nhập danh mục ban đầu</a>
+      </div> : visiblePositions.length === 0 ? <div className="empty-state compact-empty">Không tìm thấy mã phù hợp.</div> : <>
+        <div className="holding-mobile-list">
+          {visiblePositions.map(row => <HoldingMobileCard key={String(row.symbol || '').toUpperCase()} row={row} locale={locale} />)}
+        </div>
+        <div className="table-scroll portfolio-table-desktop">
+          <table className="ranking portfolio-table portfolio-table-core">
+            <thead><tr>
+              <th>Mã</th>
+              <th className="num">SL</th>
+              <th className="num">Giá vốn</th>
+              <th className="num">Giá hiện tại</th>
+              <th className="num">Giá trị</th>
+              <th className="num">Lãi/lỗ tạm tính</th>
+              <th className="num">% Lãi/lỗ</th>
+              <th className="num">Tỷ trọng</th>
+            </tr></thead>
+            <tbody>{visiblePositions.map(row => {
+              const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
+              const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
+              const hasReturn = row.unrealized_return != null && Number.isFinite(Number(row.unrealized_return));
+              const symbol = String(row.symbol || '').toUpperCase();
+              return <tr key={symbol}>
+                <td><b>{symbol}</b>{row.price_date && <div className="muted">{row.price_date}</div>}</td>
+                <td className="num">{formatShares(row.shares, locale)}</td>
+                <td className="num">{money(row.average_cost, locale)}</td>
+                <td className="num">{money(row.price, locale)}</td>
+                <td className="num emphasis">{money(row.market_value, locale)}</td>
+                <td className={`num ${pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}`}>{signedMoney(row.unrealized_pnl, locale)}</td>
+                <td className={`num ${!hasReturn ? '' : Number(row.unrealized_return) >= 0 ? 'pos' : 'neg'}`}>{pct(row.unrealized_return)}</td>
+                <td className="num">{formatWeight(row.weight)}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </>}
+    </section>
+
+    {positions.length > 0 && <section className="card dividend-card investor-dividend-card">
+      <div className="section-head">
+        <div>
+          <div className="eyebrow">Cổ tức & quyền</div>
+          <h2>Cổ tức gần nhất theo từng mã</h2>
+          <p className="muted">Mỗi mã tự chọn năm gần nhất có dữ liệu đến {currentYear}. Ví dụ mã có dữ liệu 2026 sẽ hiện 2026; mã mới nhất chỉ có 2025 vẫn hiện đầy đủ các sự kiện 2025.</p>
+        </div>
+        <div className="section-actions">
+          <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>
+          <button className="btn-secondary" type="button" onClick={() => loadDividends(true)} disabled={dividendLoading}>{dividendLoading ? 'Đang cập nhật…' : 'Cập nhật cổ tức'}</button>
+        </div>
+      </div>
+
+      {dividendErrors.length > 0 && <div className="data-error-message" role="alert">
+        Không thể tải dữ liệu cổ tức cho <b>{dividendErrors.map(row => row.symbol).join(', ')}</b>. Hãy thử cập nhật lại sau. Dữ liệu của các mã khác vẫn được giữ nguyên nếu tải thành công.
+      </div>}
+
+      {latestDividendTreeRows.length > 0 ? (
+        <DividendTree rows={latestDividendTreeRows} locale={locale} root="symbol" openLatest />
+      ) : dividendLoading ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
+    </section>}
+  </div>;
+}

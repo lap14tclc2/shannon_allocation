@@ -1,4 +1,5 @@
 let authRedirectInProgress = false;
+const getCache = new Map();
 
 function apiError(data, fallback) {
   const err = new Error(data?.error || fallback);
@@ -36,26 +37,57 @@ async function getJSON(url, signal) {
   return handleResponse(res, url);
 }
 
+async function getJSONCached(url, ttlMs = 60_000, { bypass = false } = {}) {
+  const now = Date.now();
+  const cached = getCache.get(url);
+  if (!bypass && cached && cached.expiresAt > now) return cached.value;
+  if (!bypass && cached?.promise) return cached.promise;
+
+  const promise = getJSON(url)
+    .then(value => {
+      getCache.set(url, { value, expiresAt: Date.now() + Math.max(0, ttlMs), promise: null });
+      return value;
+    })
+    .catch(error => {
+      getCache.delete(url);
+      throw error;
+    });
+  getCache.set(url, { value: cached?.value, expiresAt: cached?.expiresAt || 0, promise });
+  return promise;
+}
+
+function clearGetCache() {
+  getCache.clear();
+}
+
 async function sendJSON(url, method, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
-  return handleResponse(res, url);
+  const data = await handleResponse(res, url);
+  if (method !== 'GET') clearGetCache();
+  return data;
 }
 
 // Authentication
-export const getCurrentUser = () => getJSON('/api/auth/me');
+export const getCurrentUser = () => getJSONCached('/api/auth/me', 60_000);
 export const loginUser = (username, password = '') => sendJSON('/api/auth/login', 'POST', { username, password });
 export const registerUser = (username) => sendJSON('/api/auth/register', 'POST', { username });
 export const logoutUser = () => sendJSON('/api/auth/logout', 'POST', {});
 export const listUsers = () => getJSON('/api/auth/users');
 export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)}`, 'DELETE', {});
 export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
+export const getAdminUserPortfolio = (userId) => getJSON(`/api/admin/users/${Number(userId)}/portfolio`);
 
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
+export async function getPortfolioHoldingSymbols() {
+  const data = await getJSON('/api/portfolio/holding-symbols');
+  return data.symbols || [];
+}
 export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
 export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
 export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
 export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
 export const deletePortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+export const deletePortfolio = (confirmation) => sendJSON('/api/portfolio', 'DELETE', { confirmation });
 export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
 export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');
 export const getPortfolioRisk = () => getJSON('/api/portfolio/risk');
@@ -70,10 +102,39 @@ export const logClientActivity = (action, details = {}) => sendJSON('/api/portfo
 export const getPortfolioOperations = () => getJSON('/api/portfolio/operations');
 export const reconcileBroker = (payload) => sendJSON('/api/portfolio/reconciliation', 'POST', payload);
 export const syncCorporateActions = (payload = {}) => sendJSON('/api/portfolio/corporate-actions/sync', 'POST', payload);
-export const getLatestDividend = (symbol, options = {}) => {
-  const refresh = options?.refresh ? '?refresh=1' : '';
-  return getJSON(`/api/portfolio/dividends/latest/${encodeURIComponent(String(symbol || '').toUpperCase())}${refresh}`);
+export const getDividendHistory = (symbol, options = {}) => {
+  const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
+  const refresh = Boolean(options?.refresh);
+  const url = `/api/portfolio/dividends/latest/${ticker}${refresh ? '?refresh=1' : ''}`;
+  return refresh ? getJSON(url) : getJSONCached(url, 5 * 60_000);
 };
+
+export async function getDividendHistories(symbols, options = {}) {
+  const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
+  const concurrency = Math.max(1, Math.min(Number(options.concurrency) || 6, 10));
+  const results = new Array(unique.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= unique.length) return;
+      const symbol = unique[index];
+      try {
+        results[index] = { symbol, result: await getDividendHistory(symbol, { refresh: Boolean(options.refresh) }), error: null };
+      } catch (error) {
+        results[index] = { symbol, result: null, error: error.message || 'Không thể tải dữ liệu cổ tức.' };
+      }
+      if (typeof options.onResult === 'function') options.onResult(results[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
+  return results;
+}
+
+export const getLatestDividend = getDividendHistory;
 export const getDividendProviderHealth = () => getJSON('/api/portfolio/dividends/health');
 export const verifyCorporateAction = (id, sourceUrl) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/verify`, 'POST', { source_url: sourceUrl });
 export const recordCorporateActionReceipt = (id, payload) => sendJSON(`/api/portfolio/corporate-actions/${Number(id)}/receipt`, 'POST', payload);
