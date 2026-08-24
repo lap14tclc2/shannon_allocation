@@ -12,9 +12,16 @@ function money(value, locale = 'vi') {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
 }
 
+function signedMoney(value, locale = 'vi') {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
+}
+
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
   const returns = performance.returns || {};
-  const series = (performance.series || []).map(row => ({ date: row.date, nav: Number(row.nav || 0) }));
+  const series = (performance.series || [])
+    .filter(row => row?.date && row.nav != null && Number.isFinite(Number(row.nav)))
+    .map(row => ({ date: row.date, nav: Number(row.nav) }));
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -30,9 +37,12 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
     }
   }
 
-  const totalPnl = Number(performance.total_pnl || 0);
-  const totalPositive = totalPnl >= 0;
-  const historyCount = Number(performance.official_snapshot_count || 0);
+  const hasTotalPnl = performance.total_pnl != null && Number.isFinite(Number(performance.total_pnl));
+  const totalPnl = hasTotalPnl ? Number(performance.total_pnl) : null;
+  const totalPositive = totalPnl == null ? null : totalPnl >= 0;
+  const historyCount = performance.official_snapshot_count == null || !Number.isFinite(Number(performance.official_snapshot_count))
+    ? null
+    : Number(performance.official_snapshot_count);
 
   return <div className="page investor-performance-page">
     <AppNav active="performance" locale={locale} />
@@ -46,17 +56,17 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
       <button className="btn-secondary" type="button" onClick={sync} disabled={syncing}>{syncing ? 'Đang cập nhật…' : '↻ Cập nhật lịch sử'}</button>
     </header>
 
-    {message && <div className="run-message">{message}</div>}
+    {message && <div className="run-message data-error-message" role="alert">{message}</div>}
 
     <div className="metric-grid portfolio-metrics overview-metrics investor-overview">
       <div className="metric-card">
         <div className="metric-label">Giá trị hiện tại</div>
         <div className="metric-value">{money(performance.nav, locale)}</div>
-        <div className="metric-note">{performance.latest_date || 'Định giá hiện tại'}</div>
+        <div className="metric-note">{performance.latest_date || '-'}</div>
       </div>
-      <div className={`metric-card ${totalPositive ? 'positive-card' : 'negative-card'}`}>
+      <div className={`metric-card ${totalPositive == null ? '' : totalPositive ? 'positive-card' : 'negative-card'}`}>
         <div className="metric-label">Tổng lãi/lỗ</div>
-        <div className="metric-value">{totalPositive ? '+' : ''}{money(totalPnl, locale)}</div>
+        <div className="metric-value">{signedMoney(totalPnl, locale)}</div>
         <div className="metric-note">{pct(performance.accounting_return)} trên vốn đã ghi nhận</div>
       </div>
       <div className="metric-card">
@@ -80,7 +90,7 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
       </div>
       {series.length < 2 ? <div className="empty-state">
         <h3>Chưa đủ lịch sử để vẽ biểu đồ</h3>
-        <p>Hiện có {historyCount} ngày dữ liệu. QPort sẽ tự bổ sung khi tiếp tục theo dõi hằng ngày.</p>
+        <p>Hiện có {historyCount == null ? '-' : historyCount} ngày dữ liệu. QPort sẽ tự bổ sung khi tiếp tục theo dõi hằng ngày.</p>
       </div> : <div className="chart"><EquityChart data={series} /></div>}
     </section>
 
@@ -88,9 +98,9 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
       <section className="card">
         <h3>Thu nhập từ cổ tức</h3>
         <div className="diag-row"><span>Cổ tức tiền mặt trước thuế</span><b>{money(performance.dividend_income, locale)}</b></div>
-        <div className="diag-row"><span>Thuế khấu trừ cổ tức tiền mặt</span><b>{money(performance.cash_dividend_tax || 0, locale)}</b></div>
+        <div className="diag-row"><span>Thuế khấu trừ cổ tức tiền mặt</span><b>{money(performance.cash_dividend_tax, locale)}</b></div>
         <div className="diag-row"><span>Cổ tức tiền mặt thực nhận</span><b>{money(performance.net_dividend_income ?? performance.dividend_income, locale)}</b></div>
-        <div className="diag-row"><span>Thuế cổ tức cổ phiếu đã ghi khi bán</span><b>{money(performance.stock_dividend_sale_tax || 0, locale)}</b></div>
+        <div className="diag-row"><span>Thuế cổ tức cổ phiếu đã ghi khi bán</span><b>{money(performance.stock_dividend_sale_tax, locale)}</b></div>
       </section>
 
       <section className="card">
@@ -117,7 +127,7 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
         <div><span>Từ đầu tháng</span><b>{pct(returns.mtd)}</b></div>
         <div><span>Ngày gần nhất</span><b>{pct(returns.daily)}</b></div>
         <div><span>Ngày tốt nhất / xấu nhất</span><b>{pct(performance.best_day)} / {pct(performance.worst_day)}</b></div>
-        <div><span>Số ngày dữ liệu chính thức</span><b>{historyCount}</b></div>
+        <div><span>Số ngày dữ liệu chính thức</span><b>{historyCount == null ? '-' : historyCount}</b></div>
         <div><span>Chất lượng dòng tiền</span><b>{performance.cashflow_history_quality || '-'}</b></div>
       </div>
       <p className="muted"><b>TWR</b> giúp đo hiệu quả danh mục sau khi loại ảnh hưởng của tiền nạp/rút. <b>XIRR</b> phản ánh lợi suất thực tế theo thời điểm dòng tiền của nhà đầu tư.</p>
