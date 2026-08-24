@@ -16,7 +16,6 @@ summary {
   font-family: inherit;
 }
 
-/* Financial figures keep aligned digits without forcing the whole UI into monospace. */
 .metric-value,
 .hero-return,
 .portfolio-hero h1,
@@ -28,7 +27,6 @@ summary {
   font-variant-numeric: tabular-nums;
 }
 
-/* Navigation and headings use natural Vietnamese casing. */
 .app-nav-links a,
 .brand-copy strong,
 .brand-copy small,
@@ -49,56 +47,21 @@ summary {
   letter-spacing: normal;
 }
 
-.app-nav-links a {
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.brand-copy strong {
-  font-size: 15px;
-  letter-spacing: -.035em;
-}
-
+.app-nav-links a { font-size: 13px; font-weight: 650; }
+.brand-copy strong { font-size: 15px; letter-spacing: -.035em; }
 .brand-copy small,
 .theme-toggle,
 .nav-user,
-.nav-logout {
-  font-size: 11.5px;
-}
-
-.page-head h1 {
-  font-size: clamp(25px, 4vw, 32px);
-  letter-spacing: -.035em;
-}
-
+.nav-logout { font-size: 11.5px; }
+.page-head h1 { font-size: clamp(25px, 4vw, 32px); letter-spacing: -.035em; }
 .section-head h2,
-.card > h2 {
-  font-size: 17px;
-  letter-spacing: -.02em;
-}
-
+.card > h2 { font-size: 17px; letter-spacing: -.02em; }
 .section-head h3,
-.card > h3 {
-  font-size: 15px;
-  letter-spacing: -.015em;
-}
-
+.card > h3 { font-size: 15px; letter-spacing: -.015em; }
 .eyebrow,
-.metric-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .01em;
-}
-
-.eyebrow::before {
-  content: "";
-}
-
-.ranking th {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0;
-}
+.metric-label { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
+.eyebrow::before { content: ""; }
+.ranking th { font-size: 11px; font-weight: 650; letter-spacing: 0; }
 
 .muted,
 .section-head p,
@@ -108,19 +71,11 @@ summary {
 .info-callout,
 .metric-note,
 .diag-row,
-.holding-source-state {
-  font-size: 12px;
-}
+.holding-source-state { font-size: 12px; }
+.ranking td { font-size: 12px; }
 
-.ranking td {
-  font-size: 12px;
-}
-
-/* Softer product surfaces: still restrained, but no longer terminal-flat. */
 .card,
-.metric-card {
-  border-radius: 12px;
-}
+.metric-card { border-radius: 12px; }
 
 button,
 .btn-primary,
@@ -129,374 +84,109 @@ button,
 .btn-export,
 .btn-variant,
 .btn-small,
-.btn-danger {
-  border-radius: 8px;
-  font-size: 12px;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.text-link {
-  font-size: 12px;
-}
+.btn-danger { border-radius: 8px; font-size: 12px; text-transform: none; letter-spacing: normal; }
+.text-link { font-size: 12px; }
 
 /* ---------- Investor dashboard ---------- */
-.investor-dashboard {
-  max-width: 1180px;
-}
-
-.investor-hero {
-  padding-top: 28px;
-  padding-bottom: 24px;
-  margin-bottom: 18px;
-}
-
-.investor-hero h1 {
-  margin: 6px 0 10px;
-  font-size: clamp(36px, 5vw, 52px);
-  font-weight: 720;
-  letter-spacing: -.055em;
-}
-
-.investor-hero .hero-return {
-  gap: 8px 12px;
-}
-
-.investor-hero .hero-return strong {
-  font-size: 16px;
-  font-weight: 750;
-}
-
+.investor-dashboard { max-width: 1180px; }
+.investor-hero { padding-top: 28px; padding-bottom: 24px; margin-bottom: 18px; }
+.investor-hero h1 { margin: 6px 0 10px; font-size: clamp(36px, 5vw, 52px); font-weight: 720; letter-spacing: -.055em; }
+.investor-hero .hero-return { gap: 8px 12px; }
+.investor-hero .hero-return strong { font-size: 16px; font-weight: 750; }
 .investor-hero .hero-return span,
-.investor-hero .hero-meta > span {
-  font-size: 12px;
-}
-
-.investor-overview {
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.investor-overview .metric-card {
-  min-height: 104px;
-  padding: 16px;
-}
-
-.investor-overview .metric-value {
-  font-size: clamp(18px, 2vw, 23px);
-}
-
-.investor-overview .metric-note {
-  margin-top: 8px;
-  color: var(--text-secondary);
-}
-
-.investor-overview .income-metric .metric-value {
-  color: var(--success);
-}
-
-.investor-attention-card {
-  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
-}
-
-.investor-attention-card .assessment-flag {
-  align-items: flex-start;
-}
-
-.investor-attention-card .assessment-flag > span {
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-weight: 800;
-}
-
+.investor-hero .hero-meta > span { font-size: 12px; }
+.investor-overview { gap: 10px; margin-bottom: 18px; }
+.investor-overview .metric-card { min-height: 104px; padding: 16px; }
+.investor-overview .metric-value { font-size: clamp(18px, 2vw, 23px); }
+.investor-overview .metric-note { margin-top: 8px; color: var(--text-secondary); }
+.investor-overview .income-metric .metric-value { color: var(--success); }
+.investor-attention-card { border-color: color-mix(in srgb, var(--warning) 42%, var(--border)); }
+.investor-attention-card .assessment-flag { align-items: flex-start; }
+.investor-attention-card .assessment-flag > span { flex: 0 0 24px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; font-weight: 800; }
 .investor-holdings-card .section-head,
-.investor-dividend-card .section-head {
-  margin-bottom: 14px;
-}
-
+.investor-dividend-card .section-head { margin-bottom: 14px; }
 .investor-holdings-card .section-head p,
-.investor-dividend-card .section-head p {
-  max-width: 700px;
-  margin-top: 4px;
-}
+.investor-dividend-card .section-head p { max-width: 700px; margin-top: 4px; }
+.portfolio-table-core tr { cursor: default; }
+.portfolio-table-core tbody tr { min-height: 56px; }
+.portfolio-table-core td { padding-top: 11px; padding-bottom: 11px; }
+.portfolio-table-core td:first-child b { font-size: 14px; letter-spacing: .015em; }
+.portfolio-table-core td:first-child .muted { margin-top: 2px; font-size: 10.5px; }
+.portfolio-table-core .emphasis { font-weight: 750; color: var(--text); }
 
-.portfolio-table-core tr {
-  cursor: default;
-}
-
-.portfolio-table-core tbody tr {
-  min-height: 56px;
-}
-
-.portfolio-table-core td {
-  padding-top: 11px;
-  padding-bottom: 11px;
-}
-
-.portfolio-table-core td:first-child b {
-  font-size: 14px;
-  letter-spacing: .015em;
-}
-
-.portfolio-table-core td:first-child .muted {
-  margin-top: 2px;
-  font-size: 10.5px;
-}
-
-.portfolio-table-core .emphasis {
-  font-weight: 750;
-  color: var(--text);
-}
-
-.holding-mobile-list {
-  display: none;
-}
-
-.holding-mobile-card {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--panel);
-  padding: 14px;
-}
-
-.holding-mobile-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
+.holding-mobile-list { display: none; }
+.holding-mobile-card { border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 14px; }
+.holding-mobile-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .holding-mobile-symbol,
-.holding-mobile-value {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.holding-mobile-symbol strong {
-  font-size: 18px;
-  line-height: 1.1;
-  letter-spacing: .015em;
-}
-
+.holding-mobile-value { min-width: 0; display: grid; gap: 2px; }
+.holding-mobile-symbol strong { font-size: 18px; line-height: 1.1; letter-spacing: .015em; }
 .holding-mobile-symbol span,
 .holding-mobile-value span,
-.holding-mobile-facts span {
-  color: var(--text-secondary);
-  font-size: 11.5px;
-}
-
-.holding-mobile-value {
-  text-align: right;
-}
-
-.holding-mobile-value > strong {
-  color: var(--text);
-  font-size: 16px;
-  line-height: 1.15;
-}
-
+.holding-mobile-facts span { color: var(--text-secondary); font-size: 11.5px; }
+.holding-mobile-value { text-align: right; }
+.holding-mobile-value > strong { color: var(--text); font-size: 16px; line-height: 1.15; }
 .holding-mobile-value .pos,
-.holding-mobile-value .neg {
-  text-align: right;
+.holding-mobile-value .neg { text-align: right; font-weight: 700; }
+.holding-mobile-facts { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.holding-mobile-facts > div { min-width: 0; display: grid; gap: 2px; }
+.holding-mobile-facts b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 700; }
+.transaction-mobile-note { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.transaction-mobile-actions { margin-top: 12px; }
+.transaction-mobile-actions .row-actions { justify-content: flex-end; }
+.investor-dividend-card .dividend-symbol-node { border-color: var(--border); }
+.investor-dividend-card .dividend-node-symbol > b { font-size: 14px; }
+
+/* Admin / destructive actions */
+.admin-row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.danger-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  padding: 0;
+  font-size: 11.5px;
   font-weight: 700;
+  cursor: pointer;
 }
-
-.holding-mobile-facts {
-  margin-top: 13px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
-}
-
-.holding-mobile-facts > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.holding-mobile-facts b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.transaction-mobile-note {
-  margin: 12px 0 0;
-  padding-top: 11px;
-  border-top: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.transaction-mobile-actions {
-  margin-top: 12px;
-}
-
-.transaction-mobile-actions .row-actions {
-  justify-content: flex-end;
-}
-
-.investor-dividend-card .dividend-symbol-node {
-  border-color: var(--border);
-}
-
-.investor-dividend-card .dividend-node-symbol > b {
-  font-size: 14px;
-}
+.danger-link:hover { text-decoration: underline; }
+.danger-link:disabled { opacity: .55; cursor: default; text-decoration: none; }
+.danger-setting { border-top: 1px solid var(--border); padding-top: 12px; }
+.admin-user-portfolio-page .status-pill { white-space: nowrap; }
 
 /* Legacy detail styles still used by secondary/admin surfaces. */
-.holding-symbol-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.holding-symbol {
-  text-transform: uppercase;
-  letter-spacing: .045em;
-}
-
-.holding-info-button {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 22px;
-  width: 22px;
-  height: 22px;
-  min-height: 22px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--info);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  text-transform: lowercase;
-  cursor: help;
-}
-
+.holding-symbol-actions { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.holding-symbol { text-transform: uppercase; letter-spacing: .045em; }
+.holding-info-button { display: inline-grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; min-height: 22px; padding: 0; border: 1px solid var(--border-strong); border-radius: 50%; background: transparent; color: var(--info); font-size: 11px; font-weight: 800; line-height: 1; text-transform: lowercase; cursor: help; }
 .holding-info-button:hover,
-.holding-info-button:focus-visible {
-  border-color: var(--info);
-  outline: none;
-}
-
-.holding-source-table {
-  min-width: 1180px !important;
-}
-
-.dividend-received-cell {
-  font-weight: 700;
-  color: var(--text);
-}
-
-.transaction-symbol {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
+.holding-info-button:focus-visible { border-color: var(--info); outline: none; }
+.holding-source-table { min-width: 1180px !important; }
+.dividend-received-cell { font-weight: 700; color: var(--text); }
+.transaction-symbol { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 
 @media (max-width: 719px) {
-  body {
-    font-size: 14px;
-  }
-
-  .investor-hero {
-    padding-top: 10px;
-  }
-
-  .investor-hero h1 {
-    font-size: clamp(30px, 9vw, 38px);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-  }
-
-  .investor-hero .hero-return {
-    display: grid;
-    gap: 1px;
-  }
-
-  .investor-hero .hero-return strong {
-    font-size: 17px;
-  }
-
-  .investor-overview .metric-card {
-    min-height: 74px;
-  }
-
-  .portfolio-table-desktop {
-    display: none;
-  }
-
-  .holding-mobile-list {
-    display: grid;
-    gap: 9px;
-  }
-
-  .investor-holdings-card {
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-
-  .investor-holdings-card > .section-head {
-    padding: 2px 2px 4px;
-  }
-
-  .investor-holdings-card .search-input {
-    margin-top: 4px;
-  }
-
-  .holding-mobile-card {
-    box-shadow: none;
-  }
-
-  .transaction-mobile-card .holding-mobile-head {
-    gap: 10px;
-  }
-
-  .transaction-mobile-card .holding-mobile-symbol strong {
-    font-size: 16px;
-  }
-
-  .transaction-mobile-card .holding-mobile-value > strong {
-    font-size: 14px;
-  }
-
+  body { font-size: 14px; }
+  .investor-hero { padding-top: 10px; }
+  .investor-hero h1 { font-size: clamp(30px, 9vw, 38px); white-space: normal; overflow: visible; text-overflow: clip; }
+  .investor-hero .hero-return { display: grid; gap: 1px; }
+  .investor-hero .hero-return strong { font-size: 17px; }
+  .investor-overview .metric-card { min-height: 74px; }
+  .portfolio-table-desktop { display: none; }
+  .holding-mobile-list { display: grid; gap: 9px; }
+  .investor-holdings-card { padding: 0; border: 0; background: transparent; }
+  .investor-holdings-card > .section-head { padding: 2px 2px 4px; }
+  .investor-holdings-card .search-input { margin-top: 4px; }
+  .holding-mobile-card { box-shadow: none; }
+  .transaction-mobile-card .holding-mobile-head { gap: 10px; }
+  .transaction-mobile-card .holding-mobile-symbol strong { font-size: 16px; }
+  .transaction-mobile-card .holding-mobile-value > strong { font-size: 14px; }
   .transaction-mobile-actions .row-actions,
-  .transaction-mobile-actions .inline-delete {
-    width: 100%;
-  }
-
-  .investor-attention-card .section-head > a {
-    width: auto;
-    align-self: flex-start;
-  }
-
-  .investor-dividend-card .section-head > button {
-    width: 100%;
-  }
-
-  .ranking td {
-    font-size: 12px;
-  }
+  .transaction-mobile-actions .inline-delete { width: 100%; }
+  .investor-attention-card .section-head > a { width: auto; align-self: flex-start; }
+  .investor-dividend-card .section-head > button { width: 100%; }
+  .ranking td { font-size: 12px; }
+  .admin-row-actions { display: grid; grid-template-columns: 1fr; }
 }
 
 @media (min-width: 720px) {
-  .ranking td {
-    font-size: 12px;
-  }
+  .ranking td { font-size: 12px; }
 }
