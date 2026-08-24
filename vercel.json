@@ -2,24 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastapi",
   "buildCommand": "cd frontend && npm ci && npm run build",
-  "outputDirectory": "frontend/dist",
   "functions": {
-    "app/main.py": {
+    "app/vercel.py": {
       "maxDuration": 300
     }
   },
-  "rewrites": [
-    { "source": "/login", "destination": "/index.html" },
-    { "source": "/admin", "destination": "/index.html" },
-    { "source": "/transactions", "destination": "/index.html" },
-    { "source": "/performance", "destination": "/index.html" },
-    { "source": "/risk", "destination": "/index.html" },
-    { "source": "/snapshots", "destination": "/index.html" },
-    { "source": "/operations", "destination": "/index.html" },
-    { "source": "/logs", "destination": "/index.html" },
-    { "source": "/settings", "destination": "/index.html" },
-    { "source": "/guide", "destination": "/index.html" }
-  ],
   "crons": [
     {
       "path": "/api/cron/daily-sync",
