@@ -1,244 +1,306 @@
-# QPort — Buy & Hold Portfolio Information System
+# QPort — Vercel / PostgreSQL Edition
 
-QPort is a bilingual (EN/VI), rule-based portfolio tracker for Vietnamese cash equities.
+This branch is the Vercel-native implementation of **QPort — Buy & Hold Portfolio Information System**.
 
-QPort is intentionally a **portfolio information system**, not a stock-selection,
-optimization, allocation-timing or automatic-trading engine.
+> Branch boundary: `vercel-migration` is Vite SPA + FastAPI + PostgreSQL + Vercel Cron. The long-running Python/SQLite/Node-SSR runtime remains on `main` and is not the production architecture of this branch.
+
+QPort is bilingual (EN/VI), rule-based, and designed for Vietnamese cash-equity portfolio tracking. It is an information/accounting system, **not** an optimizer, allocation timer, stock selector or automatic trading engine.
 
 ```text
-authenticated user
-        ↓
-private SQLite portfolio book
-        ↓
-validated user/system portfolio events
-        ↓
-immutable/correctable ledger
-        ↓
-holdings + available cash
-        ↑
-Vnstock / VNDIRECT D1 prices
-        ↓
-daily historical snapshots
-        ↓
-NAV · P/L · TWR · XIRR · drawdown · risk · portfolio health
-        ↓
-information for the user
+Browser
+  │
+  ▼
+Vite / React SPA
+  │ same-origin /api/*
+  ▼
+Vercel Python Function
+FastAPI · api/index.py
+  │
+  ▼
+PostgreSQL
+  ├── qport_auth
+  ├── qport_user_2
+  ├── qport_user_3
+  └── ...
+
+Vercel Cron (daily after VN market close)
+  └── /api/cron/daily-sync
 ```
 
-## Authentication and data isolation
+## Why this branch exists
 
-QPort uses a deliberately small local authentication model:
+The previous runtime depended on a long-running Python HTTP server, local SQLite files, a spawned Node SSR worker and an in-process scheduler. Those assumptions are a poor fit for serverless hosting.
 
-- Normal users register a **unique username** and sign in with username only.
-- The built-in admin account requires a password; QPort never displays that credential in the UI, docs or startup output.
-- Admin can update the password from `/admin`.
-- Admin can remove a normal user; removal also deletes that user's sessions and entire portfolio database.
-- Every normal user gets a separate SQLite portfolio file. Transactions, prices, snapshots, dividends, operations, logs and settings are therefore isolated by authenticated user.
-- Admin is an administration-only identity. It is always routed to `/admin`, cannot open portfolio pages, and cannot call `/api/portfolio/**`.
+The Vercel version changes the infrastructure boundary while preserving QPort's deterministic Python business engine:
 
-Default runtime storage:
+- **React UI:** normal Vite SPA; no runtime Node SSR worker.
+- **HTTP/API:** FastAPI at `api/index.py`.
+- **Persistence:** PostgreSQL through `DATABASE_URL`.
+- **Isolation:** one PostgreSQL schema per normal user, preserving the old one-database-per-user isolation model.
+- **Scheduling:** one Vercel Cron invocation per day; no forever-running scheduler thread.
+- **Local development:** Vite + FastAPI + local PostgreSQL or any PostgreSQL-compatible development database.
+
+## Non-negotiable portfolio invariants
+
+- Price movement never changes shares.
+- Risk calculations never create BUY/SELL events.
+- Calendar time/year-end never changes the portfolio.
+- Only explicit effective ledger events change holdings/cash.
+- Provider failure cannot mutate historical holdings.
+- Holdings and Transactions share one effective ledger; there is no second holdings source of truth.
+- Risk is diagnostic/informational only. ERC is an advanced reference, not a target allocation.
+- Portfolio performance is built from actual tracked snapshots/ledger history, not backdated from market history before ownership.
+- Dividend/corporate-action posting remains idempotent and auditable.
+
+## PostgreSQL model
+
+Authentication is stored in:
+
+```text
+qport_auth.users
+qport_auth.sessions
+```
+
+Each normal user owns an isolated portfolio schema:
+
+```text
+qport_user_<user-id>
+```
+
+That schema contains the existing QPort ledger, prices, snapshots, tax lots, dividends, reconciliation, security master, activity chain and other institutional-lite tables.
+
+This design intentionally mirrors the old `user-<id>.sqlite3` isolation model, so the accounting/domain layer does not need a cross-cutting `user_id` column added to every table.
+
+## Authentication
+
+- Normal users register/sign in with a unique username only.
+- Admin remains administration-only and cannot access portfolio APIs.
+- Admin password is stored as PBKDF2 hash.
+- On the first Vercel deployment, set `QPORT_ADMIN_PASSWORD`; the application never renders that value.
+- Session cookie is HttpOnly + SameSite=Lax and Secure on Vercel.
+
+## Runtime routes
+
+Primary UI:
+
+```text
+/               Portfolio
+/transactions
+/performance
+/guide
+```
+
+Advanced normal-user routes remain available but are not primary navigation:
+
+```text
+/risk
+/snapshots
+/operations
+/logs
+/settings
+```
+
+Admin:
+
+```text
+/admin
+```
+
+API:
+
+```text
+/api/*
+```
+
+Health check:
+
+```text
+GET /api/health
+```
+
+## Local development
+
+### Option A — Docker PostgreSQL
+
+Requirements:
+
+- Python 3.12+
+- Node.js 22+
+- Docker
+
+Install once:
+
+```bash
+pip install -r python/requirements.txt
+cd frontend
+npm ci
+cd ..
+```
+
+Windows:
+
+```powershell
+.\scripts\dev-vercel.ps1 -StartDatabase
+```
+
+Linux:
+
+```bash
+./scripts/dev-vercel.sh --with-db
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The Vite dev server proxies `/api/*` to FastAPI on `127.0.0.1:8000`.
+
+Default local database URL:
+
+```text
+postgresql://qport:qport@127.0.0.1:5432/qport
+```
+
+### Option B — external development PostgreSQL
+
+Set `DATABASE_URL` before launching the local scripts. A Neon development branch/database works well and avoids Docker.
+
+## Environment variables
+
+Copy `.env.vercel.example` as a reference. Production needs at least:
+
+```text
+DATABASE_URL=postgresql://...
+QPORT_ADMIN_PASSWORD=<strong first-deploy password>
+CRON_SECRET=<long random value>
+```
+
+Optional:
+
+```text
+QPORT_API_DOCS=0
+QPORT_COOKIE_SECURE=1
+```
+
+For local plain HTTP:
+
+```text
+QPORT_COOKIE_SECURE=0
+```
+
+For a serverless provider such as Neon, use its pooled PostgreSQL connection string for `DATABASE_URL` when recommended by that provider.
+
+## Migrate existing SQLite data
+
+The old local data layout can be moved into PostgreSQL without fabricating portfolio events:
 
 ```text
 python/data/auth-v1/auth.sqlite3
 python/data/auth-v1/users/user-<id>.sqlite3
 ```
 
-The pre-auth single-user `python/data/portfolio.sqlite3` is removed when the authenticated server starts. The authenticated namespace therefore starts clean instead of silently inheriting old single-user data.
+Run once from the repository root:
 
-## Core invariants
-
-- Price movement never changes shares.
-- Risk calculations never create BUY/SELL events.
-- Calendar time/year-end never changes the portfolio.
-- Only validated ledger events change shares or cash. This includes user transactions and due corporate-action events posted by the dividend automation.
-- Market-data failures are visible as `STALE` / `MISSING` rather than fabricated fresh values.
-- Vietnamese equity prices are stored as canonical **full VND per share**.
-- A portfolio API request must have an authenticated normal-user session before any user portfolio database is opened.
-- Holdings, Transactions and derived history share one effective ledger; a transaction create/edit/delete is reflected in Holdings on the next render without a second holdings source of truth.
-
-## What the system provides
-
-### Portfolio
-
-- Current NAV, equity and available cash.
-- Cost value and market value per holding.
-- Live unrealized P/L and total portfolio P/L.
-- Position weights.
-- Concise portfolio-level risk/health assessment with explicit data-readiness messages.
-- Dividend announcement/history tracking for every current holding.
-- A separate expandable **Dividends received** ledger view with gross cash, withholding tax, net cash and stock shares received.
-- Expandable holding rows with broker/account source breakdown from open tax lots.
-- Full-width working tables on tablet/desktop while retaining horizontal scrolling on narrow mobile screens.
-
-### Performance
-
-After the first market sync QPort reconstructs daily history from the immutable
-ledger and stored D1 prices. It provides:
-
-- NAV history;
-- daily, MTD, YTD and since-inception performance;
-- TWR / annualized TWR / XIRR and cash-flow-quality status;
-- current/max drawdown, best/worst day and positive-day ratio;
-- realized/unrealized P/L, dividends, fees/taxes and contributions;
-- gross cash-dividend income, 5% withholding, net cash-dividend income and stock-dividend tax paid on sale;
-- history-readiness milestones so missing statistics are not mistaken for zero risk/return.
-
-### Risk
-
-Risk is information only. The advanced route includes:
-
-- 63D / 252D realized volatility and short-vs-long volatility regime;
-- concentration and HHI;
-- effective number of positions;
-- average/max correlation and interpretation;
-- diversification ratio;
-- risk contribution and equal-risk (ERC) diagnostic reference;
-- historical daily VaR/CVaR 95%;
-- downside volatility and worst observed day;
-- data-history coverage, eligible/missing symbols and explicit readiness messaging.
-
-Initial market sync backfills roughly **550 calendar days** of D1 history when needed so risk analytics are not limited to only a few days around the first portfolio import. Once a symbol has enough stored history, later syncs are incremental.
-
-### Dividend automation and tax
-
-Corporate-action discovery remains provider-driven and idempotent. For a supported cash/stock dividend with a known `payment_date`, QPort automatically creates the matching ledger event when the payment date is due. A mixed event such as cash + stock creates separate `CASH_DIVIDEND` and `STOCK_DIVIDEND` transactions.
-
-Entitlement quantity is calculated from the portfolio state before the ex-date (record date is the fallback when ex-date is unavailable). Automatic posting is protected by `corporate_action_postings`, so the same component is not posted twice.
-
-QPort applies the configured Vietnamese individual dividend-tax policy used by this system:
-
-- cash dividend: record the **gross** entitlement, withhold **5%**, add only the **net** amount to cash, and keep the withholding in `fees_and_taxes`;
-- stock dividend: no investment-income tax is charged when shares are received;
-- when taxable stock-dividend shares are later sold, QPort adds **5% investment-income tax** using VND 10,000 par value per taxable share, or the lower transfer price when the share is sold below par;
-- ordinary securities-transfer tax is a separate tax. Any user-entered SELL tax remains additive to the stock-dividend tax.
-
-The stock-dividend tax engine tracks an outstanding taxable-share pool and consumes it on later transfers until the dividend-share quantity has been exhausted.
-
-### Daily snapshots
-
-Snapshots are generated automatically from:
-
-```text
-ledger state + daily market prices
+```bash
+DATABASE_URL='postgresql://...' python scripts/migrate_sqlite_to_postgres.py
 ```
 
-`OFFICIAL` means every active holding has a price for the same trading date.
-Stale snapshots remain visible for diagnosis but are excluded from official
-performance calculations.
-
-## Ledger event types
+The migration maps:
 
 ```text
-POSITION_IMPORT
-CASH_DEPOSIT
-CASH_WITHDRAW
-BUY
-SELL
-CASH_DIVIDEND
-STOCK_DIVIDEND
-SPLIT
-FEE
+auth.sqlite3   → qport_auth
+user-2.sqlite3 → qport_user_2
+user-3.sqlite3 → qport_user_3
 ```
 
-`POSITION_IMPORT` is for migrating an existing holding with shares and cost basis
-without pretending that a historical cash BUY occurred inside QPort.
+It preserves table rows/IDs where possible, resets PostgreSQL sequences and clears old browser sessions so users sign in again on the new domain.
+
+If target QPort schemas already exist, migration aborts. `--replace` is intentionally destructive and should only be used when you explicitly want to replace a previous migration target.
+
+## Deploy to Vercel
+
+The root `vercel.json` builds `frontend/dist`, packages `api/index.py` as the Python function, rewrites application routes to the SPA, and registers the daily sync cron.
+
+Typical flow:
+
+1. Create a PostgreSQL database (for example Neon).
+2. Add `DATABASE_URL`, `QPORT_ADMIN_PASSWORD`, and `CRON_SECRET` in Vercel project settings.
+3. Import this GitHub repository into Vercel.
+4. Deploy **`vercel-migration`** as a Preview branch first.
+5. Verify `/api/health`, login, transaction create/edit/delete, Portfolio, Performance, Risk and mobile navigation.
+6. If you want this branch to be production without merging, set the Vercel Production Branch to `vercel-migration`.
+
+The Hobby cron is intentionally once per day. `0 9 * * *` means 09:00 UTC, approximately the 16:00 Vietnam hour after market close. Do not depend on minute-level precision on Vercel Hobby.
 
 ## Market data
 
-Provider policy:
+Provider policy remains:
 
 ```text
-optional Vnstock
+optional Vnstock when available
       ↓ fallback
-VNDIRECT public D1 data
+VNDIRECT D1 HTTP provider
       ↓ failure
-last stored value + STALE/MISSING status
+stored history + explicit stale/missing status
 ```
 
-Dividend provider results are persisted in the logged-in user's SQLite DB. Normal page loads use SQLite first; providers are contacted only on cache miss or explicit refresh.
+The base Vercel dependency set intentionally does not require Vnstock. The direct VNDIRECT provider lets the serverless runtime continue fetching D1 data without a persistent child process. Vnstock remains optional for environments where its dependency/runtime constraints are acceptable.
 
-Base installation:
+Initial history sync still backfills roughly 550 calendar days when needed and treats >=260 stored bars as the primary D1 risk-readiness target.
 
-```bash
-cd python
-pip install -r requirements.txt
-```
+## Performance and risk
 
-Optional Vnstock:
+Performance remains based on actual QPort ownership/accounting history:
 
-```bash
-pip install -r requirements-vnstock.txt
-```
+- TWR / annualized TWR when evidence is mature;
+- XIRR when supported;
+- drawdown and daily return statistics;
+- realized/unrealized P/L;
+- contributions, fees/taxes and dividend income.
 
-## Start
+Risk remains based on stored D1 market returns and current equity weights:
 
-```bash
-cd frontend
-npm ci
-npm run build
-npm run build:ssr
+- 63D / 252D realized volatility;
+- covariance/correlation;
+- HHI/effective positions;
+- risk contribution;
+- diversification ratio;
+- historical VaR/CVaR;
+- downside volatility;
+- ERC diagnostic reference.
 
-cd ../python
-python serve.py
-```
-
-Open:
-
-```text
-http://127.0.0.1:8080/
-```
-
-The start page asks for username. If the username is unknown, QPort shows the registration field. Normal users need no password. Entering the admin username reveals the admin password field, but QPort never prints or renders the password value.
-
-Normal-user primary navigation:
-
-```text
-Portfolio | Transactions | Performance | Guide
-```
-
-Advanced routes remain available for normal-user operational diagnostics. Admin has an administration-only page and is always routed to `/admin`.
-
-The scheduler runs at **15:30 Asia/Ho_Chi_Minh**. D1 market sync/rebuild is performed on weekdays; corporate-action discovery and due-dividend posting are checked every calendar day for normal-user databases. You can also sync manually from the portfolio UI.
+No risk result creates a trade.
 
 ## CLI
 
-CLI operations are authenticated, use the same per-user database mapping as the web app, and use the same dividend-aware service/tax policy.
-
-Normal user:
+The branch CLI uses the same PostgreSQL authentication and per-user schema routing as the FastAPI runtime:
 
 ```bash
-python -m portfolio.cli --username alice sync
-python -m portfolio.cli --username alice status
+DATABASE_URL='postgresql://...' python -m portfolio.cli --username alice status
+DATABASE_URL='postgresql://...' python -m portfolio.cli --username alice sync
 ```
 
-Do not put admin passwords in documentation, scripts or shell examples.
+Admin remains blocked from portfolio CLI operations.
 
-## First-use workflow
+## Tests
 
-1. Open QPort and register a unique username, or sign in if already registered.
-2. Open **Transactions** and import each existing position with the real share count and cost basis; include broker/account when known.
-3. Record existing available cash with **Cash deposit**.
-4. Return to **Portfolio** and refresh market data once. QPort backfills enough D1 history for meaningful risk diagnostics where the provider can supply it.
-5. Verify Cost Value, Market Value, P/L and NAV against your broker.
-6. Review the Portfolio assessment, advanced Risk and Performance only after accounting values match.
-7. Keep the server/scheduler running so market data and due dividend events remain current.
-8. Admin signs in separately and remains on `/admin` for user management and password changes only.
+Branch CI runs:
 
-## Languages
+- the existing deterministic portfolio/accounting regression suite;
+- a real PostgreSQL 16 service;
+- PostgreSQL auth/user-schema/isolation smoke tests;
+- frontend validation and AI-export contracts;
+- Vite production build.
 
-Operational UI:
+The migration is not considered validated merely because source files compile; PostgreSQL integration evidence is required.
 
-```text
-EN — English
-VI — Tiếng Việt
-```
+## Guides
 
-The language is stored in the `qport_lang` browser cookie.
+- English user guide: [`docs/USER_GUIDE_EN.md`](docs/USER_GUIDE_EN.md)
+- Vietnamese user guide: [`docs/USER_GUIDE_VI.md`](docs/USER_GUIDE_VI.md)
+- In-app guide: `/guide`
+- System specification: [`BUY_AND_HOLD_SYSTEM_SPEC.md`](BUY_AND_HOLD_SYSTEM_SPEC.md)
 
-## Complete guides
-
-- English: [`docs/USER_GUIDE_EN.md`](docs/USER_GUIDE_EN.md)
-- Vietnamese: [`docs/USER_GUIDE_VI.md`](docs/USER_GUIDE_VI.md)
-- In-app: `/guide`
-
-See also [`BUY_AND_HOLD_SYSTEM_SPEC.md`](BUY_AND_HOLD_SYSTEM_SPEC.md).
+For AI/developer handoff, read `AI_WORKING_CONTEXT.md` and then `AI_WORKING_CONTEXT_LATEST.md`. On this branch, the Vercel/PostgreSQL architecture in this README and latest handoff overrides historical SQLite/server-runtime notes.
