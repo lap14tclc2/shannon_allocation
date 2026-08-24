@@ -1,0 +1,202 @@
+/* Dividend UI shared by the portfolio year view and the dedicated history page. */
+.section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.data-error-message {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.data-error-message.compact-error {
+  margin-bottom: 0;
+}
+
+.dividend-year-list,
+.dividend-history-events {
+  display: grid;
+  gap: 8px;
+}
+
+.dividend-year-event {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.05fr) repeat(3, minmax(110px, 1fr));
+  gap: 14px;
+  align-items: center;
+  min-height: 66px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.dividend-year-event > div {
+  display: grid;
+  gap: 2px;
+}
+
+.dividend-year-event span,
+.dividend-history-event span,
+.dividend-history-placeholder span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dividend-year-event strong,
+.dividend-year-event b,
+.dividend-history-event strong,
+.dividend-history-event b {
+  font-variant-numeric: tabular-nums;
+}
+
+.dividend-year-list.is-loading .dividend-year-event {
+  opacity: .72;
+}
+
+.dividend-history-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -2px 0 14px;
+}
+
+.dividend-history-summary > span {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.dividend-history-symbols {
+  display: grid;
+  gap: 14px;
+}
+
+.dividend-history-symbol {
+  margin-bottom: 0;
+}
+
+.dividend-history-placeholder,
+.dividend-history-event-main,
+.dividend-history-event-detail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dividend-history-placeholder {
+  min-height: 74px;
+  align-items: center;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.dividend-history-placeholder > div,
+.dividend-history-event-main > div,
+.dividend-history-event-detail > div {
+  display: grid;
+  gap: 3px;
+}
+
+.dividend-history-event {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.dividend-history-event-main {
+  align-items: center;
+  padding: 12px 13px;
+}
+
+.dividend-history-event details {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.dividend-history-event details > summary {
+  min-height: 38px;
+  padding: 8px 13px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.dividend-history-event-detail {
+  padding: 11px 13px 13px;
+  background: var(--panel);
+}
+
+@media (max-width: 719px) {
+  .section-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .section-actions > * {
+    width: 100%;
+  }
+
+  .data-error-message {
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .dividend-year-event {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    padding: 13px;
+    border-radius: 13px;
+  }
+
+  .dividend-year-event > div:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dividend-history-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dividend-history-summary > span {
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .dividend-history-event-main,
+  .dividend-history-event-detail,
+  .dividend-history-placeholder {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dividend-history-event-main,
+  .dividend-history-event-detail {
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .dividend-history-event {
+    border-radius: 13px;
+  }
+}
