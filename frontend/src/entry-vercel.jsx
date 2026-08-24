@@ -38,6 +38,7 @@ import './accessibility-polish.css';
 import './appearance-controls.css';
 import './risk-readable.css';
 import './guide-friendly.css';
+import './dividend-history.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 
