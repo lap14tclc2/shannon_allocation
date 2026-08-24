@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import DividendTree from '../components/DividendTree.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
-import { getDividendHistory, syncPortfolio } from '../lib/api.js';
+import { getDividendHistories, syncPortfolio } from '../lib/api.js';
 
 function pct(value, digits = 2) {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
@@ -124,6 +125,15 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     return { year: latestYear, events };
   }, [dividends, currentYear]);
 
+  const latestDividendTreeRows = useMemo(() => {
+    if (latestDividendWindow.year == null) return [];
+    const symbols = [...new Set(latestDividendWindow.events.map(event => event.symbol))].sort();
+    return symbols.map(symbol => ({
+      symbol,
+      events: latestDividendWindow.events.filter(event => event.symbol === symbol),
+    }));
+  }, [latestDividendWindow]);
+
   const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
 
   async function sync() {
@@ -142,20 +152,18 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     const symbols = positions.map(row => String(row.symbol || '').toUpperCase()).filter(Boolean);
     if (!symbols.length) return;
     setDividendLoading(true);
-    const rows = [];
-    for (let i = 0; i < symbols.length; i += 4) {
-      const batch = symbols.slice(i, i + 4);
-      const batchRows = await Promise.all(batch.map(async symbol => {
-        try {
-          return { symbol, result: await getDividendHistory(symbol, { refresh }), error: null };
-        } catch (error) {
-          return { symbol, result: null, error: error.message || 'Không thể tải dữ liệu cổ tức.' };
-        }
-      }));
-      rows.push(...batchRows);
-      setDividends([...rows]);
+    setDividends(symbols.map(symbol => ({ symbol, result: null, error: null, loading: true })));
+    try {
+      await getDividendHistories(symbols, {
+        refresh,
+        concurrency: 6,
+        onResult: completed => {
+          setDividends(current => current.map(row => row.symbol === completed.symbol ? { ...completed, loading: false } : row));
+        },
+      });
+    } finally {
+      setDividendLoading(false);
     }
-    setDividendLoading(false);
   }
 
   useEffect(() => {
@@ -268,7 +276,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
           <h2>{latestDividendWindow.year != null ? `Sự kiện cổ tức năm ${latestDividendWindow.year}` : 'Sự kiện cổ tức gần nhất'}</h2>
           <p className="muted">
             {latestDividendWindow.year != null
-              ? `Hiển thị tất cả sự kiện cổ tức của năm gần nhất có dữ liệu (${latestDividendWindow.year}) cho các mã đang nắm giữ.`
+              ? `Năm gần nhất có dữ liệu là ${latestDividendWindow.year}. Mở từng mã để xem các sự kiện trong năm này.`
               : 'QPort sẽ tự chọn năm gần nhất có dữ liệu cổ tức của các mã đang nắm giữ.'}
           </p>
         </div>
@@ -282,24 +290,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         Không thể tải dữ liệu cổ tức cho <b>{dividendErrors.map(row => row.symbol).join(', ')}</b>. Hãy thử cập nhật lại sau. Dữ liệu của các mã khác vẫn được giữ nguyên nếu tải thành công.
       </div>}
 
-      {dividendLoading && dividends.length === 0 ? <div className="dividend-year-list is-loading">
-        {positions.map(row => <div className="dividend-year-event" key={String(row.symbol || '').toUpperCase()}>
-          <div><strong>{String(row.symbol || '').toUpperCase()}</strong><span>-</span></div>
-          <div><span>Loại</span><b>-</b></div>
-          <div><span>Giá trị</span><b>-</b></div>
-          <div><span>Thanh toán</span><b>-</b></div>
-        </div>)}
-      </div> : latestDividendWindow.events.length > 0 ? <div className="dividend-year-list">
-        {latestDividendWindow.events.map((event, index) => {
-          const cash = event.dividend_type === 'CASH_DIVIDEND';
-          return <div className="dividend-year-event" key={`${event.symbol}-${event.display_date}-${event.dividend_type}-${event.source_event_id || index}`}>
-            <div><strong>{event.symbol}</strong><span>{event.display_date || '-'}</span></div>
-            <div><span>Loại</span><b>{cash ? 'Tiền mặt' : 'Cổ phiếu'}</b></div>
-            <div><span>{cash ? 'Tiền/CP' : 'Tỷ lệ'}</span><b>{cash ? money(event.cash_per_share, locale) : event.stock_ratio_percent != null ? `${Number(event.stock_ratio_percent).toFixed(2)}%` : '-'}</b></div>
-            <div><span>Thanh toán</span><b>{event.payment_date || '-'}</b></div>
-          </div>;
-        })}
-      </div> : !dividendLoading && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
+      {dividendLoading && latestDividendWindow.events.length === 0 ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : latestDividendTreeRows.length > 0 ? (
+        <DividendTree rows={latestDividendTreeRows} locale={locale} root="year" openLatest />
+      ) : !dividendLoading && <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
   </div>;
 }
