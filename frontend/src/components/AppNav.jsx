@@ -84,6 +84,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
           </div>
         )}
         {!adminMode && <>
+          <div className="mobile-sheet-setting"><span>Cổ tức</span><a className="text-link" href="/dividends">Lịch sử cổ tức →</a></div>
           <div className="mobile-sheet-setting"><span>Hỗ trợ</span><a className="text-link" href="/guide">Hướng dẫn sử dụng →</a></div>
           <div className="mobile-sheet-setting"><span>Tùy chọn</span><a className="text-link" href="/settings">Cài đặt →</a></div>
         </>}
@@ -118,7 +119,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
           </div>
 
           <div className="app-nav-footer desktop-nav-footer">
-            {!adminMode && <div className="nav-user"><a className="text-link" href="/guide">Hướng dẫn</a><a className="text-link" href="/settings">Cài đặt</a></div>}
+            {!adminMode && <div className="nav-user"><a className="text-link" href="/dividends">Cổ tức</a><a className="text-link" href="/guide">Hướng dẫn</a><a className="text-link" href="/settings">Cài đặt</a></div>}
             {currentUser && <div className="nav-user"><span className="nav-user-name">@{currentUser.username}</span><button type="button" className="nav-logout" onClick={logout}>Đăng xuất</button></div>}
             <AppearanceControls locale={locale} />
           </div>
