@@ -1,13 +1,12 @@
 {
-  "name": "shannon-frontend",
+  "name": "qport-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.0-vercel",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:ssr": "vite build --config vite.ssr.config.js",
-    "start": "npm run build && npm run build:ssr"
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "^18.3.1",
