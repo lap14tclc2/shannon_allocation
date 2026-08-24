@@ -41,7 +41,7 @@ def test_technical_risk_evidence_and_erc_are_preserved_but_advanced():
 
 
 def test_risk_readability_styles_are_loaded_after_general_accessibility():
-    entry = (FRONTEND / "entry-client.jsx").read_text(encoding="utf-8")
+    entry = (FRONTEND / "entry-vercel.jsx").read_text(encoding="utf-8")
     assert "import './risk-readable.css';" in entry
     assert entry.index("import './accessibility-polish.css';") < entry.index("import './risk-readable.css';")
 
