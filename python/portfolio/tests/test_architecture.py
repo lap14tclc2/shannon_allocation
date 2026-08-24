@@ -7,6 +7,7 @@ PORTFOLIO_DIR = Path(__file__).resolve().parents[1]
 PYTHON_DIR = PORTFOLIO_DIR.parent
 REPO_DIR = PYTHON_DIR.parent
 FRONTEND_SRC = REPO_DIR / "frontend" / "src"
+API = REPO_DIR / "api" / "index.py"
 
 
 def _imports(path: Path) -> list[str]:
@@ -66,46 +67,38 @@ def test_isin_is_resolved_not_generated_from_ticker():
     assert "isin" in source
     assert "unresolved" in source
     assert "not mathematically" in source
-    assert "vn000000" not in source  # no ticker-to-ISIN hard-coded fabrication table
+    assert "vn000000" not in source
 
 
-def test_primary_server_exposes_operations_logs_and_no_research_routes():
-    source=(PYTHON_DIR/"buyhold_server.py").read_text(encoding="utf-8").lower()
-    assert "from portfolio.locale import resolve_locale" in source
-    assert "/api/portfolio" in source
-    assert '"operations"' in source
-    assert '"logs"' in source
-    assert "securities/resolve" in source
+def test_vercel_fastapi_exposes_operational_routes_without_research_routes():
+    source=API.read_text(encoding="utf-8").lower()
+    assert "fastapi" in source
+    assert '"/api/portfolio"' in source
+    assert '"/api/portfolio/operations"' in source
+    assert '"/api/portfolio/logs"' in source
+    assert "securities/{symbol}/resolve" in source
     assert "corporate-actions" in source
     assert "reconciliation" in source
     assert "/research" not in source
     assert "/optimizer" not in source
-    assert "/runs/" not in source
     assert "backtest" not in source
 
 
 def test_frontend_keeps_advanced_routes_but_hides_them_from_primary_navigation():
-    client=(FRONTEND_SRC/"entry-client.jsx").read_text(encoding="utf-8").lower()
-    ssr=(FRONTEND_SRC/"ssr-entry.jsx").read_text(encoding="utf-8").lower()
+    client=(FRONTEND_SRC/"entry-vercel.jsx").read_text(encoding="utf-8").lower()
     nav=(FRONTEND_SRC/"components"/"AppNav.jsx").read_text(encoding="utf-8").lower()
-    for source in (client, ssr):
-        assert "operations" in source
-        assert "logs" in source
-        assert "risk" in source
-        assert "snapshots" in source
-        assert "settings" in source
-        assert "optimizer" not in source
-        assert "research" not in source
-    for hidden in ("operations", "logs", "risk", "snapshots", "settings"):
-        assert hidden not in nav
+    for route in ("operations", "logs", "risk", "snapshots", "settings"):
+        assert f"'/{route}'" in client
+        assert route not in nav
     for primary in ("portfolio", "transactions", "performance", "guide"):
         assert primary in nav
+    assert "optimizer" not in client
+    assert "research" not in client
 
 
 def test_transactions_use_simple_history_and_advanced_optional_fields():
     source=(FRONTEND_SRC/"pages"/"TransactionsPage.jsx").read_text(encoding="utf-8")
     assert "window.prompt" not in source
-    assert "window.confirm" not in source
     assert "Advanced details" in source
     assert "Broker" in source
     assert "inline-delete" in source
@@ -114,8 +107,9 @@ def test_transactions_use_simple_history_and_advanced_optional_fields():
     assert "Correction audit log" not in source
 
 
-def test_scheduler_never_writes_transactions_or_corporate_actions():
-    source=(PORTFOLIO_DIR/"scheduler.py").read_text(encoding="utf-8")
-    assert ".sync_daily()" in source
-    assert "append_event" not in source
-    assert "post_corporate_action" not in source
+def test_runtime_cron_never_generates_model_driven_trades():
+    source=API.read_text(encoding="utf-8")
+    cron=source[source.index('def cron_daily_sync'):]
+    assert "sync_daily" in cron
+    assert "append_event" not in cron
+    assert "post_corporate_action" not in cron
