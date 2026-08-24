@@ -39,7 +39,7 @@ import './appearance-controls.css';
 import './risk-readable.css';
 import './guide-friendly.css';
 import './mobile-iphone.css';
-import './mobile-scroll.css';
+import './mobile-scroll-fix.css';
 
 applyStoredAppearance();
 document.body.classList.remove('mobile-sheet-open');
@@ -90,20 +90,6 @@ function ErrorScreen({ error }) {
     </section>
   </main>;
 }
-
-const PAGE_MAP = {
-  '/': PortfolioPage,
-  '/transactions': TransactionsPage,
-  '/performance': PerformancePage,
-  '/risk': RiskPage,
-  '/snapshots': SnapshotsPage,
-  '/operations': OperationsPage,
-  '/logs': LogsPage,
-  '/settings': SettingsPage,
-  '/guide': GuidePage,
-  '/admin': AdminPage,
-  '/login': AuthPage,
-};
 
 async function loadPage(pathname, locale) {
   if (pathname === '/login') {
