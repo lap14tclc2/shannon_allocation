@@ -32,7 +32,7 @@ function MobileTabIcon({ name }) {
   if (name === 'performance') {
     return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
   }
-  return <svg {...common}><path d="M12 3v18" /><path d="M3 12h18" /><circle cx="12" cy="12" r="8" /></svg>;
+  return <svg {...common}><path d="M12 3 19 6v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6Z" /><path d="M9 12h6" /></svg>;
 }
 
 export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
@@ -99,9 +99,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         <div className="nav-shell">
           <div className="app-nav-head">
             <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'Trang quản trị QPort' : 'Trang danh mục QPort'}>
-              <span className="brand-prompt" aria-hidden="true">$</span>
-              <span className="brand-copy"><strong>qport</strong><small>{adminMode ? '/ quản trị' : '/ danh mục'}</small></span>
-              <span className="live-badge"><span className="status-dot" />hoạt động</span>
+              <span className="brand-copy"><strong>qport</strong><small>{adminMode ? 'Quản trị' : 'Danh mục đầu tư'}</small></span>
             </a>
 
             <button type="button" className="nav-toggle" aria-expanded={open} aria-label="Mở menu tài khoản" onClick={() => setOpen(value => !value)}>
@@ -111,17 +109,17 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
 
           <div className="app-nav-links desktop-nav-links">
             {adminMode ? (
-              <a href="/admin" className="active" aria-current="page"><span className="nav-prefix" aria-hidden="true">›</span><span>Quản trị</span></a>
+              <a href="/admin" className="active" aria-current="page"><span>Quản trị</span></a>
             ) : LINKS.map(([href, key, label]) => (
               <a key={href} href={href} className={active === key ? 'active' : ''} aria-current={active === key ? 'page' : undefined}>
-                <span className="nav-prefix" aria-hidden="true">{active === key ? '›' : '·'}</span><span>{label}</span>
+                <span>{label}</span>
               </a>
             ))}
           </div>
 
           <div className="app-nav-footer desktop-nav-footer">
             {!adminMode && <div className="nav-user"><a className="text-link" href="/guide">Hướng dẫn</a><a className="text-link" href="/settings">Cài đặt</a></div>}
-            {currentUser && <div className="nav-user"><span className="nav-user-name">@{currentUser.username}</span><button type="button" className="nav-logout" onClick={logout}>đăng xuất</button></div>}
+            {currentUser && <div className="nav-user"><span className="nav-user-name">@{currentUser.username}</span><button type="button" className="nav-logout" onClick={logout}>Đăng xuất</button></div>}
             <AppearanceControls locale={locale} />
           </div>
         </div>
