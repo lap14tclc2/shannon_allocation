@@ -4,25 +4,43 @@ import { formatMoney, formatShares } from '../lib/format.js';
 import { createPortfolioTransaction, deletePortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { validateTransactionForm } from '../lib/validation.js';
-import { useI18n } from '../i18n.js';
 
-// Dividend events are system/corporate-action records, not manual transaction input.
-const TYPE_VALUES = ['POSITION_IMPORT','CASH_DEPOSIT','BUY','SELL','CASH_WITHDRAW','SPLIT','FEE'];
+const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'CASH_WITHDRAW', 'SPLIT', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
+const TYPE_LABELS = {
+  POSITION_IMPORT: 'Nhập danh mục ban đầu',
+  CASH_DEPOSIT: 'Nạp tiền',
+  BUY: 'Mua cổ phiếu',
+  SELL: 'Bán cổ phiếu',
+  CASH_WITHDRAW: 'Rút tiền',
+  SPLIT: 'Tách / gộp cổ phiếu',
+  FEE: 'Ghi nhận phí',
+  CASH_DIVIDEND: 'Cổ tức tiền mặt',
+  STOCK_DIVIDEND: 'Cổ tức cổ phiếu',
+};
+
 const EMPTY_FORM = (today = '') => ({
-  event_date: today, symbol: '', quantity: '', price: '', amount: '', ratio: '', fee: '', tax: '', note: '',
-  settlement_date: '', broker_code: 'UNASSIGNED', account_id: 'PRIMARY',
+  event_date: today,
+  symbol: '',
+  quantity: '',
+  price: '',
+  amount: '',
+  ratio: '',
+  fee: '',
+  tax: '',
+  note: '',
+  settlement_date: '',
+  broker_code: 'UNASSIGNED',
+  account_id: 'PRIMARY',
 });
 
 function FieldError({ error }) {
   return error ? <span className="field-error">{error}</span> : null;
 }
 
-export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'en' }) {
-  const { t, eventType } = useI18n(locale);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  const money = (v) => v == null ? '-' : `${formatMoney(v, false, locale)} VND`;
-  const shares = (v) => formatShares(v, locale);
+export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'vi' }) {
+  const money = value => value == null ? '-' : `${formatMoney(value, false, locale)} VND`;
+  const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
   const [type, setType] = useState('POSITION_IMPORT');
   const [form, setForm] = useState(EMPTY_FORM(today || ''));
@@ -35,24 +53,24 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const [deleteReason, setDeleteReason] = useState('');
 
   const requirements = useMemo(() => ({
-    symbol: ['POSITION_IMPORT','BUY','SELL','SPLIT'].includes(type),
-    quantity: ['POSITION_IMPORT','BUY','SELL'].includes(type),
-    price: ['POSITION_IMPORT','BUY','SELL'].includes(type),
-    amount: ['CASH_DEPOSIT','CASH_WITHDRAW','FEE'].includes(type),
+    symbol: ['POSITION_IMPORT', 'BUY', 'SELL', 'SPLIT'].includes(type),
+    quantity: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
+    price: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
+    amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'FEE'].includes(type),
     ratio: type === 'SPLIT',
-    trade: ['BUY','SELL'].includes(type),
+    trade: ['BUY', 'SELL'].includes(type),
   }), [type]);
 
   function set(key, value) {
-    setForm(x => ({ ...x, [key]: value }));
-    setFieldErrors(x => ({ ...x, [key]: undefined }));
+    setForm(current => ({ ...current, [key]: value }));
+    setFieldErrors(current => ({ ...current, [key]: undefined }));
   }
 
   function changeType(value) {
     setType(value);
     setMessage('');
     setFieldErrors({});
-    setForm(x => ({ ...x, symbol:'', quantity:'', price:'', amount:'', ratio:'', fee:'', tax:'', settlement_date:'' }));
+    setForm(current => ({ ...current, symbol: '', quantity: '', price: '', amount: '', ratio: '', fee: '', tax: '', settlement_date: '' }));
   }
 
   function resetForm() {
@@ -87,19 +105,19 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
     setMessage('');
     setFieldErrors({});
     let payload;
     try {
-      payload = validateTransactionForm(type, form, today, locale);
+      payload = validateTransactionForm(type, form, today, 'vi');
       if (editingId && !correctionReason.trim()) {
-        throw Object.assign(new Error(text('Enter why this transaction is being corrected.', 'Nhập lý do sửa giao dịch này.')), { field: 'correction_reason' });
+        throw Object.assign(new Error('Hãy nhập lý do sửa giao dịch để lịch sử thay đổi có thể được kiểm tra lại sau này.'), { field: 'correction_reason' });
       }
-    } catch (err) {
-      setFieldErrors(err.field ? { [err.field]: err.message } : {});
-      setMessage(err.message);
+    } catch (error) {
+      setFieldErrors(error.field ? { [error.field]: error.message } : {});
+      setMessage(error.message);
       return;
     }
 
@@ -108,9 +126,9 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       if (editingId) await updatePortfolioTransaction(editingId, { ...payload, correction_reason: correctionReason.trim() });
       else await createPortfolioTransaction(payload);
       window.location.reload();
-    } catch (err) {
-      if (err.field) setFieldErrors({ [err.field]: err.message });
-      setMessage(err.message);
+    } catch (error) {
+      if (error.field) setFieldErrors({ [error.field]: error.message });
+      setMessage(error.message);
       setSaving(false);
     }
   }
@@ -118,173 +136,137 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   async function confirmDelete(row) {
     if (DIVIDEND_TYPES.has(row.event_type)) return;
     if (!deleteReason.trim()) {
-      setMessage(text('Deletion reason is required.', 'Bắt buộc nhập lý do xóa.'));
+      setMessage('Hãy nhập lý do xóa giao dịch.');
       return;
     }
-    setMessage('');
     try {
       await deletePortfolioTransaction(row.id, deleteReason.trim());
       window.location.reload();
-    } catch (err) {
-      setMessage(err.message);
+    } catch (error) {
+      setMessage(error.message);
     }
   }
 
   return <div className="page">
     <AppNav active="transactions" locale={locale} />
+
     <header className="page-head">
       <div>
-        <h1>{t('transactions.title')}</h1>
-        <p className="muted">{text('Record user-originated portfolio events. Cash/stock dividends are created by the corporate-action workflow and are read-only here.', 'Ghi các sự kiện danh mục do user thực hiện. Cổ tức tiền/cổ phiếu được tạo bởi corporate-action workflow và chỉ đọc tại đây.')}</p>
+        <div className="eyebrow">Sổ giao dịch</div>
+        <h1>Giao dịch</h1>
+        <p className="muted">Ghi đúng những gì đã thực sự xảy ra trong tài khoản chứng khoán. Danh mục, giá vốn và lãi/lỗ sẽ được tính lại từ lịch sử này.</p>
       </div>
     </header>
 
     <form className={`card ${editingId ? 'correction-form' : ''}`} onSubmit={submit} noValidate>
       <div className="section-head">
         <div>
-          <h3>{editingId ? text(`Edit transaction #${editingId}`, `Sửa giao dịch #${editingId}`) : t('transactions.record_event')}</h3>
-          <p className="muted">{text('Choose the event and enter only the fields that apply. Dividend event types are intentionally not available for manual entry.', 'Chọn loại sự kiện và chỉ nhập các trường liên quan. Các loại transaction cổ tức được chủ động loại khỏi phần nhập tay.')}</p>
+          <h2>{editingId ? `Sửa giao dịch #${editingId}` : 'Thêm giao dịch'}</h2>
+          <p className="muted">Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.</p>
         </div>
-        {editingId && <button className="btn-variant" type="button" onClick={resetForm}>{text('Cancel edit','Hủy sửa')}</button>}
+        {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy sửa</button>}
       </div>
 
-      <label>{t('transactions.event_type')}
-        <select value={type} onChange={e => changeType(e.target.value)} disabled={saving}>
-          {TYPE_VALUES.map(v => <option key={v} value={v}>{eventType(v)}</option>)}
+      <label>Loại giao dịch
+        <select value={type} onChange={event => changeType(event.target.value)} disabled={saving}>
+          {TYPE_VALUES.map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
         </select>
       </label>
 
-      {type === 'BUY' && <div className="info-callout transaction-buy-note">
-        {text(
-          'Use BUY for a normal market purchase or a paid rights/new-issue subscription. Enter the actual subscribed shares, paid price, broker and account; QPort will add them to the same holding ledger.',
-          'Dùng BUY cho mua trên thị trường hoặc mua cổ phiếu phát hành thêm/quyền mua có trả tiền. Nhập số cổ phiếu thực nhận, giá thực trả, broker và tài khoản; QPort sẽ cộng vào cùng holding ledger.'
-        )}
-      </div>}
+      {type === 'POSITION_IMPORT' && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại, không cần tạo giao dịch mua giả trong quá khứ.</div>}
+      {type === 'BUY' && <div className="info-callout transaction-buy-note">Dùng cho lệnh mua thông thường hoặc mua cổ phiếu phát hành thêm/quyền mua có trả tiền. Nhập số cổ phiếu thực nhận và giá thực trả.</div>}
 
       <div className="form-grid">
-        <label>{requirements.trade ? text('Trade date','Ngày giao dịch') : t('transactions.date')}
-          <input type="date" max={today || undefined} value={form.event_date} onChange={e => set('event_date', e.target.value)} aria-invalid={!!fieldErrors.event_date}/>
-          <FieldError error={fieldErrors.event_date}/>
+        <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
+          <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
+          <FieldError error={fieldErrors.event_date} />
         </label>
-        {requirements.symbol && <label>{t('transactions.symbol')}
-          <input value={form.symbol} maxLength={10} onChange={e => set('symbol', e.target.value.replace(/[^a-zA-Z0-9]/g,'').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol}/>
-          <FieldError error={fieldErrors.symbol}/>
+        {requirements.symbol && <label>Mã cổ phiếu
+          <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
+          <FieldError error={fieldErrors.symbol} />
         </label>}
-        {requirements.quantity && <label>{t('transactions.shares')}
-          <input type="number" step="0.0001" min="0.0001" value={form.quantity} onChange={e => set('quantity', e.target.value)} aria-invalid={!!fieldErrors.quantity}/>
-          <FieldError error={fieldErrors.quantity}/>
+        {requirements.quantity && <label>Số lượng cổ phiếu
+          <input type="number" step="0.0001" min="0.0001" value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+          <FieldError error={fieldErrors.quantity} />
         </label>}
-        {requirements.price && <label>{t('transactions.price_share')}
-          <input type="number" step="1" min="1000" value={form.price} onChange={e => set('price', e.target.value)} placeholder="72000" aria-invalid={!!fieldErrors.price}/>
-          <FieldError error={fieldErrors.price}/>
+        {requirements.price && <label>{type === 'SELL' ? 'Giá bán (VND/CP)' : 'Giá mua / giá vốn (VND/CP)'}
+          <input type="number" step="1" min="1000" value={form.price} onChange={event => set('price', event.target.value)} placeholder="72000" aria-invalid={!!fieldErrors.price} />
+          <FieldError error={fieldErrors.price} />
         </label>}
-        {requirements.amount && <label>{t('transactions.amount')}
-          <input value={form.amount} onChange={e => set('amount', e.target.value)} aria-invalid={!!fieldErrors.amount}/>
-          <FieldError error={fieldErrors.amount}/>
+        {requirements.amount && <label>Số tiền (VND)
+          <input value={form.amount} onChange={event => set('amount', event.target.value)} aria-invalid={!!fieldErrors.amount} />
+          <FieldError error={fieldErrors.amount} />
         </label>}
-        {requirements.ratio && <label>{t('transactions.share_ratio')}
-          <input type="number" step="0.0001" min="0.0001" value={form.ratio} onChange={e => set('ratio', e.target.value)}/>
+        {requirements.ratio && <label>Tỷ lệ sau tách/gộp
+          <input type="number" step="0.0001" min="0.0001" value={form.ratio} onChange={event => set('ratio', event.target.value)} />
         </label>}
       </div>
 
       <details className="disclosure-card transaction-advanced">
-        <summary><b>{text('Advanced details', 'Thông tin nâng cao')}</b><span className="muted">{text('Broker, account, settlement, fee and tax', 'Broker, tài khoản, settlement, phí và thuế')}</span></summary>
+        <summary><b>Thông tin bổ sung</b><span className="muted">Công ty chứng khoán, tài khoản, phí, thuế và ngày thanh toán</span></summary>
         <div className="form-grid">
-          <label>{text('Broker','Công ty CK')}
-            <select value={form.broker_code} onChange={e => set('broker_code', e.target.value)}>
-              {BROKERS.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+          <label>Công ty chứng khoán
+            <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)}>
+              {BROKERS.map(broker => <option key={broker.code} value={broker.code}>{broker.name}</option>)}
             </select>
-            <FieldError error={fieldErrors.broker_code}/>
+            <FieldError error={fieldErrors.broker_code} />
           </label>
-          <label>{text('Account','Tài khoản')}
-            <input value={form.account_id} maxLength={32} onChange={e => set('account_id', e.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g,''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id}/>
-            <FieldError error={fieldErrors.account_id}/>
+          <label>Tài khoản
+            <input value={form.account_id} maxLength={32} onChange={event => set('account_id', event.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, ''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id} />
+            <FieldError error={fieldErrors.account_id} />
           </label>
-          {requirements.trade && <label>{text('Settlement date', 'Ngày thanh toán')}
-            <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={e => set('settlement_date', e.target.value)} aria-invalid={!!fieldErrors.settlement_date}/>
-            <FieldError error={fieldErrors.settlement_date}/>
+          {requirements.trade && <label>Ngày thanh toán
+            <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={event => set('settlement_date', event.target.value)} aria-invalid={!!fieldErrors.settlement_date} />
+            <FieldError error={fieldErrors.settlement_date} />
           </label>}
-          {requirements.trade && <label>{t('transactions.fee')}
-            <input type="number" min="0" step="1" value={form.fee} onChange={e => set('fee', e.target.value)}/>
-          </label>}
-          {requirements.trade && <label>{t('transactions.tax')}
-            <input type="number" min="0" step="1" value={form.tax} onChange={e => set('tax', e.target.value)}/>
-          </label>}
+          {requirements.trade && <label>Phí giao dịch (VND)<input type="number" min="0" step="1" value={form.fee} onChange={event => set('fee', event.target.value)} /></label>}
+          {requirements.trade && <label>Thuế (VND)<input type="number" min="0" step="1" value={form.tax} onChange={event => set('tax', event.target.value)} /></label>}
         </div>
       </details>
 
-      <label>{t('transactions.note')}
-        <textarea maxLength={500} value={form.note} onChange={e => set('note', e.target.value)}/>
-      </label>
+      <label>Ghi chú<textarea maxLength={500} value={form.note} onChange={event => set('note', event.target.value)} placeholder="Thông tin cần nhớ về giao dịch này" /></label>
 
-      {editingId && <label>{text('Reason for correction','Lý do sửa dữ liệu')}
-        <textarea maxLength={500} value={correctionReason} onChange={e => setCorrectionReason(e.target.value)} aria-invalid={!!fieldErrors.correction_reason}/>
-        <FieldError error={fieldErrors.correction_reason}/>
+      {editingId && <label>Lý do sửa dữ liệu
+        <textarea maxLength={500} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} aria-invalid={!!fieldErrors.correction_reason} />
+        <FieldError error={fieldErrors.correction_reason} />
       </label>}
 
       <div className="button-row">
-        <button className="btn-export" type="submit" disabled={saving}>{saving ? '…' : editingId ? text('Save changes','Lưu thay đổi') : t('transactions.record')}</button>
-        {editingId && <button className="btn-variant" type="button" onClick={resetForm}>{text('Cancel','Hủy')}</button>}
+        <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : 'Lưu giao dịch'}</button>
+        {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
     </form>
 
-    <div className="card">
-      <div className="section-head">
-        <div><h3>{text('Transaction history','Lịch sử giao dịch')}</h3><div className="muted">{transactions.length} {text('events','sự kiện')}</div></div>
-      </div>
-      {transactions.length === 0 ? <div className="empty-state">{t('transactions.no_events')}</div> : <div className="table-scroll">
+    <section className="card">
+      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận</div></div></div>
+      {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <div className="table-scroll">
         <table className="ranking transaction-table">
           <thead><tr>
-            <th>{text('Date','Ngày')}</th>
-            <th>{text('Type','Loại')}</th>
-            <th>{text('Ticker','Mã')}</th>
-            <th>Broker</th>
-            <th>{text('Account','Tài khoản')}</th>
-            <th>{text('Qty','SL')}</th>
-            <th>{text('Price / Amount','Giá / Tiền')}</th>
-            <th>{text('Fee / Tax','Phí / Thuế')}</th>
-            <th>{text('Note','Ghi chú')}</th>
-            <th>{text('Actions','Thao tác')}</th>
+            <th>Ngày</th><th>Loại</th><th>Mã</th><th>CTCK</th><th>Tài khoản</th><th>SL</th><th>Giá / Số tiền</th><th>Phí / Thuế</th><th>Ghi chú</th><th>Thao tác</th>
           </tr></thead>
           <tbody>{transactions.map(row => {
             const deleting = deleteRowId === row.id;
-            const securityEvent = Boolean(row.symbol);
-            const broker = row.metadata?.broker_code || 'UNASSIGNED';
-            const account = row.metadata?.account_id || 'PRIMARY';
-            const stockDividendTax = Number(row.metadata?.stock_dividend_sale_tax || 0);
-            const cashDividendTax = Number(row.metadata?.cash_dividend_withholding_tax || 0);
+            const hasSymbol = Boolean(row.symbol);
             const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
             return <tr key={row.id}>
               <td>{row.event_date}</td>
-              <td><b>{eventType(row.event_type)}</b>{row.correction && <div className="muted">{text('Corrected','Đã sửa')}</div>}{row.metadata?.auto_generated && <div className="muted">AUTO</div>}</td>
-              <td className="transaction-symbol">{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
-              <td>{securityEvent ? broker : '-'}</td>
-              <td>{securityEvent ? account : '-'}</td>
+              <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
+              <td>{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
+              <td>{hasSymbol ? (row.metadata?.broker_code || '-') : '-'}</td>
+              <td>{hasSymbol ? (row.metadata?.account_id || '-') : '-'}</td>
               <td>{row.quantity ? shares(row.quantity) : '-'}</td>
               <td>{row.price ? money(row.price) : row.amount ? money(row.amount) : '-'}</td>
-              <td>{Number(row.fee || 0) || Number(row.tax || 0) ? <>
-                <div>{money(Number(row.fee || 0))} / {money(Number(row.tax || 0))}</div>
-                {stockDividendTax > 0 && <div className="muted">{text('stock-dividend 5%', 'CP cổ tức 5%')}: {money(stockDividendTax)}</div>}
-                {cashDividendTax > 0 && <div className="muted">{text('cash withholding 5%', 'khấu trừ tiền 5%')}: {money(cashDividendTax)}</div>}
-              </> : '-'}</td>
+              <td>{Number(row.fee || 0) || Number(row.tax || 0) ? `${money(Number(row.fee || 0))} / ${money(Number(row.tax || 0))}` : '-'}</td>
               <td>{row.note || '-'}</td>
-              <td>{dividendEvent ? (
-                <span className="status-pill">{row.metadata?.auto_generated ? text('AUTO · read only', 'AUTO · chỉ đọc') : text('Dividend · read only', 'Cổ tức · chỉ đọc')}</span>
-              ) : deleting ? <div className="inline-delete">
-                <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder={text('Reason for delete','Lý do xóa')}/>
-                <div className="row-actions">
-                  <button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>{text('Confirm','Xác nhận')}</button>
-                  <button className="btn-small" type="button" onClick={() => { setDeleteRowId(null); setDeleteReason(''); }}>{text('Cancel','Hủy')}</button>
-                </div>
-              </div> : <div className="row-actions">
-                <button className="btn-small" type="button" onClick={() => startEdit(row)}>{text('Edit','Sửa')}</button>
-                <button className="btn-danger btn-small" type="button" onClick={() => { setDeleteRowId(row.id); setDeleteReason(''); }}>{text('Delete','Xóa')}</button>
-              </div>}</td>
+              <td>{dividendEvent ? <span className="status-pill">Chỉ đọc</span> : deleting ? <div className="inline-delete">
+                <input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Lý do xóa" />
+                <div className="row-actions"><button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>Xác nhận</button><button className="btn-small" type="button" onClick={() => { setDeleteRowId(null); setDeleteReason(''); }}>Hủy</button></div>
+              </div> : <div className="row-actions"><button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button><button className="btn-danger btn-small" type="button" onClick={() => { setDeleteRowId(row.id); setDeleteReason(''); }}>Xóa</button></div>}</td>
             </tr>;
           })}</tbody>
         </table>
       </div>}
-    </div>
+    </section>
   </div>;
 }
