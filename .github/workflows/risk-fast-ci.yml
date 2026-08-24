@@ -11,7 +11,6 @@ on:
       - 'scripts/**'
       - 'pyproject.toml'
       - 'vercel.json'
-      - 'docker-compose.vercel.yml'
       - '.github/workflows/risk-fast-ci.yml'
   pull_request:
     paths:
