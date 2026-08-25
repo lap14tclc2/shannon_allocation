@@ -74,9 +74,9 @@ export function validateBrokerAccount(brokerValue, accountValue, locale = 'en') 
 }
 
 export function validateTransactionForm(type, form, today, locale = 'en') {
-  const requiredSymbol = ['POSITION_IMPORT', 'BUY', 'SELL', 'STOCK_DIVIDEND', 'SPLIT', 'CASH_DIVIDEND'].includes(type);
-  const requiredQuantity = ['POSITION_IMPORT', 'BUY', 'SELL', 'STOCK_DIVIDEND'].includes(type);
-  const requiredPrice = ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type);
+  const requiredSymbol = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL', 'STOCK_DIVIDEND', 'SPLIT', 'CASH_DIVIDEND'].includes(type);
+  const requiredQuantity = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL', 'STOCK_DIVIDEND'].includes(type);
+  const requiredPrice = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type);
   const requiredAmount = ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'CASH_DIVIDEND', 'FEE'].includes(type);
   const isTrade = ['BUY', 'SELL'].includes(type);
 
