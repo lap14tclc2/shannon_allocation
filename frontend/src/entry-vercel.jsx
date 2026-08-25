@@ -189,10 +189,11 @@ function App() {
       {isLoading && hasCachedData && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
       {route.status === 'failed' && hasCachedData && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
       <Page
+        key={`dashboard:${route.updatedAt || 'loading'}`}
         {...common}
         {...data}
         dashboard={data.dashboard || {}}
-        dataLoading={isLoading}
+        dataLoading={isLoading || route.status === 'failed'}
         dataUpdatedAt={route.updatedAt}
       />
     </>;
@@ -206,7 +207,7 @@ function App() {
   return <>
     {isLoading && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
     {route.status === 'failed' && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
-    <Page {...common} {...data} />
+    <Page key={`${pathname}:${route.updatedAt || 'loading'}`} {...common} {...data} />
   </>;
 }
 
