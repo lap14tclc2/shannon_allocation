@@ -187,8 +187,14 @@
 .portfolio-menu-popover {
   position: fixed;
   z-index: 611;
-  max-width: calc(100vw - 24px);
-  padding: 7px;
+  top: 80px;
+  right: max(16px, calc((100vw - 1380px) / 2 + 24px));
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100dvh - 96px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: 15px;
   background: color-mix(in srgb, var(--panel) 97%, var(--bg));
@@ -196,6 +202,43 @@
     inset 0 1px 0 rgba(255, 255, 255, .05),
     0 24px 70px rgba(0, 0, 0, .42);
   animation: header-menu-in .18s var(--motion-standard);
+}
+
+.portfolio-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.portfolio-popover-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.portfolio-popover-head strong {
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+}
+
+.portfolio-popover-close {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 21px;
+  line-height: 1;
 }
 
 @keyframes header-menu-in {
@@ -212,10 +255,13 @@
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--bg) 22%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .portfolio-menu-list {
+  margin-top: 7px;
   display: grid;
   gap: 3px;
 }
@@ -608,6 +654,8 @@
     display: block;
   }
 
+  .portfolio-menu-popover,
+  .portfolio-menu-backdrop,
   .header-v2 .header-portfolio-menu,
   .header-v2 .desktop-nav-links,
   .header-v2 .desktop-nav-footer {

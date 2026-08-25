@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logoutUser } from '../lib/api.js';
@@ -52,8 +52,6 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
   const dispatch = useDispatch();
   const [accountOpen, setAccountOpen] = useState(false);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [portfolioAnchor, setPortfolioAnchor] = useState(null);
-  const portfolioTriggerRef = useRef(null);
   const [mounted, setMounted] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(() => (
@@ -73,17 +71,6 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     setPortfolioOpen(false);
     setAccountOpen(false);
   }, [active]);
-
-  useEffect(() => {
-    if (!portfolioOpen || typeof window === 'undefined') return undefined;
-    const closePortfolioMenu = () => setPortfolioOpen(false);
-    window.addEventListener('resize', closePortfolioMenu);
-    window.addEventListener('scroll', closePortfolioMenu, true);
-    return () => {
-      window.removeEventListener('resize', closePortfolioMenu);
-      window.removeEventListener('scroll', closePortfolioMenu, true);
-    };
-  }, [portfolioOpen]);
 
   useEffect(() => {
     if (!mounted || typeof document === 'undefined') return undefined;
@@ -117,20 +104,8 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
   }
 
   function togglePortfolioMenu() {
-    if (portfolioOpen) {
-      setPortfolioOpen(false);
-      return;
-    }
-    const rect = portfolioTriggerRef.current?.getBoundingClientRect();
-    if (!rect || typeof window === 'undefined') return;
-    const width = Math.min(330, window.innerWidth - 24);
-    setPortfolioAnchor({
-      top: Math.round(rect.bottom + 8),
-      left: Math.round(Math.min(Math.max(12, rect.left), window.innerWidth - width - 12)),
-      width,
-    });
     setAccountOpen(false);
-    setPortfolioOpen(true);
+    setPortfolioOpen(value => !value);
   }
 
   async function switchPortfolio(value) {
@@ -181,11 +156,10 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     if (adminMode || portfolios.length === 0) return null;
     return <div className={`header-portfolio-menu ${portfolioOpen ? 'open' : ''}`}>
       <button
-        ref={portfolioTriggerRef}
         type="button"
         className="header-portfolio-trigger"
         aria-expanded={portfolioOpen}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-controls="desktop-portfolio-menu"
         onClick={togglePortfolioMenu}
       >
@@ -196,10 +170,16 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     </div>;
   }
 
-  const desktopPortfolioMenu = mounted && portfolioOpen && portfolioAnchor && typeof document !== 'undefined' ? createPortal(
+  const desktopPortfolioMenu = mounted && portfolioOpen && typeof document !== 'undefined' ? createPortal(
     <>
       <button type="button" className="portfolio-menu-backdrop" aria-label="Đóng danh sách danh mục" onClick={() => setPortfolioOpen(false)} />
-      <div id="desktop-portfolio-menu" className="portfolio-menu-popover" role="menu" style={portfolioAnchor}><PortfolioList /></div>
+      <aside id="desktop-portfolio-menu" className="portfolio-menu-popover" role="dialog" aria-modal="true" aria-labelledby="desktop-portfolio-title">
+        <div className="portfolio-popover-head">
+          <div><span className="eyebrow">Không gian tài sản</span><strong id="desktop-portfolio-title">Chọn danh mục</strong></div>
+          <button type="button" className="portfolio-popover-close" aria-label="Đóng danh sách danh mục" onClick={() => setPortfolioOpen(false)}>×</button>
+        </div>
+        <PortfolioList />
+      </aside>
     </>,
     document.body,
   ) : null;
