@@ -78,7 +78,7 @@ export function deriveHoldingBooks(transactions = []) {
     const accountId = accountOf(row);
     const quantity = quantityOf(row?.quantity);
 
-    if ((type === 'POSITION_IMPORT' || type === 'BUY') && quantity > EPSILON) {
+    if ((type === 'POSITION_IMPORT' || type === 'BUY' || type === 'RIGHTS_ISSUE') && quantity > EPSILON) {
       lots.push({
         symbol,
         broker_code: brokerCode,
