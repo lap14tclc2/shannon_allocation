@@ -12,7 +12,8 @@ from portfolio.postgres import (
 
 REPO_DIR = Path(__file__).resolve().parents[3]
 APP_MAIN = REPO_DIR / "app" / "main.py"
-FRONTEND_SRC = REPO_DIR / "frontend" / "src"
+FRONTEND_DIR = REPO_DIR / "frontend"
+FRONTEND_SRC = FRONTEND_DIR / "src"
 
 
 def test_default_portfolio_preserves_the_legacy_user_schema():
@@ -58,10 +59,38 @@ def test_frontend_has_wealth_manager_and_global_switcher():
     assert "Danh mục của bạn" in page
     assert "holdings, cash, transactions, performance và analytics" in page
     assert "Portfolio mặc định giữ nguyên dữ liệu cũ" in page
-    assert "case '/portfolios':" in entry
+    assert "'/portfolios': PortfoliosPage" in entry
     assert "createPortfolio" in api
     assert "renamePortfolio" in api
     assert "activatePortfolio" in api
     assert "removePortfolio" in api
     assert "'X-QPort-Portfolio-Id': portfolioScopeId" in api
     assert "let portfolioScopeId" in api
+
+
+def test_spa_uses_persisted_redux_and_refreshes_without_page_reload():
+    package = (FRONTEND_DIR / "package.json").read_text(encoding="utf-8")
+    store = (FRONTEND_SRC / "lib" / "store.js").read_text(encoding="utf-8")
+    entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
+    dashboard = (
+        FRONTEND_SRC / "pages" / "VietnamesePortfolioDashboard.jsx"
+    ).read_text(encoding="utf-8")
+    vercel = (REPO_DIR / "vercel.json").read_text(encoding="utf-8")
+
+    assert '"@reduxjs/toolkit"' in package
+    assert '"react-redux"' in package
+    assert "configureStore" in store
+    assert "qport.redux-cache.v1" in store
+    assert "CACHE_MAX_AGE_MS" in store
+    assert "routeKey(pathname, portfolioId" in store
+    assert "await syncPortfolio()" in store
+    assert "data: { dashboard: await getPortfolioDashboard() }" in store
+    assert "<Provider store={store}>" in entry
+    assert "NAVIGATION_EVENT" in entry
+    assert "window.addEventListener('popstate'" in entry
+    assert "dataLoading={isLoading}" in entry
+    assert "window.location.reload" not in entry
+    assert "window.location.reload" not in dashboard
+    assert "dispatch(refreshDashboard()).unwrap()" in dashboard
+    assert "Chờ cập nhật đủ dữ liệu giá để tính lãi/lỗ" in dashboard
+    assert '"source": "/portfolios"' in vercel
