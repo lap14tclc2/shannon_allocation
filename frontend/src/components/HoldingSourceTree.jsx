@@ -14,6 +14,16 @@ function brokerName(code) {
   return BROKERS.find(item => item.code === code)?.name || code || 'Chưa gán';
 }
 
+function buyHref(book) {
+  const params = new URLSearchParams({
+    action: 'buy',
+    symbol: book.symbol,
+    broker: book.broker_code,
+    account: book.account_id,
+  });
+  return `/transactions?${params.toString()}`;
+}
+
 function sellHref(book) {
   const params = new URLSearchParams({
     action: 'sell',
@@ -70,8 +80,11 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
                       </div>
                       <div className="holding-source-book-action">
                         {assigned
-                          ? <a className="btn-small btn-sell" href={sellHref(book)}>Bán từ {brokerName(book.broker_code)}</a>
-                          : <span className="status-pill">Cần gán CTCK trước khi bán</span>}
+                          ? <>
+                            <a className="btn-small" href={buyHref(book)}>Mua thêm cổ phiếu</a>
+                            <a className="btn-small btn-sell" href={sellHref(book)}>Bán cổ phiếu</a>
+                          </>
+                          : <span className="status-pill">Cần gán CTCK trước khi mua/bán</span>}
                       </div>
                     </article>;
                   })}
