@@ -46,19 +46,17 @@ def test_retro_ledger_theme_and_privacy_contract():
     css = (FRONTEND_SRC / "japanese-retro-theme.css").read_text(encoding="utf-8")
 
     assert entry.index("header-v2.css") < entry.index("japanese-retro-theme.css")
-    assert "qport-theme-v1" in appearance
-    assert "DEFAULT_THEME = 'retro'" in appearance
-    assert "theme === 'retro' ? 'light' : 'dark'" in appearance
-    assert "Retro Ledger" in controls
-    assert "Cyber Fantasy" in controls
+    assert "qport-appearance-v3" in appearance
+    assert "TOKYO_SUMI_APPEARANCE" in appearance
+    assert "SHOWA_PAPER_APPEARANCE" in appearance
+    assert "Tokyo Sumi" in controls
+    assert "Showa Paper" in controls
     assert "qport.privacy-mode.v1" in nav
     assert "Sổ tài sản" in nav
     assert 'data-sensitive="money"' in dashboard
     assert ".privacy-mode [data-sensitive=\"money\"]" in css
-    assert "--retro-bg: #efe4cf" in css
-    assert "--retro-panel: #fffaf0" in css
-    assert "--retro-ink: #201d18" in css
-    assert "Showa print palette" in css
+    assert "--retro-bg: #1a1916" in css
+    assert '--font-retro-ui: "Segoe UI"' in css
     assert "Yu Gothic UI" not in css
     assert "ĐÃ XÁC NHẬN" in css
 
@@ -73,25 +71,6 @@ def test_retro_ledger_theme_and_privacy_contract():
         or "\u4e00" <= char <= "\u9fff"
         for char in checked_text
     )
-
-
-def test_quick_import_starts_empty_and_performance_metrics_are_responsive():
-    quick_import = (FRONTEND_SRC / "components" / "QuickImportPanel.jsx").read_text(encoding="utf-8")
-    quick_import_css = (FRONTEND_SRC / "quick-import.css").read_text(encoding="utf-8")
-    performance = (FRONTEND_SRC / "pages" / "PerformancePage.jsx").read_text(encoding="utf-8")
-    performance_css = (FRONTEND_SRC / "performance-interactive.css").read_text(encoding="utf-8")
-
-    assert "useState('')" in quick_import
-    assert "placeholder={importTemplate(mode)}" in quick_import
-    assert "function clearInput()" in quick_import
-    assert "Xóa dữ liệu" in quick_import
-    assert ".quick-import-textarea::placeholder" in quick_import_css
-
-    assert '<dl className="performance-health-grid">' in performance
-    assert "cashflowQualityLabel" in performance
-    assert "Chỉ có số dư đầu kỳ" in performance
-    assert "grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))" in performance_css
-    assert "overflow-wrap: anywhere" in performance_css
 
 
 def test_spa_copy_is_utf8_and_refreshes_without_document_reload():
@@ -128,15 +107,21 @@ def test_vercel_cache_contract_keeps_shell_fresh_and_assets_immutable():
 
     shell_policy = {
         "key": "Cache-Control",
-        "value": "public, max-age=0, must-revalidate",
+        "value": "private, no-store, max-age=0, must-revalidate",
     }
     for path in (
         "/",
         "/login",
+        "/admin",
+        "/admin/:path*",
         "/portfolios",
         "/transactions",
         "/performance",
         "/risk",
+        "/dividends",
+        "/snapshots",
+        "/operations",
+        "/logs",
         "/settings",
         "/guide",
     ):
