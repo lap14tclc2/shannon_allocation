@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import {
   activatePortfolio,
@@ -6,6 +7,8 @@ import {
   removePortfolio,
   renamePortfolio,
 } from '../lib/api.js';
+import { navigate } from '../lib/navigation.js';
+import { refreshPortfolioRegistry } from '../lib/store.js';
 
 function createdDate(value, locale = 'vi') {
   if (!value) return '-';
@@ -19,6 +22,7 @@ function createdDate(value, locale = 'vi') {
 }
 
 export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
+  const dispatch = useDispatch();
   const [portfolios, setPortfolios] = useState(registry.portfolios || []);
   const [activeId, setActiveId] = useState(Number(registry.active_portfolio_id || 0));
   const [newName, setNewName] = useState('');
@@ -43,6 +47,7 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
     try {
       const result = await createPortfolio(name);
       setPortfolios(current => [...current, result.portfolio]);
+      dispatch(refreshPortfolioRegistry());
       setNewName('');
       setMessage(`Đã tạo “${result.portfolio.name}”. Danh mục mới có sổ giao dịch và dữ liệu hoàn toàn độc lập.`);
     } catch (error) {
@@ -68,6 +73,7 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
     try {
       const result = await renamePortfolio(item.id, name);
       setPortfolios(current => current.map(row => row.id === item.id ? result.portfolio : row));
+      dispatch(refreshPortfolioRegistry());
       setEditingId(null);
       setMessage('Đã đổi tên danh mục.');
     } catch (error) {
@@ -79,7 +85,7 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
 
   async function openPortfolio(item) {
     if (Number(item.id) === Number(activeId)) {
-      window.location.assign('/');
+      navigate('/');
       return;
     }
     setBusy(`open-${item.id}`);
@@ -87,7 +93,8 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
     try {
       await activatePortfolio(item.id);
       setActiveId(Number(item.id));
-      window.location.assign('/');
+      await dispatch(refreshPortfolioRegistry()).unwrap();
+      navigate('/');
     } catch (error) {
       setMessage(error.message);
       setBusy('');
@@ -107,6 +114,7 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
       const result = await removePortfolio(item.id, confirmation);
       setPortfolios(current => current.filter(row => row.id !== item.id));
       setActiveId(Number(result.portfolio.next_active_portfolio_id || activeId));
+      dispatch(refreshPortfolioRegistry());
       setMessage(`Đã xóa “${item.name}”.`);
     } catch (error) {
       setMessage(error.message);
