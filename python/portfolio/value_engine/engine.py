@@ -188,22 +188,53 @@ class ValuationEngine:
             val_status = ValuationPill.OVERVALUED
             val_verdict = f"Thị giá đang giao dịch cao hơn giá trị nội tại Base {abs(mos_base):.1f}%. Kỳ vọng tương lai đang đòi hỏi tốc độ tăng trưởng cao hơn mức lịch sử."
 
-        # Moat & Capital Allocation Diagnostic
-        if net_debt < Decimal("0"):
-            fin_diag = "Cấu trúc vốn rất an toàn: Tiền mặt ròng dương (Net Cash), không chịu rủi ro áp lực nợ vay hay lãi suất."
-        else:
-            fin_diag = f"Doanh nghiệp duy trì nợ vay ròng khoảng {net_debt / Decimal('1000000000'):,.0f} tỷ VND, nằm trong tầm kiểm soát của dòng tiền hoạt động."
+        # Moat & Capital Allocation Diagnostic tailored to specific corporate models
+        SYMBOL_DIAGNOSTICS = {
+            "FPT": {
+                "moat_rating": MoatRating.WIDE,
+                "moat_summary": "Hào kinh tế sâu rộng: Chi phí chuyển đổi (Switching Cost) cao trong giải pháp phần mềm/chuyển đổi số toàn cầu và thương hiệu giáo dục công nghệ hàng đầu.",
+                "cap_diag": "Hiệu suất tái đầu tư tuyệt vời: Tỷ suất sinh lời trên vốn đầu tư (ROIC > 22%), chính sách ESOP ổn định (~1-2%/năm) gắn liền hiệu quả nhân sự.",
+                "earn_diag": "Dòng tiền CFO mạnh mẽ: Doanh thu phần mềm nước ngoài thu ngoại tệ tiền tươi, tỷ lệ biến đổi Lợi nhuận ròng sang Tiền mặt (Cash Conversion) > 90%.",
+                "fin_diag": "Pháo đài tiền mặt: Lượng tiền gửi ròng (Net Cash) duy trì hơn 8.000 tỷ VND, khả năng chống chịu lãi suất và biến động vĩ mô tối đa.",
+            },
+            "DGC": {
+                "moat_rating": MoatRating.WIDE,
+                "moat_summary": "Lợi thế chi phí độc quyền: Công nghệ tuyển quặng Apatit độc quyền giúp hạ giá thành Phốt pho vàng (P4) thấp nhất khu vực, hưởng lợi từ chu kỳ bán dẫn toàn cầu.",
+                "cap_diag": "Tập trung thặng dư tiền mặt cho đại dự án Nghi Sơn; dòng tiền tự do (FCF) dồi dào tài trợ vốn tự có không cần vay nợ mạo hiểm.",
+                "earn_diag": "Chất lượng lợi nhuận thuần khiết: Ít nợ xấu, vòng quay tồn kho linh hoạt theo biến động giá hàng hóa hoá chất cơ bản.",
+                "fin_diag": "Không nợ vay: Lượng tiền mặt & tiền gửi chiếm áp đảo (Net Cash ~7.500 tỷ VND), bảng cân đối kế toán cực kỳ nguyên sơ (Pristine Balance Sheet).",
+            },
+            "ACB": {
+                "moat_rating": MoatRating.WIDE,
+                "moat_summary": "Thương hiệu bán lẻ uy tín và khẩu vị rủi ro thận trọng: Chi phí vốn (CASA) ổn định, tệp khách hàng cá nhân & SME trung thành.",
+                "cap_diag": "Chính sách phân bổ lợi nhuận mẫu mực: Duy trì ROE > 20% liên tục nhiều năm, cân bằng hoàn hảo giữa chia cổ tức tiền mặt (10-15%) và cổ tức cổ phiếu để tăng vốn tự có.",
+                "earn_diag": "Chất lượng tài sản hàng đầu ngành ngân hàng: Tỷ lệ nợ xấu (NPL) thuộc nhóm thấp nhất hệ thống (<1.3%), không phụ thuộc vào trái phiếu doanh nghiệp rủi ro cao.",
+                "fin_diag": "Đệm vốn vững chắc: Tỷ lệ an toàn vốn (CAR > 12.5%), tỷ lệ bao phủ nợ xấu dồi dào sẵn sàng hấp thụ mọi cú sốc chu kỳ tín dụng.",
+            },
+            "IDC": {
+                "moat_rating": MoatRating.NARROW,
+                "moat_summary": "Quỹ đất KCN sạch quy mô lớn tại các vị trí chiến lược (Bắc Ninh, Bà Rịa - Vũng Tàu), nhưng biên gộp tương lai chịu áp lực chi phí giải phóng mặt bằng.",
+                "cap_diag": "Cần theo dõi sát chu kỳ CapEx mới (~3.000 tỷ/năm) để phát triển quỹ đất gối đầu, ảnh hưởng trực tiếp đến dòng tiền chia cổ tức.",
+                "earn_diag": "Lưu ý phương pháp hạch toán 1 lần vs phân bổ dần; dòng tiền CFO thực tế phụ thuộc tiến độ bàn giao và thu tiền thuê KCN.",
+                "fin_diag": "Duy trì tỷ suất cổ tức tiền mặt cao (~8-9%/năm), cung cấp tấm đệm bảo vệ danh mục đầu tư giá trị trong dài hạn.",
+            },
+        }
 
-        cap_diag = "Dòng tiền chủ sở hữu (Owner Earnings) chuyển hóa tốt sang tài sản sinh lời thực tế; không ghi nhận pha loãng đột biến qua ESOP/phát hành riêng lẻ ngoài tầm kiểm soát."
-        earn_diag = "Dòng tiền kinh doanh (CFO) đối ứng vững chắc với lợi nhuận kế toán (Net Income), không phụ thuộc vào các khoản tích luỹ (Accruals) bất thường."
+        sym_data = SYMBOL_DIAGNOSTICS.get(symbol, {
+            "moat_rating": MoatRating.NARROW,
+            "moat_summary": "Lợi thế cạnh tranh dựa trên hiệu ứng quy mô và chi phí chuyển đổi trong ngành cốt lõi.",
+            "cap_diag": "Dòng tiền chủ sở hữu (Owner Earnings) chuyển hóa tốt sang tài sản sinh lời thực tế; không ghi nhận pha loãng đột biến ngoài tầm kiểm soát.",
+            "earn_diag": "Dòng tiền kinh doanh (CFO) đối ứng vững chắc với lợi nhuận kế toán (Net Income), không phụ thuộc vào tích luỹ bất thường.",
+            "fin_diag": "Cấu trúc vốn an toàn: Nợ vay nằm trong tầm kiểm soát an toàn của dòng tiền tự do.",
+        })
 
         assessment = ValueInvestingAssessment(
-            moat_rating=MoatRating.WIDE if symbol in ["FPT", "VNM"] else MoatRating.NARROW,
+            moat_rating=sym_data["moat_rating"],
             valuation_status=val_status,
-            moat_summary="Lợi thế cạnh tranh (Moat) dựa trên chi phí chuyển đổi (Switching Cost) và hiệu ứng quy mô trong ngành cốt lõi.",
-            capital_allocation_diagnosis=cap_diag,
-            earnings_quality_diagnosis=earn_diag,
-            financial_resilience_diagnosis=fin_diag,
+            moat_summary=sym_data["moat_summary"],
+            capital_allocation_diagnosis=sym_data["cap_diag"],
+            earnings_quality_diagnosis=sym_data["earn_diag"],
+            financial_resilience_diagnosis=sym_data["fin_diag"],
             valuation_verdict=val_verdict,
             key_risks_and_invariants=[
                 "Hệ thống chỉ giải thích và giám sát giá trị nội tại; không phát sinh lệnh Mua/Bán.",
