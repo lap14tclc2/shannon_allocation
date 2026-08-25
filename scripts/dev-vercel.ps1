@@ -11,7 +11,7 @@ $DefaultLocalDatabaseUrl = 'postgresql://qport:qport@127.0.0.1:5432/qport'
 if ($DatabaseUrl) {
   $env:DATABASE_URL = $DatabaseUrl.Trim()
 }
-elseif (-not $env:DATABASE_URL) {
+elseif ([string]::IsNullOrWhiteSpace($env:DATABASE_URL) -or $env:DATABASE_URL.Trim() -eq '\') {
   $env:DATABASE_URL = $DefaultLocalDatabaseUrl
 }
 
@@ -30,8 +30,10 @@ conn = psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=3)
 conn.close()
 '@
 
+$pythonExe = if (Test-Path "$Root\.venv\Scripts\python.exe") { "$Root\.venv\Scripts\python.exe" } else { "python" }
+
 try {
-  $probe | python -
+  $probe | & $pythonExe -
   if ($LASTEXITCODE -ne 0) {
     throw 'PostgreSQL connectivity check failed.'
   }
@@ -55,7 +57,7 @@ Write-Host '  API: http://localhost:8000/api/health'
 Write-Host '  Database mode: native PostgreSQL'
 Write-Host "  DATABASE_URL: $env:DATABASE_URL"
 
-$api = Start-Process -FilePath 'python' -ArgumentList @(
+$api = Start-Process -FilePath $pythonExe -ArgumentList @(
   '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
 ) -PassThru -NoNewWindow
 
