@@ -47,6 +47,7 @@ import './portfolio-manager.css';
 import './spa-state.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
+import './design-system-v1.css';
 
 const APP_LOCALE = 'vi';
 
@@ -79,7 +80,7 @@ function LoadingScreen({ compact = false }) {
       <div className="spa-loading-spinner" aria-hidden="true" />
       <div>
         <div className="eyebrow">QPort</div>
-        <h1>Äang táº£i dá»¯ liá»uâ¦</h1>
+        <h1>Đang tải dữ liệu…</h1>
         <p className="muted">Trang váº«n an toÃ n; cÃ¡c giÃ¡ trá» thá»±c chá» hiá»n thá» sau khi dá»¯ liá»u sáºµn sÃ ng.</p>
       </div>
     </section>
@@ -90,9 +91,9 @@ function ErrorScreen({ error, onRetry }) {
   return <main className="auth-shell vercel-boot-shell">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>KhÃ´ng thá» táº£i dá»¯ liá»u</h1>
-      <p className="error">{error || 'á»¨ng dá»¥ng hiá»n khÃ´ng thá» táº£i dá»¯ liá»u. Vui lÃ²ng thá»­ láº¡i.'}</p>
-      <button type="button" className="btn-primary" onClick={onRetry}>Thá»­ láº¡i</button>
+      <h1>Không thể tải dữ liệu</h1>
+      <p className="error">{error || 'Ứng dụng hiện không thể tải dữ liệu. Vui lòng thử lại.'}</p>
+      <button type="button" className="btn-primary" onClick={onRetry}>Thử lại</button>
     </section>
   </main>;
 }
@@ -186,8 +187,8 @@ function App() {
 
   if (pathname === '/') {
     return <>
-      {isLoading && hasCachedData && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
-      {route.status === 'failed' && hasCachedData && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
+      {isLoading && hasCachedData && <div className="spa-data-banner" role="status">Đang cập nhật dữ liệu mới nhất…</div>}
+      {route.status === 'failed' && hasCachedData && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dữ liệu lưu gần nhất vẫn được giữ lại.</div>}
       <Page
         key={`dashboard:${route.updatedAt || 'loading'}`}
         {...common}
@@ -205,8 +206,8 @@ function App() {
   }
 
   return <>
-    {isLoading && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
-    {route.status === 'failed' && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
+    {isLoading && <div className="spa-data-banner" role="status">Đang cập nhật dữ liệu mới nhất…</div>}
+    {route.status === 'failed' && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dữ liệu lưu gần nhất vẫn được giữ lại.</div>}
     <Page key={`${pathname}:${route.updatedAt || 'loading'}`} {...common} {...data} />
   </>;
 }
