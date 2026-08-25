@@ -637,9 +637,13 @@ def portfolio_sync(
     qport_session: str | None = Cookie(default=None),
 ):
     user = require_portfolio_user(qport_session)
+    selected = active_portfolio(user)
     svc = portfolio(user)
     try:
-        return svc.sync_daily(actor_type="USER", actor_id=user["username"])
+        sync_result = svc.sync_daily(actor_type="USER", actor_id=user["username"])
+        dashboard = svc.dashboard()
+        dashboard["portfolio_context"] = public_portfolio(selected)
+        return {**sync_result, "dashboard": dashboard}
     except Exception as exc:
         return _service_failure(svc, request.method, request.url.path, exc)
 
