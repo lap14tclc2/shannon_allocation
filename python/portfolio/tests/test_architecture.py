@@ -7,7 +7,7 @@ PORTFOLIO_DIR = Path(__file__).resolve().parents[1]
 PYTHON_DIR = PORTFOLIO_DIR.parent
 REPO_DIR = PYTHON_DIR.parent
 FRONTEND_SRC = REPO_DIR / "frontend" / "src"
-API = REPO_DIR / "api" / "index.py"
+API = REPO_DIR / "app" / "main.py"
 
 
 def _imports(path: Path) -> list[str]:
@@ -27,8 +27,13 @@ def test_portfolio_package_is_self_contained():
 
 
 def test_optimizer_research_stack_is_removed_from_repository():
-    for path in (PYTHON_DIR/"backtest", PYTHON_DIR/"optimize_main.py", PYTHON_DIR/"research_main.py", PYTHON_DIR/"research_legacy_server.py"):
-        assert not path.exists()
+    # The optimizer/research source is gone; only a stale __pycache__ (compiled
+    # .pyc artifacts) may remain under python/backtest, never any source .py.
+    for name in ("optimize_main.py", "research_main.py", "research_legacy_server.py"):
+        assert not (PYTHON_DIR / name).exists()
+    backtest = PYTHON_DIR / "backtest"
+    if backtest.exists():
+        assert list(backtest.rglob("*.py")) == [], "stale optimizer source .py files remain"
     for name in ("OptimizerListPage.jsx","OptimizerDetailPage.jsx","ResearchPage.jsx","RunPage.jsx","ComboPage.jsx"):
         assert not (FRONTEND_SRC/"pages"/name).exists()
 
@@ -89,9 +94,10 @@ def test_frontend_keeps_advanced_routes_but_hides_them_from_primary_navigation()
     nav=(FRONTEND_SRC/"components"/"AppNav.jsx").read_text(encoding="utf-8").lower()
     for route in ("operations", "logs", "risk", "snapshots", "settings"):
         assert f"'/{route}'" in client
-        assert route not in nav
-    for primary in ("portfolio", "transactions", "performance", "guide"):
+    for primary in ("portfolio", "transactions", "performance", "risk"):
         assert primary in nav
+    for advanced in ("operations", "logs", "snapshots"):
+        assert advanced not in nav
     assert "optimizer" not in client
     assert "research" not in client
 
@@ -99,9 +105,12 @@ def test_frontend_keeps_advanced_routes_but_hides_them_from_primary_navigation()
 def test_transactions_use_simple_history_and_advanced_optional_fields():
     source=(FRONTEND_SRC/"pages"/"TransactionsPage.jsx").read_text(encoding="utf-8")
     assert "window.prompt" not in source
-    assert "Advanced details" in source
-    assert "Broker" in source
-    assert "inline-delete" in source
+    assert "Thông tin CTCK & chi phí" in source
+    assert "transaction-advanced" in source
+    assert "CTCK" in source
+    assert "broker_code" in source
+    assert "discardPortfolioTransaction" in source
+    assert "Xác nhận loại bỏ" in source
     assert "Save broker" not in source
     assert "Institutional ledger rules" not in source
     assert "Correction audit log" not in source

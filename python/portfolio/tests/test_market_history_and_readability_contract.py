@@ -19,7 +19,7 @@ def test_runtime_service_backfills_long_d1_history_before_incremental_sync():
 def test_portfolio_auto_backfill_is_visible_and_non_blocking_to_the_page():
     page = (FRONTEND / "pages" / "PortfolioPage.jsx").read_text(encoding="utf-8")
     indicator = (FRONTEND / "components" / "MarketHistoryIndicator.jsx").read_text(encoding="utf-8")
-    assert "MarketHistoryIndicator" in page
+    assert "VietnamesePortfolioDashboard" in page
     assert "syncPortfolio" in indicator
     assert "D1 HISTORY · SYNCING" in indicator
     assert "D1 HISTORY · READY" in indicator

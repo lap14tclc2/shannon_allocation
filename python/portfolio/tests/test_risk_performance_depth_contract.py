@@ -85,7 +85,8 @@ def test_performance_history_derives_multiple_windows_and_drawdown_anatomy():
     assert "Recovery date" in source
     assert "Current underwater duration" in source
     assert "Recent monthly TWR" in source
-    assert "hasTrackedSeries" in wrapper
+    assert "PerformancePage" in wrapper
+    assert "PerformancePage.jsx" in wrapper
     assert "PerformancePageV2.jsx" in client
     assert "PerformancePageV2.jsx" in ssr
 
@@ -93,13 +94,13 @@ def test_performance_history_derives_multiple_windows_and_drawdown_anatomy():
 def test_existing_risk_page_is_not_only_a_summary_card():
     source = (FRONTEND_SRC / "pages" / "RiskPage.jsx").read_text(encoding="utf-8")
     for token in (
-        "Risk interpretation",
-        "Concentration & diversification",
-        "Tail-risk diagnostics",
-        "Risk contribution HHI",
-        "Historical daily CVaR 95%",
-        "Downside volatility",
-        "ERC capital reference",
-        "Data readiness",
+        "Bốn góc nhìn quan trọng",
+        "Tác động của mã lớn nhất",
+        "Ma trận tương quan",
+        "Những phiên giảm mạnh đã xảy ra",
+        "Mỗi mã đang ảnh hưởng danh mục như thế nào?",
+        "VaR ngày 95%",
+        "CVaR ngày 95%",
+        "Biến động 63 phiên",
     ):
         assert token in source

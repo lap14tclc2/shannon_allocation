@@ -7,12 +7,12 @@ FRONTEND = REPO / "frontend" / "src"
 
 def test_guide_is_written_for_normal_users_not_developers():
     source = (FRONTEND / "pages" / "GuidePage.jsx").read_text(encoding="utf-8")
-    assert "Use QPort with confidence" in source
-    assert "Start here" in source
-    assert "What each page answers" in source
-    assert "Common things you will do" in source
-    assert "Understand the status words" in source
-    assert "If something looks wrong" in source
+    assert "Bắt đầu quản lý danh mục trong vài bước" in source
+    assert "Mỗi trang dùng để làm gì?" in source
+    assert "Ghi giao dịch đúng cách" in source
+    assert "Nếu số liệu trông không đúng" in source
+    assert "Một nguyên tắc cần nhớ" in source
+    assert "Thói quen sử dụng đơn giản" in source
 
     # Build/install instructions belong in README/docs, not the in-app normal-user guide.
     for developer_token in (
@@ -30,30 +30,27 @@ def test_guide_is_written_for_normal_users_not_developers():
 def test_guide_explains_actual_user_workflow_and_key_semantics():
     source = (FRONTEND / "pages" / "GuidePage.jsx").read_text(encoding="utf-8")
     for token in (
-        "Position import",
-        "Transactions",
-        "Portfolio",
-        "Performance",
-        "Risk",
-        "BUY",
-        "SELL",
-        "Received dividends",
-        "READY",
-        "BUILDING",
-        "STALE / PARTIAL",
-        "ERROR",
-        "ERC is only an advanced diagnostic reference",
-        "missing values are not zero",
+        "Danh mục",
+        "Giao dịch",
+        "Hiệu quả",
+        "Phân tích",
+        "Nhập danh mục ban đầu",
+        "Mua thêm cổ phiếu",
+        "Bán cổ phiếu",
+        "cổ tức",
+        "giá vốn",
+        "giá vốn sau điều chỉnh",
     ):
         assert token in source
 
 
 def test_guide_keeps_technical_integrity_rules_collapsed_and_optional():
     source = (FRONTEND / "pages" / "GuidePage.jsx").read_text(encoding="utf-8")
-    assert '<details className="card guide-advanced">' in source
-    assert "Advanced: Data integrity rules" in source
-    assert "You normally do not need these details" in source
-    assert "Risk information never changes shares" in source
+    assert "<details" in source
+    assert "Một nguyên tắc cần nhớ" in source
+    assert "QPort không tự mua bán thay bạn" in source
+    assert "Số cổ phiếu chỉ thay đổi khi có giao dịch hoặc sự kiện doanh nghiệp thực sự được ghi nhận" in source
+    assert "không cần hiểu" in source
 
 
 def test_guide_has_friendly_readable_layout_loaded_globally():

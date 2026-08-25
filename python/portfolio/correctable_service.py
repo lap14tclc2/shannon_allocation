@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from .accounting import AccountingError, apply_event, derive_state
@@ -234,6 +235,70 @@ class CorrectablePortfolioService(PortfolioService):
             "status": "BALANCED",
         }
 
+    # ------------------------------------------------------------------
+    # Tracking boundary (Quick Import "current balance" mode)
+    # ------------------------------------------------------------------
+    def _tracking_boundary(self) -> dict:
+        """Return the portfolio initialization mode and server-decided start date."""
+        with self.store.connect() as db:
+            rows = db.execute(
+                "SELECT key, value FROM app_meta WHERE key IN ('initialization_mode', 'tracking_start_date')"
+            ).fetchall()
+        values = {row["key"]: row["value"] for row in rows}
+        return {
+            "initialization_mode": values.get("initialization_mode"),
+            "tracking_start_date": values.get("tracking_start_date") or None,
+        }
+
+    def _ensure_tracking_boundary(self, mode: str) -> dict:
+        """Persist the initialization mode on the first import; later imports keep it."""
+        boundary = self._tracking_boundary()
+        if boundary["initialization_mode"]:
+            return boundary
+        with self.store.connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('initialization_mode', ?)",
+                (str(mode).upper(),),
+            )
+            if str(mode).upper() == "CURRENT":
+                db.execute(
+                    "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('tracking_start_date', ?)",
+                    (self.today_vn(),),
+                )
+        return self._tracking_boundary()
+
+    def _guard_corporate_action_date(self, effective_date: str) -> None:
+        """Reject posting a corporate action that predates a CURRENT tracking start."""
+        boundary = self._tracking_boundary()
+        if boundary.get("initialization_mode") != "CURRENT":
+            return
+        start = boundary.get("tracking_start_date")
+        effective_date = str(effective_date or "").strip()
+        if start and effective_date and effective_date < start:
+            raise InputValidationError(
+                "CORPORATE_ACTION_BEFORE_TRACKING_START",
+                f"Corporate action dated {effective_date} predates the CURRENT tracking start ({start}) "
+                "and is already reflected in the opening balance; it cannot be posted again.",
+                "received_date",
+            )
+
+    def _annotate_corporate_actions(self, actions: list[dict]) -> list[dict]:
+        boundary = self._tracking_boundary()
+        start = boundary.get("tracking_start_date") if boundary.get("initialization_mode") == "CURRENT" else None
+        for action in actions:
+            effective = str(
+                action.get("received_date")
+                or action.get("payment_date")
+                or action.get("record_date")
+                or action.get("announcement_date")
+                or ""
+            )
+            before = bool(start and effective and effective < start)
+            action["before_tracking_start"] = before
+            if before:
+                action["tracking_flag"] = "BEFORE_TRACKING_START"
+        return actions
+
     def _prepare_import(self, payload: dict, *, created_by: str) -> dict:
         if not isinstance(payload, dict):
             raise InputValidationError("INVALID_IMPORT", "Import request must be an object.", "rows")
@@ -247,16 +312,28 @@ class CorrectablePortfolioService(PortfolioService):
             raise InputValidationError("IMPORT_TOO_LARGE", "One import may contain at most 1,000 rows.", "rows")
 
         source_name = str(payload.get("source_name") or "quick-paste").strip()[:160]
+        # Capture ONE server-decided date for the whole batch so a retry across
+        # midnight cannot split the batch across two dates or break idempotency.
+        batch_date = self.today_vn()
+        cost_basis_adjusted = bool(payload.get("cost_basis_adjusted") is True)
+        if mode == "CURRENT" and not cost_basis_adjusted:
+            raise InputValidationError(
+                "COST_BASIS_CONFIRMATION_REQUIRED",
+                "Chế độ Số dư hiện tại yêu cầu xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách, "
+                "cổ tức cổ phiếu và cổ phiếu thưởng trước hôm nay.",
+                "cost_basis_adjusted",
+            )
+        confirmed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         clean_rows = []
         for index, raw in enumerate(rows, start=1):
             if not isinstance(raw, dict):
                 raise InputValidationError("INVALID_IMPORT_ROW", f"Import row {index} must be an object.", f"rows[{index - 1}]")
             candidate = dict(raw)
             if mode == "CURRENT":
-                candidate["event_date"] = self.today_vn()
+                candidate["event_date"] = batch_date
                 candidate["event_type"] = str(candidate.get("event_type") or "POSITION_IMPORT").upper()
             try:
-                clean = normalize_event_payload(candidate, today=self.today_vn())
+                clean = normalize_event_payload(candidate, today=batch_date)
             except InputValidationError as exc:
                 raise InputValidationError(exc.code, f"Dòng {index}: {exc.message}", f"rows[{index - 1}].{exc.field or 'row'}") from exc
             if mode == "CURRENT" and clean["event_type"] not in CURRENT_IMPORT_TYPES:
@@ -282,8 +359,17 @@ class CorrectablePortfolioService(PortfolioService):
                 "note": clean["note"],
                 "metadata": clean["metadata"],
             })
+
+        # The idempotency hash covers the BUSINESS payload. For CURRENT imports the
+        # event date is server policy, not client data, so it is excluded: a retry
+        # across midnight must resolve to the original stored batch.
+        hash_rows = [
+            {key: value for key, value in row.items() if not (mode == "CURRENT" and key == "event_date")}
+            for row in canonical
+        ]
         payload_hash = hashlib.sha256(json.dumps(
-            {"mode": mode, "rows": canonical}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            {"mode": mode, "cost_basis_adjusted": cost_basis_adjusted, "rows": hash_rows},
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
         idempotency_key = str(payload.get("idempotency_key") or f"import:{payload_hash[:32]}").strip()
         if not IMPORT_KEY_RE.fullmatch(idempotency_key):
@@ -328,6 +414,12 @@ class CorrectablePortfolioService(PortfolioService):
                 "import_row": index,
                 "opening_balance": mode == "CURRENT",
             })
+            if mode == "CURRENT":
+                metadata.update({
+                    "cost_basis_adjusted": True,
+                    "cost_basis_confirmed_at": confirmed_at,
+                    "tracking_start_date": batch_date,
+                })
             row = dict(clean)
             row["metadata"] = metadata
             events.append(self._event_from_clean(row, event_id=next_id + index - 1, created_by=actor))
@@ -345,6 +437,8 @@ class CorrectablePortfolioService(PortfolioService):
             "source_name": source_name,
             "payload_hash": payload_hash,
             "idempotency_key": idempotency_key,
+            "tracking_start_date": batch_date if mode == "CURRENT" else None,
+            "cost_basis_confirmed_at": confirmed_at if mode == "CURRENT" else None,
             "events": events,
             "rows": canonical,
             "warnings": warnings,
@@ -360,6 +454,8 @@ class CorrectablePortfolioService(PortfolioService):
             "row_count": len(prepared["rows"]),
             "idempotency_key": prepared["idempotency_key"],
             "payload_hash": prepared["payload_hash"],
+            "tracking_start_date": prepared.get("tracking_start_date"),
+            "cost_basis_confirmed_at": prepared.get("cost_basis_confirmed_at"),
             "rows": prepared["rows"],
             "warnings": prepared["warnings"],
             "reconciliation": prepared["reconciliation"],
@@ -369,6 +465,11 @@ class CorrectablePortfolioService(PortfolioService):
         prepared = self._prepare_import(payload, created_by=created_by)
         key = prepared["idempotency_key"]
         payload_hash = prepared["payload_hash"]
+        self._ensure_tracking_boundary(prepared["mode"])
+        tracking = {
+            "tracking_start_date": prepared.get("tracking_start_date"),
+            "cost_basis_confirmed_at": prepared.get("cost_basis_confirmed_at"),
+        }
         if "existing_event_ids" in prepared:
             return {
                 "ok": True,
@@ -378,6 +479,7 @@ class CorrectablePortfolioService(PortfolioService):
                 "row_count": len(prepared["rows"]),
                 "warnings": prepared["warnings"],
                 "reconciliation": prepared["reconciliation"],
+                **tracking,
             }
         with self.store.connect() as db:
             existing = db.execute(
@@ -398,6 +500,7 @@ class CorrectablePortfolioService(PortfolioService):
                     "event_ids": json.loads(existing["event_ids_json"] or "[]"),
                     "row_count": len(prepared["events"]),
                     "reconciliation": prepared["reconciliation"],
+                    **tracking,
                 }
 
             event_ids = []
@@ -447,6 +550,7 @@ class CorrectablePortfolioService(PortfolioService):
             "history": history,
             "warnings": prepared["warnings"],
             "reconciliation": prepared["reconciliation"],
+            **tracking,
         }
 
     def _replacement_event(self, event_id: int, payload: dict) -> LedgerEvent:
@@ -605,6 +709,8 @@ class CorrectablePortfolioService(PortfolioService):
         for action in overview.get("corporate_actions") or []:
             action["postings"] = posting_map.get(int(action["id"]), [])
             action["ledger_posted"] = bool(action["postings"])
+        overview["corporate_actions"] = self._annotate_corporate_actions(overview.get("corporate_actions") or [])
+        overview["tracking_boundary"] = self._tracking_boundary()
         overview["security_reference_provider"] = self.security_reference.health()
         overview["activity_integrity"] = verify_activity_chain(self.store)
         return overview
@@ -631,6 +737,11 @@ class CorrectablePortfolioService(PortfolioService):
         return result
 
     def sync_corporate_actions(self, start: str | None = None, end: str | None = None) -> dict:
+        boundary = self._tracking_boundary()
+        if boundary.get("initialization_mode") == "CURRENT" and boundary.get("tracking_start_date"):
+            start = start or boundary["tracking_start_date"]
+            if start and start < boundary["tracking_start_date"]:
+                start = boundary["tracking_start_date"]
         result = self.book.sync_corporate_actions(sorted(self.current_state().positions), start=start, end=end)
         self._log("USER", "local", "CORPORATE_ACTION", "CORPORATE_ACTION_SYNC", f"Corporate-action sync discovered {result.get('discovered', 0)} event(s).", details=result)
         return result
@@ -648,6 +759,7 @@ class CorrectablePortfolioService(PortfolioService):
         return result
 
     def record_corporate_action_receipt(self, action_id: int, payload: dict, created_by: str = "local") -> dict:
+        self._guard_corporate_action_date(payload.get("received_date") or payload.get("payment_date"))
         result = self.book.record_corporate_action_receipt(action_id, payload, created_by=created_by)
         self._log("USER", created_by, "CORPORATE_ACTION", "CORPORATE_ACTION_RECEIPT_RECORDED", f"Recorded receipt for corporate action #{action_id}.", entity_type="CORPORATE_ACTION", entity_id=action_id, details=result)
         return result
@@ -662,6 +774,7 @@ class CorrectablePortfolioService(PortfolioService):
         if action.get("status") != "RECONCILED":
             raise InputValidationError("CORPORATE_ACTION_NOT_RECONCILED", "Record and reconcile the actual broker receipt before posting it to the ledger.", "action_id")
         receipt = action.get("receipt") or {}
+        self._guard_corporate_action_date(receipt.get("received_date") or receipt.get("payment_date"))
         with self.store.connect() as db:
             existing = {r["posting_type"]: int(r["event_id"]) for r in db.execute("SELECT posting_type,event_id FROM corporate_action_postings WHERE action_id=?", (int(action_id),)).fetchall()}
         created = []

@@ -5,6 +5,32 @@
   align-items: center;
 }
 
+/* Theme picker is portaled to document.body so no header/sheet ancestor can
+   create a containing block, clip it, or trap its position. */
+.appearance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  pointer-events: none;
+}
+
+.appearance-overlay > .appearance-popover,
+.appearance-overlay > .appearance-backdrop {
+  pointer-events: auto;
+}
+
+.appearance-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
+}
+
 .appearance-toggle {
   min-height: 38px;
   display: inline-grid;

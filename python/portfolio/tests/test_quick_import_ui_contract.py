@@ -56,3 +56,32 @@ def test_guidance_styles_are_present_for_mobile():
     assert ".cost-basis-guidance" in css
     assert ".cost-basis-guide" in css
     assert ".quick-import-date-note" in css
+
+
+def test_current_balance_mode_requires_cost_basis_confirmation():
+    panel = _panel()
+    assert "type=\"checkbox\"" in panel
+    assert "confirmed" in panel
+    assert "Tôi xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách" in panel
+    # The confirmation must be required (not pre-checked) and sent to the backend.
+    assert "checked={confirmed}" in panel
+    assert "cost_basis_adjusted: mode === 'CURRENT' ? confirmed : undefined" in panel
+    # Preview stays disabled until confirmed in CURRENT mode.
+    assert "mode === 'CURRENT' && !confirmed" in panel
+
+
+def test_historical_mode_does_not_require_confirmation():
+    panel = _panel()
+    # Confirmation gate is scoped to CURRENT only.
+    assert "mode === 'CURRENT' && !confirmed" in panel
+    assert "mode === 'CURRENT' && <div className=\"cost-basis-guidance\"" in panel
+
+
+def test_standard_transaction_form_keeps_date_field_defaulting_to_today():
+    transactions = (FRONTEND / "pages" / "TransactionsPage.jsx").read_text(encoding="utf-8")
+    assert 'type="date"' in transactions
+    assert "event_date: today" in transactions
+    assert "max={today || undefined}" in transactions
+    # Quick Import is the only flow that drops the date picker.
+    panel = _panel()
+    assert 'type="date"' not in panel

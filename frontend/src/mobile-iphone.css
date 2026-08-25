@@ -32,7 +32,8 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  body.mobile-sheet-open {
+  body.mobile-sheet-open,
+  body.theme-sheet-open {
     overflow: hidden;
   }
 
@@ -328,6 +329,14 @@
   }
 
   /* Appearance panel becomes a full-width secondary sheet above the account sheet. */
+  .appearance-overlay {
+    z-index: 700;
+  }
+
+  .appearance-backdrop {
+    background: rgba(0, 0, 0, .52);
+  }
+
   .appearance-popover {
     z-index: 560;
     top: auto;
@@ -338,6 +347,9 @@
     max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
     padding: 16px;
     border-radius: 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .appearance-row {

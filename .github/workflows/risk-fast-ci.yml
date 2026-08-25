@@ -2,7 +2,7 @@ name: QPort Vercel Migration CI
 
 on:
   push:
-    branches: [vercel-migration]
+    branches: [main, vercel-migration]
     paths:
       - 'app/**'
       - 'python/portfolio/**'

@@ -263,6 +263,11 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
             if not payment_date or payment_date > today:
                 continue
 
+            boundary = self._tracking_boundary()
+            if boundary.get("initialization_mode") == "CURRENT" and boundary.get("tracking_start_date") and payment_date < boundary["tracking_start_date"]:
+                skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "BEFORE_TRACKING_START"})
+                continue
+
             posting_type = "CASH" if action_type == "CASH_DIVIDEND" else "STOCK"
             if (action_id, posting_type) in posted:
                 continue

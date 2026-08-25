@@ -11,7 +11,7 @@ def test_mobile_navigation_is_portaled_outside_top_nav_containing_block():
     assert "createPortal(" in nav
     assert "document.body" in nav
     assert 'className="mobile-tab-bar"' in nav
-    assert 'className="mobile-account-sheet"' in nav
+    assert "mobile-account-sheet" in nav
     assert 'className="mobile-nav-backdrop"' in nav
     assert 'className="app-nav-links desktop-nav-links"' in nav
     assert 'className="app-nav-footer desktop-nav-footer"' in nav

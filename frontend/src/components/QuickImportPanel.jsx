@@ -13,6 +13,7 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
   const [mode, setMode] = useState('CURRENT');
   const [text, setText] = useState('');
   const [sourceName, setSourceName] = useState('quick-paste');
+  const [confirmed, setConfirmed] = useState(false);
   const fileInputRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState('');
@@ -24,6 +25,7 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
   function switchMode(nextMode) {
     setMode(nextMode);
     setText('');
+    setConfirmed(false);
     setPreview(null);
     setMessage('');
   }
@@ -31,6 +33,7 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
   function clearInput() {
     setText('');
     setSourceName('quick-paste');
+    setConfirmed(false);
     setPreview(null);
     setMessage('');
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -54,7 +57,12 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
   }
 
   function requestBody() {
-    return { mode, source_name: sourceName, rows: parseQuickImport(text, { mode, today }) };
+    return {
+      mode,
+      source_name: sourceName,
+      cost_basis_adjusted: mode === 'CURRENT' ? confirmed : undefined,
+      rows: parseQuickImport(text, { mode, today }),
+    };
   }
 
   async function runPreview() {
@@ -132,8 +140,13 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
         <label className="btn-variant quick-import-file">Chọn CSV / TSV / TXT<input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" onChange={loadFile} /></label>
         <span className="muted">Excel: copy vùng dữ liệu rồi dán, hoặc Save As CSV UTF-8.</span>
       </div>
+      {mode === 'CURRENT' && <label className="quick-import-confirm">
+        <input type="checkbox" checked={confirmed} onChange={event => { setConfirmed(event.target.checked); setPreview(null); setMessage(''); }} />
+        <span>Tôi xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách, cổ tức cổ phiếu và cổ phiếu thưởng trước hôm nay.</span>
+      </label>}
+
       <div className="button-row quick-import-actions">
-        <button className="btn-primary" type="button" onClick={runPreview} disabled={busy || !text.trim()}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</button>
+        <button className="btn-primary" type="button" onClick={runPreview} disabled={busy || !text.trim() || (mode === 'CURRENT' && !confirmed)}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</button>
         <button className="btn-secondary quick-import-clear" type="button" onClick={clearInput} disabled={busy || (!text && !preview && !message)} aria-label="Xóa dữ liệu nhập nhanh">Xóa dữ liệu</button>
       </div>
       {message && <div className="run-message">{message}</div>}

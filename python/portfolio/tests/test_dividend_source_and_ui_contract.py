@@ -68,7 +68,9 @@ def test_auto_dividend_ledger_records_entitlement_date_broker_allocations():
 def test_dividend_history_uses_one_canonical_runtime_source_and_dedupes_old_cache():
     source = (PORTFOLIO_DIR / "dividend_store.py").read_text(encoding="utf-8")
     assert "self.stop_on_first_data = True if using_defaults" in source
-    assert "SINGLE_CANONICAL_SOURCE_PLUS_ECONOMIC_EVENT_DEDUPE" in source
+    assert "self.single_source_runtime = using_defaults" in source
+    assert "FIRST_PROVIDER_WITH_USABLE_DIVIDEND" in source
+    assert "CANONICAL_EVENT_FAMILY_PLUS_PARSER_ARTIFACT_SUPPRESSION" in source
     assert "def _same_economic_event" in source
     assert 'db.execute("DELETE FROM dividend_events WHERE symbol = ?", (symbol,))' in source
     assert '"canonical_source": canonical_source' in source

@@ -98,11 +98,11 @@ def test_desktop_tables_fill_card_width_and_mobile_scroll_contract_remains():
 def test_risk_and_performance_pages_surface_interpretation_and_tax_impact():
     risk = (FRONTEND_SRC / "pages" / "RiskPage.jsx").read_text(encoding="utf-8")
     performance = (FRONTEND_SRC / "pages" / "PerformancePage.jsx").read_text(encoding="utf-8")
-    assert "Risk interpretation" in risk
-    assert "Correlation regime" in risk
-    assert "Volatility regime" in risk
-    assert "Risk coverage" in risk
-    assert "Income after dividend tax" in performance
+    assert "Bốn góc nhìn quan trọng" in risk
+    assert "Tương quan trung bình" in risk
+    assert "Biến động ~3 tháng" in risk
+    assert "độ phủ" in risk
+    assert "Thu nhập từ cổ tức" in performance
     assert "cash_dividend_tax" in performance
     assert "stock_dividend_sale_tax" in performance
-    assert "History readiness" in performance
+    assert "chất lượng lịch sử" in performance

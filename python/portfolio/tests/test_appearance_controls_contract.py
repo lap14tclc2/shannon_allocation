@@ -40,6 +40,21 @@ def test_theme_selector_is_keyboard_and_click_outside_safe():
     assert "aria-label" in component
 
 
+def test_theme_picker_is_portaled_to_body_and_viewport_owned():
+    component = (FRONTEND / "components" / "AppearanceControls.jsx").read_text(encoding="utf-8")
+    assert "createPortal" in component
+    assert "document.body" in component
+    assert "appearance-overlay" in component
+    assert "appearance-backdrop" in component
+    assert "theme-sheet-open" in component
+    css = (FRONTEND / "appearance-controls.css").read_text(encoding="utf-8")
+    assert ".appearance-overlay" in css
+    assert "z-index: 700" in css
+    assert ".appearance-backdrop" in css
+    mobile = (FRONTEND / "mobile-iphone.css").read_text(encoding="utf-8")
+    assert "body.theme-sheet-open" in mobile
+
+
 def test_appearance_popover_is_compact_and_mobile_safe():
     css = (FRONTEND / "appearance-controls.css").read_text(encoding="utf-8")
     assert ".appearance-popover" in css

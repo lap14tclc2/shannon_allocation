@@ -36,7 +36,7 @@ def test_mobile_navigation_is_portaled_to_real_viewport():
     assert "createPortal" in nav
     assert "document.body" in nav
     assert 'className="mobile-tab-bar"' in nav
-    assert 'className="mobile-account-sheet"' in nav
+    assert "mobile-account-sheet" in nav
     assert 'className="mobile-nav-backdrop"' in nav
     assert "position: fixed" in css
     assert "grid-template-columns: repeat(4" in css

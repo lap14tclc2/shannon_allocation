@@ -38,14 +38,14 @@ const corrections = [{ id: 1, event_id: 1, action: 'EDIT', reason: 'Correct brok
 
 const markdown = buildAIExportMarkdown({ dashboard, performance, risk, operations, activity, snapshots: [], transactions, corrections, generatedAt: '2026-08-23T05:00:00.000Z' });
 function check(name, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) process.exitCode = 1; }
-check('has v4 schema', markdown.includes('qport-ai-export-v4'));
+check('has v5 schema', markdown.includes('qport-ai-export-v5'));
 check('contains institutional book identity', markdown.includes('INSTITUTIONAL_LITE_IBOR') && markdown.includes('FIFO_TAX_LOTS'));
 check('contains broker aware lots and settlement', markdown.includes('Tax lots by broker/account') && markdown.includes('TCBS') && markdown.includes('PRIMARY'));
 check('contains broker reconciliation', markdown.includes('## Broker reconciliation') && markdown.includes('MATCH'));
 check('contains security master and real ISIN', markdown.includes('## Security master') && markdown.includes('VN000000DGC1'));
 check('contains corporate actions', markdown.includes('## Corporate actions') && markdown.includes('VERIFIED'));
-check('contains activity audit and integrity', markdown.includes('Recent activity log') && markdown.includes('TRANSACTION_CORRECTED') && markdown.includes('Activity chain') && markdown.includes('VERIFIED'));
+check('contains activity audit and integrity', markdown.includes('Activity log returned by API') && markdown.includes('TRANSACTION_CORRECTED') && markdown.includes('Activity chain') && markdown.includes('VERIFIED'));
 check('contains performance policy', markdown.includes('QPORT_PERF_V2'));
 check('contains correction audit', markdown.includes('## Transaction correction audit') && markdown.includes('Correct broker cost'));
-check('contains machine-readable v4 payload', markdown.includes('"operations"') && markdown.includes('"activity_integrity"') && markdown.includes('"schema_version": "qport-ai-export-v4"'));
-if (!process.exitCode) console.log('\nAI EXPORT V4 TEST PASSED');
+check('contains machine-readable v5 payload', markdown.includes('"operations"') && markdown.includes('"activity_integrity"') && markdown.includes('"schema_version": "qport-ai-export-v5"'));
+if (!process.exitCode) console.log('\nAI EXPORT V5 TEST PASSED');

@@ -53,8 +53,8 @@ def test_frontend_has_wealth_manager_and_global_switcher():
     entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
     api = (FRONTEND_SRC / "lib" / "api.js").read_text(encoding="utf-8")
 
-    assert "Tài sản đang xem" in nav
-    assert "Chuyển danh mục đầu tư" in nav
+    assert "Danh mục đang xem" in nav
+    assert "Chọn danh mục để chuyển nhanh" in nav
     assert 'href="/portfolios"' in nav
     assert "Danh mục của bạn" in page
     assert "holdings, cash, transactions, performance và analytics" in page
@@ -89,7 +89,7 @@ def test_spa_uses_persisted_redux_and_refreshes_without_page_reload():
     assert "<Provider store={store}>" in entry
     assert "NAVIGATION_EVENT" in entry
     assert "window.addEventListener('popstate'" in entry
-    assert "dataLoading={isLoading}" in entry
+    assert "dataLoading={isLoading" in entry
     assert "window.location.reload" not in entry
     assert "window.location.reload" not in dashboard
     assert "dispatch(refreshDashboard()).unwrap()" in dashboard

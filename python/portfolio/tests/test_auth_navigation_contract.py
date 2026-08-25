@@ -3,7 +3,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 FRONTEND = REPO / "frontend" / "src"
-API = REPO / "api" / "index.py"
+API = REPO / "app" / "main.py"
 
 
 def test_api_redirects_only_expired_authenticated_sessions_to_login():
@@ -32,7 +32,7 @@ def test_relogin_restores_safe_internal_page_after_session_expiry():
     assert "raw.startsWith('/login')" in source
     assert "setSessionExpired(params.get('reason') === 'session_expired')" in source
     assert "window.location.replace(result.user?.role === 'ADMIN' ? '/admin' : nextPath)" in source
-    assert "Your session expired" in source
+    assert "Phiên đăng nhập đã hết hạn" in source
 
 
 def test_vercel_spa_bootstraps_from_api_instead_of_server_hydration():
@@ -42,8 +42,8 @@ def test_vercel_spa_bootstraps_from_api_instead_of_server_hydration():
     assert "createRoot" in client
     assert "hydrateRoot" not in client
     assert "window.__PAGE__" not in client
-    assert "getCurrentUser" in client
-    assert "getPortfolioDashboard" in client
+    assert "bootstrapApp" in client
+    assert "loadRoute" in client
     assert "pathname === '/login'" in client
     assert "user.role === 'ADMIN'" in client
     assert '@app.get("/api/auth/me")' in api

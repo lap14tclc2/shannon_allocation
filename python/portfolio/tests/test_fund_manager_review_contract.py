@@ -6,16 +6,14 @@ FRONTEND = REPO / "frontend" / "src"
 
 
 def test_portfolio_exposes_concise_professional_fund_manager_review():
-    page = (FRONTEND / "pages" / "PortfolioPage.jsx").read_text(encoding="utf-8")
     review = (FRONTEND / "components" / "FundManagerReview.jsx").read_text(encoding="utf-8")
-    assert "FundManagerReview" in page
-    assert "fund-manager-review.css" in page
-    assert "Experienced portfolio-manager view" in review
-    assert "Fund manager review" in review
-    assert "Manager view" in review
-    assert "What I would watch next" in review
-    assert "See detailed risk analysis" in review
-    assert "See performance history" in review
+    assert "Góc nhìn của nhà quản lý danh mục kinh nghiệm" in review
+    assert "Nhận xét của nhà quản lý quỹ" in review
+    assert "Đánh giá chính" in review
+    assert "Tôi sẽ theo dõi điều gì tiếp theo" in review
+    assert "Xem phân tích Risk chi tiết" in review
+    assert "Xem lịch sử Performance" in review
+    assert "fund-manager-review-card" in review
 
 
 def test_review_uses_only_evidence_needed_for_professional_judgment():

@@ -3,14 +3,14 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parents[3]
 PYTHON_DIR = REPO_DIR / "python"
 FRONTEND_SRC = REPO_DIR / "frontend" / "src"
-API = REPO_DIR / "api" / "index.py"
+API = REPO_DIR / "app" / "main.py"
 
 
 def test_vercel_runtime_uses_automated_portfolio_service():
     source = API.read_text(encoding="utf-8")
     assert "AutomatedPortfolioService" in source
     assert "PostgresPortfolioStore" in source
-    assert "svc = AutomatedPortfolioService(store=PostgresPortfolioStore(user_id))" in source
+    assert "PostgresPortfolioStore(user_id, selected[\"schema_name\"])" in source
 
 
 def test_dividend_automation_is_payment_date_driven_and_idempotent():
@@ -47,7 +47,7 @@ def test_received_dividend_ui_and_transaction_sources_are_visible():
     assert "CASH_DIVIDEND" in received and "STOCK_DIVIDEND" in received
     assert "AUTO corporate action" in received
     assert "Broker" in received and "Account" in received
-    assert "<th>Broker</th>" in transactions
+    assert "<th>CTCK</th>" in transactions
     assert "row.metadata?.broker_code" in transactions
     assert "row.metadata?.account_id" in transactions
     assert "PortfolioPage" in entry
