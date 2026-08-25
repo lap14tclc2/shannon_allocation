@@ -119,13 +119,14 @@ export const loadRoute = createAsyncThunk(
 export const refreshDashboard = createAsyncThunk(
   'qport/refreshDashboard',
   async (_, { getState }) => {
-    await syncPortfolio();
+    const result = await syncPortfolio();
+    if (!result?.dashboard) throw new Error('API đồng bộ không trả về dashboard mới.');
     const portfolioId = activePortfolioId(getState());
     return {
       key: routeKey('/', portfolioId),
       pathname: '/',
       portfolioId,
-      data: { dashboard: await getPortfolioDashboard() },
+      data: { dashboard: result.dashboard },
       updatedAt: Date.now(),
     };
   },
