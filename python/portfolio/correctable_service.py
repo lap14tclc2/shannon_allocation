@@ -150,7 +150,7 @@ class CorrectablePortfolioService(PortfolioService):
         state = PortfolioState()
         for event in sorted(events, key=lambda e: (e.event_date, int(e.id or 0))):
             apply_event(state, event)
-            if event.event_type in {EventType.BUY, EventType.CASH_WITHDRAW, EventType.FEE} and state.cash < -1e-6:
+            if event.event_type in {EventType.BUY, EventType.RIGHTS_ISSUE, EventType.CASH_WITHDRAW, EventType.FEE} and state.cash < -1e-6:
                 raise AccountingError(f"Ledger would make cash negative after transaction #{event.id}. Correct the funding/cash event first.")
 
     @staticmethod
