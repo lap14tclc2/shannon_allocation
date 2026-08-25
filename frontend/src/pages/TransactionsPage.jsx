@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
 import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
 import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
+import { loadRoute } from '../lib/store.js';
 
 const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'RIGHTS_ISSUE', 'CASH_WITHDRAW', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
@@ -64,6 +66,7 @@ function tradeIntentFromLocation() {
 }
 
 export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'vi' }) {
+  const dispatch = useDispatch();
   const money = value => value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
   const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
@@ -297,7 +300,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       } else {
         await createPortfolioTransaction(payload);
       }
-      window.location.replace('/transactions');
+      await dispatch(loadRoute({ pathname: '/transactions' })).unwrap();
     } catch (error) {
       if (error.field) setFieldErrors({ [error.field]: error.message });
       setMessage(error.message);
@@ -332,7 +335,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     setDiscardError('');
     try {
       await discardPortfolioTransaction(discardTarget.id, reason);
-      window.location.replace('/transactions');
+      await dispatch(loadRoute({ pathname: '/transactions' })).unwrap();
     } catch (error) {
       setDiscardError(error.message);
       setDiscarding(false);
