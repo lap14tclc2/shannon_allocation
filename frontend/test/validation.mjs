@@ -6,6 +6,7 @@ import {
   validateCashReserveInput,
   validateReferenceWeightInputs,
   validateTransactionForm,
+  vndToVietnameseWords,
 } from '../src/lib/validation.js';
 
 function check(name, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) process.exitCode = 1; }
@@ -31,6 +32,9 @@ check('parse 20m', parseVndMoneyInput('20m', 'cash_reserve', 'en') === 20_000_00
 check('parse Vietnamese grouped VND', parseVndMoneyInput('20.000.000', 'cash_reserve', 'vi') === 20_000_000);
 check('parse comma grouped VND', parseVndMoneyInput('20,000,000', 'cash_reserve', 'en') === 20_000_000);
 check('parse decimal million suffix', parseVndMoneyInput('20,5tr', 'cash_reserve', 'vi') === 20_500_000);
+check('parse Vietnamese billion suffix', parseVndMoneyInput('1.5 tỷ', 'cash_reserve', 'vi') === 1_500_000_000);
+check('parse thousand suffix', parseVndMoneyInput('72.5k', 'cash_reserve', 'vi') === 72_500);
+check('read VND in Vietnamese', vndToVietnameseWords(20_000_000) === 'Hai mươi triệu đồng');
 check('reject malformed money', rejects('cash_reserve', () => parseVndMoneyInput('20..000', 'cash_reserve', 'vi')));
 check('reference weights require 100%', rejects('weights', () => validateReferenceWeightInputs({ ACB:40,DGC:40,FPT:10 }, ['ACB','DGC','FPT'], 'en')));
 check('reference weights normalize', validateReferenceWeightInputs({ ACB:40,DGC:30,FPT:30 }, ['ACB','DGC','FPT'], 'en').ACB === .4);

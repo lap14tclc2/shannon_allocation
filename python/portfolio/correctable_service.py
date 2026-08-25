@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from urllib.parse import urlparse
 
 from .accounting import AccountingError, apply_event, derive_state
@@ -27,6 +30,9 @@ from .validation import (
 )
 
 AUTHORITATIVE_CA_HOSTS = ("vsd.vn", "hnx.vn", "hsx.vn", "hose.vn")
+IMPORT_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]{8,128}$")
+IMPORT_MODES = {"CURRENT", "HISTORICAL"}
+CURRENT_IMPORT_TYPES = {EventType.POSITION_IMPORT, EventType.CASH_DEPOSIT}
 
 
 class CorrectablePortfolioService(PortfolioService):
@@ -55,6 +61,20 @@ class CorrectablePortfolioService(PortfolioService):
                     PRIMARY KEY(action_id, posting_type),
                     FOREIGN KEY(action_id) REFERENCES corporate_actions(id),
                     FOREIGN KEY(event_id) REFERENCES ledger_events(id)
+                )
+                """
+            )
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS import_batches (
+                    idempotency_key TEXT PRIMARY KEY,
+                    payload_hash TEXT NOT NULL,
+                    import_mode TEXT NOT NULL,
+                    source_name TEXT NOT NULL DEFAULT '',
+                    event_ids_json TEXT NOT NULL DEFAULT '[]',
+                    created_by TEXT NOT NULL DEFAULT 'local',
+                    created_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'COMMITTED'
                 )
                 """
             )
@@ -185,6 +205,249 @@ class CorrectablePortfolioService(PortfolioService):
             details={"event_type": event.event_type.value, "event_date": event.event_date, "symbol": event.symbol, "broker_code": event.broker_code, "account_id": event.account_id},
         )
         return {"ok": True, "event_id": eid, "event": self._serialize_event(stored), "history": history}
+
+    @staticmethod
+    def _import_reconciliation(state) -> dict:
+        books: dict[tuple[str, str, str], dict] = {}
+        for symbol, position in sorted(state.positions.items()):
+            for lot in position.lots:
+                key = (symbol, lot.broker_code, lot.account_id)
+                row = books.setdefault(key, {
+                    "symbol": symbol,
+                    "broker_code": lot.broker_code,
+                    "account_id": lot.account_id,
+                    "shares": 0.0,
+                    "cost_basis": 0.0,
+                })
+                row["shares"] += float(lot.remaining_quantity)
+                row["cost_basis"] += float(lot.cost_basis)
+        holdings = []
+        for row in books.values():
+            row["average_cost"] = row["cost_basis"] / row["shares"] if row["shares"] > 0 else 0.0
+            holdings.append(row)
+        holdings.sort(key=lambda row: (row["symbol"], row["broker_code"], row["account_id"]))
+        return {
+            "cash": float(state.cash),
+            "holdings": holdings,
+            "holding_count": len(holdings),
+            "total_shares": sum(float(row["shares"]) for row in holdings),
+            "status": "BALANCED",
+        }
+
+    def _prepare_import(self, payload: dict, *, created_by: str) -> dict:
+        if not isinstance(payload, dict):
+            raise InputValidationError("INVALID_IMPORT", "Import request must be an object.", "rows")
+        mode = str(payload.get("mode") or "CURRENT").strip().upper()
+        if mode not in IMPORT_MODES:
+            raise InputValidationError("INVALID_IMPORT_MODE", "mode must be CURRENT or HISTORICAL.", "mode")
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not rows:
+            raise InputValidationError("IMPORT_ROWS_REQUIRED", "Provide at least one import row.", "rows")
+        if len(rows) > 1000:
+            raise InputValidationError("IMPORT_TOO_LARGE", "One import may contain at most 1,000 rows.", "rows")
+
+        source_name = str(payload.get("source_name") or "quick-paste").strip()[:160]
+        clean_rows = []
+        for index, raw in enumerate(rows, start=1):
+            if not isinstance(raw, dict):
+                raise InputValidationError("INVALID_IMPORT_ROW", f"Import row {index} must be an object.", f"rows[{index - 1}]")
+            candidate = dict(raw)
+            if mode == "CURRENT":
+                candidate["event_date"] = self.today_vn()
+                candidate["event_type"] = str(candidate.get("event_type") or "POSITION_IMPORT").upper()
+            try:
+                clean = normalize_event_payload(candidate, today=self.today_vn())
+            except InputValidationError as exc:
+                raise InputValidationError(exc.code, f"Dòng {index}: {exc.message}", f"rows[{index - 1}].{exc.field or 'row'}") from exc
+            if mode == "CURRENT" and clean["event_type"] not in CURRENT_IMPORT_TYPES:
+                raise InputValidationError(
+                    "CURRENT_IMPORT_EVENT_TYPE",
+                    f"Dòng {index}: chế độ Số dư hiện tại chỉ nhận POSITION_IMPORT hoặc CASH_DEPOSIT. Chọn Lịch sử đầy đủ cho {clean['event_type'].value}.",
+                    f"rows[{index - 1}].event_type",
+                )
+            clean_rows.append(clean)
+
+        canonical = []
+        for clean in clean_rows:
+            canonical.append({
+                "event_type": clean["event_type"].value,
+                "event_date": clean["event_date"],
+                "symbol": clean["symbol"],
+                "quantity": clean["quantity"],
+                "price": clean["price"],
+                "fee": clean["fee"],
+                "tax": clean["tax"],
+                "amount": clean["amount"],
+                "ratio": clean["ratio"],
+                "note": clean["note"],
+                "metadata": clean["metadata"],
+            })
+        payload_hash = hashlib.sha256(json.dumps(
+            {"mode": mode, "rows": canonical}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
+        idempotency_key = str(payload.get("idempotency_key") or f"import:{payload_hash[:32]}").strip()
+        if not IMPORT_KEY_RE.fullmatch(idempotency_key):
+            raise InputValidationError("INVALID_IDEMPOTENCY_KEY", "idempotency_key must be 8–128 safe characters.", "idempotency_key")
+
+        with self.store.connect() as db:
+            existing = db.execute(
+                "SELECT payload_hash, event_ids_json FROM import_batches WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+        if existing:
+            if existing["payload_hash"] != payload_hash:
+                raise InputValidationError(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "This idempotency_key was already used for different import data.",
+                    "idempotency_key",
+                )
+            current_state = derive_state(effective_events(self.store))
+            return {
+                "mode": mode,
+                "source_name": source_name,
+                "payload_hash": payload_hash,
+                "idempotency_key": idempotency_key,
+                "events": [],
+                "rows": canonical,
+                "warnings": ["Dữ liệu này đã được ghi trước đó; xác nhận lại sẽ không tạo giao dịch trùng."],
+                "reconciliation": self._import_reconciliation(current_state),
+                "existing_event_ids": json.loads(existing["event_ids_json"] or "[]"),
+            }
+
+        actor = str(created_by or "local")[:100]
+        source = raw_events(self.store)
+        next_id = max((int(event.id or 0) for event in source), default=0) + 1
+        events = []
+        for index, clean in enumerate(clean_rows, start=1):
+            metadata = dict(clean["metadata"])
+            metadata.update({
+                "import_batch_id": idempotency_key,
+                "import_payload_hash": payload_hash,
+                "import_mode": mode,
+                "import_source": source_name,
+                "import_row": index,
+                "opening_balance": mode == "CURRENT",
+            })
+            row = dict(clean)
+            row["metadata"] = metadata
+            events.append(self._event_from_clean(row, event_id=next_id + index - 1, created_by=actor))
+
+        projected = effective_events(self.store) + events
+        self._validate_ledger(projected)
+        projected_state = derive_state(sorted(projected, key=lambda event: (event.event_date, int(event.id or 0))))
+        warnings = []
+        if mode == "CURRENT":
+            warnings.append("Số dư hiện tại bắt đầu đo hiệu suất từ hôm nay; QPort không dựng giao dịch mua giả trong quá khứ.")
+        else:
+            warnings.append("Lịch sử đầy đủ sẽ tính lại snapshot từ ngày giao dịch sớm nhất và có thể mất thêm thời gian.")
+        return {
+            "mode": mode,
+            "source_name": source_name,
+            "payload_hash": payload_hash,
+            "idempotency_key": idempotency_key,
+            "events": events,
+            "rows": canonical,
+            "warnings": warnings,
+            "reconciliation": self._import_reconciliation(projected_state),
+        }
+
+    def preview_import(self, payload: dict, created_by: str = "local") -> dict:
+        prepared = self._prepare_import(payload, created_by=created_by)
+        return {
+            "ok": True,
+            "preview": True,
+            "mode": prepared["mode"],
+            "row_count": len(prepared["rows"]),
+            "idempotency_key": prepared["idempotency_key"],
+            "payload_hash": prepared["payload_hash"],
+            "rows": prepared["rows"],
+            "warnings": prepared["warnings"],
+            "reconciliation": prepared["reconciliation"],
+        }
+
+    def import_events(self, payload: dict, created_by: str = "local") -> dict:
+        prepared = self._prepare_import(payload, created_by=created_by)
+        key = prepared["idempotency_key"]
+        payload_hash = prepared["payload_hash"]
+        if "existing_event_ids" in prepared:
+            return {
+                "ok": True,
+                "deduplicated": True,
+                "idempotency_key": key,
+                "event_ids": prepared["existing_event_ids"],
+                "row_count": len(prepared["rows"]),
+                "warnings": prepared["warnings"],
+                "reconciliation": prepared["reconciliation"],
+            }
+        with self.store.connect() as db:
+            existing = db.execute(
+                "SELECT * FROM import_batches WHERE idempotency_key = ?",
+                (key,),
+            ).fetchone()
+            if existing:
+                if existing["payload_hash"] != payload_hash:
+                    raise InputValidationError(
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "This idempotency_key was already used for different import data.",
+                        "idempotency_key",
+                    )
+                return {
+                    "ok": True,
+                    "deduplicated": True,
+                    "idempotency_key": key,
+                    "event_ids": json.loads(existing["event_ids_json"] or "[]"),
+                    "row_count": len(prepared["events"]),
+                    "reconciliation": prepared["reconciliation"],
+                }
+
+            event_ids = []
+            for event in prepared["events"]:
+                stored = LedgerEvent(
+                    id=None, event_type=event.event_type, event_date=event.event_date,
+                    symbol=event.symbol, quantity=event.quantity, price=event.price,
+                    fee=event.fee, tax=event.tax, amount=event.amount, ratio=event.ratio,
+                    note=event.note, created_by=event.created_by, metadata=event.metadata,
+                )
+                event_ids.append(self.store.insert_event(db, stored))
+            db.execute(
+                """
+                INSERT INTO import_batches (
+                    idempotency_key, payload_hash, import_mode, source_name,
+                    event_ids_json, created_by, created_at, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'COMMITTED')
+                """,
+                (
+                    key, payload_hash, prepared["mode"], prepared["source_name"],
+                    json.dumps(event_ids), str(created_by or "local")[:100], self.store._now(),
+                ),
+            )
+
+        history = None
+        latest_snapshot = self.store.latest_snapshot()
+        earliest = min(event.event_date for event in prepared["events"])
+        if latest_snapshot and earliest <= latest_snapshot["snapshot_date"]:
+            self.book.mark_restatement(
+                earliest,
+                f"Import batch {key} added historical ledger events.",
+                correction_event_id=event_ids[0],
+            )
+            history = self._refresh_derived_history()
+        self._log(
+            "USER", str(created_by or "local")[:100], "LEDGER", "IMPORT_COMMITTED",
+            f"Imported {len(event_ids)} transactions as one atomic batch.",
+            entity_type="IMPORT_BATCH", entity_id=key,
+            details={"mode": prepared["mode"], "source_name": prepared["source_name"], "event_ids": event_ids, "payload_hash": payload_hash},
+        )
+        return {
+            "ok": True,
+            "deduplicated": False,
+            "idempotency_key": key,
+            "event_ids": event_ids,
+            "row_count": len(event_ids),
+            "history": history,
+            "warnings": prepared["warnings"],
+            "reconciliation": prepared["reconciliation"],
+        }
 
     def _replacement_event(self, event_id: int, payload: dict) -> LedgerEvent:
         current = effective_event(self.store, event_id)

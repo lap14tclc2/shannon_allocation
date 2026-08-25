@@ -35,6 +35,8 @@ import './received-dividends.css';
 import './table-alignment.css';
 import './auth.css';
 import './ui-polish.css';
+import './quick-import.css';
+import './performance-interactive.css';
 import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';

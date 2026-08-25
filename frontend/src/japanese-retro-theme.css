@@ -18,7 +18,7 @@
   --retro-gold: #d0a957;
   --retro-grid: rgba(238, 231, 215, .018);
   --retro-shadow: rgba(0, 0, 0, .38);
-  --font-retro-ui: "Segoe UI", Inter, Arial, Helvetica, sans-serif;
+  --font-retro-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Arial, Helvetica, sans-serif;
   --font-mono-num: "Cascadia Mono", "SFMono-Regular", "Roboto Mono", Consolas, monospace;
   --bg: var(--retro-bg);
   --bg-elevated: #1f1e1a;
@@ -94,6 +94,8 @@ body {
   background-attachment: fixed;
   font-family: var(--font-retro-ui);
   letter-spacing: 0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 body::before {

@@ -32,7 +32,19 @@ export function parseVndMoneyInput(value, field = 'amount', locale = 'en') {
   let text = original.toLowerCase().replace(/\s+/g, '');
   let multiplier = 1;
   let hasSuffix = false;
-  if (/(triệu|tr|m)$/.test(text)) { text = text.replace(/(triệu|tr|m)$/, ''); multiplier = 1_000_000; hasSuffix = true; }
+  const suffixes = [
+    [/(tỷ|ty|b)$/, 1_000_000_000],
+    [/(triệu|tr|m)$/, 1_000_000],
+    [/(nghìn|ngan|k)$/, 1_000],
+  ];
+  for (const [pattern, valueMultiplier] of suffixes) {
+    if (pattern.test(text)) {
+      text = text.replace(pattern, '');
+      multiplier = valueMultiplier;
+      hasSuffix = true;
+      break;
+    }
+  }
   if (!text) throw new FormValidationError(field, 'Enter a valid VND amount.', 'Nhập số tiền VND hợp lệ.', locale);
   let normalized;
   if (hasSuffix) {
@@ -52,6 +64,45 @@ export function parseVndMoneyInput(value, field = 'amount', locale = 'en') {
   if (!Number.isFinite(n) || n < 0 || n > MAX_MONEY) throw new FormValidationError(field, 'VND amount is outside the allowed range.', 'Số tiền VND vượt phạm vi cho phép.', locale);
   if (!Number.isInteger(n)) throw new FormValidationError(field, 'VND amount must resolve to a whole number of đồng.', 'Số tiền VND phải quy đổi thành số nguyên đồng.', locale);
   return n;
+}
+
+const VI_DIGITS = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+const VI_SCALES = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ', 'triệu tỷ'];
+
+function readVietnameseTriad(value, forceHundreds = false) {
+  const hundreds = Math.floor(value / 100);
+  const tens = Math.floor((value % 100) / 10);
+  const units = value % 10;
+  const words = [];
+  if (hundreds || forceHundreds) words.push(VI_DIGITS[hundreds], 'trăm');
+  if (tens > 1) words.push(VI_DIGITS[tens], 'mươi');
+  else if (tens === 1) words.push('mười');
+  else if (units && (hundreds || forceHundreds)) words.push('lẻ');
+  if (units) {
+    if (units === 1 && tens > 1) words.push('mốt');
+    else if (units === 5 && tens > 0) words.push('lăm');
+    else words.push(VI_DIGITS[units]);
+  }
+  return words.join(' ');
+}
+
+export function vndToVietnameseWords(value) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number) || number < 0 || number > MAX_MONEY) return '';
+  if (number === 0) return 'Không đồng';
+  const groups = [];
+  let remaining = number;
+  while (remaining > 0) { groups.push(remaining % 1000); remaining = Math.floor(remaining / 1000); }
+  const words = [];
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index];
+    if (!group) continue;
+    const forceHundreds = index < groups.length - 1 && group < 100;
+    words.push(readVietnameseTriad(group, forceHundreds));
+    if (VI_SCALES[index]) words.push(VI_SCALES[index]);
+  }
+  const text = `${words.join(' ').replace(/\s+/g, ' ').trim()} đồng`;
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function validateCashAmount(value, locale = 'en') {
@@ -79,6 +130,7 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
   const requiredPrice = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type);
   const requiredAmount = ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'CASH_DIVIDEND', 'FEE'].includes(type);
   const isTrade = ['BUY', 'SELL'].includes(type);
+  const hasTax = isTrade || type === 'CASH_DIVIDEND';
 
   if (!form.event_date) throw new FormValidationError('event_date', 'Date is required.', 'Ngày là bắt buộc.', locale);
   if (today && form.event_date > today) throw new FormValidationError('event_date', 'Future dates are not allowed.', 'Không được nhập ngày trong tương lai.', locale);
@@ -92,8 +144,9 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
   const amount = requiredAmount ? validateCashAmount(form.amount, locale) : 0;
   const ratio = type === 'SPLIT' ? number(form.ratio, 'ratio', locale, { positive: true, max: 100 }) : 0;
   const fee = isTrade && String(form.fee || '').trim() !== '' ? number(form.fee, 'fee', locale, { min: 0, max: MAX_MONEY }) : 0;
-  const tax = isTrade && String(form.tax || '').trim() !== '' ? number(form.tax, 'tax', locale, { min: 0, max: MAX_MONEY }) : 0;
+  const tax = hasTax && String(form.tax || '').trim() !== '' ? number(form.tax, 'tax', locale, { min: 0, max: MAX_MONEY }) : 0;
   if (isTrade && fee + tax > quantity * price) throw new FormValidationError('fee', 'Fee + tax cannot exceed gross trade value.', 'Phí + thuế không được lớn hơn giá trị giao dịch.', locale);
+  if (type === 'CASH_DIVIDEND' && tax > amount) throw new FormValidationError('tax', 'Dividend tax cannot exceed the gross amount.', 'Thuế cổ tức không được lớn hơn số tiền trước thuế.', locale);
 
   const note = String(form.note || '').trim();
   if (note.length > MAX_NOTE) throw new FormValidationError('note', `Note must be at most ${MAX_NOTE} characters.`, `Ghi chú tối đa ${MAX_NOTE} ký tự.`, locale);

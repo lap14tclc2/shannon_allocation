@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
+import QuickImportPanel from '../components/QuickImportPanel.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
 import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
-import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
+import { parseVndMoneyInput, validateTransactionForm, vndToVietnameseWords } from '../lib/validation.js';
 import { loadRoute } from '../lib/store.js';
 
-const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'RIGHTS_ISSUE', 'CASH_WITHDRAW', 'FEE'];
+const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'RIGHTS_ISSUE', 'CASH_WITHDRAW', 'CASH_DIVIDEND', 'STOCK_DIVIDEND', 'SPLIT', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
 const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL']);
 const TYPE_LABELS = {
@@ -129,15 +130,20 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         }
       })()
     : null;
+  const amountInWords = useMemo(() => {
+    if (!String(form.amount || '').trim()) return '';
+    try { return vndToVietnameseWords(parseVndMoneyInput(form.amount, 'amount', 'vi')); }
+    catch { return ''; }
+  }, [form.amount]);
 
   const requirements = useMemo(() => ({
-    symbol: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
-    quantity: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    symbol: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL', 'CASH_DIVIDEND', 'STOCK_DIVIDEND', 'SPLIT'].includes(type),
+    quantity: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL', 'STOCK_DIVIDEND'].includes(type),
     price: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
-    amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'FEE'].includes(type),
-    ratio: false,
+    amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'CASH_DIVIDEND', 'FEE'].includes(type),
+    ratio: type === 'SPLIT',
     trade: ['BUY', 'SELL'].includes(type),
-    holding: ['BUY', 'RIGHTS_ISSUE'].includes(type),
+    holding: ['BUY', 'RIGHTS_ISSUE', 'STOCK_DIVIDEND', 'SPLIT'].includes(type),
   }), [type]);
 
   function set(key, value) {
@@ -369,6 +375,12 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </div>
     </header>
 
+    <QuickImportPanel
+      today={today}
+      locale={locale}
+      onCommitted={() => dispatch(loadRoute({ pathname: '/transactions' })).unwrap()}
+    />
+
     <form className={`card ${editingId ? 'correction-form' : ''} ${isSellCreate ? 'transaction-sell-form' : ''}`} onSubmit={submit} noValidate>
       <div className="section-head">
         <div>
@@ -391,6 +403,8 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       {type === 'POSITION_IMPORT' && !editingId && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại.</div>}
       {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Chọn mã và đúng CTCK/tài khoản nhận thêm cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
       {type === 'RIGHTS_ISSUE' && !editingId && <div className="info-callout transaction-buy-note">Ghi nhận cổ phiếu phát hành thêm theo số lượng và giá thực trả; tiền và giá vốn sẽ được cập nhật tương ứng.</div>}
+      {DIVIDEND_TYPES.has(type) && !editingId && <div className="info-callout">QPort thường tự ghi cổ tức đã đối soát. Chỉ nhập thủ công khi bổ sung lịch sử còn thiếu; hệ thống vẫn giữ nguồn import để phát hiện bản ghi trùng.</div>}
+      {type === 'SPLIT' && !editingId && <div className="info-callout">Tỷ lệ là số cổ phiếu sau sự kiện chia cho số trước sự kiện, ví dụ 2 cho tách 1:2 hoặc 0,5 cho gộp 2:1.</div>}
 
       {isSellCreate ? <>
         <div className="sell-source-panel">
@@ -429,6 +443,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             <input inputMode="numeric" value={form.amount} onChange={event => set('amount', event.target.value)} placeholder="Ví dụ 72.000.000" aria-invalid={!!fieldErrors.amount} />
             <FieldError error={fieldErrors.amount} />
             <span className="field-hint">Giá bán bình quân: {estimatedSellPrice == null ? '-' : `${money(estimatedSellPrice)}/CP`}</span>
+            {amountInWords && <span className="field-hint amount-in-words">{amountInWords}</span>}
           </label>
         </div>
         <div className="info-callout">QPort sẽ ghi SELL đúng tại <b>{sellBook ? `${brokerName(sellBook.broker_code)} · ${sellBook.account_id}` : 'CTCK/tài khoản đã chọn'}</b>. Cổ phiếu ở CTCK khác không được dùng để bù cho lệnh bán này.</div>
@@ -458,7 +473,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         </label>
       </> : <>
         {requirements.holding && <div className="sell-source-panel">
-          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : 'Nguồn nhận cổ phiếu phát hành thêm'}</b><span>Chọn từ danh mục đang nắm giữ</span></div>
+          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : type === 'RIGHTS_ISSUE' ? 'Nguồn nhận cổ phiếu phát hành thêm' : 'Vị thế áp dụng sự kiện'}</b><span>Chọn từ danh mục đang nắm giữ</span></div>
           <div className="form-grid">
             <label>Mã cổ phiếu
               <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.symbol}>
@@ -499,6 +514,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           {requirements.amount && <label>Số tiền (VND)
             <input value={form.amount} onChange={event => set('amount', event.target.value)} aria-invalid={!!fieldErrors.amount} />
             <FieldError error={fieldErrors.amount} />
+            {amountInWords && <span className="field-hint amount-in-words">{amountInWords}</span>}
           </label>}
           {requirements.ratio && <label>Tỷ lệ sau tách/gộp
             <input type="number" step="0.0001" min="0.0001" value={form.ratio} onChange={event => set('ratio', event.target.value)} />
@@ -524,6 +540,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             </label>}
             {requirements.trade && <label>Phí giao dịch (VND)<input type="number" min="0" step="1" value={form.fee} onChange={event => set('fee', event.target.value)} /></label>}
             {requirements.trade && <label>Thuế (VND)<input type="number" min="0" step="1" value={form.tax} onChange={event => set('tax', event.target.value)} /></label>}
+            {type === 'CASH_DIVIDEND' && <label>Thuế khấu trừ (VND)<input type="number" min="0" step="1" value={form.tax} onChange={event => set('tax', event.target.value)} /></label>}
           </div>
         </details>
         <label>Ghi chú<textarea maxLength={500} value={form.note} onChange={event => set('note', event.target.value)} placeholder="Thông tin cần nhớ về giao dịch này" /></label>

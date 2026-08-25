@@ -74,12 +74,33 @@
 .risk-overview-card,
 .risk-history-card,
 .risk-symbol-review-card,
+.risk-correlation-card,
 .risk-technical-details {
   border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--panel) 96%, var(--bg-elevated));
   box-shadow: 0 12px 34px rgba(0, 0, 0, .10);
 }
+
+.risk-block-meter { display: grid; gap: 7px; margin: 2px 0 14px; }
+.risk-block-meter-track { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.risk-block-meter-track i { height: 10px; border: 1px solid var(--border-strong); background: transparent; }
+.risk-block-meter-track i.active { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 1px rgba(255,255,255,.16); }
+.risk-block-meter > div:last-child { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 11px; }
+.risk-correlation-card { display: grid; gap: 16px; padding: 22px 24px; }
+.risk-correlation-scroll { overflow-x: auto; padding-bottom: 4px; }
+.risk-correlation-matrix { width: max-content; min-width: 100%; border-collapse: collapse; font-family: var(--font-mono-num); font-variant-numeric: tabular-nums; }
+.risk-correlation-matrix th, .risk-correlation-matrix td { min-width: 66px; height: 48px; padding: 8px; border: 1px solid var(--border-strong); text-align: center; }
+.risk-correlation-matrix th { color: var(--text-secondary); background: var(--bg-elevated); font-size: 11px; letter-spacing: .04em; }
+.risk-correlation-matrix td { color: var(--text); font-weight: 700; }
+.corr-missing { color: var(--text-muted) !important; background: transparent; }
+.corr-negative { background: color-mix(in srgb, var(--info) 32%, var(--panel)); }
+.corr-low { background: color-mix(in srgb, var(--success) 12%, var(--panel)); }
+.corr-mid { background: color-mix(in srgb, var(--warning) 20%, var(--panel)); }
+.corr-high { background: color-mix(in srgb, var(--warning) 38%, var(--panel)); }
+.corr-very-high { background: color-mix(in srgb, var(--danger) 48%, var(--panel)); }
+.correlation-legend { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.correlation-legend span { padding: 5px 8px; border: 1px solid var(--border); font-size: 10px; font-weight: 700; }
 
 .risk-overview-card {
   overflow: hidden;

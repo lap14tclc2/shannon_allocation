@@ -132,7 +132,63 @@ class PortfolioService:
         return rows, equity
 
     def _histories(self, symbols: list[str], end: str | None = None, limit: int = 10000) -> dict[str, list[dict]]:
-        return {s: self.store.price_history(s, limit=limit, end=end) for s in symbols}
+        histories = {s: self.store.price_history(s, limit=limit, end=end) for s in symbols}
+        if not symbols:
+            return histories
+        try:
+            placeholders = ",".join("?" for _ in symbols)
+            sql = f"""
+                SELECT symbol, action_type, ex_date, cash_per_share, stock_ratio
+                FROM corporate_actions
+                WHERE verification_status = 'VERIFIED'
+                  AND ex_date IS NOT NULL
+                  AND symbol IN ({placeholders})
+            """
+            args: list[object] = [symbol.upper() for symbol in symbols]
+            if end:
+                sql += " AND ex_date <= ?"
+                args.append(end)
+            with self.store.connect() as db:
+                actions = db.execute(sql, args).fetchall()
+        except Exception:
+            actions = []
+
+        adjustments: dict[tuple[str, str], dict] = {}
+        for action in actions:
+            key = (str(action["symbol"]).upper(), str(action["ex_date"]))
+            item = adjustments.setdefault(key, {"cash_distribution": 0.0, "share_factor": 1.0, "sources": []})
+            action_type = str(action["action_type"] or "").upper()
+            if action_type == "CASH_DIVIDEND" and action["cash_per_share"] is not None:
+                item["cash_distribution"] += float(action["cash_per_share"])
+                item["sources"].append("VERIFIED_CASH_DIVIDEND")
+            elif action_type == "STOCK_DIVIDEND" and action["stock_ratio"] is not None:
+                item["share_factor"] *= 1.0 + float(action["stock_ratio"])
+                item["sources"].append("VERIFIED_STOCK_DIVIDEND")
+
+        for symbol, rows in histories.items():
+            for row in rows:
+                adjustment = adjustments.get((symbol.upper(), str(row.get("trading_date") or "")))
+                if adjustment and adjustment["sources"]:
+                    row["analytics_cash_distribution"] = adjustment["cash_distribution"]
+                    row["analytics_share_factor"] = adjustment["share_factor"]
+                    row["analytics_adjustment_sources"] = adjustment["sources"]
+        # A user-recorded SPLIT is itself an explicit trusted ledger event. It
+        # changes shares in accounting and removes the mechanical price jump
+        # from analytics on the first stored market date at/after the event.
+        for event in self.store.list_events():
+            if event.event_type != EventType.SPLIT or not event.symbol or event.symbol.upper() not in histories:
+                continue
+            effective_row = next((
+                row for row in histories[event.symbol.upper()]
+                if str(row.get("trading_date") or "") >= event.event_date
+            ), None)
+            if effective_row is None:
+                continue
+            effective_row["analytics_share_factor"] = float(effective_row.get("analytics_share_factor") or 1) * float(event.ratio)
+            sources = list(effective_row.get("analytics_adjustment_sources") or [])
+            sources.append("EXPLICIT_SPLIT_LEDGER")
+            effective_row["analytics_adjustment_sources"] = sources
+        return histories
 
     @staticmethod
     def _live_accounting(state, positions: list[dict], nav: float) -> dict:
@@ -176,6 +232,7 @@ class PortfolioService:
                 "return_type": "log_return",
                 "annualization": 252,
                 "covariance": "pairwise_40_observations_with_10pct_diagonal_shrinkage",
+                "corporate_actions": "verified cash/stock dividends are total-return adjusted on ex-date; unverified actions leave raw returns unchanged",
                 "var": "historical_5pct_quantile",
                 "concentration_basis": "equity_normalized",
                 "erc": "diagnostic_reference_only",
@@ -309,11 +366,11 @@ class PortfolioService:
             },
             "analytics": {
                 "series": "stored D1 provider close",
-                "corporate_action_adjusted": None,
-                "status": "UNVERIFIED",
+                "corporate_action_adjusted": "verified cash and stock dividends are applied on ex-date; raw close is retained",
+                "status": "EXPLICIT_VERIFIED_ACTIONS_ONLY",
                 "purpose": "return/covariance/volatility diagnostics",
             },
-            "warning": "Corporate-action adjustment of the analytics series is not yet proven by QPort metadata; interpret long-window risk around corporate actions cautiously.",
+            "warning": "Unverified corporate actions never alter analytics silently. Verify them in Operations before QPort applies an ex-date total-return adjustment.",
         }
 
     def dashboard(self) -> dict:
@@ -504,6 +561,15 @@ class PortfolioService:
             except Exception as exc:
                 errors.append({"symbol": symbol, "error": str(exc)})
 
+        benchmark_sync = None
+        benchmark_error = None
+        try:
+            benchmark_sync = self._sync_symbol("VNINDEX", today)
+        except Exception as exc:
+            # A benchmark is contextual analysis only. Its provider outage must
+            # never block valuation, official snapshots or ledger operations.
+            benchmark_error = str(exc)
+
         rebuilt = self._rebuild_snapshot_history()
         prices = self.store.latest_prices(current_symbols)
         quality, snapshot_date, stale_symbols = self._price_quality(current_symbols, prices)
@@ -516,6 +582,8 @@ class PortfolioService:
             "history_status": history_status,
             "sync": sync_rows,
             "errors": errors,
+            "benchmark": benchmark_sync,
+            "benchmark_error": benchmark_error,
             "stale_symbols": stale_symbols,
             "market_quality": quality,
             "snapshot_date": snapshot_date,
@@ -580,6 +648,20 @@ class PortfolioService:
             if days >= 30 and factor > 0:
                 annualized_twr = factor ** (365.25 / days) - 1.0
 
+        benchmark_rows = self.store.price_history("VNINDEX", limit=10000, end=last_date)
+        if first_date:
+            benchmark_rows = [row for row in benchmark_rows if row.get("trading_date") and row["trading_date"] >= first_date]
+        benchmark_base = float(benchmark_rows[0]["close"]) if benchmark_rows and float(benchmark_rows[0].get("close") or 0) > 0 else None
+        benchmark_series = [
+            {
+                "date": row["trading_date"],
+                "index": float(row["close"]) / benchmark_base,
+                "close": float(row["close"]),
+            }
+            for row in benchmark_rows
+            if benchmark_base and row.get("close") is not None
+        ]
+
         return {
             "returns": returns,
             "annualized_twr": annualized_twr,
@@ -600,6 +682,13 @@ class PortfolioService:
             "best_day": max(daily_values) if daily_values else None,
             "worst_day": min(daily_values) if daily_values else None,
             "positive_day_ratio": (sum(1 for r in daily_values if r > 0) / len(daily_values)) if daily_values else None,
+            "benchmark": {
+                "symbol": "VNINDEX",
+                "status": "AVAILABLE" if len(benchmark_series) >= 2 else "UNAVAILABLE",
+                "series": benchmark_series,
+                "method": "provider_raw_close_normalized_to_first_overlapping_observation",
+                "warning": None if len(benchmark_series) >= 2 else "VN-Index history is not stored yet; run a normal market sync to fetch it.",
+            },
             "latest": snapshots[-1] if snapshots else None,
             "series": [
                 {

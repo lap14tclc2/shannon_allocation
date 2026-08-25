@@ -1,0 +1,22 @@
+.chart-range-switch { display: flex; gap: 3px; flex-wrap: wrap; }
+.chart-range-switch button { min-height: 30px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-elevated); color: var(--text-secondary); font: 700 10px/1 var(--font-mono-num); }
+.chart-range-switch button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated)); color: var(--text); }
+.chart-legend { display: flex; justify-content: flex-end; gap: 14px; margin: 2px 0 4px; color: var(--text-secondary); font-size: 11px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 18px; height: 2px; background: var(--accent); }
+.chart-legend .benchmark-swatch { height: 1px; background: repeating-linear-gradient(90deg, var(--warning) 0 5px, transparent 5px 8px); }
+.interactive-equity-chart { position: relative; touch-action: pan-y; }
+.portfolio-line { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 30%, transparent)); }
+.benchmark-line { opacity: .9; }
+.chart-pointer-capture { cursor: crosshair; }
+.chart-tooltip { position: absolute; z-index: 2; top: 16px; display: grid; gap: 4px; min-width: 176px; padding: 10px 11px; border: 1px solid var(--border-strong); border-radius: 0; background: color-mix(in srgb, var(--panel) 94%, transparent); box-shadow: 4px 4px 0 rgba(0,0,0,.24); pointer-events: none; transform: translateX(10px); backdrop-filter: blur(10px); }
+.chart-tooltip.align-right { transform: translateX(calc(-100% - 10px)); }
+.chart-tooltip > b { padding-bottom: 5px; border-bottom: 1px solid var(--border); font: 700 11px/1.2 var(--font-mono-num); }
+.chart-tooltip > span { display: flex; justify-content: space-between; gap: 14px; color: var(--text-secondary); font-size: 11px; }
+.chart-tooltip strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.chart-benchmark-note { margin: 8px 0 0; font-size: 11px; }
+@media (max-width: 720px) {
+  .chart-range-switch { width: 100%; }
+  .chart-range-switch button { flex: 1; }
+  .chart-tooltip { min-width: 154px; }
+}

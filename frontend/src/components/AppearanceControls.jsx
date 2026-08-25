@@ -4,7 +4,7 @@ import { getStoredTheme, saveTheme } from '../lib/appearance.js';
 const THEMES = [
   {
     id: 'retro',
-    name: 'Retro Japanese',
+    name: 'Retro Ledger',
     shortName: 'Retro',
     description: 'Ấm, hoài cổ và giống một sổ tài sản được in thủ công.',
     descriptionEn: 'Warm, tactile and inspired by a carefully printed asset ledger.',

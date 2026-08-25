@@ -601,6 +601,34 @@ def portfolio_create_transaction(
         return _service_failure(svc, request.method, request.url.path, exc)
 
 
+@app.post("/api/portfolio/transactions/import/preview")
+def portfolio_preview_transaction_import(
+    request: Request,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    try:
+        return svc.preview_import(body, created_by=user["username"])
+    except Exception as exc:
+        return _service_failure(svc, request.method, request.url.path, exc)
+
+
+@app.post("/api/portfolio/transactions/import")
+def portfolio_commit_transaction_import(
+    request: Request,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    try:
+        return JSONResponse(status_code=201, content=svc.import_events(body, created_by=user["username"]))
+    except Exception as exc:
+        return _service_failure(svc, request.method, request.url.path, exc)
+
+
 @app.patch("/api/portfolio/transactions/{event_id}")
 def portfolio_update_transaction(
     event_id: int,

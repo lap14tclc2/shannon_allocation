@@ -152,6 +152,8 @@ export async function getPortfolioHoldingSymbols() {
 export async function listPortfolioTransactions() { const d = await getJSON('/api/portfolio/transactions'); return d.transactions || []; }
 export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
 export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
+export const previewPortfolioImport = (payload) => sendJSON('/api/portfolio/transactions/import/preview', 'POST', payload);
+export const commitPortfolioImport = (payload) => sendJSON('/api/portfolio/transactions/import', 'POST', payload);
 export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
 export const discardPortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
 // Backward-compatible alias for older clients. The server never physically deletes the ledger row.
