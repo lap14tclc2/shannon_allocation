@@ -9,7 +9,11 @@ FRONTEND_SRC = REPO_DIR / "frontend" / "src"
 def test_transaction_form_keeps_dividends_readonly_and_has_broker_specific_sell_flow():
     source = (FRONTEND_SRC / "pages" / "TransactionsPage.jsx").read_text(encoding="utf-8")
     assert "const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);" in source
-    assert "const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'SELL']);" in source
+    assert "const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL']);" in source
+    assert "BUY: 'Mua thêm cổ phiếu'" in source
+    assert "RIGHTS_ISSUE: 'Phát hành thêm'" in source
+    assert "Mã cổ phiếu" in source
+    assert "CTCK / tài khoản" in source
     assert "Giao dịch đã ghi không bị xóa vật lý" in source
     assert "Nguồn cổ phiếu cần bán" in source
     assert "CTCK đang lưu ký" in source
@@ -28,11 +32,13 @@ def test_current_dashboard_surfaces_custody_broker_tree_and_source_specific_sell
     assert "listPortfolioTransactions" in dashboard
     assert "deriveHoldingBooks" in dashboard
     assert "CTCK đang lưu ký" in tree
-    assert "Bán từ" in tree
+    assert "Mua thêm cổ phiếu" in tree
+    assert "Bán cổ phiếu" in tree
+    assert "action: 'buy'" in tree
     assert "action: 'sell'" in tree
     assert "broker: book.broker_code" in tree
     assert "account: book.account_id" in tree
-    assert "Cần gán CTCK trước khi bán" in tree
+    assert "Cần gán CTCK trước khi mua/bán" in tree
     assert "eligibleLots" in books
     assert "allocateStockDividend" in books
 
