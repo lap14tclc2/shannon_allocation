@@ -108,6 +108,12 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
     metadata = dict(metadata_raw)
     metadata["broker_code"] = normalize_broker(payload.get("broker_code") or metadata.get("broker_code"))
     metadata["account_id"] = normalize_account(payload.get("account_id") or metadata.get("account_id"))
+    if event_type == EventType.SELL and metadata["broker_code"] == "UNASSIGNED":
+        raise InputValidationError(
+            "SELL_BROKER_REQUIRED",
+            "SELL requires the custody broker. Assign the holding to DNSE, TCBS or the actual broker before selling.",
+            "broker_code",
+        )
 
     symbol_required = event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL, EventType.CASH_DIVIDEND, EventType.STOCK_DIVIDEND, EventType.SPLIT}
     symbol = normalize_symbol(payload.get("symbol"))
