@@ -139,6 +139,53 @@ def test_edit_only_allows_quantity_price_and_broker(tmp_path):
         svc.update_event(event_id,{"account_id":"MARGIN","correction_reason":"not allowed"})
 
 
+def test_stock_transaction_type_can_change_to_paid_share_issuance(tmp_path):
+    svc = make_service(tmp_path)
+    svc.append_event({
+        "event_type": "CASH_DEPOSIT",
+        "event_date": "2026-08-19",
+        "amount": 20_000_000,
+    })
+    event_id = svc.append_event({
+        "event_type": "POSITION_IMPORT",
+        "event_date": "2026-08-20",
+        "symbol": "FPT",
+        "quantity": 100,
+        "price": 70_000,
+        "broker_code": "DNSE",
+        "account_id": "PRIMARY",
+    })["event_id"]
+
+    result = svc.update_event(event_id, {
+        "event_type": "RIGHTS_ISSUE",
+        "correction_reason": "This was a paid additional issuance",
+    })
+
+    assert result["event"]["event_type"] == "RIGHTS_ISSUE"
+    state = svc.current_state()
+    assert state.positions["FPT"].shares == pytest.approx(100)
+    assert state.positions["FPT"].cost_basis == pytest.approx(7_000_000)
+    assert state.cash == pytest.approx(13_000_000)
+
+
+def test_cash_transaction_type_cannot_change_to_stock_type(tmp_path):
+    svc = make_service(tmp_path)
+    event_id = svc.append_event({
+        "event_type": "CASH_DEPOSIT",
+        "event_date": "2026-08-20",
+        "amount": 20_000_000,
+    })["event_id"]
+
+    with pytest.raises(CorrectionError, match="only be changed among"):
+        svc.update_event(event_id, {
+            "event_type": "POSITION_IMPORT",
+            "symbol": "FPT",
+            "quantity": 100,
+            "price": 70_000,
+            "correction_reason": "Invalid cross-family change",
+        })
+
+
 def test_corporate_action_requires_authoritative_verification_and_explicit_post(tmp_path):
     svc=make_service(tmp_path)
     svc.append_event({"event_type":"POSITION_IMPORT","event_date":"2026-08-01","symbol":"FPT","quantity":1000,"price":70_000})
