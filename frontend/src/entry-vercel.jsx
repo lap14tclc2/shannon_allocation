@@ -81,7 +81,7 @@ function LoadingScreen({ compact = false }) {
       <div>
         <div className="eyebrow">QPort</div>
         <h1>Đang tải dữ liệu…</h1>
-        <p className="muted">Trang váº«n an toÃ n; cÃ¡c giÃ¡ trá» thá»±c chá» hiá»n thá» sau khi dá»¯ liá»u sáºµn sÃ ng.</p>
+        <p className="muted">Trang vẫn an toàn; các giá trị thực chỉ hiển thị sau khi dữ liệu sẵn sàng.</p>
       </div>
     </section>
   </main>;
