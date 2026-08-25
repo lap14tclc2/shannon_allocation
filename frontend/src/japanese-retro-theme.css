@@ -669,3 +669,11 @@ button:active {
     transition: none;
   }
 }
+
+
+/* Portaled controls must keep viewport positioning. The shared retro surface
+   rule above intentionally styles their frame, but must not make them relative. */
+.appearance-popover,
+.portfolio-menu-popover {
+  position: fixed;
+}

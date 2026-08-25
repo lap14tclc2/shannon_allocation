@@ -231,8 +231,6 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
           </button>
         </div>
 
-        {!adminMode && <DesktopPortfolioSwitcher />}
-
         <div className="app-nav-links desktop-nav-links">
           {adminMode ? <a href="/admin" className="active" aria-current="page"><NavIcon name="risk" /><span>Quản trị</span></a> : LINKS.map(([href, key, label]) => (
             <a key={href} href={href} className={active === key ? 'active' : ''} aria-current={active === key ? 'page' : undefined}><NavIcon name={key} /><span>{label}</span></a>
@@ -253,6 +251,9 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         </div>
       </nav>
     </header>
+    {!adminMode && portfolios.length > 0 && <div className="desktop-portfolio-context" aria-label="Danh mục hiện tại">
+      <div className="desktop-portfolio-context-shell"><DesktopPortfolioSwitcher /></div>
+    </div>}
     {desktopPortfolioMenu}
     {mobileChrome}
   </>;

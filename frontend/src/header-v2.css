@@ -21,7 +21,7 @@
   height: var(--header-height);
   padding: 0 24px;
   display: grid;
-  grid-template-columns: auto minmax(180px, 226px) minmax(390px, 1fr) auto;
+  grid-template-columns: auto minmax(390px, 1fr) auto;
   align-items: center;
   gap: 18px;
   background: transparent;
@@ -106,6 +106,26 @@
   display: none !important;
 }
 
+.desktop-portfolio-context {
+  position: relative;
+  z-index: 390;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--bg) 94%, var(--panel));
+}
+
+.desktop-portfolio-context-shell {
+  width: min(100%, 1380px);
+  min-height: 58px;
+  margin: 0 auto;
+  padding: 7px 24px;
+  display: flex;
+  align-items: center;
+}
+
+.desktop-portfolio-context .header-portfolio-menu {
+  width: min(360px, 100%);
+}
+
 .header-portfolio-menu {
   position: relative;
   z-index: 430;
@@ -187,7 +207,7 @@
 .portfolio-menu-popover {
   position: fixed;
   z-index: 611;
-  top: 80px;
+  top: 138px;
   right: max(16px, calc((100vw - 1380px) / 2 + 24px));
   width: min(360px, calc(100vw - 32px));
   max-height: calc(100dvh - 96px);
@@ -586,7 +606,7 @@
 
 @media (max-width: 1180px) {
   .header-v2 .nav-shell {
-    grid-template-columns: auto minmax(160px, 200px) minmax(350px, 1fr) auto;
+    grid-template-columns: auto minmax(350px, 1fr) auto;
     gap: 11px;
     padding-inline: 18px;
   }
@@ -603,7 +623,7 @@
 
 @media (max-width: 960px) and (min-width: 720px) {
   .header-v2 .nav-shell {
-    grid-template-columns: auto minmax(150px, 190px) minmax(330px, 1fr);
+    grid-template-columns: auto minmax(330px, 1fr);
   }
 
   .header-v2 .desktop-nav-footer {
@@ -654,6 +674,7 @@
     display: block;
   }
 
+  .desktop-portfolio-context,
   .portfolio-menu-popover,
   .portfolio-menu-backdrop,
   .header-v2 .header-portfolio-menu,
