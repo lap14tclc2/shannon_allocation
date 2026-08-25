@@ -26,6 +26,7 @@ export default function AppearanceControls({ locale = 'en' }) {
   const [mounted, setMounted] = useState(false);
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
+  const closeButtonRef = useRef(null);
   const currentTheme = THEMES.find(item => item.id === theme) || THEMES[0];
 
   useEffect(() => setMounted(true), []);
@@ -37,10 +38,34 @@ export default function AppearanceControls({ locale = 'en' }) {
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
+    const focusableElements = () => Array.from(
+      panelRef.current?.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])') || []
+    );
+    requestAnimationFrame(() => {
+      const selectedTheme = panelRef.current?.querySelector('[role="radio"][aria-checked="true"]');
+      (selectedTheme || closeButtonRef.current || panelRef.current)?.focus();
+    });
     const onKey = event => {
       if (event.key === 'Escape') {
         event.stopPropagation();
         closeAndRestoreFocus();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = focusableElements();
+      if (!focusable.length) {
+        event.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
     const onPointer = event => {
@@ -62,13 +87,13 @@ export default function AppearanceControls({ locale = 'en' }) {
   }
 
   const picker = open ? <div className="appearance-overlay">
-    <div ref={panelRef} className="appearance-popover" role="dialog" aria-modal="true" aria-label={text('Choose interface theme', 'Chọn giao diện')}>
+    <div ref={panelRef} className="appearance-popover" role="dialog" aria-modal="true" aria-label={text('Choose interface theme', 'Chọn giao diện')} tabIndex="-1">
       <div className="appearance-head">
         <div>
           <b>{text('Interface theme', 'Giao diện')}</b>
           <span>{text('Choose one complete QPort visual system', 'Chọn một phong cách hoàn chỉnh cho QPort')}</span>
         </div>
-        <button type="button" className="appearance-close" onClick={closeAndRestoreFocus} aria-label={text('Close', 'Đóng')}>×</button>
+        <button ref={closeButtonRef} type="button" className="appearance-close" onClick={closeAndRestoreFocus} aria-label={text('Close', 'Đóng')}>×</button>
       </div>
 
       <div className="theme-options" role="radiogroup" aria-label={text('Available themes', 'Các giao diện hiện có')}>

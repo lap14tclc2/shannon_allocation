@@ -82,6 +82,8 @@ def test_standard_transaction_form_keeps_date_field_defaulting_to_today():
     assert 'type="date"' in transactions
     assert "event_date: today" in transactions
     assert "max={today || undefined}" in transactions
-    # Quick Import is the only flow that drops the date picker.
+    assert "{type !== 'POSITION_IMPORT' && <label>" in transactions
+    # Opening-position entry and Quick Import both use the server-controlled current date.
+    # Other standard transaction types retain their visible date field.
     panel = _panel()
     assert 'type="date"' not in panel

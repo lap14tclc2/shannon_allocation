@@ -264,8 +264,19 @@ class AutomatedPortfolioService(CorrectablePortfolioService):
                 continue
 
             boundary = self._tracking_boundary()
-            if boundary.get("initialization_mode") == "CURRENT" and boundary.get("tracking_start_date") and payment_date < boundary["tracking_start_date"]:
-                skipped.append({"action_id": action_id, "symbol": action["symbol"], "reason": "BEFORE_TRACKING_START"})
+            entitlement_date = self._corporate_action_entitlement_date(action)
+            if (
+                boundary.get("initialization_mode") == "CURRENT"
+                and boundary.get("tracking_start_date")
+                and entitlement_date
+                and entitlement_date < boundary["tracking_start_date"]
+            ):
+                skipped.append({
+                    "action_id": action_id,
+                    "symbol": action["symbol"],
+                    "reason": "ENTITLEMENT_BEFORE_TRACKING_START",
+                    "entitlement_date": entitlement_date,
+                })
                 continue
 
             posting_type = "CASH" if action_type == "CASH_DIVIDEND" else "STOCK"

@@ -170,13 +170,14 @@ def test_corporate_action_after_start_date_still_updates_ledger_state(tmp_path):
     assert position.average_cost == 25_000
 
 
-def _seed_corporate_action(svc, payment_date: str) -> int:
+def _seed_corporate_action(svc, payment_date: str, *, ex_date: str | None = None, record_date: str | None = None) -> int:
     action = CorporateAction(
-        external_key=f"manual-{payment_date}",
+        external_key=f"manual-{ex_date or record_date or payment_date}-{payment_date}",
         symbol="FPT",
         action_type="CASH_DIVIDEND",
-        announcement_date=payment_date,
-        record_date=payment_date,
+        announcement_date=ex_date or record_date or payment_date,
+        ex_date=ex_date,
+        record_date=record_date or ex_date or payment_date,
         payment_date=payment_date,
         cash_per_share=1_000,
     )
@@ -246,3 +247,73 @@ def test_current_import_uses_one_server_date_for_whole_batch(monkeypatch, tmp_pa
     ]))
     assert result["row_count"] == 2
     assert {row["event_date"] for row in svc.transactions()} == {"2026-08-24"}
+
+
+@pytest.mark.parametrize(
+    ("first_mode", "second_payload"),
+    [
+        ("CURRENT", {"mode": "HISTORICAL", "rows": [{"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 1_000_000}]}),
+        ("HISTORICAL", current_payload()),
+    ],
+)
+def test_portfolio_rejects_mixed_import_modes(tmp_path, first_mode, second_payload):
+    svc = service(tmp_path)
+    if first_mode == "CURRENT":
+        svc.import_events(current_payload())
+    else:
+        svc.import_events({"mode": "HISTORICAL", "rows": [
+            {"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 1_000_000},
+        ]})
+    before = list(svc.transactions())
+    with pytest.raises(InputValidationError) as error:
+        svc.import_events(second_payload)
+    assert error.value.code == "IMPORT_MODE_CONFLICT"
+    assert svc.transactions() == before
+
+
+def test_failed_import_does_not_persist_tracking_boundary(monkeypatch, tmp_path):
+    svc = service(tmp_path)
+
+    def fail_insert(*_args, **_kwargs):
+        raise RuntimeError("simulated insert failure")
+
+    monkeypatch.setattr(svc.store, "insert_event", fail_insert)
+    with pytest.raises(RuntimeError, match="simulated insert failure"):
+        svc.import_events(current_payload())
+    assert svc.transactions() == []
+    assert svc._tracking_boundary() == {
+        "initialization_mode": None,
+        "tracking_start_date": None,
+    }
+
+
+def test_retry_returns_original_tracking_metadata_after_midnight(monkeypatch, tmp_path):
+    svc = service(tmp_path)
+    monkeypatch.setattr(svc, "today_vn", lambda: "2026-08-24")
+    payload = current_payload()
+    first = svc.import_events(payload, created_by="alice")
+
+    monkeypatch.setattr(svc, "today_vn", lambda: "2026-08-25")
+    retry = svc.import_events(payload, created_by="alice")
+    assert retry["deduplicated"] is True
+    assert retry["tracking_start_date"] == first["tracking_start_date"] == "2026-08-24"
+    assert retry["cost_basis_confirmed_at"] == first["cost_basis_confirmed_at"]
+
+
+def test_current_portfolio_rejects_old_entitlement_paid_after_tracking_start(monkeypatch, tmp_path):
+    svc = service(tmp_path)
+    monkeypatch.setattr(svc, "today_vn", lambda: "2026-08-25")
+    svc.import_events(current_payload())
+    action_id = _seed_corporate_action(
+        svc,
+        "2026-09-10",
+        ex_date="2026-08-20",
+        record_date="2026-08-21",
+    )
+
+    with pytest.raises(InputValidationError) as error:
+        svc.record_corporate_action_receipt(
+            action_id,
+            {"received_date": "2026-09-10", "actual_cash": 100_000},
+        )
+    assert error.value.code == "CORPORATE_ACTION_BEFORE_TRACKING_START"

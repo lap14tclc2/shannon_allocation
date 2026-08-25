@@ -495,10 +495,10 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           {holdingBooks.length === 0 && <div className="empty-state compact-empty">Chưa có cổ phiếu trong danh mục. Hãy nhập danh mục ban đầu trước.</div>}
         </div>}
         <div className="form-grid">
-          <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
+          {type !== 'POSITION_IMPORT' && <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
             <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
             <FieldError error={fieldErrors.event_date} />
-          </label>
+          </label>}
           {requirements.symbol && !requirements.holding && <label>Mã cổ phiếu
             <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
             <FieldError error={fieldErrors.symbol} />

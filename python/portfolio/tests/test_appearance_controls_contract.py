@@ -71,3 +71,13 @@ def test_mobile_touch_targets_are_at_least_44px():
     assert "min-height: 44px" in css
     assert ".theme-option" in css
     assert "min-height: 82px" in css
+
+
+
+def test_theme_dialog_moves_and_traps_focus():
+    component = (FRONTEND / "components" / "AppearanceControls.jsx").read_text(encoding="utf-8")
+    assert "closeButtonRef" in component
+    assert "selectedTheme" in component
+    assert "event.key !== 'Tab'" in component
+    assert "focusableElements" in component
+    assert 'tabIndex="-1"' in component
