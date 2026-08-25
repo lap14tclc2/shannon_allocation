@@ -63,3 +63,48 @@
     touch-action: pan-x pan-y pinch-zoom;
   }
 }
+
+/* Final holding-tree guard.
+   Some legacy disclosure styles inject a +/− marker with summary::before.
+   On this grid that pseudo-element becomes an extra grid item and shifts the
+   ticker/value/weight into the wrong columns. HoldingSourceTree owns its caret. */
+.holding-source-symbol > summary::before,
+.holding-source-symbol > summary::after {
+  content: none !important;
+  display: none !important;
+}
+
+.holding-source-symbol > summary > .tree-caret {
+  grid-column: 1;
+}
+
+.holding-source-symbol > summary > .holding-source-symbol-name {
+  grid-column: 2;
+  text-align: left;
+  justify-items: start;
+}
+
+.holding-source-symbol > summary > .holding-source-symbol-value {
+  grid-column: 3;
+}
+
+.holding-source-symbol > summary > .holding-source-weight {
+  grid-column: 4;
+}
+
+@media (max-width: 719px) {
+  .holding-source-symbol > summary > .holding-source-symbol-name {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .holding-source-symbol > summary > .holding-source-symbol-value {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .holding-source-symbol > summary > .holding-source-weight {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
