@@ -18,6 +18,7 @@
     { "source": "/login", "destination": "/" },
     { "source": "/admin", "destination": "/" },
     { "source": "/admin/:path*", "destination": "/" },
+    { "source": "/portfolios", "destination": "/" },
     { "source": "/transactions", "destination": "/" },
     { "source": "/performance", "destination": "/" },
     { "source": "/risk", "destination": "/" },
