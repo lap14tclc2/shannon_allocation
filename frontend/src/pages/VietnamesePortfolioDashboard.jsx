@@ -54,6 +54,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const [holdingSourceError, setHoldingSourceError] = useState('');
 
   const portfolio = dashboard.portfolio || {};
+  const portfolioContext = dashboard.portfolio_context || {};
   const positions = portfolio.positions || [];
   const performance = dashboard.performance_summary || {};
   const market = dashboard.market_data || {};
@@ -169,7 +170,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
 
     <header className="portfolio-hero investor-hero">
       <div className="hero-primary">
-        <div className="eyebrow">Tổng tài sản</div>
+        <div className="eyebrow">{portfolioContext.name || 'Danh mục'} · Tổng tài sản</div>
         <h1>{money(portfolio.nav, locale)}</h1>
         <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
           <strong>{signedMoney(totalPnl, locale)}</strong>
