@@ -175,7 +175,8 @@ def effective_event(store, event_id: int) -> LedgerEvent | None:
 
 def _stable_metadata(event: LedgerEvent) -> dict:
     metadata = dict(event.metadata or {})
-    metadata.pop("broker_code", None)
+    for key in ("broker_code", "trade_date", "settlement_date", "settlement_confirmed", "settlement_status"):
+        metadata.pop(key, None)
     for key in _AUTOMATIC_TAX_METADATA:
         metadata.pop(key, None)
     return metadata
