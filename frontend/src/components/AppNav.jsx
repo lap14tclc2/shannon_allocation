@@ -47,15 +47,20 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     let live = true;
     setMounted(true);
     getCurrentUser()
-      .then(async result => {
+      .then(result => {
         if (!live) return;
         const user = result.user || null;
         setCurrentUser(user);
         if (user?.role !== 'ADMIN') {
-          const registry = await listPortfolios();
-          if (!live) return;
-          setPortfolios(registry.portfolios || []);
-          setActivePortfolioId(String(registry.active_portfolio_id || ''));
+          listPortfolios()
+            .then(registry => {
+              if (!live) return;
+              setPortfolios(registry.portfolios || []);
+              setActivePortfolioId(String(registry.active_portfolio_id || ''));
+            })
+            .catch(() => {
+              // Keep account navigation usable if the portfolio registry is temporarily unavailable.
+            });
         }
       })
       .catch(() => {
