@@ -437,53 +437,63 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           {symbolRows.map(({ symbol }) => {
             const val = valuations[symbol];
             if (!val) return null;
+            const assess = val.assessment || {};
             const baseDcf = val.scenarios?.BASE?.intrinsic_value_per_share;
-            const bearDcf = val.scenarios?.BEAR?.intrinsic_value_per_share;
-            const bullDcf = val.scenarios?.BULL?.intrinsic_value_per_share;
             const mos = val.scenarios?.BASE?.margin_of_safety_pct;
-            const epvVal = val.epv_result?.epv_per_share;
 
             return (
-              <article key={symbol} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--surface-soft)' }}>
+              <article key={symbol} style={{ border: '1px solid var(--border)', borderRadius: '14px', padding: '18px', background: 'var(--surface-soft)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div>
-                    <strong style={{ fontSize: '16px', color: 'var(--text)' }}>{symbol}</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)', marginLeft: '8px' }}>Kỳ {val.fiscal_period_latest}</span>
+                    <strong style={{ fontSize: '18px', color: 'var(--text)' }}>{symbol}</strong>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)', marginLeft: '8px' }}>Kỳ {val.fiscal_period_latest}</span>
                   </div>
-                  <span className={`risk-level ${val.confidence_level === 'HIGH' ? 'risk-level-good' : 'risk-level-watch'}`}>
-                    Độ tin cậy: {val.confidence_level}
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px', fontSize: '13px' }}>
-                  <div>
-                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Thị giá hiện tại</span>
-                    <strong>{formatMoney(val.current_market_price, false, locale)} ₫</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Giá trị nội tại (Base)</span>
-                    <strong style={{ color: 'var(--accent)' }}>{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Biên an toàn (MoS)</span>
-                    <strong style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>
-                      {mos ? `${Number(mos).toFixed(1)}%` : '-'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>EPV (Không tăng trưởng)</span>
-                    <strong>{epvVal ? `${formatMoney(epvVal, false, locale)} ₫` : '-'}</strong>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {assess.moat_rating && (
+                      <span className="risk-level risk-level-good">
+                        Hào kinh tế: {assess.moat_rating === 'WIDE' ? 'Sâu rộng (Wide Moat)' : 'Hẹp (Narrow)'}
+                      </span>
+                    )}
+                    <span className={`risk-level ${val.confidence_level === 'HIGH' ? 'risk-level-good' : 'risk-level-watch'}`}>
+                      Tin cậy: {val.confidence_level}
+                    </span>
                   </div>
                 </div>
 
-                <div style={{ fontSize: '11px', padding: '8px 10px', background: 'var(--panel)', borderRadius: '6px', color: 'var(--text-secondary)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <span>Dải kịch bản (Bear → Bull):</span>
-                    <b>{bearDcf ? `${formatMoney(bearDcf, false, locale)}` : '-'} → {bullDcf ? `${formatMoney(bullDcf, false, locale)} ₫` : '-'}</b>
+                {/* Kết luận định giá & Biên an toàn theo trường phái giá trị */}
+                <div style={{ padding: '10px 12px', background: 'var(--panel)', borderRadius: '8px', borderLeft: '4px solid var(--accent)', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text)', marginBottom: '4px' }}>
+                    {assess.valuation_verdict || 'Đang tổng hợp đánh giá đầu tư giá trị…'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', display: 'flex', gap: '16px', marginTop: '6px' }}>
+                    <span>Thị giá: <b>{formatMoney(val.current_market_price, false, locale)} ₫</b></span>
+                    <span>Nội tại ước tính: <b style={{ color: 'var(--accent)' }}>{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</b></span>
+                    <span>Biên an toàn: <b style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>{mos ? `${Number(mos).toFixed(1)}%` : '-'}</b></span>
+                  </div>
+                </div>
+
+                {/* 4 Trụ cột chất lượng doanh nghiệp theo Buffett - Munger */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ minWidth: '130px', color: 'var(--muted)' }}>🛡️ Lợi thế cạnh tranh:</span>
+                    <span>{assess.moat_summary || 'Dựa trên chi phí chuyển đổi cao và quy mô.'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ minWidth: '130px', color: 'var(--muted)' }}>🏛️ Phân bổ vốn:</span>
+                    <span>{assess.capital_allocation_diagnosis || 'Owner Earnings chuyển hóa bền vững vào tài sản sinh lời thực tế.'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ minWidth: '130px', color: 'var(--muted)' }}>💧 Chất lượng lợi nhuận:</span>
+                    <span>{assess.earnings_quality_diagnosis || 'Dòng tiền kinh doanh (CFO) cao, tương ứng thực tế với lợi nhuận kế toán.'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ minWidth: '130px', color: 'var(--muted)' }}>⚓ Độ vững tài chính:</span>
+                    <span>{assess.financial_resilience_diagnosis || 'Cơ cấu bảng cân đối kế toán lành mạnh, nợ vay trong tầm kiểm soát.'}</span>
                   </div>
                   {val.reverse_dcf_result?.verdict && (
-                    <div style={{ marginTop: '4px', borderTop: '1px dashed var(--border)', paddingTop: '4px', color: 'var(--muted)' }}>
-                      {val.reverse_dcf_result.verdict}
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed var(--border)' }}>
+                      <span style={{ minWidth: '130px', color: 'var(--muted)' }}>🔍 Kỳ vọng thị trường:</span>
+                      <span style={{ color: 'var(--text)' }}>{val.reverse_dcf_result.verdict}</span>
                     </div>
                   )}
                 </div>

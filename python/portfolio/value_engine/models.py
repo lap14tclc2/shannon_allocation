@@ -1,8 +1,8 @@
 """
-QPort Value Engine Data Contracts & Models (QVE-051, QVE-170, QVE-180).
+QPort Value Engine Data Contracts & Models (QVE-051, QVE-080, QVE-170, QVE-180).
 
-Immutable structures for Owner Earnings bridges, valuation models, sensitivity matrices,
-and audit-grade reproducible Valuation Reports.
+Immutable structures for Business Quality Diagnostics, Buffett Qualitative Assessments,
+Owner Earnings bridges, valuation models, sensitivity matrices, and Valuation Reports.
 """
 from __future__ import annotations
 
@@ -32,6 +32,35 @@ class ConfidenceLevel(str, Enum):
     MEDIUM = "MEDIUM"
     LOW = "LOW"
     BLOCKED = "BLOCKED"
+
+
+class MoatRating(str, Enum):
+    WIDE = "WIDE"          # Lợi thế cạnh tranh bền vững sâu rộng
+    NARROW = "NARROW"      # Có lợi thế cạnh tranh nhất định
+    NONE = "NONE"          # Không có hào kinh tế rõ rệt
+
+
+class ValuationPill(str, Enum):
+    DEEP_VALUE = "DEEP_VALUE"            # Thị giá dưới mức kịch bản Bear
+    UNDERVALUED = "UNDERVALUED"          # Thị giá dưới mức kịch bản Base (MoS > 15%)
+    FAIR_VALUE = "FAIR_VALUE"            # Thị giá nằm quanh vùng giá trị nội tại (-15% <= MoS <= 15%)
+    OVERVALUED = "OVERVALUED"            # Thị giá cao hơn giá trị nội tại (MoS < -15%)
+    GROWTH_PRICED_IN = "GROWTH_PRICED_IN"# Thị trường đang đòi hỏi mức tăng trưởng rất cao
+
+
+@dataclass
+class ValueInvestingAssessment:
+    """
+    Buffett-Munger Qualitative & Diagnostic Evaluation (QVE-080, QVE-083, QVE-085, QVE-088).
+    """
+    moat_rating: MoatRating
+    valuation_status: ValuationPill
+    moat_summary: str
+    capital_allocation_diagnosis: str
+    earnings_quality_diagnosis: str
+    financial_resilience_diagnosis: str
+    valuation_verdict: str
+    key_risks_and_invariants: List[str]
 
 
 @dataclass
@@ -82,7 +111,7 @@ class ReverseDCFResult:
     implied_stage1_growth_rate: Decimal  # Growth % implied by market
     discount_rate_used: Decimal
     terminal_growth_used: Decimal
-    verdict: str  # e.g., "Market prices aggressive growth (22.5%)"
+    verdict: str  # e.g., "Thị trường đang định giá tăng trưởng 22.5%"
 
 
 @dataclass
@@ -104,6 +133,7 @@ class ValuationReport:
     diluted_shares_estimate: Decimal
     confidence_level: ConfidenceLevel
     confidence_reasons: List[str]
+    assessment: ValueInvestingAssessment
     owner_earnings_bridge: OwnerEarningsBridge
     scenarios: Dict[ScenarioType, ValuationScenario]
     epv_result: Optional[EPVResult]

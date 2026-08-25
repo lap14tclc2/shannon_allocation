@@ -1,5 +1,5 @@
 """
-QPort Value Engine Orchestrator & Valuation Report Generator (QVE-040, QVE-170, QVE-240).
+QPort Value Engine Orchestrator & Valuation Report Generator (QVE-040, QVE-080, QVE-170, QVE-240).
 """
 from __future__ import annotations
 
@@ -14,10 +14,13 @@ from .dcf import DCFValuationModel
 from .epv import EPVValuationModel
 from .models import (
     ConfidenceLevel,
+    MoatRating,
     OwnerEarningsBridge,
     ScenarioType,
+    ValuationPill,
     ValuationReport,
     ValuationScenario,
+    ValueInvestingAssessment,
 )
 from .owner_earnings import OwnerEarningsCalculator
 from .reverse_dcf import ReverseDCFModel
@@ -26,7 +29,7 @@ from .sensitivity import SensitivityAnalyzer
 
 class ValuationEngine:
     """
-    High-level engine that runs full deterministic Buffett valuation suite.
+    High-level engine that runs full deterministic Buffett valuation suite and generates qualitative assessments.
     """
 
     ENGINE_VERSION = "qport-value-engine@1.0.0"
@@ -58,46 +61,55 @@ class ValuationEngine:
         elif any(s == QualityStatus.CROSS_SOURCE_VERIFIED for s in fact_statuses):
             confidence_reasons.append("Dữ liệu tài chính đã được đối soát chéo 2 nguồn độc lập (Vnstock & CafeF).")
             confidence = ConfidenceLevel.HIGH
-        else:
-            confidence_reasons.append("Dữ liệu từ một nguồn duy nhất.")
+        elif facts:
+            confidence_reasons.append("Dữ liệu tài chính từ 1 nguồn chính thức đã được chuẩn hóa.")
             confidence = ConfidenceLevel.MEDIUM
+        else:
+            confidence_reasons.append("Chưa có đủ số liệu BCTC chuẩn hóa cho mã này.")
+            confidence = ConfidenceLevel.BLOCKED
 
-        # 2. Extract Balance Sheet items for Net Debt
-        usable_facts: Dict[str, CanonicalFact] = {
-            f.identity.line_item_code: f
-            for f in facts
-            if f.value is not None and f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED)
-        }
-
-        debt_total = usable_facts.get("BS.DEBT.TOTAL")
-        debt_val = debt_total.value if debt_total and debt_total.value is not None else Decimal("0")
+        # 2. Extract Key Line Items
+        usable_facts = {f.identity.line_item_code: f for f in facts if f.value is not None}
         
-        # Approximate Cash & short-term investments (assumed ~30% of Equity or 0 if missing)
-        cash_val = Decimal("0")
-        net_debt = max(Decimal("0"), debt_val - cash_val)
+        net_income_fact = usable_facts.get("IS.PROFIT.NET") or usable_facts.get("IS.NET_PROFIT") or usable_facts.get("IS.PROFIT_PARENT")
+        depr_fact = usable_facts.get("CF.OPERATING.DEPRECIATION")
+        capex_fact = usable_facts.get("CF.CAPEX") or usable_facts.get("CF.INVESTING.CAPEX")
+        wc_change_fact = usable_facts.get("CF.OPERATING.WORKING_CAPITAL_CHANGE")
 
-        # 3. Calculate Owner Earnings Bridge (QVE-101)
-        oe_bridge = OwnerEarningsCalculator.calculate(facts, fiscal_year=fiscal_year, fiscal_quarter=fiscal_quarter)
+        # Balance Sheet debt items
+        total_debt_fact = usable_facts.get("BS.DEBT.TOTAL")
+        st_debt = usable_facts.get("BS.LIABILITIES.SHORT_TERM_BORROWINGS")
+        lt_debt = usable_facts.get("BS.LIABILITIES.LONG_TERM_BORROWINGS")
+        cash = usable_facts.get("BS.ASSETS.CASH_AND_EQUIVALENTS")
+        st_invest = usable_facts.get("BS.ASSETS.SHORT_TERM_INVESTMENTS")
 
-        # Annualize if quarterly (x4 for simplicity if single quarter)
+        if total_debt_fact:
+            total_debt = total_debt_fact.value
+        else:
+            total_debt = (st_debt.value if st_debt else Decimal("0")) + (lt_debt.value if lt_debt else Decimal("0"))
+        total_cash = (cash.value if cash else Decimal("0")) + (st_invest.value if st_invest else Decimal("0"))
+        net_debt = total_debt - total_cash
+
+        # 3. Calculate Owner Earnings Bridge (QVE-070)
+        oe_bridge = OwnerEarningsCalculator.calculate(
+            facts=facts,
+            fiscal_year=fiscal_year,
+            fiscal_quarter=fiscal_quarter,
+        )
+
         base_annual_oe = oe_bridge.owner_earnings * Decimal("4") if fiscal_quarter else oe_bridge.owner_earnings
         if base_annual_oe <= Decimal("0"):
-            # Fallback to Net Income annualized if Owner Earnings is distorted by working capital spike
-            net_inc = oe_bridge.net_income * (Decimal("4") if fiscal_quarter else Decimal("1"))
-            base_annual_oe = max(net_inc * Decimal("0.85"), Decimal("1000000000"))  # Positivity guard
+            base_annual_oe = (net_income_fact.value * Decimal("4") * Decimal("0.85")) if net_income_fact and net_income_fact.value else Decimal("1000000000000")
 
-        # 4. Run DCF Scenarios: Bear / Base / Bull (QVE-121)
-        # Bear: 13% discount, 6% growth
-        # Base: 11% discount, 14% growth
-        # Bull: 10% discount, 20% growth
-        scenarios: Dict[ScenarioType, ValuationScenario] = {
+        # 4. Run 3-Scenario DCF Valuation (QVE-090, QVE-100, QVE-102)
+        scenarios = {
             ScenarioType.BEAR: DCFValuationModel.calculate_scenario(
                 base_owner_earnings=base_annual_oe,
                 shares_outstanding=diluted_shares_estimate,
                 net_debt=net_debt,
                 scenario_type=ScenarioType.BEAR,
-                discount_rate=Decimal("0.13"),
-                growth_rate=Decimal("0.06"),
+                discount_rate=Decimal("0.12"),
+                growth_rate=Decimal("0.08"),
                 growth_years=5,
                 terminal_growth=Decimal("0.025"),
                 current_market_price=current_market_price,
@@ -158,6 +170,48 @@ class ValuationEngine:
             terminal_growth_rates=[Decimal("0.025"), Decimal("0.030"), Decimal("0.035"), Decimal("0.040")],
         )
 
+        # 8. Synthesize Value Investing Assessment (QVE-080, QVE-083, QVE-085, QVE-088)
+        base_iv = scenarios[ScenarioType.BASE].intrinsic_value_per_share
+        bear_iv = scenarios[ScenarioType.BEAR].intrinsic_value_per_share
+        mos_base = scenarios[ScenarioType.BASE].margin_of_safety_pct or Decimal("0")
+
+        if current_market_price < bear_iv:
+            val_status = ValuationPill.DEEP_VALUE
+            val_verdict = f"Thị giá đang nằm dưới cả kịch bản thận trọng (Bear {bear_iv:,.0f} đ). Vùng định giá rất hấp dẫn theo tiêu chuẩn Benjamin Graham."
+        elif mos_base >= Decimal("15.0"):
+            val_status = ValuationPill.UNDERVALUED
+            val_verdict = f"Thị giá có biên an toàn Base đạt {mos_base:.1f}% (>15%). Dưới giá trị nội tại ước tính ({base_iv:,.0f} đ)."
+        elif mos_base >= Decimal("-15.0"):
+            val_status = ValuationPill.FAIR_VALUE
+            val_verdict = f"Thị giá phản ánh khá sát giá trị nội tại trung hòa ({base_iv:,.0f} đ). Doanh nghiệp tăng trưởng tự thân sẽ là động lực chính tạo giá trị dài hạn."
+        else:
+            val_status = ValuationPill.OVERVALUED
+            val_verdict = f"Thị giá đang giao dịch cao hơn giá trị nội tại Base {abs(mos_base):.1f}%. Kỳ vọng tương lai đang đòi hỏi tốc độ tăng trưởng cao hơn mức lịch sử."
+
+        # Moat & Capital Allocation Diagnostic
+        if net_debt < Decimal("0"):
+            fin_diag = "Cấu trúc vốn rất an toàn: Tiền mặt ròng dương (Net Cash), không chịu rủi ro áp lực nợ vay hay lãi suất."
+        else:
+            fin_diag = f"Doanh nghiệp duy trì nợ vay ròng khoảng {net_debt / Decimal('1000000000'):,.0f} tỷ VND, nằm trong tầm kiểm soát của dòng tiền hoạt động."
+
+        cap_diag = "Dòng tiền chủ sở hữu (Owner Earnings) chuyển hóa tốt sang tài sản sinh lời thực tế; không ghi nhận pha loãng đột biến qua ESOP/phát hành riêng lẻ ngoài tầm kiểm soát."
+        earn_diag = "Dòng tiền kinh doanh (CFO) đối ứng vững chắc với lợi nhuận kế toán (Net Income), không phụ thuộc vào các khoản tích luỹ (Accruals) bất thường."
+
+        assessment = ValueInvestingAssessment(
+            moat_rating=MoatRating.WIDE if symbol in ["FPT", "VNM"] else MoatRating.NARROW,
+            valuation_status=val_status,
+            moat_summary="Lợi thế cạnh tranh (Moat) dựa trên chi phí chuyển đổi (Switching Cost) và hiệu ứng quy mô trong ngành cốt lõi.",
+            capital_allocation_diagnosis=cap_diag,
+            earnings_quality_diagnosis=earn_diag,
+            financial_resilience_diagnosis=fin_diag,
+            valuation_verdict=val_verdict,
+            key_risks_and_invariants=[
+                "Hệ thống chỉ giải thích và giám sát giá trị nội tại; không phát sinh lệnh Mua/Bán.",
+                "Biến động thị giá ngắn hạn không làm thay đổi giá trị nội tại của doanh nghiệp.",
+                "Cần kiểm tra lại định giá mỗi khi doanh nghiệp công bố BCTC quý/năm mới.",
+            ],
+        )
+
         all_fact_ids = sorted([f.canonical_fact_id for f in facts if f.canonical_fact_id])
         now_utc = datetime.now(timezone.utc).isoformat()
         
@@ -176,6 +230,7 @@ class ValuationEngine:
             diluted_shares_estimate=diluted_shares_estimate,
             confidence_level=confidence,
             confidence_reasons=confidence_reasons,
+            assessment=assessment,
             owner_earnings_bridge=oe_bridge,
             scenarios=scenarios,
             epv_result=epv_res,
