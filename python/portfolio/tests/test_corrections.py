@@ -33,16 +33,45 @@ def test_edit_changes_effective_state_but_preserves_source_row(tmp_path):
     assert svc.book.restatements()==[]
 
 
-def test_delete_is_disabled_and_preserves_effective_ledger(tmp_path):
+def test_soft_delete_preserves_source_row_and_updates_effective_cash(tmp_path):
     svc=make_service(tmp_path)
     keep=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":50_000_000})
     extra=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
-    with pytest.raises(CorrectionError, match="deletion is disabled"):
-        svc.delete_event(extra["event_id"],"Duplicate cash entry")
-    assert svc.current_state().cash==pytest.approx(60_000_000)
+
+    result=svc.delete_event(extra["event_id"],"Duplicate cash entry")
+
+    assert result["action"]=="SOFT_DELETE"
+    assert result["status"]=="SOFT_DELETED"
+    assert svc.current_state().cash==pytest.approx(50_000_000)
     assert [e.id for e in raw_events(svc.store)]==[keep["event_id"],extra["event_id"]]
-    assert len(svc.transactions())==2
-    assert svc.transaction_audit()==[]
+
+    rows={row["id"]:row for row in svc.transactions()}
+    assert len(rows)==2
+    assert rows[keep["event_id"]]["status"]=="ACTIVE"
+    assert rows[extra["event_id"]]["status"]=="SOFT_DELETED"
+    assert rows[extra["event_id"]]["correction"]["reason"]=="Duplicate cash entry"
+    assert svc.transaction_audit()[0]["action"]=="SOFT_DELETE"
+
+
+def test_soft_delete_buy_rebuilds_holdings_and_restores_cash(tmp_path):
+    svc=make_service(tmp_path)
+    svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
+    buy=svc.append_event({
+        "event_type":"BUY",
+        "event_date":"2026-08-21",
+        "symbol":"FPT",
+        "quantity":100,
+        "price":70_000,
+    })
+    before=svc.current_state()
+    assert before.positions["FPT"].shares==pytest.approx(100)
+    assert before.cash==pytest.approx(3_000_000)
+
+    svc.delete_event(buy["event_id"],"Trade was entered by mistake")
+
+    after=svc.current_state()
+    assert "FPT" not in after.positions
+    assert after.cash==pytest.approx(10_000_000)
 
 
 def test_delete_never_removes_required_funding(tmp_path):
