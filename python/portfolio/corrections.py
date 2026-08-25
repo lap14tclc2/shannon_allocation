@@ -200,7 +200,7 @@ def _enforce_edit_policy(current: LedgerEvent, replacement: LedgerEvent) -> None
         ("amount", float(current.amount or 0), float(replacement.amount or 0)),
         ("ratio", float(current.ratio or 0), float(replacement.ratio or 0)),
         ("note", current.note or "", replacement.note or ""),
-        ("settlement_date", current.settlement_date, replacement.settlement_date),
+        ("settlement_date", current.settlement_date, replacement.settlement_date if current.event_type == replacement.event_type else current.settlement_date),
         ("metadata", _stable_metadata(current), _stable_metadata(replacement)),
     )
     changed = [name for name, before, after in immutable_checks if before != after]
