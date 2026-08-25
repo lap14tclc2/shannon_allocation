@@ -10,7 +10,7 @@ export function normalizeTheme(value) {
 
 function updateBrowserChrome(theme) {
   if (typeof document === 'undefined') return;
-  const themeColor = theme === 'cyber' ? '#080b14' : '#1a1916';
+  const themeColor = theme === 'cyber' ? '#080b14' : '#efe4cf';
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', themeColor);
 }
@@ -20,9 +20,10 @@ export function applyTheme(value) {
   if (typeof document === 'undefined') return theme;
 
   const root = document.documentElement;
-  root.dataset.theme = 'dark';
+  const colorScheme = theme === 'retro' ? 'light' : 'dark';
+  root.dataset.theme = colorScheme;
   root.dataset.visualTheme = theme;
-  root.style.colorScheme = 'dark';
+  root.style.colorScheme = colorScheme;
   updateBrowserChrome(theme);
   return theme;
 }

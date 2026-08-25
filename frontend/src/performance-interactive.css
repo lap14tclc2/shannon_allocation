@@ -20,3 +20,43 @@
   .chart-range-switch button { flex: 1; }
   .chart-tooltip { min-width: 154px; }
 }
+
+
+.performance-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 16px 0 2px;
+}
+.performance-health-grid > div {
+  min-width: 0;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  min-height: 94px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.performance-health-grid dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.performance-health-grid dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font: 750 17px/1.25 var(--font-mono-num);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.disclosure-card > .muted {
+  margin: 14px 0 2px;
+  line-height: 1.6;
+}
+@media (max-width: 520px) {
+  .performance-health-grid { grid-template-columns: 1fr; }
+  .performance-health-grid > div { min-height: 78px; }
+}

@@ -6,8 +6,8 @@ const THEMES = [
     id: 'retro',
     name: 'Retro Ledger',
     shortName: 'Retro',
-    description: 'Ấm, hoài cổ và giống một sổ tài sản được in thủ công.',
-    descriptionEn: 'Warm, tactile and inspired by a carefully printed asset ledger.',
+    description: 'Sáng, ấm như giấy Washi với mực sumi và điểm nhấn đỏ son.',
+    descriptionEn: 'Warm washi paper, sumi ink and a restrained cinnabar accent.',
   },
   {
     id: 'cyber',

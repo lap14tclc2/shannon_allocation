@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a1916" />
+    <meta name="theme-color" content="#efe4cf" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="QPort" />
@@ -14,13 +14,15 @@
         try {
           const stored = localStorage.getItem('qport-theme-v1');
           const theme = stored === 'cyber' ? 'cyber' : 'retro';
-          document.documentElement.dataset.theme = 'dark';
+          const colorScheme = theme === 'retro' ? 'light' : 'dark';
+          document.documentElement.dataset.theme = colorScheme;
           document.documentElement.dataset.visualTheme = theme;
-          document.documentElement.style.colorScheme = 'dark';
-          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'cyber' ? '#080b14' : '#1a1916');
+          document.documentElement.style.colorScheme = colorScheme;
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'cyber' ? '#080b14' : '#efe4cf');
         } catch {
-          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.theme = 'light';
           document.documentElement.dataset.visualTheme = 'retro';
+          document.documentElement.style.colorScheme = 'light';
         }
       })();
     </script>
