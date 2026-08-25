@@ -527,7 +527,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </>}
 
       <div className="button-row">
-        <button className="btn-primary" type="submit" disabled={saving || (requirements.holding && !selectedSellBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
+        <button className="btn-primary" type="submit" disabled={saving || (!editingId && requirements.holding && !selectedSellBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
