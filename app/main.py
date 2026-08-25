@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import os
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,10 @@ app = FastAPI(
 _auth_store: PostgresAuthStore | None = None
 _services: dict[tuple[int, int], AutomatedPortfolioService] = {}
 _dividend_services: dict[tuple[int, int], SqliteDividendService] = {}
+_requested_portfolio_id: ContextVar[int | None] = ContextVar(
+    "qport_requested_portfolio_id",
+    default=None,
+)
 
 
 class ApiError(Exception):
@@ -49,6 +54,32 @@ class ApiError(Exception):
         super().__init__(error)
         self.status = int(status)
         self.payload = {"error": error, "code": code, "field": field}
+
+
+@app.middleware("http")
+async def bind_portfolio_scope(request: Request, call_next):
+    """Pin every request to one owned portfolio, even across concurrent browser tabs."""
+    raw = str(request.headers.get("X-QPort-Portfolio-Id") or "").strip()
+    requested = None
+    if raw:
+        try:
+            requested = int(raw)
+            if requested <= 0:
+                raise ValueError
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "X-QPort-Portfolio-Id must be a positive integer.",
+                    "code": "INVALID_PORTFOLIO_SCOPE",
+                    "field": "portfolio_id",
+                },
+            )
+    token = _requested_portfolio_id.set(requested)
+    try:
+        return await call_next(request)
+    finally:
+        _requested_portfolio_id.reset(token)
 
 
 @app.exception_handler(ApiError)
@@ -122,7 +153,19 @@ def admin_target_user(user_id: int) -> dict:
 
 
 def active_portfolio(user: dict) -> dict:
-    return auth().active_portfolio(int(user["id"]))
+    user_id = int(user["id"])
+    requested_id = _requested_portfolio_id.get()
+    if requested_id is not None:
+        selected = auth().portfolio_for_user(user_id, requested_id)
+        if selected is None:
+            raise ApiError(
+                404,
+                "Portfolio does not exist or does not belong to this account.",
+                "PORTFOLIO_NOT_FOUND",
+                "portfolio_id",
+            )
+        return selected
+    return auth().active_portfolio(user_id)
 
 
 def public_portfolio(row: dict) -> dict:
