@@ -385,23 +385,83 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
               <div><span>Tương quan với mã khác</span><b>{num(metric.average_correlation_to_others)}</b></div>
               <div><span>Phiên giảm mạnh nhất</span><b>{pct(metric.worst_daily_return)}</b></div>
             </div>
-            {val && <div className="risk-symbol-valuation-box" style={{ margin: '10px 0', padding: '10px', background: 'var(--surface-soft)', borderRadius: '8px', fontSize: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--muted)' }}>Giá trị nội tại (Base DCF):</span>
-                <strong>{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--muted)' }}>Biên an toàn (MoS):</span>
-                <strong style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>{mos ? `${Number(mos).toFixed(1)}%` : '-'}</strong>
-              </div>
-              {val.reverse_dcf_result?.verdict && <div style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '4px', borderTop: '1px dashed var(--border)', paddingTop: '4px' }}>
-                {val.reverse_dcf_result.verdict}
-              </div>}
-            </div>}
             <p>{symbolComment(symbol, metric)}</p>
           </article>;
         })}
       </div>}
+    </section>
+
+    <section className="card risk-valuation-summary-card" style={{ marginTop: '20px', padding: '20px', borderRadius: '16px', background: 'var(--panel)', border: '1px solid var(--border)' }}>
+      <div className="risk-section-heading">
+        <div>
+          <span className="eyebrow">Giá trị & Biên an toàn</span>
+          <h2>Định giá nội tại các mã đang nắm giữ</h2>
+        </div>
+        <p>Được tính toán tất định theo triết lý Buffett (Owner Earnings DCF, EPV & Reverse DCF) từ BCTC hợp nhất đối soát chéo.</p>
+      </div>
+
+      {Object.keys(valuations).length === 0 ? (
+        <div className="empty-state compact-empty">Đang tải và tính toán định giá cho các mã trong danh mục…</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', marginTop: '16px' }}>
+          {symbolRows.map(({ symbol }) => {
+            const val = valuations[symbol];
+            if (!val) return null;
+            const baseDcf = val.scenarios?.BASE?.intrinsic_value_per_share;
+            const bearDcf = val.scenarios?.BEAR?.intrinsic_value_per_share;
+            const bullDcf = val.scenarios?.BULL?.intrinsic_value_per_share;
+            const mos = val.scenarios?.BASE?.margin_of_safety_pct;
+            const epvVal = val.epv_result?.epv_per_share;
+
+            return (
+              <article key={symbol} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--surface-soft)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <strong style={{ fontSize: '16px', color: 'var(--text)' }}>{symbol}</strong>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)', marginLeft: '8px' }}>Kỳ {val.fiscal_period_latest}</span>
+                  </div>
+                  <span className={`risk-level ${val.confidence_level === 'HIGH' ? 'risk-level-good' : 'risk-level-watch'}`}>
+                    Độ tin cậy: {val.confidence_level}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px', fontSize: '13px' }}>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Thị giá hiện tại</span>
+                    <strong>{formatMoney(val.current_market_price, false, locale)} ₫</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Giá trị nội tại (Base)</span>
+                    <strong style={{ color: 'var(--accent)' }}>{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Biên an toàn (MoS)</span>
+                    <strong style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {mos ? `${Number(mos).toFixed(1)}%` : '-'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>EPV (Không tăng trưởng)</span>
+                    <strong>{epvVal ? `${formatMoney(epvVal, false, locale)} ₫` : '-'}</strong>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '11px', padding: '8px 10px', background: 'var(--panel)', borderRadius: '6px', color: 'var(--text-secondary)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <span>Dải kịch bản (Bear → Bull):</span>
+                    <b>{bearDcf ? `${formatMoney(bearDcf, false, locale)}` : '-'} → {bullDcf ? `${formatMoney(bullDcf, false, locale)} ₫` : '-'}</b>
+                  </div>
+                  {val.reverse_dcf_result?.verdict && (
+                    <div style={{ marginTop: '4px', borderTop: '1px dashed var(--border)', paddingTop: '4px', color: 'var(--muted)' }}>
+                      {val.reverse_dcf_result.verdict}
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
 
     <details className="risk-technical-details">
