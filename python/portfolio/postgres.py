@@ -608,7 +608,12 @@ class PostgresAuthStore:
                 (int(portfolio_id), int(user_id)),
             )
         removed = drop_portfolio_schema(user_id, row["schema_name"])
-        return {**row, "portfolio_data_removed": removed, "next_active_portfolio_id": default["id"]}
+        next_active = self.active_portfolio(user_id)
+        return {
+            **row,
+            "portfolio_data_removed": removed,
+            "next_active_portfolio_id": next_active["id"],
+        }
 
     def user_by_username(self, username: str) -> dict | None:
         try:
