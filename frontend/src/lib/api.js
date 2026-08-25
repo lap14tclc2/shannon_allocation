@@ -45,14 +45,25 @@ async function handleResponse(res, url) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     redirectExpiredSession(res, data);
-    throw apiError(data, `Request failed: ${res.status} ${url}`);
+    const error = apiError(data, `Request failed: ${res.status} ${url}`);
+    error.invalidPortfolioScope = res.status === 404 && data?.code === 'PORTFOLIO_NOT_FOUND';
+    throw error;
   }
   return data;
 }
 
-async function getJSON(url, signal) {
+async function getJSON(url, signal, retryScope = true) {
   const res = await fetch(url, { signal, headers: scopedHeaders() });
-  return handleResponse(res, url);
+  try {
+    return await handleResponse(res, url);
+  } catch (error) {
+    if (retryScope && portfolioScopeId && error.invalidPortfolioScope) {
+      setPortfolioScope('');
+      clearGetCache();
+      return getJSON(url, signal, false);
+    }
+    throw error;
+  }
 }
 
 async function getJSONCached(url, ttlMs = 60_000, { bypass = false } = {}) {
