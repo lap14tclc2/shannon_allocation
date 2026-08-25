@@ -249,3 +249,60 @@ button,
 @media (min-width: 720px) {
   .ranking td { font-size: 12px; }
 }
+
+
+/* Transaction discard keeps the immutable source row visible while clearly
+   separating it from the effective ledger used for portfolio accounting. */
+.transaction-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.btn-discard {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.btn-discard:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.transaction-discard-confirmation {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.discard-transaction-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.transaction-soft-deleted {
+  opacity: .62;
+}
+
+.transaction-soft-deleted td:not(:last-child) {
+  color: var(--text-secondary);
+}
+
+.status-soft-deleted {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+@media (max-width: 720px) {
+  .transaction-row-actions {
+    justify-content: flex-start;
+  }
+
+  .transaction-discard-confirmation .button-row > * {
+    width: 100%;
+  }
+}
