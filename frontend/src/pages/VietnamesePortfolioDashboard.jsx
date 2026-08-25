@@ -153,7 +153,12 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions.map(row => row.symbol).join('|')]);
 
-  const hasTotalPnl = portfolio.total_pnl != null && Number.isFinite(Number(portfolio.total_pnl));
+  const hasCompleteValuation = positions.every(
+    position => position.price != null && Number.isFinite(Number(position.price)),
+  );
+  const hasTotalPnl = hasCompleteValuation
+    && portfolio.total_pnl != null
+    && Number.isFinite(Number(portfolio.total_pnl));
   const totalPnl = hasTotalPnl ? Number(portfolio.total_pnl) : null;
   const totalPositive = totalPnl == null ? null : totalPnl >= 0;
   const dividendIncome = performance.net_dividend_income ?? performance.dividend_income ?? null;
@@ -168,7 +173,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         <h1>{money(portfolio.nav, locale)}</h1>
         <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
           <strong>{signedMoney(totalPnl, locale)}</strong>
-          <span>{pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận</span>
+          <span>{hasCompleteValuation
+            ? `${pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận`
+            : 'Chờ cập nhật đủ dữ liệu giá để tính lãi/lỗ'}</span>
         </div>
         <div className="hero-meta">
           <span>{positions.length} mã cổ phiếu</span>
