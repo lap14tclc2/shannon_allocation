@@ -153,6 +153,37 @@ def test_buy_requires_funding_first(tmp_path):
     assert svc.transactions() == []
 
 
+def test_paid_share_issuance_increases_holding_and_reduces_cash(tmp_path):
+    svc = make_service(tmp_path)
+    svc.append_event({
+        "event_type": "POSITION_IMPORT",
+        "event_date": "2026-01-02",
+        "symbol": "FPT",
+        "quantity": 100,
+        "price": 70_000,
+        "broker_code": "DNSE",
+    })
+    svc.append_event({
+        "event_type": "CASH_DEPOSIT",
+        "event_date": "2026-01-03",
+        "amount": 10_000_000,
+    })
+
+    svc.append_event({
+        "event_type": "RIGHTS_ISSUE",
+        "event_date": "2026-01-04",
+        "symbol": "FPT",
+        "quantity": 20,
+        "price": 50_000,
+        "broker_code": "DNSE",
+    })
+
+    state = svc.current_state()
+    assert state.positions["FPT"].shares == pytest.approx(120)
+    assert state.positions["FPT"].cost_basis == pytest.approx(8_000_000)
+    assert state.cash == pytest.approx(9_000_000)
+
+
 def test_no_equal_weight_fallback_without_explicit_policy(tmp_path):
     svc = make_service(tmp_path)
     svc.append_event({"event_type": "POSITION_IMPORT", "event_date": "2026-01-02", "symbol": "AAA", "quantity": 100, "price": 20_000})
