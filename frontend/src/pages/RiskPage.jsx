@@ -101,7 +101,7 @@ function symbolComment(symbol, metric) {
 }
 
 export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], locale = 'vi' }) {
-  const [snapshots, setSnapshots] = useState(initialSnapshots);
+  const [snapshots, setSnapshots] = useState(initialSnapshots || []);
   const [valuations, setValuations] = useState({});
   const quality = risk.quality || {};
   const coverage = Number(quality.coverage_weight || 0);
@@ -119,12 +119,9 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
   const symbolMetrics = risk.symbol_metrics || {};
 
   useEffect(() => {
-    if (initialSnapshots.length) return undefined;
-    let active = true;
-    listPortfolioSnapshots()
-      .then(rows => { if (active) setSnapshots(rows || []); })
-      .catch(() => { if (active) setSnapshots([]); });
-    return () => { active = false; };
+    if (initialSnapshots && initialSnapshots.length > 0) {
+      setSnapshots(initialSnapshots);
+    }
   }, [initialSnapshots]);
 
   const symbolRows = useMemo(() => Object.entries(symbolMetrics)

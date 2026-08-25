@@ -74,8 +74,13 @@ async function fetchRoutePayload(pathname) {
     }
     case '/performance':
       return { performance: await getPortfolioPerformance() };
-    case '/risk':
-      return { risk: await getPortfolioRisk() };
+    case '/risk': {
+      const [risk, snapshots] = await Promise.all([
+        getPortfolioRisk(),
+        listPortfolioSnapshots(),
+      ]);
+      return { risk, snapshots };
+    }
     case '/dividends':
       return { symbols: await getPortfolioHoldingSymbols() };
     case '/snapshots':
