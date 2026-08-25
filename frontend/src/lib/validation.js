@@ -78,7 +78,7 @@ export function validateTransactionForm(type, form, today, locale = 'en') {
   const requiredQuantity = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL', 'STOCK_DIVIDEND'].includes(type);
   const requiredPrice = ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type);
   const requiredAmount = ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'CASH_DIVIDEND', 'FEE'].includes(type);
-  const isTrade = ['BUY', 'SELL'].includes(type);
+  const isTrade = ['BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type);
 
   if (!form.event_date) throw new FormValidationError('event_date', 'Date is required.', 'Ngày là bắt buộc.', locale);
   if (today && form.event_date > today) throw new FormValidationError('event_date', 'Future dates are not allowed.', 'Không được nhập ngày trong tương lai.', locale);
