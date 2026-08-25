@@ -154,7 +154,8 @@ summary,
 .auth-card,
 .portfolio-switcher,
 .appearance-popover,
-.portfolio-menu-popover {
+.portfolio-menu-popover,
+.navigation-menu-popover {
   position: relative;
   border: 1.5px solid var(--retro-border-bold);
   border-radius: 2px;
@@ -428,13 +429,13 @@ button:active {
 }
 
 .header-v2 .nav-shell {
-  grid-template-areas: "brand portfolio primary actions";
+  grid-template-areas: "brand portfolio navigation . actions";
   grid-template-rows: 68px;
 }
 
 .header-v2 .app-nav-head { grid-area: brand; }
 .header-v2 .header-portfolio-menu { grid-area: portfolio; }
-.header-v2 .desktop-nav-links { grid-area: primary; }
+.header-v2 .header-navigation-menu { grid-area: navigation; }
 .header-v2 .desktop-nav-footer { grid-area: actions; }
 
 .portfolio-menu-popover {
@@ -445,6 +446,8 @@ button:active {
 
 .brand-mark,
 .header-portfolio-trigger,
+.header-navigation-trigger,
+.header-navigation-icon,
 .header-icon-link,
 .header-v2 .appearance-toggle,
 .header-privacy-button,
@@ -476,18 +479,21 @@ button:active {
 }
 
 .header-v2 .brand-copy small,
-.header-context-copy small {
+.header-context-copy small,
+.header-navigation-copy small {
   color: var(--retro-gold);
   font-family: var(--font-retro-ui);
 }
 
-.header-portfolio-trigger {
+.header-portfolio-trigger,
+.header-navigation-trigger {
   border-color: var(--retro-border-bold);
   background: var(--retro-panel-subtle);
   box-shadow: 2px 2px 0 var(--retro-shadow);
 }
 
-.header-context-icon {
+.header-context-icon,
+.header-navigation-icon {
   border-radius: 1px;
   border-color: color-mix(in srgb, var(--retro-hanko) 40%, var(--retro-border));
   background: color-mix(in srgb, var(--retro-hanko) 7%, transparent);
@@ -495,19 +501,19 @@ button:active {
 }
 
 .header-v2 .app-nav-links a,
-.desktop-workspace-navbar .app-nav-links a {
+.navigation-menu-grid a {
   border-radius: 1px;
 }
 
 .header-v2 .app-nav-links a.active,
-.desktop-workspace-navbar .app-nav-links a.active {
+.navigation-menu-grid a.active {
   border-color: var(--retro-hanko);
   background: color-mix(in srgb, var(--retro-hanko) 8%, transparent);
   box-shadow: 2px 2px 0 color-mix(in srgb, var(--retro-hanko) 18%, transparent);
 }
 
 .header-v2 .app-nav-links a.active svg,
-.desktop-workspace-navbar .app-nav-links a.active svg {
+.navigation-menu-grid a.active svg {
   color: var(--retro-hanko);
 }
 
@@ -634,7 +640,7 @@ button:active {
 
 @media (max-width: 960px) and (min-width: 720px) {
   .header-v2 .nav-shell {
-    grid-template-areas: "brand portfolio primary";
+    grid-template-areas: "brand portfolio navigation . actions";
   }
 }
 
@@ -683,6 +689,7 @@ button:active {
 /* Portaled controls must keep viewport positioning. The shared retro surface
    rule above intentionally styles their frame, but must not make them relative. */
 .appearance-popover,
-.portfolio-menu-popover {
+.portfolio-menu-popover,
+.navigation-menu-popover {
   position: fixed;
 }
