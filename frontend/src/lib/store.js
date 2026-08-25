@@ -90,7 +90,7 @@ async function fetchRoutePayload(pathname) {
     case '/admin':
       return {};
     default:
-      throw new Error('Trang khÃ´ng tá»n táº¡i.');
+      throw new Error('Trang không tồn tại.');
   }
 }
 
@@ -192,7 +192,7 @@ const qportSlice = createSlice({
       .addCase(bootstrapApp.rejected, (state, action) => {
         state.user = null;
         state.bootStatus = 'failed';
-        state.bootError = action.error.message || 'KhÃ´ng thá» xÃ¡c minh phiÃªn ÄÄng nháº­p.';
+        state.bootError = action.error.message || 'Không thể xác minh phiên đăng nhập.';
       })
       .addCase(loadRoute.pending, (state, action) => {
         const key = routeKey(
@@ -226,7 +226,7 @@ const qportSlice = createSlice({
           ...(state.routes[key] || {}),
           pathname: action.meta.arg.pathname,
           status: 'failed',
-          error: action.error.message || 'KhÃ´ng thá» táº£i dá»¯ liá»u.',
+          error: action.error.message || 'Không thể tải dữ liệu.',
         };
       })
       .addCase(refreshDashboard.pending, state => {
@@ -243,7 +243,7 @@ const qportSlice = createSlice({
       })
       .addCase(refreshDashboard.rejected, (state, action) => {
         state.refreshStatus = 'failed';
-        state.refreshError = action.error.message || 'KhÃ´ng thá» cáº­p nháº­t dá»¯ liá»u.';
+        state.refreshError = action.error.message || 'Không thể cập nhật dữ liệu.';
       })
       .addCase(refreshPortfolioRegistry.fulfilled, (state, action) => {
         state.registry = action.payload;
@@ -258,7 +258,7 @@ const qportSlice = createSlice({
       })
       .addCase(selectPortfolio.rejected, (state, action) => {
         state.refreshStatus = 'failed';
-        state.refreshError = action.error.message || 'KhÃ´ng thá» chuyá»n danh má»¥c.';
+        state.refreshError = action.error.message || 'Không thể chuyển danh mục.';
       });
   },
 });
