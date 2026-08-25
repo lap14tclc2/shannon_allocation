@@ -131,15 +131,31 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     .map(([symbol, metric]) => ({ symbol: String(symbol).toUpperCase(), metric: metric || {} }))
     .sort((a, b) => Number(b.metric.equity_weight || 0) - Number(a.metric.equity_weight || 0)), [symbolMetrics]);
 
-  useEffect(() => {
+  const [valuationLoading, setValuationLoading] = useState(false);
+  const [valuationLoaded, setValuationLoaded] = useState(false);
+
+  async function loadValuations(force = false) {
     const symbols = symbolRows.map(r => r.symbol);
     if (!symbols.length) return;
-    let active = true;
-    getValuationReports(symbols).then(res => {
-      if (active && res) setValuations(res);
-    });
-    return () => { active = false; };
-  }, [symbolRows.map(r => r.symbol).join('|')]);
+    setValuationLoading(true);
+    try {
+      const res = await getValuationReports(symbols);
+      if (res) {
+        setValuations(res);
+        setValuationLoaded(true);
+      }
+    } finally {
+      setValuationLoading(false);
+    }
+  }
+
+  // Báo cáo tài chính là dữ liệu theo quý/năm, không fetch tự động liên tục
+  // Tải lần đầu nếu chưa có dữ liệu lưu trữ
+  useEffect(() => {
+    if (!valuationLoaded && symbolRows.length > 0) {
+      loadValuations(false);
+    }
+  }, [symbolRows.length]);
 
   const historicalWorstDays = useMemo(() => (snapshots || [])
     .filter(row => row?.official && row.daily_return != null && Number.isFinite(Number(row.daily_return)))
@@ -392,16 +408,30 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     </section>
 
     <section className="card risk-valuation-summary-card" style={{ marginTop: '20px', padding: '20px', borderRadius: '16px', background: 'var(--panel)', border: '1px solid var(--border)' }}>
-      <div className="risk-section-heading">
+      <div className="risk-section-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <span className="eyebrow">Giá trị & Biên an toàn</span>
           <h2>Định giá nội tại các mã đang nắm giữ</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
+            Dữ liệu tài chính được tổng hợp theo kỳ Báo cáo Quý/Năm. Bấm nút bên cạnh khi có BCTC mới phát hành.
+          </p>
         </div>
-        <p>Được tính toán tất định theo triết lý Buffett (Owner Earnings DCF, EPV & Reverse DCF) từ BCTC hợp nhất đối soát chéo.</p>
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => loadValuations(true)}
+          disabled={valuationLoading}
+        >
+          {valuationLoading ? 'Đang cập nhật BCTC…' : '↻ Tải lại định giá BCTC'}
+        </button>
       </div>
 
-      {Object.keys(valuations).length === 0 ? (
-        <div className="empty-state compact-empty">Đang tải và tính toán định giá cho các mã trong danh mục…</div>
+      {valuationLoading && Object.keys(valuations).length === 0 ? (
+        <div className="empty-state compact-empty">Đang trích xuất BCTC và tính toán định giá cho các mã trong danh mục…</div>
+      ) : Object.keys(valuations).length === 0 ? (
+        <div className="empty-state compact-empty">
+          Chưa có dữ liệu định giá BCTC. Bấm nút <b>"Tải lại định giá BCTC"</b> để nạp dữ liệu.
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', marginTop: '16px' }}>
           {symbolRows.map(({ symbol }) => {
