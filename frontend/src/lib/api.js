@@ -77,6 +77,14 @@ export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)
 export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
 export const getAdminUserPortfolio = (userId) => getJSON(`/api/admin/users/${Number(userId)}/portfolio`);
 
+// Multi-portfolio registry. The active portfolio is persisted server-side per user,
+// so all existing portfolio endpoints remain safely scoped without client headers.
+export const listPortfolios = () => getJSON('/api/portfolios');
+export const createPortfolio = (name) => sendJSON('/api/portfolios', 'POST', { name });
+export const renamePortfolio = (portfolioId, name) => sendJSON(`/api/portfolios/${Number(portfolioId)}`, 'PATCH', { name });
+export const activatePortfolio = (portfolioId) => sendJSON(`/api/portfolios/${Number(portfolioId)}/select`, 'POST', {});
+export const removePortfolio = (portfolioId, confirmation) => sendJSON(`/api/portfolios/${Number(portfolioId)}`, 'DELETE', { confirmation });
+
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
 export async function getPortfolioHoldingSymbols() {
   const data = await getJSON('/api/portfolio/holding-symbols');
