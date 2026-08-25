@@ -74,6 +74,22 @@ def test_soft_delete_buy_rebuilds_holdings_and_restores_cash(tmp_path):
     assert after.cash==pytest.approx(10_000_000)
 
 
+def test_automatic_transaction_cannot_be_discarded_directly(tmp_path):
+    svc=make_service(tmp_path)
+    event=svc.append_event({
+        "event_type":"CASH_DEPOSIT",
+        "event_date":"2026-08-20",
+        "amount":10_000_000,
+        "metadata":{"auto_generated":True},
+    })
+
+    with pytest.raises(InputValidationError) as exc:
+        svc.delete_event(event["event_id"],"Remove generated event")
+
+    assert exc.value.code=="AUTOMATED_TRANSACTION_DISCARD_FORBIDDEN"
+    assert svc.current_state().cash==pytest.approx(10_000_000)
+
+
 def test_delete_never_removes_required_funding(tmp_path):
     svc=make_service(tmp_path)
     funding=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
