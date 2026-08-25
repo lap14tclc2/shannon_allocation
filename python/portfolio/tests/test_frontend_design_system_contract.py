@@ -22,6 +22,43 @@ def test_canonical_design_system_loads_after_legacy_styles():
     assert '--accent: #4aa3ff' in css
 
 
+def test_header_v2_uses_custom_portfolio_navigation():
+    entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
+    nav = (FRONTEND_SRC / "components" / "AppNav.jsx").read_text(encoding="utf-8")
+    css = (FRONTEND_SRC / "header-v2.css").read_text(encoding="utf-8")
+
+    assert entry.index("design-system-v1.css") < entry.index("header-v2.css")
+    assert "<select" not in nav
+    assert 'aria-haspopup="menu"' in nav
+    assert 'aria-label="Mở tài khoản và tùy chọn"' in nav
+    assert "portfolio-menu-option" in nav
+    assert "header-user-avatar" in nav
+    assert "@media (max-width: 719px)" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+
+
+def test_japanese_ledger_theme_and_privacy_contract():
+    entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
+    appearance = (FRONTEND_SRC / "lib" / "appearance.js").read_text(encoding="utf-8")
+    controls = (FRONTEND_SRC / "components" / "AppearanceControls.jsx").read_text(encoding="utf-8")
+    nav = (FRONTEND_SRC / "components" / "AppNav.jsx").read_text(encoding="utf-8")
+    dashboard = (FRONTEND_SRC / "pages" / "VietnamesePortfolioDashboard.jsx").read_text(encoding="utf-8")
+    css = (FRONTEND_SRC / "japanese-retro-theme.css").read_text(encoding="utf-8")
+
+    assert entry.index("header-v2.css") < entry.index("japanese-retro-theme.css")
+    assert "qport-appearance-v2" in appearance
+    assert "TOKYO_SUMI_APPEARANCE" in appearance
+    assert "SHOWA_PAPER_APPEARANCE" in appearance
+    assert "Tokyo Sumi" in controls
+    assert "Showa Paper" in controls
+    assert "qport.privacy-mode.v1" in nav
+    assert "証券管理" in nav
+    assert 'data-sensitive="money"' in dashboard
+    assert ".privacy-mode [data-sensitive=\"money\"]" in css
+    assert "--retro-hanko: #ff4d36" in css
+    assert "済・正式 / OFFICIAL" in css
+
+
 def test_spa_copy_is_utf8_and_refreshes_without_document_reload():
     checked = [
         FRONTEND_SRC / "entry-vercel.jsx",

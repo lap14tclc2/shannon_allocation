@@ -4,6 +4,7 @@ import {
   getStoredAppearance,
   resetAppearance,
   saveAppearance,
+  useAppearancePreset,
 } from '../lib/appearance.js';
 
 const FIELDS = [
@@ -68,6 +69,12 @@ export default function AppearanceControls({ locale = 'en' }) {
     setDrafts(next);
   }
 
+  function applyPreset(name) {
+    const next = useAppearancePreset(name);
+    setPalette(next);
+    setDrafts(next);
+  }
+
   return <div className="appearance-control">
     <button
       ref={buttonRef}
@@ -92,9 +99,28 @@ export default function AppearanceControls({ locale = 'en' }) {
       </div>
 
       <p className="appearance-note">{text(
-        'Choose the page background and semantic text colors. Cards, inputs and borders adapt automatically. Default is QPort dark.',
-        'Chọn màu nền và màu chữ theo ngữ nghĩa. Card, input và border tự thích nghi. Mặc định là QPort dark.'
+        'Choose a Japanese ledger preset or fine-tune its semantic colors.',
+        'Chọn một preset sổ cái Nhật Bản hoặc tinh chỉnh màu theo ngữ nghĩa.'
       )}</p>
+
+      <div className="appearance-presets" aria-label={text('Japanese theme presets', 'Preset giao diện Nhật Bản')}>
+        <button
+          type="button"
+          className={palette.background === '#14171a' ? 'active' : ''}
+          onClick={() => applyPreset('tokyo-sumi')}
+        >
+          <span className="preset-swatch tokyo-sumi-swatch" aria-hidden="true" />
+          <span><strong>東京墨</strong><small>Tokyo Sumi</small></span>
+        </button>
+        <button
+          type="button"
+          className={palette.background === '#f5f0e6' ? 'active' : ''}
+          onClick={() => applyPreset('showa-paper')}
+        >
+          <span className="preset-swatch showa-paper-swatch" aria-hidden="true" />
+          <span><strong>昭和紙</strong><small>Showa Paper</small></span>
+        </button>
+      </div>
 
       <div className="appearance-fields">
         {FIELDS.map(([field, en, vi]) => <label className="appearance-row" key={field}>
@@ -126,7 +152,7 @@ export default function AppearanceControls({ locale = 'en' }) {
       </div>
 
       <div className="appearance-actions">
-        <button type="button" className="btn-ghost appearance-reset" onClick={reset}>{text('Reset default dark', 'Khôi phục dark mặc định')}</button>
+        <button type="button" className="btn-ghost appearance-reset" onClick={reset}>{text('Reset Tokyo Sumi', 'Khôi phục Tokyo Sumi')}</button>
         <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>{text('Done', 'Xong')}</button>
       </div>
     </div>}

@@ -24,7 +24,7 @@ function signedMoney(value, locale = 'vi') {
 function Metric({ label, value, note, tone = '' }) {
   return <div className={`metric-card overview-metric ${tone}`}>
     <div className="metric-label">{label}</div>
-    <div className="metric-value">{value}</div>
+    <div className="metric-value" data-sensitive="money">{value}</div>
     {note && <div className="metric-note">{note}</div>}
   </div>;
 }
@@ -173,9 +173,9 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
     <header className="portfolio-hero investor-hero">
       <div className="hero-primary">
         <div className="eyebrow">{portfolioContext.name || 'Danh mục'} · Tổng tài sản</div>
-        <h1>{money(portfolio.nav, locale)}</h1>
+        <h1 data-sensitive="money">{money(portfolio.nav, locale)}</h1>
         <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
-          <strong>{signedMoney(totalPnl, locale)}</strong>
+          <strong data-sensitive="money">{signedMoney(totalPnl, locale)}</strong>
           <span>{hasCompleteValuation
             ? `${pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận`
             : 'Chờ cập nhật đủ dữ liệu giá để tính lãi/lỗ'}</span>

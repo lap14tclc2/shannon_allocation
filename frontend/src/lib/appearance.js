@@ -1,15 +1,29 @@
-const STORAGE_KEY = 'qport-appearance-v1';
+const STORAGE_KEY = 'qport-appearance-v2';
 
 export const DEFAULT_APPEARANCE = Object.freeze({
-  background: '#090a09',
-  text: '#f1f4ef',
-  secondary: '#b3bcb3',
-  muted: '#8e988e',
-  accent: '#a6ff4d',
-  success: '#9cf26d',
-  warning: '#f0c65b',
-  danger: '#ff7474',
-  info: '#8abfff',
+  background: '#14171a',
+  text: '#ede8df',
+  secondary: '#b8b1a7',
+  muted: '#8e9cae',
+  accent: '#ff4d36',
+  success: '#3fb68b',
+  warning: '#e5b54f',
+  danger: '#ff5a36',
+  info: '#86a9c7',
+});
+
+export const TOKYO_SUMI_APPEARANCE = DEFAULT_APPEARANCE;
+
+export const SHOWA_PAPER_APPEARANCE = Object.freeze({
+  background: '#f5f0e6',
+  text: '#1a1d20',
+  secondary: '#4e5660',
+  muted: '#646d76',
+  accent: '#c8382b',
+  success: '#236e47',
+  warning: '#966115',
+  danger: '#b92e24',
+  info: '#3d6380',
 });
 
 const VARIABLE_BY_FIELD = {
@@ -82,9 +96,8 @@ export function applyAppearance(value) {
   const palette = normalizeAppearance(value);
   const root = document.documentElement;
 
-  // QPort has one visual system now: dark is the base, while saved colors may
-  // override it. We intentionally do not follow the OS light/dark preference.
-  root.dataset.theme = 'dark';
+  root.dataset.theme = backgroundIsLight(palette.background) ? 'light' : 'dark';
+  root.dataset.visualSystem = 'japanese-ledger';
   for (const [field, variable] of Object.entries(VARIABLE_BY_FIELD)) {
     root.style.setProperty(variable, palette[field]);
   }
@@ -98,6 +111,7 @@ export function clearCustomAppearance() {
   const root = document.documentElement;
   for (const variable of CUSTOM_VARIABLES) root.style.removeProperty(variable);
   root.dataset.theme = 'dark';
+  root.dataset.visualSystem = 'japanese-ledger';
   root.style.colorScheme = 'dark';
 }
 
@@ -133,4 +147,9 @@ export function resetAppearance() {
   }
   clearCustomAppearance();
   return { ...DEFAULT_APPEARANCE };
+}
+
+export function useAppearancePreset(preset) {
+  if (preset === 'showa-paper') return saveAppearance(SHOWA_PAPER_APPEARANCE);
+  return saveAppearance(TOKYO_SUMI_APPEARANCE);
 }

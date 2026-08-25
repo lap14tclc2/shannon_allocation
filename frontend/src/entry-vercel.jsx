@@ -48,6 +48,8 @@ import './spa-state.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 import './design-system-v1.css';
+import './header-v2.css';
+import './japanese-retro-theme.css';
 
 const APP_LOCALE = 'vi';
 
