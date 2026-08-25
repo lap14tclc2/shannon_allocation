@@ -10,6 +10,14 @@ class CorrectionError(ValueError):
     pass
 
 
+_EDITABLE_STOCK_TYPES = {
+    EventType.POSITION_IMPORT,
+    EventType.BUY,
+    EventType.RIGHTS_ISSUE,
+    EventType.SELL,
+}
+
+
 _AUTOMATIC_TAX_METADATA = {
     "cash_dividend_withholding_rate",
     "cash_dividend_withholding_tax",
@@ -174,13 +182,16 @@ def _stable_metadata(event: LedgerEvent) -> dict:
 
 
 def _enforce_edit_policy(current: LedgerEvent, replacement: LedgerEvent) -> None:
-    """Only quantity, price and broker may be user-corrected.
+    """Allow stock-type corrections while keeping cash transaction types immutable."""
+    if current.event_type != replacement.event_type and not (
+        current.event_type in _EDITABLE_STOCK_TYPES
+        and replacement.event_type in _EDITABLE_STOCK_TYPES
+    ):
+        raise CorrectionError(
+            "Transaction type can only be changed among editable stock transaction types."
+        )
 
-    Tax and tax metadata may change as a derived consequence of changing
-    quantity/price. Everything that identifies the transaction stays immutable.
-    """
     immutable_checks = (
-        ("event_type", current.event_type, replacement.event_type),
         ("event_date", current.event_date, replacement.event_date),
         ("symbol", current.symbol, replacement.symbol),
         ("account_id", current.account_id, replacement.account_id),
@@ -195,7 +206,7 @@ def _enforce_edit_policy(current: LedgerEvent, replacement: LedgerEvent) -> None
     if changed:
         fields = ", ".join(changed)
         raise CorrectionError(
-            f"Only quantity, price and broker can be edited. Read-only field changed: {fields}."
+            f"Only stock transaction type, quantity, price and broker can be edited. Read-only field changed: {fields}."
         )
 
 
