@@ -20,7 +20,12 @@ from portfolio.automated_service import AutomatedPortfolioService  # noqa: E402
 from portfolio.corrections import effective_events  # noqa: E402
 from portfolio.dividend_store import SqliteDividendService  # noqa: E402
 from portfolio.dividends import DividendLookupError  # noqa: E402
-from portfolio.postgres import PostgresAuthStore, PostgresPortfolioStore, drop_user_schema  # noqa: E402
+from portfolio.postgres import (  # noqa: E402
+    PostgresAuthStore,
+    PostgresPortfolioStore,
+    drop_user_schema,
+    reset_portfolio_schema,
+)
 from portfolio.validation import InputValidationError  # noqa: E402
 
 SESSION_COOKIE = "qport_session"
@@ -35,8 +40,8 @@ app = FastAPI(
 )
 
 _auth_store: PostgresAuthStore | None = None
-_services: dict[int, AutomatedPortfolioService] = {}
-_dividend_services: dict[int, SqliteDividendService] = {}
+_services: dict[tuple[int, int], AutomatedPortfolioService] = {}
+_dividend_services: dict[tuple[int, int], SqliteDividendService] = {}
 
 
 class ApiError(Exception):
@@ -58,9 +63,11 @@ def handle_validation_error(_request: Request, exc: InputValidationError):
 
 @app.exception_handler(AuthError)
 def handle_auth_error(_request: Request, exc: AuthError):
-    status = 404 if exc.code == "USER_NOT_REGISTERED" else 400
+    status = 404 if exc.code in {"USER_NOT_REGISTERED", "PORTFOLIO_NOT_FOUND"} else 400
     if exc.code == "INVALID_ADMIN_PASSWORD":
         status = 401
+    elif exc.code == "PORTFOLIO_NAME_TAKEN":
+        status = 409
     return JSONResponse(status_code=status, content=exc.as_dict())
 
 
@@ -114,27 +121,46 @@ def admin_target_user(user_id: int) -> dict:
     }
 
 
+def active_portfolio(user: dict) -> dict:
+    return auth().active_portfolio(int(user["id"]))
+
+
 def portfolio(user: dict) -> AutomatedPortfolioService:
     user_id = int(user["id"])
-    svc = _services.get(user_id)
+    selected = active_portfolio(user)
+    key = (user_id, int(selected["id"]))
+    svc = _services.get(key)
     if svc is None:
-        svc = AutomatedPortfolioService(store=PostgresPortfolioStore(user_id))
-        _services[user_id] = svc
+        svc = AutomatedPortfolioService(
+            store=PostgresPortfolioStore(user_id, selected["schema_name"])
+        )
+        _services[key] = svc
     return svc
 
 
 def dividends(user: dict) -> SqliteDividendService:
     user_id = int(user["id"])
-    service = _dividend_services.get(user_id)
+    selected = active_portfolio(user)
+    key = (user_id, int(selected["id"]))
+    service = _dividend_services.get(key)
     if service is None:
         service = SqliteDividendService(portfolio(user).store, stop_on_first_data=False)
-        _dividend_services[user_id] = service
+        _dividend_services[key] = service
     return service
 
 
+def clear_portfolio_runtime(user_id: int, portfolio_id: int) -> None:
+    key = (int(user_id), int(portfolio_id))
+    _services.pop(key, None)
+    _dividend_services.pop(key, None)
+
+
 def clear_user_runtime(user_id: int) -> None:
-    _services.pop(int(user_id), None)
-    _dividend_services.pop(int(user_id), None)
+    target = int(user_id)
+    for key in [item for item in _services if item[0] == target]:
+        _services.pop(key, None)
+    for key in [item for item in _dividend_services if item[0] == target]:
+        _dividend_services.pop(key, None)
 
 
 def _secure_cookie() -> bool:
@@ -185,7 +211,7 @@ def api_root():
         "ok": True,
         "service": "qport",
         "runtime": "vercel-fastapi-postgresql",
-        "persistence": "postgresql-schema-per-user",
+        "persistence": "postgresql-schema-per-portfolio",
     }
 
 
@@ -278,11 +304,93 @@ def auth_change_admin_password(
 
 
 # ---------------------------------------------------------------------------
+# Portfolio registry / selection
+# ---------------------------------------------------------------------------
+@app.get("/api/portfolios")
+def portfolio_list(qport_session: str | None = Cookie(default=None)):
+    user = require_portfolio_user(qport_session)
+    selected = active_portfolio(user)
+    rows = auth().list_portfolios(int(user["id"]))
+    return {
+        "ok": True,
+        "active_portfolio_id": int(selected["id"]),
+        "portfolios": rows,
+        "scope": {
+            "ledger_isolation": "POSTGRESQL_SCHEMA_PER_PORTFOLIO",
+            "existing_data_policy": "LEGACY_SCHEMA_IS_DEFAULT_PORTFOLIO",
+            "aggregate_ready": True,
+        },
+    }
+
+
+@app.post("/api/portfolios")
+def portfolio_create(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    created = auth().create_portfolio(int(user["id"]), body.get("name"))
+    return JSONResponse(status_code=201, content={"ok": True, "portfolio": created})
+
+
+@app.patch("/api/portfolios/{portfolio_id}")
+def portfolio_rename(
+    portfolio_id: int,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    renamed = auth().rename_portfolio(int(user["id"]), portfolio_id, body.get("name"))
+    return {"ok": True, "portfolio": renamed}
+
+
+@app.post("/api/portfolios/{portfolio_id}/select")
+def portfolio_select(
+    portfolio_id: int,
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    selected = auth().select_portfolio(int(user["id"]), portfolio_id)
+    return {"ok": True, "active_portfolio_id": selected["id"], "portfolio": selected}
+
+
+@app.delete("/api/portfolios/{portfolio_id}")
+def portfolio_remove(
+    portfolio_id: int,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    if str(body.get("confirmation") or "").strip() != PORTFOLIO_DELETE_CONFIRMATION:
+        raise ApiError(
+            400,
+            f'Type "{PORTFOLIO_DELETE_CONFIRMATION}" to confirm portfolio deletion.',
+            "PORTFOLIO_DELETE_CONFIRMATION_REQUIRED",
+            "confirmation",
+        )
+    current = auth().portfolio_for_user(int(user["id"]), portfolio_id)
+    if current is None:
+        raise AuthError("PORTFOLIO_NOT_FOUND", "Portfolio does not exist.", "portfolio_id")
+    clear_portfolio_runtime(int(user["id"]), portfolio_id)
+    removed = auth().delete_portfolio(int(user["id"]), portfolio_id)
+    return {
+        "ok": True,
+        "portfolio_deleted": True,
+        "portfolio": removed,
+        "account_preserved": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Portfolio reads
 # ---------------------------------------------------------------------------
 @app.get("/api/portfolio")
 def portfolio_dashboard(qport_session: str | None = Cookie(default=None)):
-    return portfolio(require_portfolio_user(qport_session)).dashboard()
+    user = require_portfolio_user(qport_session)
+    selected = active_portfolio(user)
+    result = portfolio(user).dashboard()
+    result["portfolio_context"] = selected
+    return result
 
 
 @app.get("/api/portfolio/holding-symbols")
@@ -413,14 +521,17 @@ def portfolio_delete_all(
             "confirmation",
         )
     user_id = int(user["id"])
-    clear_user_runtime(user_id)
-    removed = drop_user_schema(user_id)
-    PostgresPortfolioStore(user_id)
-    clear_user_runtime(user_id)
+    selected = active_portfolio(user)
+    clear_portfolio_runtime(user_id, int(selected["id"]))
+    removed = reset_portfolio_schema(user_id, selected["schema_name"])
+    PostgresPortfolioStore(user_id, selected["schema_name"])
     return {
         "ok": True,
-        "portfolio_deleted": True,
+        "portfolio_cleared": True,
+        "portfolio_id": int(selected["id"]),
+        "portfolio_name": selected["name"],
         "portfolio_data_removed": removed,
+        "other_portfolios_preserved": True,
         "account_preserved": True,
     }
 
