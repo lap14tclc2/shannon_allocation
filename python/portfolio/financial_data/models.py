@@ -1,18 +1,9 @@
 """
-QPort Vietnamese Financial Data System Foundation Models.
-
-Implements contracts and data structures specified in:
-- QFD-200: Three layers of data
-- QFD-210: Financial fact identity key
-- QFD-220: ProviderFact contract
-- QFD-230: Provenance and evidence chain
-- QFD-240: Reporting period normalization
-- QFD-250: Units, currency, and sign conventions
-- QFD-260: Entity-specific taxonomies
-- QFD-330: Quality status lifecycle
+QPort Vietnamese Financial Data System Foundation Models (QFD-200 to QFD-260, QFD-330, QFD-520).
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
@@ -71,6 +62,13 @@ class FactIdentityKey:
     line_item_code: str
     currency: str = "VND"
 
+    def canonical_string(self) -> str:
+        return (
+            f"{self.security_id}|{self.statement_type.value}|{self.period_end}|"
+            f"{self.period_type.value}|{self.fiscal_year}|{self.fiscal_quarter}|"
+            f"{self.consolidation_scope.value}|{self.line_item_code}|{self.currency}"
+        )
+
 
 @dataclass
 class ProviderFact:
@@ -98,6 +96,18 @@ class ProviderFact:
     parser_version: str
     revision_no: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    provider_fact_id: str = ""
+
+    def __post_init__(self):
+        if not self.provider_fact_id:
+            # Deterministic ID generation based on content
+            raw_key = (
+                f"{self.provider_id}|{self.source_document_id}|{self.security_id}|"
+                f"{self.statement_type.value}|{self.line_item_code}|{self.period_end}|"
+                f"{self.period_type.value}|{self.fiscal_year}|{self.fiscal_quarter}|"
+                f"{self.value_normalized}|{self.revision_no}|{self.observed_at}"
+            )
+            self.provider_fact_id = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     @property
     def identity_key(self) -> FactIdentityKey:
@@ -115,18 +125,39 @@ class ProviderFact:
 
 
 @dataclass
+class ReconciliationDecision:
+    """
+    Audit record of the reconciliation decision (QFD-230, QFD-300, QFD-420).
+    """
+    decision_id: str
+    identity_key: FactIdentityKey
+    rule_version: str
+    candidate_fact_ids: List[str]
+    winning_candidate_id: Optional[str]
+    chosen_status: QualityStatus
+    chosen_value: Optional[Decimal]
+    tolerance_used: Optional[Decimal]
+    reason: str
+    decided_at: str
+
+
+@dataclass
 class CanonicalFact:
     """
-    Reconciled canonical fact served to consumers (QFD-200, QFD-230).
+    Reconciled canonical fact served to consumers (QFD-200, QFD-230, QFD-250, QFD-520).
+    value is None when quality_status is MISSING.
     """
     canonical_fact_id: str
     identity: FactIdentityKey
-    value: Decimal
+    value: Optional[Decimal]
     quality_status: QualityStatus
     decision_id: str
     winning_candidate_id: Optional[str]
     candidate_ids: List[str]
     observed_at: str
+    valid_from: str = ""
+    valid_to: Optional[str] = None
+    superseded_by: Optional[str] = None
     published_at: Optional[str] = None
     tolerance_used: Optional[Decimal] = None
     reason: str = ""
