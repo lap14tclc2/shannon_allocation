@@ -472,23 +472,18 @@ class PostgresAuthStore:
             ).fetchone()
             if row is None:
                 now = _iso()
-                try:
-                    cur = db.execute(
-                        """
-                        INSERT INTO portfolios(user_id,name,schema_name,is_default,created_at,updated_at)
-                        VALUES (?,?,?,1,?,?)
-                        """,
-                        (user_id, DEFAULT_PORTFOLIO_NAME, user_schema(user_id), now, now),
-                    )
-                    row = db.execute(
-                        "SELECT * FROM portfolios WHERE id=?",
-                        (int(cur.lastrowid),),
-                    ).fetchone()
-                except psycopg.IntegrityError:
-                    row = db.execute(
-                        "SELECT * FROM portfolios WHERE user_id=? AND is_default=1 LIMIT 1",
-                        (user_id,),
-                    ).fetchone()
+                db.execute(
+                    """
+                    INSERT INTO portfolios(user_id,name,schema_name,is_default,created_at,updated_at)
+                    VALUES (?,?,?,1,?,?)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (user_id, DEFAULT_PORTFOLIO_NAME, user_schema(user_id), now, now),
+                )
+                row = db.execute(
+                    "SELECT * FROM portfolios WHERE user_id=? AND is_default=1 LIMIT 1",
+                    (user_id,),
+                ).fetchone()
             user = db.execute(
                 "SELECT active_portfolio_id FROM users WHERE id=?",
                 (user_id,),
@@ -498,7 +493,6 @@ class PostgresAuthStore:
                     "UPDATE users SET active_portfolio_id=?,updated_at=? WHERE id=?",
                     (int(row["id"]), _iso(), user_id),
                 )
-        PostgresPortfolioStore(user_id, user_schema(user_id))
         return self._public_portfolio(row)
 
     def list_portfolios(self, user_id: int) -> list[dict]:
