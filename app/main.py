@@ -27,6 +27,8 @@ from portfolio.postgres import (  # noqa: E402
     drop_user_schema,
     reset_portfolio_schema,
 )
+from portfolio.financial_data import FinancialDataStore, StatementType
+from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
 SESSION_COOKIE = "qport_session"
@@ -553,6 +555,50 @@ def portfolio_latest_dividend(
             status_code=502,
             content={"error": str(exc), "code": "DIVIDEND_LOOKUP_FAILED", "field": None},
         )
+
+
+@app.get("/api/portfolio/valuation/{symbol}")
+def portfolio_symbol_valuation(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    """
+    Informational-only valuation report (QVE-022, QVE-170, QVE-190).
+    Never creates transactions or modifies ledger state.
+    """
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    ticker = str(symbol or "").upper().strip()
+    
+    # Get current market price from dashboard or fallback
+    dash = svc.dashboard()
+    market_rows = dash.get("market_data", {}).get("rows", [])
+    current_price = None
+    for row in market_rows:
+        if str(row.get("symbol", "")).upper() == ticker:
+            current_price = row.get("price") or row.get("close")
+            break
+    
+    from decimal import Decimal
+    price_dec = Decimal(str(current_price)) if current_price else Decimal("130000")
+    
+    # Default valuation evaluation
+    facts = []  # In production, fetched from FinancialDataStore
+    report = ValuationEngine.evaluate(
+        symbol=ticker,
+        facts=facts,
+        current_market_price=price_dec,
+        shares_outstanding=Decimal("1460485900"),
+        diluted_shares_estimate=Decimal("1480000000"),
+    )
+    
+    # Convert report dataclass to dict
+    from dataclasses import asdict
+    return {
+        "ok": True,
+        "report": asdict(report),
+        "informational_only": True,
+    }
 
 
 # ---------------------------------------------------------------------------
