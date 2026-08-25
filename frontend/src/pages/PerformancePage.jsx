@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import EquityChart from '../components/EquityChart.jsx';
 import { formatMoney } from '../lib/format.js';
 import { syncPortfolio } from '../lib/api.js';
+import { loadRoute } from '../lib/store.js';
 
 function pct(value, digits = 2) {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
@@ -18,6 +20,7 @@ function signedMoney(value, locale = 'vi') {
 }
 
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
+  const dispatch = useDispatch();
   const returns = performance.returns || {};
   const series = (performance.series || [])
     .filter(row => row?.date && row.nav != null && Number.isFinite(Number(row.nav)))
@@ -30,9 +33,11 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
     setMessage('');
     try {
       await syncPortfolio();
-      window.location.reload();
+      await dispatch(loadRoute({ pathname: '/performance' })).unwrap();
+      setMessage('Lịch sử hiệu quả đã được cập nhật.');
     } catch (error) {
       setMessage(`Không thể cập nhật lịch sử: ${error.message}`);
+    } finally {
       setSyncing(false);
     }
   }
