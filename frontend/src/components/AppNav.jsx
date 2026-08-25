@@ -148,7 +148,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         onClick={() => setPortfolioOpen(value => !value)}
       >
         <span className="header-context-icon"><NavIcon name="portfolio-stack" size={17} /></span>
-        <span className="header-context-copy"><small>株式・Danh mục</small><strong>{activePortfolio?.name || 'Danh mục'}</strong></span>
+        <span className="header-context-copy"><small>Danh mục đang xem</small><strong>{activePortfolio?.name || 'Danh mục'}</strong></span>
         <span className="header-context-chevron"><NavIcon name="chevron" size={16} /></span>
       </button>
       {portfolioOpen && <div className="portfolio-menu-popover" role="menu"><PortfolioList /></div>}
@@ -195,7 +195,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         <div className="app-nav-head">
           <a className="brand" href={adminMode ? '/admin' : '/'} aria-label={adminMode ? 'Trang quản trị QPort' : 'Trang tổng quan QPort'}>
             <BrandMark />
-            <span className="brand-copy"><strong>QPort</strong><small>{adminMode ? '管理画面' : '証券管理'}</small></span>
+            <span className="brand-copy"><strong>QPort</strong><small>{adminMode ? 'Quản trị' : 'Sổ tài sản'}</small></span>
           </a>
           <button type="button" className="nav-toggle header-user-button" aria-expanded={accountOpen} aria-label="Mở tài khoản và tùy chọn" onClick={() => setAccountOpen(value => !value)}>
             <span className="header-user-avatar">{userInitial}</span><NavIcon name="chevron" size={15} />

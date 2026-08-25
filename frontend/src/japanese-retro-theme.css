@@ -1,35 +1,35 @@
 /*
- * QPort Japanese Financial Ledger
- * 昭和レトロ × professional financial clarity
+ * QPort Retro Financial Ledger
+ * Warm editorial heritage with professional financial clarity.
  */
 
 :root,
 :root[data-theme="dark"] {
-  --retro-bg: #14171a;
-  --retro-panel: #1e232a;
-  --retro-panel-subtle: #181c22;
-  --retro-border: #38424f;
-  --retro-border-bold: #4d5b6d;
-  --retro-ink: #ede8df;
-  --retro-muted: #8e9cae;
-  --retro-hanko: #ff4d36;
-  --retro-green: #3fb68b;
-  --retro-red: #ff5a36;
-  --retro-gold: #e5b54f;
-  --retro-grid: rgba(142, 156, 174, .045);
-  --retro-shadow: rgba(0, 0, 0, .42);
-  --font-jp-ui: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", var(--font-ui);
-  --font-mono-num: var(--font-numeric), "SFMono-Regular", "Roboto Mono", monospace;
+  --retro-bg: #1a1916;
+  --retro-panel: #24221d;
+  --retro-panel-subtle: #1f1e1a;
+  --retro-border: #4d4941;
+  --retro-border-bold: #6a6256;
+  --retro-ink: #eee7d7;
+  --retro-muted: #aaa18f;
+  --retro-hanko: #dc5a43;
+  --retro-green: #72a47b;
+  --retro-red: #e36a52;
+  --retro-gold: #d0a957;
+  --retro-grid: rgba(238, 231, 215, .018);
+  --retro-shadow: rgba(0, 0, 0, .38);
+  --font-retro-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Arial, Helvetica, sans-serif;
+  --font-mono-num: "Cascadia Mono", "SFMono-Regular", "Roboto Mono", Consolas, monospace;
   --bg: var(--retro-bg);
-  --bg-elevated: #181c22;
+  --bg-elevated: #1f1e1a;
   --panel: var(--retro-panel);
-  --panel-2: #242a32;
-  --panel-hover: #29313a;
-  --input: #171b20;
+  --panel-2: #2b2923;
+  --panel-hover: #322f28;
+  --input: #1c1b18;
   --border: var(--retro-border);
   --border-strong: var(--retro-border-bold);
   --text: var(--retro-ink);
-  --text-secondary: #b8b1a7;
+  --text-secondary: #c1b8a7;
   --muted: var(--retro-muted);
   --accent: var(--retro-hanko);
   --accent-soft: rgba(255, 77, 54, .09);
@@ -37,7 +37,7 @@
   --success: var(--retro-green);
   --danger: var(--retro-red);
   --warning: var(--retro-gold);
-  --info: #86a9c7;
+  --info: #9cafb7;
   --selection: rgba(255, 77, 54, .22);
   --row-hover: rgba(229, 181, 79, .045);
   --overlay: rgba(20, 23, 26, .94);
@@ -46,29 +46,29 @@
 }
 
 :root[data-theme="light"] {
-  --retro-bg: #f5f0e6;
-  --retro-panel: #fcfaf5;
-  --retro-panel-subtle: #eee7d9;
-  --retro-border: #7a7469;
-  --retro-border-bold: #2b3037;
-  --retro-ink: #1a1d20;
-  --retro-muted: #646d76;
-  --retro-hanko: #c8382b;
-  --retro-green: #236e47;
-  --retro-red: #b92e24;
-  --retro-gold: #966115;
-  --retro-grid: rgba(43, 48, 55, .055);
-  --retro-shadow: rgba(43, 48, 55, .24);
+  --retro-bg: #f2ead8;
+  --retro-panel: #fffaf0;
+  --retro-panel-subtle: #e9dfcc;
+  --retro-border: #9d9382;
+  --retro-border-bold: #625a4f;
+  --retro-ink: #24211c;
+  --retro-muted: #625f58;
+  --retro-hanko: #b0402e;
+  --retro-green: #2f6b4d;
+  --retro-red: #a93e31;
+  --retro-gold: #875d1c;
+  --retro-grid: rgba(70, 61, 48, .03);
+  --retro-shadow: rgba(65, 55, 42, .2);
   --bg: var(--retro-bg);
-  --bg-elevated: #eee8dc;
+  --bg-elevated: #ebe1cf;
   --panel: var(--retro-panel);
-  --panel-2: #f0eadf;
-  --panel-hover: #e9e1d3;
+  --panel-2: #eee4d2;
+  --panel-hover: #e4d8c4;
   --input: #fffdf8;
   --border: #aaa294;
   --border-strong: var(--retro-border-bold);
   --text: var(--retro-ink);
-  --text-secondary: #4e5660;
+  --text-secondary: #514d45;
   --muted: var(--retro-muted);
   --accent: var(--retro-hanko);
   --accent-soft: rgba(200, 56, 43, .08);
@@ -76,7 +76,7 @@
   --success: var(--retro-green);
   --danger: var(--retro-red);
   --warning: var(--retro-gold);
-  --info: #3d6380;
+  --info: #3f6570;
   --selection: rgba(200, 56, 43, .18);
   --row-hover: rgba(43, 48, 55, .04);
   --overlay: rgba(245, 240, 230, .95);
@@ -87,10 +87,15 @@
 body {
   background-color: var(--retro-bg);
   background-image:
-    linear-gradient(var(--retro-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--retro-grid) 1px, transparent 1px);
-  background-size: 24px 24px;
-  font-family: var(--font-jp-ui);
+    radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--retro-hanko) 5%, transparent), transparent 34rem),
+    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--retro-gold) 4%, transparent), transparent 30rem),
+    repeating-linear-gradient(0deg, transparent 0 39px, var(--retro-grid) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, var(--retro-grid) 39px 40px);
+  background-attachment: fixed;
+  font-family: var(--font-retro-ui);
+  letter-spacing: 0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 body::before {
@@ -98,9 +103,8 @@ body::before {
   z-index: -1;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 11% 2%, color-mix(in srgb, var(--retro-hanko) 4%, transparent), transparent 25%),
-    radial-gradient(circle at 88% 20%, color-mix(in srgb, var(--retro-gold) 3%, transparent), transparent 28%);
+  background: repeating-radial-gradient(circle at 20% 30%, transparent 0 3px, color-mix(in srgb, var(--retro-ink) 1.2%, transparent) 3px 4px);
+  opacity: .45;
   content: "";
 }
 
@@ -109,11 +113,27 @@ body::before {
 .portfolio-hero h1,
 .portfolio-manager-stat strong,
 .hero-return strong,
-.ranking td,
 .mono-small {
   font-family: var(--font-mono-num);
   font-variant-numeric: tabular-nums slashed-zero;
   letter-spacing: -.02em;
+}
+
+button,
+input,
+textarea,
+select,
+summary,
+.ranking,
+.portfolio-table-core,
+.transaction-table {
+  font-family: var(--font-retro-ui);
+}
+
+.ranking td,
+.portfolio-table-core td,
+.transaction-table td {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Matchbox-ledger surfaces */
@@ -180,7 +200,7 @@ body::before {
   letter-spacing: .08em;
   text-transform: uppercase;
   transform: rotate(-1.2deg);
-  content: "済・正式 / OFFICIAL";
+  content: "ĐÃ XÁC NHẬN";
 }
 
 .portfolio-hero::after {
@@ -194,7 +214,7 @@ body::before {
 
 .investor-hero .eyebrow::before {
   color: var(--retro-gold);
-  content: "資産合計 // ";
+  content: "TỔNG TÀI SẢN // ";
 }
 
 .portfolio-hero h1 {
@@ -210,7 +230,7 @@ body::before {
 
 .hero-meta span::before {
   color: var(--retro-gold);
-  content: "基準 ";
+  content: "MỐC ";
 }
 
 .overview-metric {
@@ -218,15 +238,10 @@ body::before {
   padding: 17px 16px;
 }
 
-.investor-overview > :nth-child(1) .metric-label::before { content: "株式 "; }
-.investor-overview > :nth-child(2) .metric-label::before { content: "現金 "; }
-.investor-overview > :nth-child(3) .metric-label::before { content: "投資元本 "; }
-.investor-overview > :nth-child(4) .metric-label::before { content: "配当金 "; }
-
 .metric-label,
 .eyebrow {
   color: var(--retro-muted);
-  font-family: var(--font-jp-ui);
+  font-family: var(--font-retro-ui);
   font-size: 10px;
   font-weight: 720;
   letter-spacing: .09em;
@@ -290,7 +305,7 @@ body::before {
   border-bottom: 2px solid var(--retro-border-bold);
   background: var(--retro-panel-subtle);
   color: var(--retro-muted);
-  font-family: var(--font-jp-ui);
+  font-family: var(--font-retro-ui);
   font-size: 10px;
   font-weight: 720;
   letter-spacing: .075em;
@@ -329,7 +344,7 @@ body::before {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: .11em;
-  content: "保有銘柄一覧";
+  content: "SỔ DANH MỤC";
 }
 
 /* Risograph chart treatment */
@@ -395,14 +410,29 @@ button:active {
   transform: translate(1px, 1px);
 }
 
-/* Header: Tokyo ledger masthead */
+/* Header: warm retro ledger masthead */
 .header-v2 {
+  position: fixed;
+  inset: 0 0 auto;
   border-bottom: 2px solid var(--retro-border-bold);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--retro-hanko) 4%, transparent) 1px, transparent 1px),
-    color-mix(in srgb, var(--retro-bg) 96%, transparent);
-  background-size: 24px 100%, auto;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--retro-panel) 96%, transparent), color-mix(in srgb, var(--retro-bg) 97%, transparent));
   box-shadow: 0 4px 0 color-mix(in srgb, var(--retro-shadow) 58%, transparent);
+}
+
+.header-v2 .nav-shell {
+  grid-template-areas: "brand portfolio primary actions";
+  grid-template-rows: 68px;
+}
+
+.header-v2 .app-nav-head { grid-area: brand; }
+.header-v2 .header-portfolio-menu { grid-area: portfolio; }
+.header-v2 .desktop-nav-links { grid-area: primary; }
+.header-v2 .desktop-nav-footer { grid-area: actions; }
+
+.portfolio-menu-popover {
+  width: min(310px, calc(100vw - 32px));
+  max-height: min(380px, calc(100vh - 96px));
+  overflow-y: auto;
 }
 
 .brand-mark,
@@ -440,7 +470,7 @@ button:active {
 .header-v2 .brand-copy small,
 .header-context-copy small {
   color: var(--retro-gold);
-  font-family: var(--font-jp-ui);
+  font-family: var(--font-retro-ui);
 }
 
 .header-portfolio-trigger {
@@ -482,7 +512,7 @@ button:active {
   background: var(--retro-panel-subtle);
   color: var(--text-secondary);
   cursor: pointer;
-  font-family: var(--font-jp-ui);
+  font-family: var(--font-retro-ui);
   font-size: 10px;
   font-weight: 680;
   white-space: nowrap;
@@ -537,7 +567,7 @@ button:active {
 }
 
 .appearance-presets strong {
-  font-family: var(--font-jp-ui);
+  font-family: var(--font-retro-ui);
   font-size: 12px;
 }
 
@@ -557,14 +587,14 @@ button:active {
   background:
     linear-gradient(rgba(142,156,174,.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(142,156,174,.08) 1px, transparent 1px),
-    #14171a;
+    #1a1916;
 }
 
 .showa-paper-swatch {
   background:
     linear-gradient(rgba(43,48,55,.09) 1px, transparent 1px),
     linear-gradient(90deg, rgba(43,48,55,.09) 1px, transparent 1px),
-    #f5f0e6;
+    #f2ead8;
 }
 
 @media (max-width: 1180px) {
@@ -575,6 +605,12 @@ button:active {
   .header-privacy-button {
     width: 38px;
     padding: 0;
+  }
+}
+
+@media (max-width: 960px) and (min-width: 720px) {
+  .header-v2 .nav-shell {
+    grid-template-areas: "brand portfolio primary";
   }
 }
 

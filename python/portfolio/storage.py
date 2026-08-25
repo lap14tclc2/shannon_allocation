@@ -184,30 +184,39 @@ class PortfolioStore:
 
     def append_event(self, event: LedgerEvent) -> int:
         with self.connect() as db:
-            cur = db.execute(
-                """
-                INSERT INTO ledger_events (
-                    event_type, event_date, symbol, quantity, price, fee, tax,
-                    amount, ratio, note, created_by, created_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.event_type.value,
-                    event.event_date,
-                    event.symbol.upper() if event.symbol else None,
-                    float(event.quantity or 0),
-                    float(event.price or 0),
-                    float(event.fee or 0),
-                    float(event.tax or 0),
-                    float(event.amount or 0),
-                    float(event.ratio or 0),
-                    event.note or "",
-                    event.created_by or "local",
-                    event.created_at or self._now(),
-                    json.dumps(event.metadata or {}, ensure_ascii=False),
-                ),
-            )
-            return int(cur.lastrowid)
+            return self.insert_event(db, event)
+
+    def insert_event(self, db, event: LedgerEvent) -> int:
+        """Insert one event using an existing transaction.
+
+        Application services use this method for atomic multi-row imports.  The
+        normal public append path remains immutable and intentionally exposes no
+        update/delete operation for ledger rows.
+        """
+        cur = db.execute(
+            """
+            INSERT INTO ledger_events (
+                event_type, event_date, symbol, quantity, price, fee, tax,
+                amount, ratio, note, created_by, created_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.event_type.value,
+                event.event_date,
+                event.symbol.upper() if event.symbol else None,
+                float(event.quantity or 0),
+                float(event.price or 0),
+                float(event.fee or 0),
+                float(event.tax or 0),
+                float(event.amount or 0),
+                float(event.ratio or 0),
+                event.note or "",
+                event.created_by or "local",
+                event.created_at or self._now(),
+                json.dumps(event.metadata or {}, ensure_ascii=False),
+            ),
+        )
+        return int(cur.lastrowid)
 
     def list_events(self, start: str | None = None, end: str | None = None) -> list[LedgerEvent]:
         sql = "SELECT * FROM ledger_events WHERE 1=1"

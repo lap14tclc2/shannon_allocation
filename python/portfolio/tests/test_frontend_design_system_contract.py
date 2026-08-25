@@ -37,7 +37,7 @@ def test_header_v2_uses_custom_portfolio_navigation():
     assert "@media (prefers-reduced-motion: reduce)" in css
 
 
-def test_japanese_ledger_theme_and_privacy_contract():
+def test_retro_ledger_theme_and_privacy_contract():
     entry = (FRONTEND_SRC / "entry-vercel.jsx").read_text(encoding="utf-8")
     appearance = (FRONTEND_SRC / "lib" / "appearance.js").read_text(encoding="utf-8")
     controls = (FRONTEND_SRC / "components" / "AppearanceControls.jsx").read_text(encoding="utf-8")
@@ -46,25 +46,40 @@ def test_japanese_ledger_theme_and_privacy_contract():
     css = (FRONTEND_SRC / "japanese-retro-theme.css").read_text(encoding="utf-8")
 
     assert entry.index("header-v2.css") < entry.index("japanese-retro-theme.css")
-    assert "qport-appearance-v2" in appearance
+    assert "qport-appearance-v3" in appearance
     assert "TOKYO_SUMI_APPEARANCE" in appearance
     assert "SHOWA_PAPER_APPEARANCE" in appearance
     assert "Tokyo Sumi" in controls
     assert "Showa Paper" in controls
     assert "qport.privacy-mode.v1" in nav
-    assert "証券管理" in nav
+    assert "Sổ tài sản" in nav
     assert 'data-sensitive="money"' in dashboard
     assert ".privacy-mode [data-sensitive=\"money\"]" in css
-    assert "--retro-hanko: #ff4d36" in css
-    assert "済・正式 / OFFICIAL" in css
+    assert "--retro-bg: #1a1916" in css
+    assert '--font-retro-ui: "Segoe UI"' in css
+    assert "Yu Gothic UI" not in css
+    assert "ĐÃ XÁC NHẬN" in css
+
+    checked_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in FRONTEND_SRC.rglob("*")
+        if path.suffix in {".js", ".jsx", ".css"}
+    )
+    assert not any(
+        "\u3040" <= char <= "\u30ff"
+        or "\u3400" <= char <= "\u4dbf"
+        or "\u4e00" <= char <= "\u9fff"
+        for char in checked_text
+    )
 
 
 def test_spa_copy_is_utf8_and_refreshes_without_document_reload():
     checked = [
-        FRONTEND_SRC / "entry-vercel.jsx",
-        FRONTEND_SRC / "lib" / "store.js",
+        path
+        for path in FRONTEND_SRC.rglob("*")
+        if path.suffix in {".js", ".jsx", ".css"}
     ]
-    mojibake_markers = ("Ã", "Ä", "Æ", "áº", "á»")
+    mojibake_markers = ("Ã¡", "Ã¢", "Ã£", "Ã©", "Ä‘", "Æ°", "áº", "á»")
     for path in checked:
         source = path.read_text(encoding="utf-8")
         assert not any(marker in source for marker in mojibake_markers), path

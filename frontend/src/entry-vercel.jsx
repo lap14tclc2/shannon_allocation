@@ -15,7 +15,7 @@ import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
-import { applyStoredAppearance } from './lib/appearance.js';
+import { applyStoredTheme } from './lib/appearance.js';
 import { NAVIGATION_EVENT, navigate } from './lib/navigation.js';
 import {
   bootstrapApp,
@@ -35,6 +35,8 @@ import './received-dividends.css';
 import './table-alignment.css';
 import './auth.css';
 import './ui-polish.css';
+import './quick-import.css';
+import './performance-interactive.css';
 import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';
@@ -50,6 +52,7 @@ import './mobile-scroll-fix.css';
 import './design-system-v1.css';
 import './header-v2.css';
 import './japanese-retro-theme.css';
+import './cyber-fantasy-theme.css';
 
 const APP_LOCALE = 'vi';
 
@@ -68,7 +71,7 @@ const ROUTES = {
   '/admin': AdminPage,
 };
 
-applyStoredAppearance();
+applyStoredTheme();
 document.body.classList.remove('mobile-sheet-open');
 document.documentElement.lang = APP_LOCALE;
 

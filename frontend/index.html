@@ -3,12 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#090a09" />
+    <meta name="theme-color" content="#1a1916" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="QPort" />
     <meta name="description" content="QPort — hệ thống theo dõi danh mục đầu tư Mua & Nắm giữ cho nhà đầu tư Việt Nam" />
     <title>QPort — Danh mục</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem('qport-theme-v1');
+          const theme = stored === 'cyber' ? 'cyber' : 'retro';
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.visualTheme = theme;
+          document.documentElement.style.colorScheme = 'dark';
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'cyber' ? '#080b14' : '#1a1916');
+        } catch {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.visualTheme = 'retro';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -12,7 +12,7 @@ import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
-import { applyStoredAppearance } from './lib/appearance.js';
+import { applyStoredTheme } from './lib/appearance.js';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
@@ -21,6 +21,8 @@ import './received-dividends.css';
 import './table-alignment.css';
 import './auth.css';
 import './ui-polish.css';
+import './quick-import.css';
+import './performance-interactive.css';
 import './insight-depth.css';
 import './holding-info-row.css';
 import './accessibility-polish.css';
@@ -29,10 +31,14 @@ import './risk-readable.css';
 import './guide-friendly.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
+import './design-system-v1.css';
+import './header-v2.css';
+import './japanese-retro-theme.css';
+import './cyber-fantasy-theme.css';
 
 // Apply a persisted custom palette before hydration. With no saved palette the
 // app explicitly stays on QPort's default dark appearance.
-applyStoredAppearance();
+applyStoredTheme();
 
 // Browser device simulators, bfcache and hot reload can preserve a body class
 // from an open mobile sheet. Never carry that scroll lock into a fresh page.

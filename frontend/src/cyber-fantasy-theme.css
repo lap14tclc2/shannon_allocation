@@ -1,0 +1,321 @@
+/*
+ * QPort Cyber Fantasy
+ * An obsidian analytical system with restrained luminous energy.
+ */
+
+:root[data-visual-theme="cyber"] {
+  --retro-bg: #080b14;
+  --retro-panel: #101725;
+  --retro-panel-subtle: #0c111d;
+  --retro-border: #26394a;
+  --retro-border-bold: #3a596b;
+  --retro-ink: #e8f4f6;
+  --retro-muted: #8599a5;
+  --retro-hanko: #63d8e8;
+  --retro-green: #70d7a2;
+  --retro-red: #ff7185;
+  --retro-gold: #8e7cff;
+  --retro-grid: rgba(99, 216, 232, .025);
+  --retro-shadow: rgba(0, 0, 0, .52);
+  --bg: #080b14;
+  --bg-elevated: #0c111c;
+  --panel: #101725;
+  --panel-2: #141d2d;
+  --panel-hover: #182438;
+  --input: #0b101b;
+  --border: #26394a;
+  --border-strong: #3a596b;
+  --text: #e8f4f6;
+  --text-secondary: #a6b8c2;
+  --muted: #8599a5;
+  --accent: #63d8e8;
+  --accent-soft: rgba(99, 216, 232, .09);
+  --accent-border: rgba(99, 216, 232, .42);
+  --success: #70d7a2;
+  --danger: #ff7185;
+  --warning: #e4bd68;
+  --info: #8e7cff;
+  --selection: rgba(99, 216, 232, .22);
+  --row-hover: rgba(99, 216, 232, .045);
+  --overlay: rgba(5, 8, 15, .95);
+  --chart-grid: #243749;
+  --shadow-surface: 0 16px 42px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .025);
+  --control-radius: 7px 2px 7px 2px;
+  --option-radius: 9px 2px 9px 2px;
+  --popover-radius: 12px 3px 12px 3px;
+  --check-radius: 6px 1px 6px 1px;
+  --popover-shadow: 0 24px 70px rgba(0, 0, 0, .58), 0 0 32px rgba(99, 216, 232, .07);
+}
+
+:root[data-visual-theme="cyber"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 82% -10%, rgba(142, 124, 255, .12), transparent 36rem),
+    radial-gradient(circle at 8% 26%, rgba(99, 216, 232, .075), transparent 31rem),
+    linear-gradient(rgba(99, 216, 232, .02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 216, 232, .02) 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px, 32px 32px;
+}
+
+:root[data-visual-theme="cyber"] body::before {
+  background:
+    linear-gradient(115deg, transparent 0 46%, rgba(99, 216, 232, .025) 46% 46.25%, transparent 46.25% 100%),
+    radial-gradient(circle at 22% 36%, rgba(99, 216, 232, .1) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 78% 68%, rgba(142, 124, 255, .1) 0 1px, transparent 1.5px);
+  background-size: 160px 120px, 96px 96px, 120px 120px;
+  opacity: .62;
+}
+
+:root[data-visual-theme="cyber"] .card,
+:root[data-visual-theme="cyber"] .metric-card,
+:root[data-visual-theme="cyber"] .portfolio-hero,
+:root[data-visual-theme="cyber"] .portfolio-space-card,
+:root[data-visual-theme="cyber"] .portfolio-manager-hero,
+:root[data-visual-theme="cyber"] .portfolio-manager-stat,
+:root[data-visual-theme="cyber"] .auth-card,
+:root[data-visual-theme="cyber"] .portfolio-switcher,
+:root[data-visual-theme="cyber"] .appearance-popover,
+:root[data-visual-theme="cyber"] .portfolio-menu-popover,
+:root[data-visual-theme="cyber"] .risk-overview-card,
+:root[data-visual-theme="cyber"] .risk-history-card,
+:root[data-visual-theme="cyber"] .risk-symbol-review-card,
+:root[data-visual-theme="cyber"] .risk-technical-details,
+:root[data-visual-theme="cyber"] .risk-insight-card,
+:root[data-visual-theme="cyber"] .risk-symbol-card {
+  border-color: var(--border-strong);
+  border-radius: 12px 3px 12px 3px;
+  background-color: var(--panel);
+  background-image:
+    linear-gradient(135deg, rgba(99, 216, 232, .025), transparent 24%),
+    linear-gradient(rgba(99, 216, 232, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 216, 232, .018) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
+  box-shadow: var(--shadow-surface);
+}
+
+:root[data-visual-theme="cyber"] .card::after,
+:root[data-visual-theme="cyber"] .metric-card::after,
+:root[data-visual-theme="cyber"] .portfolio-space-card::after {
+  right: 7px;
+  bottom: 7px;
+  width: 13px;
+  height: 13px;
+  border-color: rgba(99, 216, 232, .45);
+  filter: drop-shadow(0 0 4px rgba(99, 216, 232, .24));
+}
+
+:root[data-visual-theme="cyber"] .portfolio-hero {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(142, 124, 255, .14), transparent 28rem),
+    linear-gradient(120deg, rgba(99, 216, 232, .055), transparent 38%),
+    linear-gradient(rgba(99, 216, 232, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 216, 232, .025) 1px, transparent 1px),
+    var(--panel);
+  background-size: auto, auto, 24px 24px, 24px 24px, auto;
+}
+
+:root[data-visual-theme="cyber"] .portfolio-hero::before {
+  border: 1px solid var(--accent);
+  border-radius: 7px 1px 7px 1px;
+  background: rgba(99, 216, 232, .055);
+  color: var(--accent);
+  box-shadow: 0 0 16px rgba(99, 216, 232, .12), inset 0 0 10px rgba(99, 216, 232, .06);
+  text-shadow: 0 0 7px rgba(99, 216, 232, .45);
+  transform: none;
+  content: "DỮ LIỆU ĐÃ ĐỒNG BỘ";
+}
+
+:root[data-visual-theme="cyber"] .portfolio-hero::after {
+  border-color: rgba(99, 216, 232, .16);
+  border-radius: 8px 2px 8px 2px;
+}
+
+:root[data-visual-theme="cyber"] .investor-hero .eyebrow::before {
+  color: var(--accent);
+  content: "HỆ THỐNG TÀI SẢN // ";
+}
+
+:root[data-visual-theme="cyber"] .portfolio-hero h1 {
+  color: var(--text);
+  text-shadow: 0 0 22px rgba(99, 216, 232, .12);
+}
+
+:root[data-visual-theme="cyber"] .metric-label,
+:root[data-visual-theme="cyber"] .eyebrow {
+  color: var(--muted);
+}
+
+:root[data-visual-theme="cyber"] .status-pill,
+:root[data-visual-theme="cyber"] .portfolio-active-badge,
+:root[data-visual-theme="cyber"] .portfolio-default-badge,
+:root[data-visual-theme="cyber"] .data-status,
+:root[data-visual-theme="cyber"] .portfolio-option-status,
+:root[data-visual-theme="cyber"] .risk-level {
+  border-width: 1px;
+  border-radius: 6px 1px 6px 1px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  box-shadow: inset 0 0 10px color-mix(in srgb, currentColor 5%, transparent);
+  transform: none;
+}
+
+:root[data-visual-theme="cyber"] .table-scroll,
+:root[data-visual-theme="cyber"] .holdings-tree {
+  border-color: var(--border);
+  border-radius: 10px 2px 10px 2px;
+  background: var(--panel);
+  box-shadow: 0 15px 38px rgba(0, 0, 0, .28);
+}
+
+:root[data-visual-theme="cyber"] .ranking,
+:root[data-visual-theme="cyber"] .portfolio-table-core,
+:root[data-visual-theme="cyber"] .transaction-table {
+  background:
+    linear-gradient(rgba(99, 216, 232, .016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 216, 232, .016) 1px, transparent 1px),
+    var(--panel);
+  background-size: 24px 24px;
+}
+
+:root[data-visual-theme="cyber"] .ranking th,
+:root[data-visual-theme="cyber"] .portfolio-table-core th,
+:root[data-visual-theme="cyber"] .transaction-table th {
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--panel-subtle, var(--retro-panel-subtle));
+  color: var(--muted);
+}
+
+:root[data-visual-theme="cyber"] .ranking td,
+:root[data-visual-theme="cyber"] .portfolio-table-core td,
+:root[data-visual-theme="cyber"] .transaction-table td {
+  border-top-style: solid;
+  border-top-color: rgba(58, 89, 107, .62);
+}
+
+:root[data-visual-theme="cyber"] .ranking tbody tr:hover td,
+:root[data-visual-theme="cyber"] .portfolio-table-core tbody tr:hover td,
+:root[data-visual-theme="cyber"] .transaction-table tbody tr:hover td {
+  background-color: rgba(99, 216, 232, .045);
+}
+
+:root[data-visual-theme="cyber"] .holdings-head h2::before {
+  color: var(--accent);
+  content: "VỊ THẾ / DỮ LIỆU";
+}
+
+:root[data-visual-theme="cyber"] .chart {
+  border-color: var(--border-strong);
+  border-radius: 12px 3px 12px 3px;
+  background:
+    radial-gradient(circle at 78% 15%, rgba(142, 124, 255, .09), transparent 42%),
+    linear-gradient(rgba(99, 216, 232, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 216, 232, .025) 1px, transparent 1px),
+    var(--retro-panel-subtle);
+  background-size: auto, 24px 24px, 24px 24px, auto;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .32), inset 0 0 25px rgba(99, 216, 232, .025);
+}
+
+:root[data-visual-theme="cyber"] .equity-chart polyline {
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 5px rgba(99, 216, 232, .52));
+}
+
+:root[data-visual-theme="cyber"] .equity-chart circle {
+  fill: var(--accent);
+  stroke: var(--panel);
+  filter: drop-shadow(0 0 5px rgba(99, 216, 232, .66));
+}
+
+:root[data-visual-theme="cyber"] button,
+:root[data-visual-theme="cyber"] .btn-primary,
+:root[data-visual-theme="cyber"] .btn-secondary,
+:root[data-visual-theme="cyber"] .btn-ghost,
+:root[data-visual-theme="cyber"] .btn-small,
+:root[data-visual-theme="cyber"] .btn-danger,
+:root[data-visual-theme="cyber"] .btn-export,
+:root[data-visual-theme="cyber"] input,
+:root[data-visual-theme="cyber"] select,
+:root[data-visual-theme="cyber"] textarea {
+  border-radius: var(--control-radius);
+}
+
+:root[data-visual-theme="cyber"] .btn-primary {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, #5bc9db, #6c9dea);
+  color: #071019;
+  box-shadow: 0 0 18px rgba(99, 216, 232, .12);
+}
+
+:root[data-visual-theme="cyber"] .btn-secondary,
+:root[data-visual-theme="cyber"] .btn-ghost {
+  border-color: var(--border-strong);
+  background: rgba(13, 20, 32, .9);
+}
+
+:root[data-visual-theme="cyber"] .header-v2 {
+  border-bottom: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(12, 17, 29, .97), rgba(8, 11, 20, .94));
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .3), 0 1px 0 rgba(99, 216, 232, .07);
+  backdrop-filter: blur(18px);
+}
+
+:root[data-visual-theme="cyber"] .brand-mark {
+  border-color: var(--accent);
+  border-radius: 9px 2px 9px 2px;
+  background: rgba(99, 216, 232, .055);
+  box-shadow: 0 0 18px rgba(99, 216, 232, .11), inset 0 0 14px rgba(99, 216, 232, .055);
+  transform: none;
+}
+
+:root[data-visual-theme="cyber"] .brand-mark::after {
+  background: var(--info);
+  box-shadow: 0 0 5px rgba(142, 124, 255, .7);
+}
+
+:root[data-visual-theme="cyber"] .header-v2 .brand-copy small,
+:root[data-visual-theme="cyber"] .header-context-copy small {
+  color: var(--accent);
+}
+
+:root[data-visual-theme="cyber"] .header-portfolio-trigger,
+:root[data-visual-theme="cyber"] .header-privacy-button {
+  border-color: var(--border-strong);
+  border-radius: var(--control-radius);
+  background: rgba(13, 18, 31, .88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+:root[data-visual-theme="cyber"] .header-context-icon {
+  border-color: rgba(99, 216, 232, .35);
+  border-radius: 7px 2px 7px 2px;
+  background: rgba(99, 216, 232, .055);
+  color: var(--accent);
+}
+
+:root[data-visual-theme="cyber"] .header-v2 .app-nav-links a {
+  border-radius: 7px 2px 7px 2px;
+}
+
+:root[data-visual-theme="cyber"] .header-v2 .app-nav-links a.active {
+  border-color: rgba(99, 216, 232, .5);
+  background: linear-gradient(135deg, rgba(99, 216, 232, .09), rgba(142, 124, 255, .045));
+  box-shadow: inset 0 0 18px rgba(99, 216, 232, .035), 0 0 14px rgba(99, 216, 232, .04);
+}
+
+:root[data-visual-theme="cyber"] .header-v2 .app-nav-links a.active svg,
+:root[data-visual-theme="cyber"] .header-privacy-button.active {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px rgba(99, 216, 232, .4));
+}
+
+:root[data-visual-theme="cyber"] .portfolio-menu-option.active,
+:root[data-visual-theme="cyber"] .theme-option.active {
+  border-color: rgba(99, 216, 232, .6);
+  background: linear-gradient(135deg, rgba(99, 216, 232, .08), rgba(142, 124, 255, .04));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-visual-theme="cyber"] .appearance-toggle:hover .theme-trigger-cyber,
+  :root[data-visual-theme="cyber"] .btn-primary:hover {
+    filter: brightness(1.06) drop-shadow(0 0 7px rgba(99, 216, 232, .18));
+  }
+}

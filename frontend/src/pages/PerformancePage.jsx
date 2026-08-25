@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import EquityChart from '../components/EquityChart.jsx';
@@ -22,11 +22,22 @@ function signedMoney(value, locale = 'vi') {
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
   const dispatch = useDispatch();
   const returns = performance.returns || {};
-  const series = (performance.series || [])
+  const series = useMemo(() => (performance.series || [])
     .filter(row => row?.date && row.nav != null && Number.isFinite(Number(row.nav)))
-    .map(row => ({ date: row.date, nav: Number(row.nav) }));
+    .map(row => ({ date: row.date, nav: Number(row.nav), daily_return: row.daily_return })), [performance.series]);
+  const [range, setRange] = useState('ALL');
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
+  const chartData = useMemo(() => {
+    if (range === 'ALL' || series.length < 2) return series;
+    const latest = new Date(`${series[series.length - 1].date}T00:00:00Z`);
+    const cutoff = new Date(latest);
+    if (range === 'YTD') cutoff.setUTCMonth(0, 1);
+    else cutoff.setUTCMonth(cutoff.getUTCMonth() - ({ '1M': 1, '3M': 3, '6M': 6, '1Y': 12 }[range] || 0));
+    const filtered = series.filter(row => new Date(`${row.date}T00:00:00Z`) >= cutoff);
+    return filtered.length >= 2 ? filtered : series;
+  }, [series, range]);
+  const benchmarkSeries = performance.benchmark?.series || [];
 
   async function sync() {
     setSyncing(true);
@@ -92,11 +103,19 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
           <h2>Giá trị danh mục theo thời gian</h2>
           <p className="muted">Biểu đồ chỉ dùng giai đoạn QPort thực sự theo dõi được danh mục.</p>
         </div>
+        <div className="chart-range-switch" role="group" aria-label="Khoảng thời gian biểu đồ">
+          {['1M', '3M', '6M', 'YTD', '1Y', 'ALL'].map(value => <button type="button" key={value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{value === 'ALL' ? 'TẤT CẢ' : value}</button>)}
+        </div>
       </div>
       {series.length < 2 ? <div className="empty-state">
         <h3>Chưa đủ lịch sử để vẽ biểu đồ</h3>
         <p>Hiện có {historyCount == null ? '-' : historyCount} ngày dữ liệu. QPort sẽ tự bổ sung khi tiếp tục theo dõi hằng ngày.</p>
-      </div> : <div className="chart"><EquityChart data={series} /></div>}
+      </div> : <>
+        <div className="chart-legend"><span><i className="portfolio-swatch" />Danh mục</span>{performance.benchmark?.status === 'AVAILABLE' && <span><i className="benchmark-swatch" />VN-Index (chuẩn hóa)</span>}</div>
+        <div className="chart"><EquityChart data={chartData} benchmark={benchmarkSeries} /></div>
+        {performance.benchmark?.status !== 'AVAILABLE' && <p className="muted chart-benchmark-note">VN-Index sẽ xuất hiện sau lần đồng bộ dữ liệu thị trường kế tiếp; QPort không dựng benchmark giả.</p>}
+        <p className="muted chart-benchmark-note">NAV dùng giá đóng cửa raw và các sự kiện cổ tức/chia tách đã ghi trong sổ cái; VN-Index được chuẩn hóa về cùng điểm bắt đầu để so sánh tương đối.</p>
+      </>}
     </section>
 
     <div className="expand-grid">

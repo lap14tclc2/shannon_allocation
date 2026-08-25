@@ -37,14 +37,26 @@ def _returns_frame(histories: dict[str, list[dict]]) -> pd.DataFrame:
     for symbol, rows in histories.items():
         if not rows:
             continue
-        s = pd.Series(
-            {r["trading_date"]: float(r["close"]) for r in rows if r.get("close") is not None},
-            dtype=float,
-        ).sort_index()
+        indexed = {
+            r["trading_date"]: {
+                "close": float(r["close"]),
+                "cash": float(r.get("analytics_cash_distribution") or 0),
+                "factor": float(r.get("analytics_share_factor") or 1),
+            }
+            for r in rows if r.get("close") is not None
+        }
+        s = pd.Series({day: values["close"] for day, values in indexed.items()}, dtype=float).sort_index()
         if len(s) < 3:
             continue
         with np.errstate(divide="ignore", invalid="ignore"):
             ret = np.log(s / s.shift(1))
+        for day, values in indexed.items():
+            if day not in ret.index or values["cash"] == 0 and values["factor"] == 1:
+                continue
+            previous = s.shift(1).get(day)
+            adjusted_value = values["close"] * values["factor"] + values["cash"]
+            if previous is not None and pd.notna(previous) and previous > 0 and adjusted_value > 0:
+                ret.loc[day] = np.log(adjusted_value / previous)
         series[symbol] = ret.replace([np.inf, -np.inf], np.nan)
     return pd.DataFrame(series).sort_index() if series else pd.DataFrame()
 
@@ -114,9 +126,20 @@ def _solve_erc(cov: np.ndarray) -> np.ndarray | None:
 
 def _correlation_metrics(returns: pd.DataFrame, symbols: list[str]) -> dict:
     if len(symbols) < 2:
-        return {"average_correlation": None, "max_correlation": None}
+        return {
+            "average_correlation": None,
+            "max_correlation": None,
+            "correlation_symbols": list(symbols),
+            "correlation_matrix": ({symbols[0]: {symbols[0]: 1.0}} if symbols else {}),
+        }
     corr = returns[symbols].tail(252).corr(min_periods=40)
     values = []
+    matrix = {}
+    for row_symbol in symbols:
+        matrix[row_symbol] = {}
+        for column_symbol in symbols:
+            value = corr.loc[row_symbol, column_symbol]
+            matrix[row_symbol][column_symbol] = float(value) if pd.notna(value) else None
     for i in range(len(symbols)):
         for j in range(i + 1, len(symbols)):
             value = corr.iloc[i, j]
@@ -125,6 +148,8 @@ def _correlation_metrics(returns: pd.DataFrame, symbols: list[str]) -> dict:
     return {
         "average_correlation": float(np.mean(values)) if values else None,
         "max_correlation": max(values) if values else None,
+        "correlation_symbols": list(symbols),
+        "correlation_matrix": matrix,
     }
 
 
@@ -234,6 +259,8 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "erc_reference_weights": {},
         "average_correlation": None,
         "max_correlation": None,
+        "correlation_symbols": [],
+        "correlation_matrix": {},
         "diversification_ratio": None,
         "daily_var_95": None,
         "daily_cvar_95": None,

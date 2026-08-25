@@ -112,6 +112,9 @@ def test_first_sync_rebuilds_daily_performance_and_drawdown_history(tmp_path):
     assert performance["max_drawdown"] is not None
     assert performance["latest_date"] is not None
     assert performance["total_pnl"] != 0
+    assert performance["benchmark"]["symbol"] == "VNINDEX"
+    assert performance["benchmark"]["status"] == "AVAILABLE"
+    assert len(performance["benchmark"]["series"]) > 20
 
 
 def test_sync_creates_snapshots_without_changing_shares(tmp_path):
@@ -135,7 +138,7 @@ def test_extended_risk_diagnostics_use_equity_normalized_concentration(tmp_path)
     risk = svc.risk()
     for key in (
         "effective_positions", "effective_position_ratio", "equity_hhi", "max_equity_weight",
-        "average_correlation", "max_correlation", "diversification_ratio", "daily_var_95",
+        "average_correlation", "max_correlation", "correlation_symbols", "correlation_matrix", "diversification_ratio", "daily_var_95",
         "daily_cvar_95", "downside_volatility", "largest_risk_symbol",
         "largest_risk_contribution", "risk_concentration_ratio",
     ):
@@ -143,6 +146,8 @@ def test_extended_risk_diagnostics_use_equity_normalized_concentration(tmp_path)
     assert risk["status"] in {"VALID", "PARTIAL"}
     assert risk["quality"]["coverage_weight"] > 0
     assert risk["effective_position_ratio"] <= 1.000001
+    assert risk["correlation_symbols"] == ["AAA", "BBB", "CCC"]
+    assert risk["correlation_matrix"]["AAA"]["AAA"] == pytest.approx(1.0)
     assert risk["methodology"]["concentration_basis"] == "equity_normalized"
 
 
@@ -233,8 +238,50 @@ def test_market_metadata_and_lineage_are_explicit(tmp_path):
     dashboard = svc.dashboard()
     assert dashboard["market_data"]["market_date"] is not None
     assert dashboard["market_data"]["aligned"] is True
-    assert dashboard["data_lineage"]["analytics"]["status"] == "UNVERIFIED"
-    assert dashboard["data_lineage"]["analytics"]["corporate_action_adjusted"] is None
+    assert dashboard["data_lineage"]["analytics"]["status"] == "EXPLICIT_VERIFIED_ACTIONS_ONLY"
+    assert "verified cash and stock dividends" in dashboard["data_lineage"]["analytics"]["corporate_action_adjusted"]
+
+
+def test_verified_corporate_action_enriches_analytics_without_mutating_raw_close(tmp_path):
+    from portfolio.correctable_service import CorrectablePortfolioService
+
+    svc = CorrectablePortfolioService(PortfolioStore(tmp_path / "adjustments.sqlite3"), FakeMarket())
+    svc.append_event({"event_type": "POSITION_IMPORT", "event_date": "2026-01-02", "symbol": "FPT", "quantity": 100, "price": 20_000})
+    svc.store.upsert_market_prices([
+        {"symbol": "FPT", "trading_date": "2026-06-14", "close": 100_000, "source": "fake"},
+        {"symbol": "FPT", "trading_date": "2026-06-15", "close": 98_000, "source": "fake"},
+        {"symbol": "FPT", "trading_date": "2026-06-16", "close": 99_000, "source": "fake"},
+    ])
+    with svc.store.connect() as db:
+        db.execute(
+            """INSERT INTO corporate_actions (
+                external_key,symbol,action_type,ex_date,cash_per_share,source,
+                confidence,verification_status,raw_json,created_at,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            ("ca-fpt-cash", "FPT", "CASH_DIVIDEND", "2026-06-15", 2_000, "test", "HIGH", "VERIFIED", "{}", svc.store._now(), svc.store._now()),
+        )
+    history = svc._histories(["FPT"])["FPT"]
+    ex_date = next(row for row in history if row["trading_date"] == "2026-06-15")
+    assert ex_date["close"] == pytest.approx(98_000)
+    assert ex_date["analytics_cash_distribution"] == pytest.approx(2_000)
+    assert ex_date["analytics_adjustment_sources"] == ["VERIFIED_CASH_DIVIDEND"]
+
+
+def test_explicit_split_uses_raw_price_for_valuation_and_share_factor_for_returns(tmp_path):
+    svc = make_service(tmp_path)
+    svc.append_event({"event_type": "POSITION_IMPORT", "event_date": "2026-01-02", "symbol": "FPT", "quantity": 100, "price": 100_000})
+    svc.append_event({"event_type": "SPLIT", "event_date": "2026-06-15", "symbol": "FPT", "ratio": 2})
+    svc.store.upsert_market_prices([
+        {"symbol": "FPT", "trading_date": "2026-06-14", "close": 100_000, "source": "fake"},
+        {"symbol": "FPT", "trading_date": "2026-06-15", "close": 50_000, "source": "fake"},
+        {"symbol": "FPT", "trading_date": "2026-06-16", "close": 51_000, "source": "fake"},
+    ])
+    history = svc._histories(["FPT"])["FPT"]
+    split_date = next(row for row in history if row["trading_date"] == "2026-06-15")
+    assert split_date["close"] == pytest.approx(50_000)
+    assert split_date["analytics_share_factor"] == pytest.approx(2)
+    assert split_date["analytics_adjustment_sources"] == ["EXPLICIT_SPLIT_LEDGER"]
+    assert svc.current_state().positions["FPT"].shares == pytest.approx(200)
 
 
 def test_event_ledger_has_no_application_delete_path(tmp_path):

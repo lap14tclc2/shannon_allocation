@@ -43,6 +43,25 @@ function InsightCard({ index, question, state, tone = 'neutral', title, highligh
   </article>;
 }
 
+function BlockMeter({ value, max = 1, threshold = null, label }) {
+  const normalized = value == null || !Number.isFinite(Number(value)) ? 0 : Math.max(0, Math.min(1, Number(value) / max));
+  const active = Math.round(normalized * 12);
+  return <div className="risk-block-meter" aria-label={label}>
+    <div className="risk-block-meter-track">{Array.from({ length: 12 }, (_, index) => <i className={index < active ? 'active' : ''} key={index} />)}</div>
+    <div><span>{label}</span>{threshold != null && <small>Ngưỡng theo dõi {threshold}</small>}</div>
+  </div>;
+}
+
+function correlationCellTone(value) {
+  if (value == null || !Number.isFinite(Number(value))) return 'missing';
+  const number = Number(value);
+  if (number >= 0.70) return 'very-high';
+  if (number >= 0.45) return 'high';
+  if (number >= 0.20) return 'mid';
+  if (number >= 0) return 'low';
+  return 'negative';
+}
+
 function correlationMeaning(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'Chưa đủ dữ liệu để so sánh với các mã còn lại.';
   if (Number(value) >= 0.60) return 'Mức liên hệ cao: mã này thường đi cùng hướng với phần còn lại, nên khi thị trường xấu lợi ích đa dạng hóa giảm.';
@@ -116,6 +135,8 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
   const volatilityRatio = vol63 != null && vol252 ? vol63 / vol252 : null;
   const volatilityChange = volatilityRatio == null ? null : volatilityRatio - 1;
   const symbolMetrics = risk.symbol_metrics || {};
+  const correlationSymbols = risk.correlation_symbols || [];
+  const correlationMatrix = risk.correlation_matrix || {};
 
   useEffect(() => {
     if (initialSnapshots.length) return undefined;
@@ -214,6 +235,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           highlightNote={concentrationImpact == null ? null : `Nếu mã này giảm 10% → phần cổ phiếu của danh mục có thể giảm khoảng ${pct(concentrationImpact)}`}
           footer="Mức tập trung đo tác động của một mã đơn lẻ; không có nghĩa danh mục phải chia đều tỷ trọng."
         >
+          <BlockMeter value={largestWeight} max={0.60} threshold="35%" label="Mức tập trung vốn" />
           {largestWeight == null
             ? 'Chưa đủ dữ liệu để đánh giá mức tập trung.'
             : <>Tỷ trọng hiện tại khiến <b>{largestPositionSymbol || 'mã lớn nhất'}</b> có khả năng ảnh hưởng rõ đến kết quả chung. Ví dụ 10% ở trên chỉ để hình dung độ nhạy, không phải dự báo giá.</>}
@@ -229,6 +251,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           highlightNote="Tương quan trung bình giữa các mã"
           footer="Gần 1: thường cùng hướng · Gần 0: ít quan hệ ổn định · Âm: thường có xu hướng ngược hướng."
         >
+          <BlockMeter value={avgCorrelation == null ? null : Math.max(0, avgCorrelation)} max={0.80} threshold="0,60" label="Mức đồng pha" />
           {avgCorrelation == null
             ? 'Chưa đủ lịch sử giao nhau giữa các mã để đánh giá.'
             : avgCorrelation >= 0.60
@@ -247,6 +270,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           footer="Hai số là độ biến động quy đổi theo năm, không phải mức lợi nhuận."
         >
           {volatilityRatio == null ? 'Chưa đủ dữ liệu để so sánh biến động gần đây với nền một năm.' : <>
+            <BlockMeter value={volatilityRatio} max={2} threshold="1,20×" label="63 phiên / 252 phiên" />
             <div className="risk-volatility-compare">
               <div><span>~3 tháng</span><strong>{pct(vol63)}</strong><small>63 phiên</small></div>
               <span className="risk-compare-arrow">→</span>
@@ -273,12 +297,33 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           highlightNote={riskWeightGap == null ? null : `Cao hơn tỷ trọng vốn khoảng ${pct(riskWeightGap, 2)} điểm % theo thang tỷ lệ`}
           footer="Đóng góp rủi ro đo mức ảnh hưởng đến biến động chung; không phải lãi/lỗ và không phải khuyến nghị bán."
         >
+          <BlockMeter value={largestRisk} max={0.60} threshold="45%" label="Mức tập trung rủi ro" />
           {largestRisk == null
             ? 'Chưa đủ dữ liệu để xác định mã ảnh hưởng rủi ro nhiều nhất.'
             : <>{risk.largest_risk_symbol} đang tạo ra phần biến động lớn nhất trong danh mục. {riskWeightGap != null && riskWeightGap > 0.05 ? 'Rủi ro của mã này cao hơn tỷ trọng vốn một khoảng đáng chú ý, nên đây là mã nên theo dõi kỹ hơn.' : 'Đóng góp rủi ro hiện không lệch quá xa tỷ trọng vốn.'}</>}
         </InsightCard>
       </div>
     </section>
+
+    {correlationSymbols.length > 1 && <section className="risk-correlation-card">
+      <div className="risk-section-heading">
+        <div><span className="eyebrow">Đồng pha theo cặp</span><h2>Ma trận tương quan</h2></div>
+        <p>Màu đậm hơn nghĩa là hai mã thường biến động cùng hướng hơn. Ô trống là chưa đủ 40 phiên giao nhau.</p>
+      </div>
+      <div className="risk-correlation-scroll">
+        <table className="risk-correlation-matrix">
+          <thead><tr><th aria-label="Mã cổ phiếu" />{correlationSymbols.map(symbol => <th key={symbol}>{symbol}</th>)}</tr></thead>
+          <tbody>{correlationSymbols.map(rowSymbol => <tr key={rowSymbol}>
+            <th>{rowSymbol}</th>
+            {correlationSymbols.map(columnSymbol => {
+              const value = correlationMatrix?.[rowSymbol]?.[columnSymbol];
+              return <td className={`corr-${correlationCellTone(value)}`} key={columnSymbol} title={`${rowSymbol} / ${columnSymbol}: ${num(value)}`}>{num(value)}</td>;
+            })}
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <div className="correlation-legend"><span className="corr-negative">Âm</span><span className="corr-low">Thấp</span><span className="corr-mid">Vừa</span><span className="corr-high">Cao</span><span className="corr-very-high">Rất cao</span></div>
+    </section>}
 
     <section className="risk-history-card">
       <div className="risk-section-heading risk-history-heading">
@@ -362,6 +407,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           <div className="metric-card"><div className="metric-label">Phiên xấu nhất của mô hình</div><div className="metric-value">{pct(risk.max_daily_loss)}</div><div className="metric-note">{risk.max_daily_loss_date || '-'}</div></div>
         </div>
         <p className="muted"><b>63 phiên</b> tương đương khoảng 3 tháng giao dịch; <b>252 phiên</b> tương đương khoảng 1 năm. Volatility là độ rung lắc quy đổi theo năm, không phải lợi nhuận. VaR/CVaR chỉ mô tả phân phối lịch sử và không phải giới hạn lỗ được đảm bảo.</p>
+        <p className="muted"><b>Giá và corporate action:</b> NAV luôn dùng giá đóng cửa raw. Chuỗi lợi suất chỉ cộng cổ tức tiền hoặc hệ số cổ tức cổ phiếu vào ngày GDKHQ sau khi sự kiện đã được xác minh; dữ liệu chưa xác minh không tự động sửa lịch sử.</p>
       </div>
     </details>
   </div>;
