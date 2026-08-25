@@ -125,6 +125,14 @@ def active_portfolio(user: dict) -> dict:
     return auth().active_portfolio(int(user["id"]))
 
 
+def public_portfolio(row: dict) -> dict:
+    return {
+        key: value
+        for key, value in row.items()
+        if key not in {"schema_name", "user_id"}
+    }
+
+
 def portfolio(user: dict) -> AutomatedPortfolioService:
     user_id = int(user["id"])
     selected = active_portfolio(user)
@@ -314,7 +322,7 @@ def portfolio_list(qport_session: str | None = Cookie(default=None)):
     return {
         "ok": True,
         "active_portfolio_id": int(selected["id"]),
-        "portfolios": rows,
+        "portfolios": [public_portfolio(row) for row in rows],
         "scope": {
             "ledger_isolation": "POSTGRESQL_SCHEMA_PER_PORTFOLIO",
             "existing_data_policy": "LEGACY_SCHEMA_IS_DEFAULT_PORTFOLIO",
@@ -330,7 +338,7 @@ def portfolio_create(
 ):
     user = require_portfolio_user(qport_session)
     created = auth().create_portfolio(int(user["id"]), body.get("name"))
-    return JSONResponse(status_code=201, content={"ok": True, "portfolio": created})
+    return JSONResponse(status_code=201, content={"ok": True, "portfolio": public_portfolio(created)})
 
 
 @app.patch("/api/portfolios/{portfolio_id}")
@@ -341,7 +349,7 @@ def portfolio_rename(
 ):
     user = require_portfolio_user(qport_session)
     renamed = auth().rename_portfolio(int(user["id"]), portfolio_id, body.get("name"))
-    return {"ok": True, "portfolio": renamed}
+    return {"ok": True, "portfolio": public_portfolio(renamed)}
 
 
 @app.post("/api/portfolios/{portfolio_id}/select")
@@ -351,7 +359,7 @@ def portfolio_select(
 ):
     user = require_portfolio_user(qport_session)
     selected = auth().select_portfolio(int(user["id"]), portfolio_id)
-    return {"ok": True, "active_portfolio_id": selected["id"], "portfolio": selected}
+    return {"ok": True, "active_portfolio_id": selected["id"], "portfolio": public_portfolio(selected)}
 
 
 @app.delete("/api/portfolios/{portfolio_id}")
@@ -376,7 +384,7 @@ def portfolio_remove(
     return {
         "ok": True,
         "portfolio_deleted": True,
-        "portfolio": removed,
+        "portfolio": public_portfolio(removed),
         "account_preserved": True,
     }
 
@@ -389,7 +397,7 @@ def portfolio_dashboard(qport_session: str | None = Cookie(default=None)):
     user = require_portfolio_user(qport_session)
     selected = active_portfolio(user)
     result = portfolio(user).dashboard()
-    result["portfolio_context"] = selected
+    result["portfolio_context"] = public_portfolio(selected)
     return result
 
 
