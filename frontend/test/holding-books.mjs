@@ -42,6 +42,14 @@ const rows = [
     quantity: 300,
     metadata: { broker_code: 'DNSE', account_id: 'MARGIN' },
   },
+  {
+    id: 6,
+    event_type: 'RIGHTS_ISSUE',
+    event_date: '2026-03-15',
+    symbol: 'ACB',
+    quantity: 50,
+    metadata: { broker_code: 'DNSE', account_id: 'MARGIN' },
+  },
 ];
 
 const books = deriveHoldingBooks(rows);
@@ -52,7 +60,7 @@ const acbDnse = findHoldingBook(books, 'ACB', 'DNSE', 'MARGIN');
 // 150 dividend shares are allocated 100/50 because the open books were 1000/500.
 assert.equal(fptDnse?.shares, 900, 'DNSE FPT receives its dividend allocation then only DNSE is reduced by the DNSE sell');
 assert.equal(fptTcbs?.shares, 550, 'TCBS FPT receives its dividend allocation and stays untouched by a DNSE sell');
-assert.equal(acbDnse?.shares, 300);
+assert.equal(acbDnse?.shares, 350, 'paid share issuance adds shares to the selected holding book');
 
 const legacyRows = [
   {
