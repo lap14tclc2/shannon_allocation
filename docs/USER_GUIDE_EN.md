@@ -144,6 +144,30 @@ Use an honest acquisition/migration date. Historical Performance starts from the
 dates represented in the ledger; do not invent old dates simply to create a
 longer chart.
 
+### “Current balance” mode (Quick Import)
+
+If you only need QPort to start tracking from **today** without reconstructing full
+history, use **Quick Import by text / CSV → Current balance**. In this mode:
+
+- QPort **records the start date as today** in Vietnam time; you **cannot pick or edit the date**.
+- QPort **does not reconstruct or re-apply** past splits, stock dividends or bonus shares before today.
+- The quantity you enter must be the **current quantity after all past corporate actions**.
+- The price you enter must be the **adjusted cost basis** that matches the current quantity.
+
+Adjusted cost basis formula:
+
+```text
+Before split:  100 sh × 100,000 VND  →  total cost basis 10,000,000 VND
+After 2:1 split: 200 sh × 50,000 VND  →  total cost basis 10,000,000 VND (unchanged)
+```
+
+- Stock dividends / bonus shares increase quantity and lower the average cost accordingly.
+- Cash dividends do **not** change the cost basis you enter — QPort never subtracts old cash dividends from cost basis.
+- Do not enter the unadjusted original purchase price when the quantity is already the post-split quantity.
+- Use **full VND per share** (for example `74025`, not `74`).
+
+Corporate actions that occur **from the start date onward** are still recorded as explicit ledger events.
+
 ### Step 2 — Record available cash
 
 You can do either:

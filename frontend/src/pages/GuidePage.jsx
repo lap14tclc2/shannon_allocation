@@ -51,6 +51,15 @@ export default function GuidePage({ locale = 'vi' }) {
       <div className="guide-section-head"><div><span>03</span><h2>Ghi giao dịch đúng cách</h2></div><p>Chọn loại giao dịch khớp với điều thực sự xảy ra.</p></div>
       <div className="guide-task-list">
         <details open><summary>Tôi đã có cổ phiếu trước khi dùng QPort</summary><p>Dùng <b>Nhập danh mục ban đầu</b>. Nhập số lượng hiện có và giá vốn thực tế. Không cần tạo các lệnh mua giả trong quá khứ.</p></details>
+        <details><summary>Nhập Số dư hiện tại: giá vốn sau điều chỉnh</summary><p>Trong chế độ <b>Số dư hiện tại</b>, QPort ghi ngày bắt đầu là <b>hôm nay</b> (theo giờ Việt Nam) và không tái dựng chia/tách hoặc cổ tức trước ngày này. Vì vậy hãy nhập <b>giá vốn sau điều chỉnh</b>: số lượng đã là số lượng sau chia, và giá vốn bình quân đã phản ánh cổ tức cổ phiếu / cổ phiếu thưởng trong quá khứ.</p><ul>
+          <li>Trước khi tách: 100 CP × 100.000 VND.</li>
+          <li>Sau khi tách 2:1: 200 CP × 50.000 VND.</li>
+          <li>Tổng giá vốn vẫn là 10.000.000 VND.</li>
+          <li>Cổ tức cổ phiếu / cổ phiếu thưởng làm tăng số lượng và giảm giá vốn bình quân tương ứng.</li>
+          <li>Cổ tức tiền mặt <b>không</b> làm thay đổi giá vốn bạn nhập.</li>
+          <li>Không nhập giá mua gốc chưa điều chỉnh nếu số lượng đã là số lượng sau chia.</li>
+          <li>Giá dùng đơn vị <b>VND đầy đủ trên mỗi cổ phiếu</b> (ví dụ 72.000, không phải 72).</li>
+        </ul></details>
         <details><summary>Tôi vừa mua thêm cổ phiếu</summary><p>Dùng <b>Mua thêm cổ phiếu</b>, nhập ngày giao dịch, mã, số lượng và giá mua thực tế. Có thể bổ sung CTCK, tài khoản, phí và thuế.</p></details>
         <details><summary>Tôi vừa bán cổ phiếu</summary><p>Dùng <b>Bán cổ phiếu</b> với ngày, số lượng và giá bán thực tế. QPort sẽ tính lại số lượng còn lại và lãi/lỗ đã chốt.</p></details>
         <details><summary>Tôi nhập sai một giao dịch</summary><p>Trong Lịch sử giao dịch, chọn <b>Sửa</b> hoặc <b>Loại bỏ</b>. QPort yêu cầu lý do để bạn có thể kiểm tra lại lịch sử thay đổi sau này.</p></details>

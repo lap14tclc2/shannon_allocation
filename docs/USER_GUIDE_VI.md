@@ -143,6 +143,30 @@ Giá / CP: 74025
 Nên dùng ngày mua/chuyển dữ liệu trung thực. Lịch sử Hiệu suất bắt đầu từ các ngày
 được đại diện trong ledger; không nên bịa ngày cũ chỉ để có chart dài hơn.
 
+### Chế độ “Số dư hiện tại” (Quick Import)
+
+Nếu bạn chỉ cần QPort bắt đầu theo dõi từ **hôm nay** mà không dựng lại toàn bộ lịch
+sử, dùng **Nhập nhanh bằng text / CSV → Số dư hiện tại**. Ở chế độ này:
+
+- QPort **tự ghi ngày bắt đầu là hôm nay** theo giờ Việt Nam; bạn **không thể chọn hoặc sửa ngày**.
+- QPort **không tái dựng hoặc áp dụng lại** chia/tách, cổ tức cổ phiếu hay cổ phiếu thưởng trước ngày hôm nay.
+- Số lượng bạn nhập phải là **số lượng hiện tại sau mọi corporate action**.
+- Giá bạn nhập phải là **giá vốn sau điều chỉnh** (adjusted cost basis) tương ứng với số lượng hiện tại.
+
+Công thức giá vốn sau điều chỉnh:
+
+```text
+Trước tách:  100 CP × 100.000 VND  →  tổng giá vốn 10.000.000 VND
+Sau tách 2:1: 200 CP × 50.000 VND   →  tổng giá vốn 10.000.000 VND (không đổi)
+```
+
+- Cổ tức cổ phiếu / cổ phiếu thưởng làm tăng số lượng và giảm giá vốn bình quân tương ứng.
+- Cổ tức tiền mặt **không** làm thay đổi giá vốn bạn nhập — QPort không tự trừ cổ tức tiền mặt cũ khỏi giá vốn.
+- Không nhập giá mua gốc chưa điều chỉnh nếu số lượng đã là số lượng sau chia/tách.
+- Giá dùng đơn vị **VND đầy đủ trên mỗi cổ phiếu** (ví dụ `74025`, không phải `74`).
+
+Corporate action phát sinh **từ ngày bắt đầu trở đi** vẫn được ghi nhận bằng sự kiện ledger rõ ràng.
+
 ### Bước 2 — Ghi tiền mặt khả dụng
 
 Có hai cách:

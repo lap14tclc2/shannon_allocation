@@ -4,7 +4,7 @@ Các yêu cầu viết hoặc sửa code được quản lý bằng atomic task 
 
 | Task | Trạng thái | Ưu tiên | Chủ đề |
 |---|---|---:|---|
-| [TASK-20260825-001](TASK-20260825-001-quick-import-mobile-and-price-policy.md) | ready | P1 | Responsive theme selector và chính sách Quick Import |
+| [TASK-20260825-001](TASK-20260825-001-quick-import-mobile-and-price-policy.md) | in-progress | P1 | Responsive theme selector và chính sách Quick Import |
 
 ## Trạng thái
 

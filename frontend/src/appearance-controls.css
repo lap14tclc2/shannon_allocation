@@ -348,7 +348,7 @@
   .header-account-sheet .appearance-toggle {
     width: auto;
     min-width: 86px;
-    min-height: 42px;
+    min-height: 44px;
     grid-template-columns: auto auto;
     padding: 4px 8px;
   }
@@ -357,12 +357,22 @@
     display: grid;
   }
 
+  .appearance-close {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+
   .appearance-popover {
     top: auto;
     right: 12px;
     bottom: calc(72px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
+    max-width: calc(100vw - 16px);
     max-height: calc(100vh - 96px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .theme-option {

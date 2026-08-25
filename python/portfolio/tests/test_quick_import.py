@@ -88,3 +88,56 @@ def test_idempotency_key_cannot_be_reused_for_other_payload(tmp_path):
         ]})
     assert error.value.code == "IDEMPOTENCY_KEY_REUSED"
     assert len(svc.transactions()) == 1
+
+
+def test_current_import_ignores_client_sent_date_and_uses_system_today(tmp_path):
+    svc = service(tmp_path)
+    svc.import_events({
+        "mode": "CURRENT",
+        "rows": [
+            # A malicious or stale client could send any event_date; the server must override it.
+            {"event_type": "POSITION_IMPORT", "event_date": "2020-01-01", "symbol": "FPT", "quantity": 100, "price": 70_000},
+        ],
+    })
+    assert len(svc.transactions()) == 1
+    assert svc.transactions()[0]["event_date"] == svc.today_vn()
+    assert svc.transactions()[0]["event_date"] != "2020-01-01"
+
+
+def test_current_import_requires_adjusted_cost_basis_price(tmp_path):
+    svc = service(tmp_path)
+    for bad_price in (None, 0, -1, float("nan"), 72):
+        rows = [{"event_type": "POSITION_IMPORT", "symbol": "FPT", "quantity": 100, "price": bad_price}]
+        with pytest.raises(InputValidationError) as error:
+            svc.preview_import({"mode": "CURRENT", "rows": rows})
+        assert error.value.code in ("REQUIRED_POSITIVE", "INVALID_NUMBER", "PRICE_UNIT_SUSPECT", "VALUE_TOO_SMALL")
+    assert svc.transactions() == []
+
+
+def test_opening_position_is_not_double_adjusted_by_past_corporate_actions(tmp_path):
+    svc = service(tmp_path)
+    svc.import_events({"mode": "CURRENT", "rows": [
+        # Quantity and adjusted cost basis are the CURRENT post-corporate-action state.
+        {"event_type": "POSITION_IMPORT", "symbol": "FPT", "quantity": 200, "price": 50_000},
+    ]})
+    state = svc.current_state()
+    position = state.positions["FPT"]
+    # QPort must not re-apply past splits/stock dividends on top of the opening position.
+    assert position.shares == 200
+    assert position.cost_basis == 200 * 50_000
+    assert position.average_cost == 50_000
+
+
+def test_corporate_action_after_start_date_still_updates_ledger_state(tmp_path):
+    svc = service(tmp_path)
+    svc.import_events({"mode": "CURRENT", "rows": [
+        {"event_type": "POSITION_IMPORT", "symbol": "FPT", "quantity": 100, "price": 50_000},
+    ]})
+    # A split AFTER the start date is a normal, explicit ledger event.
+    svc.append_event({"event_type": "SPLIT", "symbol": "FPT", "ratio": 2})
+    state = svc.current_state()
+    position = state.positions["FPT"]
+    assert position.shares == 200
+    # The split re-bases quantity but leaves total cost basis unchanged.
+    assert position.cost_basis == 100 * 50_000
+    assert position.average_cost == 25_000

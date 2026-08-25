@@ -82,7 +82,7 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
     <div className="quick-import-body">
       <div className="import-mode-switch" role="radiogroup" aria-label="Chế độ nhập dữ liệu">
         <button type="button" role="radio" aria-checked={mode === 'CURRENT'} className={mode === 'CURRENT' ? 'active' : ''} onClick={() => switchMode('CURRENT')}>
-          <b>Số dư hiện tại</b><span>Bắt đầu theo dõi từ hôm nay, không dựng lệnh mua giả.</span>
+          <b>Số dư hiện tại</b><span>Bắt đầu theo dõi từ hôm nay, không dựng lệnh mua giả. Nhập giá vốn sau điều chỉnh.</span>
         </button>
         <button type="button" role="radio" aria-checked={mode === 'HISTORICAL'} className={mode === 'HISTORICAL' ? 'active' : ''} onClick={() => switchMode('HISTORICAL')}>
           <b>Lịch sử đầy đủ</b><span>Giữ ngày và toàn bộ loại giao dịch để tính lại hiệu suất.</span>
@@ -90,18 +90,40 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
       </div>
 
       <div className="quick-import-guidance" id="quick-import-guidance">
-        <b>{mode === 'CURRENT' ? 'Cột: Mã, Số lượng, Giá vốn, CTCK, Tài khoản' : 'CSV có tiêu đề; hỗ trợ toàn bộ loại giao dịch'}</b>
+        <b>{mode === 'CURRENT' ? 'Cột: Mã, Số lượng, Giá vốn sau điều chỉnh, CTCK, Tài khoản' : 'CSV có tiêu đề; hỗ trợ toàn bộ loại giao dịch'}</b>
         <span>{mode === 'CURRENT'
-          ? 'Có thể thêm CASH_DEPOSIT bằng CSV có tiêu đề. Ngày được khóa về hôm nay.'
+          ? 'Có thể thêm CASH_DEPOSIT bằng CSV có tiêu đề. Ngày bắt đầu được hệ thống tự động ghi là hôm nay.'
           : IMPORT_EVENT_TYPES.map(type => EVENT_LABELS[type]).join(' · ')}</span>
       </div>
+
+      {mode === 'CURRENT' && <div className="quick-import-date-note">
+        <span className="eyebrow">Ngày bắt đầu</span>
+        <b>{today || 'Hôm nay (do hệ thống ghi)'}</b>
+        <small>Ngày bắt đầu được hệ thống tự động ghi là hôm nay theo giờ Việt Nam và không thể chọn hoặc sửa.</small>
+      </div>}
+
+      {mode === 'CURRENT' && <div className="cost-basis-guidance" id="quick-import-cost-guidance">
+        <p><b>Giá vốn sau điều chỉnh (VND/cp):</b> nhập giá vốn hiện tại sau khi đã điều chỉnh cho các lần chia/tách, cổ tức bằng cổ phiếu và cổ phiếu thưởng trước hôm nay. Không tự trừ cổ tức tiền mặt khỏi giá vốn. QPort bắt đầu theo dõi từ hôm nay và không tái dựng các sự kiện trước ngày này.</p>
+        <details className="cost-basis-guide">
+          <summary>Ví dụ và cách tính giá vốn sau điều chỉnh</summary>
+          <ul>
+            <li>Trước khi tách: <b>100 CP × 100.000 VND</b>.</li>
+            <li>Sau khi tách 2:1: <b>200 CP × 50.000 VND</b>.</li>
+            <li>Tổng giá vốn vẫn là <b>10.000.000 VND</b>.</li>
+            <li>Cổ tức cổ phiếu / cổ phiếu thưởng làm tăng số lượng và giảm giá vốn bình quân tương ứng.</li>
+            <li>Cổ tức tiền mặt không làm thay đổi giá vốn bạn nhập.</li>
+            <li>Không nhập giá mua gốc chưa điều chỉnh nếu số lượng đã là số lượng sau chia/tách.</li>
+            <li>Giá dùng đơn vị <b>VND đầy đủ trên mỗi cổ phiếu</b> (ví dụ 72.000, không phải 72).</li>
+          </ul>
+        </details>
+      </div>}
 
       <label>Dữ liệu cần nhập
         <textarea
           className="quick-import-textarea"
           value={text}
           placeholder={importTemplate(mode)}
-          aria-describedby="quick-import-guidance"
+          aria-describedby={mode === 'CURRENT' ? 'quick-import-guidance quick-import-cost-guidance' : 'quick-import-guidance'}
           onChange={event => { setText(event.target.value); setPreview(null); setMessage(''); }}
           spellCheck="false"
         />
