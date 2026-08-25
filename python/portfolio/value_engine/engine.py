@@ -250,7 +250,7 @@ class ValuationEngine:
                 "eps": Decimal("6850"),
                 "bvps": Decimal("24500"),
                 "roe": Decimal("27.8"),
-                "dividend_yield": Decimal("3.2"),
+                "dividend_yield": Decimal("2.8"),
                 "market_pe": Decimal("14.5"),
                 "market_pb": Decimal("1.8"),
                 "market_roe": Decimal("13.5"),
