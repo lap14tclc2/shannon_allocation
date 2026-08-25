@@ -123,14 +123,14 @@ export default function SettingsPage({ dashboard = {}, locale = 'vi' }) {
 
   async function removePortfolio() {
     const confirmation = window.prompt(
-      'Thao tác này xóa vĩnh viễn toàn bộ giao dịch, lịch sử, cổ tức, snapshot và dữ liệu danh mục nhưng giữ nguyên account.\n\nNhập chính xác: XOA DANH MUC',
+      'Thao tác này chỉ xóa dữ liệu của danh mục đang được chọn: giao dịch, holdings, cash, cổ tức, snapshot và analytics. Các danh mục khác và account vẫn được giữ nguyên.\n\nNhập chính xác: XOA DANH MUC',
       '',
     );
     if (confirmation !== 'XOA DANH MUC') return;
     setDeleting(true);
     try {
       await deletePortfolio(confirmation);
-      window.alert('Đã xóa portfolio. Account của bạn vẫn được giữ nguyên.');
+      window.alert('Đã xóa dữ liệu của danh mục đang chọn. Các danh mục khác vẫn được giữ nguyên.');
       window.location.replace('/');
     } catch (error) {
       window.alert(`Không thể xóa portfolio: ${error.message}`);
@@ -261,10 +261,10 @@ export default function SettingsPage({ dashboard = {}, locale = 'vi' }) {
       <section className="card settings-card settings-danger-card">
         <div className="settings-danger-copy">
           <span className="settings-card-kicker">Vùng nguy hiểm</span>
-          <h2>Xóa portfolio</h2>
-          <p>Xóa toàn bộ dữ liệu danh mục, giao dịch, snapshot và dữ liệu liên quan. Account đăng nhập của bạn vẫn được giữ lại.</p>
+          <h2>Xóa dữ liệu danh mục đang chọn</h2>
+          <p>Làm trống holdings, cash, giao dịch, snapshot và analytics của danh mục hiện tại. Tên danh mục, account và các danh mục khác vẫn được giữ lại.</p>
         </div>
-        <button type="button" className="btn-danger" onClick={removePortfolio} disabled={deleting}>{deleting ? 'Đang xóa…' : 'Xóa portfolio'}</button>
+        <button type="button" className="btn-danger" onClick={removePortfolio} disabled={deleting}>{deleting ? 'Đang xóa…' : 'Làm trống danh mục'}</button>
       </section>
     </main>
   </div>;

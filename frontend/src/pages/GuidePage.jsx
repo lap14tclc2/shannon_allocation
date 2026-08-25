@@ -29,7 +29,7 @@ export default function GuidePage({ locale = 'vi' }) {
     <section className="guide-section">
       <div className="guide-section-head"><div><span>01</span><h2>Thiết lập lần đầu</h2></div><p>Nếu bạn đã có cổ phiếu ở CTCK, hãy bắt đầu từ đúng trạng thái hiện tại.</p></div>
       <div className="guide-start-grid">
-        <Step number="1" title="Đăng nhập">Dùng tên tài khoản của bạn để mở danh mục. Nếu chưa có, QPort sẽ cho phép tạo danh mục mới.</Step>
+        <Step number="1" title="Chọn danh mục">Sau khi đăng nhập, dùng bộ chuyển danh mục trên thanh điều hướng. Dữ liệu cũ nằm trong “Danh mục mặc định”; có thể tạo thêm không gian độc lập tại trang Danh mục.</Step>
         <Step number="2" title="Nhập cổ phiếu đang sở hữu">Vào Giao dịch → Nhập danh mục ban đầu. Với mỗi mã, nhập đúng số lượng và giá vốn đang theo dõi tại CTCK.</Step>
         <Step number="3" title="Nhập tiền mặt nếu muốn theo dõi">Nếu tài khoản còn tiền mặt và bạn muốn QPort tính vào tổng tài sản, hãy ghi một giao dịch Nạp tiền tương ứng.</Step>
         <Step number="4" title="Đối chiếu với CTCK">Quay lại Danh mục và kiểm tra số lượng, giá vốn, giá trị hiện tại, lãi/lỗ và tiền mặt. Chỉ dùng phần phân tích sau khi các số này đã đúng.</Step>
@@ -39,6 +39,7 @@ export default function GuidePage({ locale = 'vi' }) {
     <section className="guide-section">
       <div className="guide-section-head"><div><span>02</span><h2>Mỗi trang dùng để làm gì?</h2></div><p>Chọn trang theo câu hỏi bạn muốn trả lời.</p></div>
       <div className="guide-page-grid">
+        <PageCard href="/portfolios" title="Các danh mục" question="Tôi đang quản lý những tài sản nào?">Tạo, đổi tên và chuyển nhanh giữa các danh mục độc lập theo mục tiêu hoặc tài khoản.</PageCard>
         <PageCard href="/" title="Danh mục" question="Hiện tại tôi đang có gì?">Xem tổng tài sản, tiền mặt, lãi/lỗ, từng mã cổ phiếu và những điểm đáng chú ý.</PageCard>
         <PageCard href="/transactions" title="Giao dịch" question="Điều gì đã làm danh mục thay đổi?">Thêm mua/bán, nạp/rút tiền, nhập danh mục ban đầu và sửa dữ liệu nếu nhập nhầm.</PageCard>
         <PageCard href="/performance" title="Hiệu quả" question="Danh mục của tôi đã tăng trưởng thế nào?">Xem tổng lãi/lỗ, lợi suất từ đầu năm, mức giảm từ đỉnh và biểu đồ giá trị danh mục.</PageCard>
@@ -50,9 +51,9 @@ export default function GuidePage({ locale = 'vi' }) {
       <div className="guide-section-head"><div><span>03</span><h2>Ghi giao dịch đúng cách</h2></div><p>Chọn loại giao dịch khớp với điều thực sự xảy ra.</p></div>
       <div className="guide-task-list">
         <details open><summary>Tôi đã có cổ phiếu trước khi dùng QPort</summary><p>Dùng <b>Nhập danh mục ban đầu</b>. Nhập số lượng hiện có và giá vốn thực tế. Không cần tạo các lệnh mua giả trong quá khứ.</p></details>
-        <details><summary>Tôi vừa mua thêm cổ phiếu</summary><p>Dùng <b>Mua cổ phiếu</b>, nhập ngày giao dịch, mã, số lượng và giá mua thực tế. Có thể bổ sung CTCK, tài khoản, phí và thuế.</p></details>
+        <details><summary>Tôi vừa mua thêm cổ phiếu</summary><p>Dùng <b>Mua thêm cổ phiếu</b>, nhập ngày giao dịch, mã, số lượng và giá mua thực tế. Có thể bổ sung CTCK, tài khoản, phí và thuế.</p></details>
         <details><summary>Tôi vừa bán cổ phiếu</summary><p>Dùng <b>Bán cổ phiếu</b> với ngày, số lượng và giá bán thực tế. QPort sẽ tính lại số lượng còn lại và lãi/lỗ đã chốt.</p></details>
-        <details><summary>Tôi nhập sai một giao dịch</summary><p>Trong Lịch sử giao dịch, chọn <b>Sửa</b> hoặc <b>Xóa</b>. QPort yêu cầu lý do để bạn có thể kiểm tra lại lịch sử thay đổi sau này.</p></details>
+        <details><summary>Tôi nhập sai một giao dịch</summary><p>Trong Lịch sử giao dịch, chọn <b>Sửa</b> hoặc <b>Loại bỏ</b>. QPort yêu cầu lý do để bạn có thể kiểm tra lại lịch sử thay đổi sau này.</p></details>
         <details><summary>Tôi nhận cổ tức</summary><p>QPort có thể lấy thông tin cổ tức từ nguồn dữ liệu và ghi nhận khoản đã nhận khi có đủ thông tin. Cổ tức tiền mặt được tính riêng phần trước thuế, thuế khấu trừ và số tiền thực nhận.</p></details>
       </div>
     </section>

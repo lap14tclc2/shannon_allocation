@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import DividendTree from '../components/DividendTree.jsx';
 import HoldingSourceTree from '../components/HoldingSourceTree.jsx';
 import { formatMoney } from '../lib/format.js';
 import { deriveHoldingBooks } from '../lib/holdingBooks.js';
-import { getDividendHistories, listPortfolioTransactions, syncPortfolio } from '../lib/api.js';
+import { getDividendHistories, listPortfolioTransactions } from '../lib/api.js';
+import { refreshDashboard, selectRefreshStatus } from '../lib/store.js';
 
 function pct(value, digits = 2) {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
@@ -42,9 +44,9 @@ function eventYear(event) {
   return Number.isInteger(year) && year >= 1900 ? year : null;
 }
 
-export default function VietnamesePortfolioDashboard({ dashboard: initialDashboard = {}, locale = 'vi' }) {
-  const [dashboard] = useState(initialDashboard);
-  const [syncing, setSyncing] = useState(false);
+export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 'vi', dataLoading = false }) {
+  const dispatch = useDispatch();
+  const syncing = useSelector(selectRefreshStatus) === 'loading';
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
   const [dividends, setDividends] = useState([]);
@@ -54,6 +56,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const [holdingSourceError, setHoldingSourceError] = useState('');
 
   const portfolio = dashboard.portfolio || {};
+  const portfolioContext = dashboard.portfolio_context || {};
   const positions = portfolio.positions || [];
   const performance = dashboard.performance_summary || {};
   const market = dashboard.market_data || {};
@@ -107,14 +110,12 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const dividendErrors = useMemo(() => dividends.filter(row => row.error), [dividends]);
 
   async function sync() {
-    setSyncing(true);
     setMessage('');
     try {
-      await syncPortfolio();
-      window.location.reload();
+      await dispatch(refreshDashboard()).unwrap();
+      setMessage('Dữ liệu danh mục đã được cập nhật.');
     } catch (error) {
       setMessage(`Không thể cập nhật dữ liệu: ${error.message}`);
-      setSyncing(false);
     }
   }
 
@@ -153,7 +154,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions.map(row => row.symbol).join('|')]);
 
-  const hasCompleteValuation = positions.every(
+  const marketStatus = String(market.status || '').toUpperCase();
+  const marketReady = !marketStatus || ['VALID', 'READY', 'OK'].includes(marketStatus);
+  const hasCompleteValuation = !dataLoading && marketReady && positions.every(
     position => position.price != null && Number.isFinite(Number(position.price)),
   );
   const hasTotalPnl = hasCompleteValuation
@@ -169,7 +172,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
 
     <header className="portfolio-hero investor-hero">
       <div className="hero-primary">
-        <div className="eyebrow">Tổng tài sản</div>
+        <div className="eyebrow">{portfolioContext.name || 'Danh mục'} · Tổng tài sản</div>
         <h1>{money(portfolio.nav, locale)}</h1>
         <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
           <strong>{signedMoney(totalPnl, locale)}</strong>
@@ -179,7 +182,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         </div>
         <div className="hero-meta">
           <span>{positions.length} mã cổ phiếu</span>
-          <span>{market.market_date ? `Dữ liệu giá đến ${market.market_date}` : 'Dữ liệu giá: -'}</span>
+          <span>{dataLoading ? 'Đang tải dữ liệu giá…' : market.market_date ? `Dữ liệu giá đến ${market.market_date}` : 'Dữ liệu giá: chưa sẵn sàng'}</span>
         </div>
       </div>
       <div className="hero-actions">
@@ -217,7 +220,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         {positions.length > 6 && <input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu…" aria-label="Tìm mã cổ phiếu" />}
       </div>
 
-      {positions.length === 0 ? <div className="empty-state">
+      {dataLoading && positions.length === 0 ? <div className="dashboard-loading-skeleton" role="status" aria-label="Đang tải danh sách cổ phiếu" /> : positions.length === 0 ? <div className="empty-state">
         <h3>Chưa có cổ phiếu trong danh mục</h3>
         <p>Hãy nhập danh mục hiện có hoặc ghi giao dịch mua đầu tiên.</p>
         <a className="btn-primary" href="/transactions">Nhập danh mục ban đầu</a>

@@ -1,0 +1,102 @@
+.spa-data-banner {
+  position: fixed;
+  z-index: 1400;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 680px);
+  padding: 0.7rem 1rem;
+  border: 1px solid rgba(198, 166, 100, 0.34);
+  border-radius: 999px;
+  background: rgba(20, 22, 19, 0.94);
+  color: var(--text, #f5f2e9);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.spa-data-error {
+  border-color: rgba(255, 112, 112, 0.42);
+  color: #ffd0d0;
+}
+
+.spa-route-loading {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: var(--page-bg, #090a09);
+}
+
+.spa-route-loading-card {
+  width: min(100%, 560px);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.2rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 20px;
+  background: var(--card-bg, #11130f);
+}
+
+.spa-route-loading-card h1 {
+  margin: 0.15rem 0 0.25rem;
+  font-size: clamp(1.2rem, 4vw, 1.6rem);
+}
+
+.spa-route-loading-card p {
+  margin: 0;
+}
+
+.spa-loading-spinner,
+.dashboard-loading-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.spa-loading-spinner {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(198, 166, 100, 0.18);
+  border-top-color: #c6a664;
+  border-radius: 50%;
+  animation: qport-spin 0.8s linear infinite;
+}
+
+.dashboard-loading-skeleton {
+  min-height: 150px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.085), rgba(255,255,255,.035));
+  background-size: 220% 100%;
+  animation: qport-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes qport-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes qport-shimmer {
+  to { background-position: -220% 0; }
+}
+
+@media (max-width: 720px) {
+  .spa-data-banner {
+    top: max(0.5rem, env(safe-area-inset-top));
+    width: calc(100vw - 1rem);
+    max-width: none;
+    border-radius: 14px;
+  }
+
+  .spa-route-loading {
+    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spa-loading-spinner,
+  .dashboard-loading-skeleton {
+    animation: none;
+  }
+}
