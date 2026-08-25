@@ -195,7 +195,7 @@ def _enforce_edit_policy(current: LedgerEvent, replacement: LedgerEvent) -> None
         ("event_date", current.event_date, replacement.event_date),
         ("symbol", current.symbol, replacement.symbol),
         ("account_id", current.account_id, replacement.account_id),
-        ("fee", float(current.fee or 0), float(replacement.fee or 0)),
+        ("fee", float(current.fee or 0), float(replacement.fee or 0) if current.event_type == replacement.event_type else float(current.fee or 0)),
         ("amount", float(current.amount or 0), float(replacement.amount or 0)),
         ("ratio", float(current.ratio or 0), float(replacement.ratio or 0)),
         ("note", current.note or "", replacement.note or ""),
