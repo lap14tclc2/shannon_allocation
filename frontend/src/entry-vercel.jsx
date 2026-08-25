@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider, useDispatch, useSelector } from 'react-redux';
 import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
@@ -14,21 +15,18 @@ import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
-import {
-  getActivityLog,
-  getAdminUserPortfolio,
-  getCurrentUser,
-  getPortfolioDashboard,
-  getPortfolioHoldingSymbols,
-  getPortfolioOperations,
-  getPortfolioPerformance,
-  getPortfolioRisk,
-  listPortfolioSnapshots,
-  listPortfolios,
-  listPortfolioTransactionAudit,
-  listPortfolioTransactions,
-} from './lib/api.js';
 import { applyStoredAppearance } from './lib/appearance.js';
+import { NAVIGATION_EVENT, navigate } from './lib/navigation.js';
+import {
+  bootstrapApp,
+  loadRoute,
+  selectBootError,
+  selectBootStatus,
+  selectRegistry,
+  selectRouteState,
+  selectUser,
+  store,
+} from './lib/store.js';
 import './styles.css';
 import './buyhold.css';
 import './responsive.css';
@@ -46,144 +44,171 @@ import './guide-friendly.css';
 import './dividend-history.css';
 import './settings-friendly.css';
 import './portfolio-manager.css';
+import './spa-state.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 
 const APP_LOCALE = 'vi';
 
+const ROUTES = {
+  '/': PortfolioPage,
+  '/portfolios': PortfoliosPage,
+  '/transactions': TransactionsPage,
+  '/performance': PerformancePage,
+  '/risk': RiskPage,
+  '/dividends': DividendHistoryPage,
+  '/snapshots': SnapshotsPage,
+  '/operations': OperationsPage,
+  '/logs': LogsPage,
+  '/settings': SettingsPage,
+  '/guide': GuidePage,
+  '/admin': AdminPage,
+};
+
 applyStoredAppearance();
 document.body.classList.remove('mobile-sheet-open');
 document.documentElement.lang = APP_LOCALE;
 
-const root = createRoot(document.getElementById('root'));
-
-function todayVn() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+function currentPathname() {
+  return window.location.pathname.replace(/\/+$/, '') || '/';
 }
 
-function LoadingScreen() {
-  return <main className="auth-shell vercel-boot-shell" aria-busy="true">
-    <section className="auth-card vercel-boot-card">
-      <div className="eyebrow">QPort</div>
-      <h1>Đang tải dữ liệu…</h1>
-      <p className="muted">Các giá trị thực sẽ hiển thị sau khi dữ liệu tải xong.</p>
+function LoadingScreen({ compact = false }) {
+  return <main className={compact ? 'spa-route-loading' : 'auth-shell vercel-boot-shell'} aria-busy="true">
+    <section className={compact ? 'spa-route-loading-card' : 'auth-card vercel-boot-card'}>
+      <div className="spa-loading-spinner" aria-hidden="true" />
+      <div>
+        <div className="eyebrow">QPort</div>
+        <h1>Äang táº£i dá»¯ liá»uâ¦</h1>
+        <p className="muted">Trang váº«n an toÃ n; cÃ¡c giÃ¡ trá» thá»±c chá» hiá»n thá» sau khi dá»¯ liá»u sáºµn sÃ ng.</p>
+      </div>
     </section>
   </main>;
 }
 
-function ErrorScreen({ error }) {
+function ErrorScreen({ error, onRetry }) {
   return <main className="auth-shell vercel-boot-shell">
     <section className="auth-card vercel-boot-card">
       <div className="eyebrow">QPort</div>
-      <h1>Không thể tải dữ liệu</h1>
-      <p className="error">{error?.message || 'Ứng dụng hiện không thể tải dữ liệu. Vui lòng thử lại.'}</p>
-      <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Thử lại</button>
+      <h1>KhÃ´ng thá» táº£i dá»¯ liá»u</h1>
+      <p className="error">{error || 'á»¨ng dá»¥ng hiá»n khÃ´ng thá» táº£i dá»¯ liá»u. Vui lÃ²ng thá»­ láº¡i.'}</p>
+      <button type="button" className="btn-primary" onClick={onRetry}>Thá»­ láº¡i</button>
     </section>
   </main>;
 }
 
-async function loadPage(pathname, locale) {
+function resolveRoute(pathname) {
+  const adminUserMatch = pathname.match(/^\/admin\/users\/\d+$/);
+  if (adminUserMatch) return AdminUserPortfolioPage;
+  return ROUTES[pathname] || null;
+}
+
+function App() {
+  const dispatch = useDispatch();
+  const [pathname, setPathname] = useState(currentPathname);
+  const bootStatus = useSelector(selectBootStatus);
+  const bootError = useSelector(selectBootError);
+  const user = useSelector(selectUser);
+  const registry = useSelector(selectRegistry);
+  const route = useSelector(state => selectRouteState(state, pathname));
+  const activePortfolioId = registry?.active_portfolio_id || 0;
+  const Page = useMemo(() => resolveRoute(pathname), [pathname]);
+
+  useEffect(() => {
+    dispatch(bootstrapApp());
+  }, [dispatch]);
+
+  useEffect(() => {
+    const updatePath = () => setPathname(currentPathname());
+    const handleDocumentClick = event => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target.closest?.('a[href]');
+      if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
+      const target = new URL(anchor.href, window.location.origin);
+      if (target.origin !== window.location.origin) return;
+      event.preventDefault();
+      navigate(`${target.pathname}${target.search}${target.hash}`);
+    };
+    window.addEventListener('popstate', updatePath);
+    window.addEventListener(NAVIGATION_EVENT, updatePath);
+    document.addEventListener('click', handleDocumentClick);
+    return () => {
+      window.removeEventListener('popstate', updatePath);
+      window.removeEventListener(NAVIGATION_EVENT, updatePath);
+      document.removeEventListener('click', handleDocumentClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (bootStatus !== 'ready') return;
+    if (pathname === '/login') {
+      if (user) navigate(user.role === 'ADMIN' ? '/admin' : '/', { replace: true });
+      return;
+    }
+    if (!user) {
+      navigate('/login', { replace: true });
+      return;
+    }
+    const adminPath = pathname === '/admin' || /^\/admin\/users\/\d+$/.test(pathname);
+    if (user.role === 'ADMIN' && !adminPath) {
+      navigate('/admin', { replace: true });
+      return;
+    }
+    if (user.role !== 'ADMIN' && adminPath) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (!resolveRoute(pathname)) {
+      navigate(user.role === 'ADMIN' ? '/admin' : '/', { replace: true });
+      return;
+    }
+    dispatch(loadRoute({ pathname }));
+  }, [activePortfolioId, bootStatus, dispatch, pathname, user]);
+
+  if (bootStatus === 'idle' || bootStatus === 'loading') return <LoadingScreen />;
+
   if (pathname === '/login') {
-    try {
-      const me = await getCurrentUser();
-      if (me?.user) {
-        window.location.replace(me.user.role === 'ADMIN' ? '/admin' : '/');
-        return null;
-      }
-    } catch {
-      // Chưa đăng nhập là trạng thái bình thường của trang đăng nhập.
-    }
-    return { Page: AuthPage, props: { locale } };
+    if (user) return <LoadingScreen />;
+    return <AuthPage locale={APP_LOCALE} />;
   }
 
-  const me = await getCurrentUser();
-  const user = me?.user || null;
-  if (!user) {
-    window.location.replace('/login');
-    return null;
+  if (bootStatus === 'failed') {
+    return <ErrorScreen error={bootError} onRetry={() => dispatch(bootstrapApp())} />;
   }
 
-  const isAdminPath = pathname === '/admin' || /^\/admin\/users\/\d+$/.test(pathname);
-  if (user.role === 'ADMIN' && !isAdminPath) {
-    window.location.replace('/admin');
-    return null;
-  }
-  if (user.role !== 'ADMIN' && isAdminPath) {
-    window.location.replace('/');
-    return null;
+  if (!user || !Page) return <LoadingScreen />;
+
+  const common = { locale: APP_LOCALE, currentUser: user };
+  const data = route.data || {};
+  const isLoading = route.status === 'idle' || route.status === 'loading';
+  const hasCachedData = Boolean(route.data);
+
+  if (pathname === '/') {
+    return <>
+      {isLoading && hasCachedData && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
+      {route.status === 'failed' && hasCachedData && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
+      <Page
+        {...common}
+        {...data}
+        dashboard={data.dashboard || {}}
+        dataLoading={isLoading}
+        dataUpdatedAt={route.updatedAt}
+      />
+    </>;
   }
 
-  const common = { locale, currentUser: user };
-
-  const adminUserMatch = pathname.match(/^\/admin\/users\/(\d+)$/);
-  if (adminUserMatch) {
-    const payload = await getAdminUserPortfolio(Number(adminUserMatch[1]));
-    return { Page: AdminUserPortfolioPage, props: { ...common, payload } };
+  if (isLoading && !hasCachedData) return <LoadingScreen compact />;
+  if (route.status === 'failed' && !hasCachedData) {
+    return <ErrorScreen error={route.error} onRetry={() => dispatch(loadRoute({ pathname }))} />;
   }
 
-  switch (pathname) {
-    case '/': {
-      const dashboard = await getPortfolioDashboard();
-      return { Page: PortfolioPage, props: { ...common, dashboard } };
-    }
-    case '/portfolios':
-      return { Page: PortfoliosPage, props: { ...common, registry: await listPortfolios() } };
-    case '/transactions': {
-      const [transactions, corrections] = await Promise.all([
-        listPortfolioTransactions(),
-        listPortfolioTransactionAudit(),
-      ]);
-      return {
-        Page: TransactionsPage,
-        props: { ...common, transactions, corrections, today: todayVn() },
-      };
-    }
-    case '/performance':
-      return { Page: PerformancePage, props: { ...common, performance: await getPortfolioPerformance() } };
-    case '/risk':
-      return { Page: RiskPage, props: { ...common, risk: await getPortfolioRisk() } };
-    case '/dividends':
-      return { Page: DividendHistoryPage, props: { ...common, symbols: await getPortfolioHoldingSymbols() } };
-    case '/snapshots':
-      return { Page: SnapshotsPage, props: { ...common, snapshots: await listPortfolioSnapshots() } };
-    case '/operations':
-      return {
-        Page: OperationsPage,
-        props: { ...common, operations: await getPortfolioOperations(), today: todayVn() },
-      };
-    case '/logs':
-      return { Page: LogsPage, props: { ...common, activity: await getActivityLog() } };
-    case '/settings':
-      return { Page: SettingsPage, props: { ...common, dashboard: await getPortfolioDashboard() } };
-    case '/guide':
-      return { Page: GuidePage, props: common };
-    case '/admin':
-      return { Page: AdminPage, props: common };
-    default:
-      window.history.replaceState({}, '', user.role === 'ADMIN' ? '/admin' : '/');
-      return loadPage(user.role === 'ADMIN' ? '/admin' : '/', locale);
-  }
+  return <>
+    {isLoading && <div className="spa-data-banner" role="status">Äang cáº­p nháº­t dá»¯ liá»u má»i nháº¥tâ¦</div>}
+    {route.status === 'failed' && <div className="spa-data-banner spa-data-error" role="alert">{route.error} Dá»¯ liá»u lÆ°u gáº§n nháº¥t váº«n ÄÆ°á»£c giá»¯ láº¡i.</div>}
+    <Page {...common} {...data} />
+  </>;
 }
 
-async function boot() {
-  root.render(<LoadingScreen />);
-  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-  const locale = APP_LOCALE;
-  try {
-    const loaded = await loadPage(pathname, locale);
-    if (!loaded) return;
-    const { Page, props } = loaded;
-    root.render(<Page {...props} />);
-  } catch (error) {
-    root.render(<ErrorScreen error={error} />);
-  }
-}
-
-boot();
+const root = createRoot(document.getElementById('root'));
+root.render(<Provider store={store}><App /></Provider>);
