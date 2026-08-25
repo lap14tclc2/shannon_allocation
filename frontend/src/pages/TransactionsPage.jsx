@@ -6,16 +6,17 @@ import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
 import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
 
-const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'CASH_WITHDRAW', 'SPLIT', 'FEE'];
+const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'RIGHTS_ISSUE', 'CASH_WITHDRAW', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
-const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'SELL']);
+const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL']);
 const TYPE_LABELS = {
   POSITION_IMPORT: 'Nhập danh mục ban đầu',
   CASH_DEPOSIT: 'Nạp tiền',
-  BUY: 'Mua cổ phiếu',
+  BUY: 'Mua thêm cổ phiếu',
   SELL: 'Bán cổ phiếu',
+  RIGHTS_ISSUE: 'Phát hành thêm',
   CASH_WITHDRAW: 'Rút tiền',
-  SPLIT: 'Tách / gộp cổ phiếu',
+  SPLIT: 'Tách / gộp cổ phiếu (giao dịch cũ)',
   FEE: 'Ghi nhận phí',
   CASH_DIVIDEND: 'Cổ tức tiền mặt',
   STOCK_DIVIDEND: 'Cổ tức cổ phiếu',
@@ -44,15 +45,17 @@ function brokerName(code) {
   return BROKERS.find(item => item.code === code)?.name || code || 'Chưa gán';
 }
 
-function sellIntentFromLocation() {
-  if (typeof window === 'undefined') return { active: false, locked: false };
+function tradeIntentFromLocation() {
+  if (typeof window === 'undefined') return { active: false, locked: false, type: 'POSITION_IMPORT' };
   const params = new URLSearchParams(window.location.search || '');
-  const active = params.get('action') === 'sell';
+  const action = params.get('action');
+  const active = action === 'buy' || action === 'sell';
   const symbol = String(params.get('symbol') || '').toUpperCase();
   const broker_code = String(params.get('broker') || '').toUpperCase();
   const account_id = String(params.get('account') || '').toUpperCase();
   return {
     active,
+    type: action === 'buy' ? 'BUY' : action === 'sell' ? 'SELL' : 'POSITION_IMPORT',
     symbol,
     broker_code,
     account_id,
@@ -65,12 +68,12 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
   const holdingBooks = useMemo(() => deriveHoldingBooks(transactions), [transactions]);
-  const intent = useMemo(() => sellIntentFromLocation(), []);
+  const intent = useMemo(() => tradeIntentFromLocation(), []);
   const intentBook = useMemo(() => intent.locked
     ? findHoldingBook(holdingBooks, intent.symbol, intent.broker_code, intent.account_id)
     : null, [holdingBooks, intent]);
 
-  const [type, setType] = useState(intent.active ? 'SELL' : 'POSITION_IMPORT');
+  const [type, setType] = useState(intent.type);
   const [form, setForm] = useState(() => {
     const initial = EMPTY_FORM(today || '');
     if (!intent.locked) return initial;
@@ -104,8 +107,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     return holdingBooks.find(row => holdingBookKey(row) === selectedSellKey) || null;
   }, [holdingBooks, selectedSellKey]);
 
-  const lockedSell = !editingId && type === 'SELL' && intent.locked;
-  const sellBook = lockedSell ? intentBook : selectedSellBook;
+  const sellBook = selectedSellBook || (type === 'SELL' ? intentBook : null);
   const isSellCreate = !editingId && type === 'SELL';
   const estimatedSellPrice = isSellCreate && Number(form.quantity) > 0 && String(form.amount || '').trim()
     ? (() => {
@@ -118,12 +120,13 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     : null;
 
   const requirements = useMemo(() => ({
-    symbol: ['POSITION_IMPORT', 'BUY', 'SELL', 'SPLIT'].includes(type),
-    quantity: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
-    price: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
+    symbol: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    quantity: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    price: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
     amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'FEE'].includes(type),
-    ratio: type === 'SPLIT',
+    ratio: false,
     trade: ['BUY', 'SELL'].includes(type),
+    holding: ['BUY', 'RIGHTS_ISSUE'].includes(type),
   }), [type]);
 
   function set(key, value) {
@@ -153,7 +156,6 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   function changeType(value) {
-    if (intent.locked && value !== 'SELL') return;
     setType(value);
     setEditingId(null);
     setCorrectionReason('');
@@ -169,7 +171,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     setMessage('');
     setFieldErrors({});
     if (intent.active) {
-      setType('SELL');
+      setType(intent.type);
       setSelectedSellKey(intent.locked ? `${intent.symbol}|${intent.broker_code}|${intent.account_id}` : '');
       setForm({
         ...EMPTY_FORM(today || ''),
@@ -215,7 +217,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
   function validateSellSelection() {
     if (!sellBook) {
-      const error = new Error(lockedSell
+      const error = new Error(false
         ? 'Nguồn cổ phiếu đã chọn không còn tồn tại trong danh mục. Hãy quay lại Danh mục và chọn lại nơi bán.'
         : 'Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
       error.field = 'sell_source';
@@ -275,6 +277,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     try {
       if (editingId) {
         await updatePortfolioTransaction(editingId, {
+          event_type: payload.event_type,
           quantity: payload.quantity,
           price: payload.price,
           broker_code: payload.broker_code,
@@ -357,7 +360,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         <div>
           <h2>{editingId ? `Sửa giao dịch #${editingId}` : isSellCreate ? 'Bán cổ phiếu' : 'Thêm giao dịch'}</h2>
           <p className="muted">{editingId
-            ? 'Ngày, mã cổ phiếu, loại giao dịch và tài khoản được khóa. Chỉ số lượng, giá và CTCK có thể sửa.'
+            ? 'Ngày, mã cổ phiếu và tài khoản được khóa. Bạn có thể đổi loại trong nhóm giao dịch cổ phiếu, đồng thời sửa số lượng, giá và CTCK.'
             : isSellCreate
               ? 'Chọn đúng nơi đang giữ cổ phiếu. Sau khi chọn, mã, CTCK, tài khoản và ngày giao dịch sẽ được khóa.'
               : 'Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.'}</p>
@@ -366,18 +369,19 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </div>
 
       <label>Loại giao dịch
-        <select value={type} onChange={event => changeType(event.target.value)} disabled={saving || editingId != null || intent.locked}>
-          {TYPE_VALUES.map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
+        <select value={type} onChange={event => editingId ? setType(event.target.value) : changeType(event.target.value)} disabled={saving}>
+          {(editingId ? TYPE_VALUES.filter(value => EDITABLE_TYPES.has(value)) : TYPE_VALUES).map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
         </select>
       </label>
 
       {type === 'POSITION_IMPORT' && !editingId && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại.</div>}
-      {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Ghi đúng CTCK và tài khoản nhận cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
+      {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Chọn mã và đúng CTCK/tài khoản nhận thêm cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
+      {type === 'RIGHTS_ISSUE' && !editingId && <div className="info-callout transaction-buy-note">Ghi nhận cổ phiếu phát hành thêm theo số lượng và giá thực trả; tiền và giá vốn sẽ được cập nhật tương ứng.</div>}
 
       {isSellCreate ? <>
         <div className="sell-source-panel">
           <div className="sell-source-title"><b>Nguồn cổ phiếu cần bán</b><span>CTCK đang lưu ký</span></div>
-          {lockedSell ? <div className="sell-source-locked">
+          {false ? <div className="sell-source-locked">
             <strong>{intent.symbol}</strong>
             <span>{brokerName(intent.broker_code)} · {intent.account_id}</span>
             <span>{intentBook ? `${shares(intentBook.shares)} CP khả dụng` : 'Nguồn này hiện không còn cổ phiếu khả dụng'}</span>
@@ -488,7 +492,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </>}
 
       <div className="button-row">
-        <button className="btn-primary" type="submit" disabled={saving || (lockedSell && !intentBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
+        <button className="btn-primary" type="submit" disabled={saving || (false && !intentBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
