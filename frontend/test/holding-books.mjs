@@ -85,4 +85,21 @@ const legacyBooks = deriveHoldingBooks(legacyRows);
 assert.equal(findHoldingBook(legacyBooks, 'REE', 'DNSE', 'PRIMARY'), null, 'legacy consolidated sell consumes oldest lot first');
 assert.equal(findHoldingBook(legacyBooks, 'REE', 'TCBS', 'PRIMARY')?.shares, 80);
 
+const discardedBooks = deriveHoldingBooks([
+  {
+    id: 10,
+    event_type: 'BUY',
+    event_date: '2026-04-01',
+    symbol: 'VCB',
+    quantity: 200,
+    status: 'SOFT_DELETED',
+    metadata: { broker_code: 'DNSE', account_id: 'PRIMARY' },
+  },
+]);
+assert.equal(
+  findHoldingBook(discardedBooks, 'VCB', 'DNSE', 'PRIMARY'),
+  null,
+  'soft-deleted transactions must not create effective holding books',
+);
+
 console.log('holding-books contract: ok');
