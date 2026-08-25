@@ -234,10 +234,15 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
     python_exe = configured_python()
     if not Path(python_exe).exists() and python_exe != sys.executable:
         raise VnstockIsolatedError(f"QPORT_VNSTOCK_PYTHON does not exist: {python_exe}")
+    
+    # Check if running in a serverless environment (e.g. Vercel / AWS Lambda)
+    is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    
     worker_env = dict(os.environ)
     worker_env.pop("PYTHONPATH", None)
     worker_env["PYTHONIOENCODING"] = "utf-8"
     root_dir = str(Path(__file__).resolve().parents[2])
+    
     try:
         proc = subprocess.run(
             [python_exe, str(_WORKER_PATH), "--worker"],
@@ -251,22 +256,23 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
             env=worker_env,
             cwd=root_dir,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise VnstockIsolatedError(f"Vnstock {task} timed out after {timeout:g}s") from exc
-    except OSError as exc:
-        raise VnstockIsolatedError(f"Cannot start Vnstock Python interpreter {python_exe}: {exc}") from exc
-
-    result = _decode_worker_output(proc.stdout)
-    if result is None:
-        stderr = str(proc.stderr or "").strip()
-        raise VnstockIsolatedError(
-            f"Vnstock {task} worker returned no JSON result (exit={proc.returncode})"
-            + (f": {stderr[-800:]}" if stderr else "")
-        )
-    if result.get("status") != "success":
-        raise VnstockIsolatedError(str(result.get("error") or f"Vnstock {task} failed"))
-    result.setdefault("worker_python", python_exe)
-    return result
+        result = _decode_worker_output(proc.stdout)
+        if result is not None and result.get("status") == "success":
+            result.setdefault("worker_python", python_exe)
+            return result
+        if result is not None and result.get("status") != "success":
+            raise VnstockIsolatedError(str(result.get("error") or f"Vnstock {task} failed"))
+    except (subprocess.TimeoutExpired, OSError, VnstockIsolatedError) as exc:
+        if not is_serverless:
+            raise
+    
+    # Fallback to direct in-process execution for Serverless / restricted runtimes
+    try:
+        direct_result = _execute_task(task, payload)
+        direct_result.setdefault("worker_python", sys.executable)
+        return direct_result
+    except Exception as exc:
+        raise VnstockIsolatedError(f"Vnstock {task} in-process failed: {exc}") from exc
 
 
 def _is_rate_limit(text: str) -> bool:
