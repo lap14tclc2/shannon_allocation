@@ -19,6 +19,14 @@ function signedMoney(value, locale = 'vi') {
   return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
 }
 
+function cashflowQualityLabel(value) {
+  return ({
+    OPENING_BALANCE_ONLY: 'Chỉ có số dư đầu kỳ',
+    COMPLETE: 'Đầy đủ dòng tiền',
+    PARTIAL: 'Chưa đầy đủ',
+  })[value] || value || '-';
+}
+
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
   const dispatch = useDispatch();
   const returns = performance.returns || {};
@@ -144,16 +152,16 @@ export default function PerformancePage({ performance = {}, locale = 'vi' }) {
           <p className="muted">TWR, XIRR, lợi suất theo kỳ và chất lượng lịch sử.</p>
         </div>
       </summary>
-      <div className="health-grid">
-        <div><span>Lợi suất từ khi bắt đầu theo dõi</span><b>{pct(returns.since_inception)}</b></div>
-        <div><span>TWR năm hóa</span><b>{pct(performance.annualized_twr)}</b></div>
-        <div><span>XIRR</span><b>{pct(performance.xirr)}</b></div>
-        <div><span>Từ đầu tháng</span><b>{pct(returns.mtd)}</b></div>
-        <div><span>Ngày gần nhất</span><b>{pct(returns.daily)}</b></div>
-        <div><span>Ngày tốt nhất / xấu nhất</span><b>{pct(performance.best_day)} / {pct(performance.worst_day)}</b></div>
-        <div><span>Số ngày dữ liệu chính thức</span><b>{historyCount == null ? '-' : historyCount}</b></div>
-        <div><span>Chất lượng dòng tiền</span><b>{performance.cashflow_history_quality || '-'}</b></div>
-      </div>
+      <dl className="performance-health-grid">
+        <div><dt>Lợi suất từ khi bắt đầu theo dõi</dt><dd>{pct(returns.since_inception)}</dd></div>
+        <div><dt>TWR năm hóa</dt><dd>{pct(performance.annualized_twr)}</dd></div>
+        <div><dt>XIRR</dt><dd>{pct(performance.xirr)}</dd></div>
+        <div><dt>Từ đầu tháng</dt><dd>{pct(returns.mtd)}</dd></div>
+        <div><dt>Ngày gần nhất</dt><dd>{pct(returns.daily)}</dd></div>
+        <div><dt>Ngày tốt nhất / xấu nhất</dt><dd>{pct(performance.best_day)} / {pct(performance.worst_day)}</dd></div>
+        <div><dt>Số ngày dữ liệu chính thức</dt><dd>{historyCount == null ? '-' : historyCount}</dd></div>
+        <div><dt>Chất lượng dòng tiền</dt><dd>{cashflowQualityLabel(performance.cashflow_history_quality)}</dd></div>
+      </dl>
       <p className="muted"><b>TWR</b> giúp đo hiệu quả danh mục sau khi loại ảnh hưởng của tiền nạp/rút. <b>XIRR</b> phản ánh lợi suất thực tế theo thời điểm dòng tiền của nhà đầu tư.</p>
     </details>
   </div>;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { commitPortfolioImport, previewPortfolioImport } from '../lib/api.js';
 import { formatMoney, formatShares } from '../lib/format.js';
 import { IMPORT_EVENT_TYPES, importTemplate, parseQuickImport } from '../lib/quickImport.js';
@@ -11,8 +11,9 @@ const EVENT_LABELS = {
 
 export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) {
   const [mode, setMode] = useState('CURRENT');
-  const [text, setText] = useState(() => importTemplate('CURRENT'));
+  const [text, setText] = useState('');
   const [sourceName, setSourceName] = useState('quick-paste');
+  const fileInputRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,9 +23,17 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
 
   function switchMode(nextMode) {
     setMode(nextMode);
-    setText(importTemplate(nextMode));
+    setText('');
     setPreview(null);
     setMessage('');
+  }
+
+  function clearInput() {
+    setText('');
+    setSourceName('quick-paste');
+    setPreview(null);
+    setMessage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   async function loadFile(event) {
@@ -80,7 +89,7 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
         </button>
       </div>
 
-      <div className="quick-import-guidance">
+      <div className="quick-import-guidance" id="quick-import-guidance">
         <b>{mode === 'CURRENT' ? 'Cột: Mã, Số lượng, Giá vốn, CTCK, Tài khoản' : 'CSV có tiêu đề; hỗ trợ toàn bộ loại giao dịch'}</b>
         <span>{mode === 'CURRENT'
           ? 'Có thể thêm CASH_DEPOSIT bằng CSV có tiêu đề. Ngày được khóa về hôm nay.'
@@ -88,14 +97,22 @@ export default function QuickImportPanel({ today, locale = 'vi', onCommitted }) 
       </div>
 
       <label>Dữ liệu cần nhập
-        <textarea className="quick-import-textarea" value={text} onChange={event => { setText(event.target.value); setPreview(null); }} spellCheck="false" />
+        <textarea
+          className="quick-import-textarea"
+          value={text}
+          placeholder={importTemplate(mode)}
+          aria-describedby="quick-import-guidance"
+          onChange={event => { setText(event.target.value); setPreview(null); setMessage(''); }}
+          spellCheck="false"
+        />
       </label>
       <div className="quick-import-file-row">
-        <label className="btn-variant quick-import-file">Chọn CSV / TSV / TXT<input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" onChange={loadFile} /></label>
+        <label className="btn-variant quick-import-file">Chọn CSV / TSV / TXT<input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" onChange={loadFile} /></label>
         <span className="muted">Excel: copy vùng dữ liệu rồi dán, hoặc Save As CSV UTF-8.</span>
       </div>
-      <div className="button-row">
-        <button className="btn-primary" type="button" onClick={runPreview} disabled={busy}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</button>
+      <div className="button-row quick-import-actions">
+        <button className="btn-primary" type="button" onClick={runPreview} disabled={busy || !text.trim()}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra & xem trước'}</button>
+        <button className="btn-secondary quick-import-clear" type="button" onClick={clearInput} disabled={busy || (!text && !preview && !message)} aria-label="Xóa dữ liệu nhập nhanh">Xóa dữ liệu</button>
       </div>
       {message && <div className="run-message">{message}</div>}
 

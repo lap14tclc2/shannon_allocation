@@ -13,6 +13,9 @@
 .quick-import-guidance { display: grid; gap: 4px; padding: 11px 12px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .quick-import-guidance span { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .quick-import-textarea { min-height: 150px; font-family: var(--font-mono-num); font-size: 12px; line-height: 1.6; white-space: pre; overflow: auto; }
+.quick-import-textarea::placeholder { color: var(--muted); opacity: .72; }
+.quick-import-actions { justify-content: flex-start; }
+.quick-import-clear { color: var(--text-secondary); }
 .quick-import-file-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .quick-import-file { position: relative; overflow: hidden; cursor: pointer; }
 .quick-import-file input { position: absolute; width: 1px; height: 1px; opacity: 0; }

@@ -61,10 +61,11 @@
 }
 
 .theme-trigger-retro {
-  --theme-selector-accent: #dc5a43;
+  --theme-selector-accent: #a63f30;
+  border-color: #5d5549;
   border-radius: 1px;
-  background: #24221d;
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, .3);
+  background: #fffaf0;
+  box-shadow: 2px 2px 0 rgba(65, 55, 42, .24);
 }
 
 .theme-trigger-copy {
@@ -266,23 +267,27 @@
 }
 
 .theme-preview-retro {
-  border-color: #6a6256;
+  border-color: #5d5549;
   background:
-    linear-gradient(rgba(238, 231, 215, .035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(238, 231, 215, .035) 1px, transparent 1px),
-    #1a1916;
+    linear-gradient(rgba(65, 54, 39, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(65, 54, 39, .06) 1px, transparent 1px),
+    #efe4cf;
   background-size: 9px 9px;
-  color: #6a6256;
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, .42);
+  color: #6b6255;
+  box-shadow: 2px 2px 0 rgba(65, 55, 42, .24);
 }
 
 .theme-preview-retro .theme-preview-nav,
 .theme-preview-retro .theme-preview-card {
-  background: #24221d;
+  background: #fffaf0;
+}
+
+.theme-preview-retro .theme-preview-line {
+  color: #7a551d;
 }
 
 .theme-preview-retro .theme-preview-accent {
-  background: #dc5a43;
+  background: #a63f30;
 }
 
 .theme-preview-cyber {

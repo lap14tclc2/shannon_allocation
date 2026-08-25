@@ -46,41 +46,45 @@
 }
 
 :root[data-theme="light"] {
-  --retro-bg: #f2ead8;
+  /* Showa print palette: warm washi paper, sumi ink and cinnabar accent. */
+  --retro-bg: #efe4cf;
   --retro-panel: #fffaf0;
-  --retro-panel-subtle: #e9dfcc;
-  --retro-border: #9d9382;
-  --retro-border-bold: #625a4f;
-  --retro-ink: #24211c;
-  --retro-muted: #625f58;
-  --retro-hanko: #b0402e;
+  --retro-panel-subtle: #f4ecd9;
+  --retro-border: #9c927f;
+  --retro-border-bold: #5d5549;
+  --retro-ink: #201d18;
+  --retro-muted: #696257;
+  --retro-hanko: #a63f30;
   --retro-green: #2f6b4d;
-  --retro-red: #a93e31;
-  --retro-gold: #875d1c;
-  --retro-grid: rgba(70, 61, 48, .03);
-  --retro-shadow: rgba(65, 55, 42, .2);
+  --retro-red: #9f382d;
+  --retro-gold: #7a551d;
+  --retro-grid: rgba(65, 54, 39, .045);
+  --retro-shadow: rgba(65, 55, 42, .18);
   --bg: var(--retro-bg);
-  --bg-elevated: #ebe1cf;
+  --bg-elevated: #f5eddd;
   --panel: var(--retro-panel);
-  --panel-2: #eee4d2;
-  --panel-hover: #e4d8c4;
+  --panel-2: #eee3cf;
+  --panel-hover: #e9ddc8;
+  --surface-soft: #f6efdf;
+  --card: var(--retro-panel);
   --input: #fffdf8;
-  --border: #aaa294;
+  --border: var(--retro-border);
   --border-strong: var(--retro-border-bold);
   --text: var(--retro-ink);
-  --text-secondary: #514d45;
+  --text-secondary: #4e4940;
+  --text-muted: var(--retro-muted);
   --muted: var(--retro-muted);
   --accent: var(--retro-hanko);
-  --accent-soft: rgba(200, 56, 43, .08);
-  --accent-border: rgba(200, 56, 43, .38);
+  --accent-soft: rgba(166, 63, 48, .09);
+  --accent-border: rgba(166, 63, 48, .42);
   --success: var(--retro-green);
   --danger: var(--retro-red);
   --warning: var(--retro-gold);
-  --info: #3f6570;
-  --selection: rgba(200, 56, 43, .18);
-  --row-hover: rgba(43, 48, 55, .04);
-  --overlay: rgba(245, 240, 230, .95);
-  --chart-grid: #b8b0a3;
+  --info: #365f69;
+  --selection: rgba(166, 63, 48, .17);
+  --row-hover: rgba(122, 85, 29, .055);
+  --overlay: rgba(255, 250, 240, .96);
+  --chart-grid: #b4a995;
   --shadow-surface: 4px 4px 0 var(--retro-shadow);
 }
 
@@ -106,6 +110,10 @@ body::before {
   background: repeating-radial-gradient(circle at 20% 30%, transparent 0 3px, color-mix(in srgb, var(--retro-ink) 1.2%, transparent) 3px 4px);
   opacity: .45;
   content: "";
+}
+
+:root[data-theme="light"] body::before {
+  opacity: .18;
 }
 
 .num,
