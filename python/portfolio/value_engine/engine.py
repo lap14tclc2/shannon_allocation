@@ -250,7 +250,7 @@ class ValuationEngine:
                 "eps": Decimal("6850"),
                 "bvps": Decimal("24500"),
                 "roe": Decimal("27.8"),
-                "dividend_yield": Decimal("2.8"),
+                "dividend_yield": Decimal("2.8"),  # 2,000 đ tiền mặt / 71,400 đ
                 "market_pe": Decimal("14.5"),
                 "market_pb": Decimal("1.8"),
                 "market_roe": Decimal("13.5"),
@@ -262,19 +262,19 @@ class ValuationEngine:
                 "eps": Decimal("8950"),
                 "bvps": Decimal("38200"),
                 "roe": Decimal("25.4"),
-                "dividend_yield": Decimal("6.8"),
+                "dividend_yield": Decimal("6.4"),  # 2,800 đ tiền mặt / 43,900 đ
                 "market_pe": Decimal("14.5"),
                 "market_pb": Decimal("1.8"),
                 "market_roe": Decimal("13.5"),
                 "sector_pe": Decimal("12.0"),
-                "comparison_note": "P/E 4.9x thuộc vùng đáy lịch sử và thấp hơn 66% so với thị trường; tỷ suất cổ tức tiền mặt 6.8% vượt trội so với lãi suất gửi tiết kiệm.",
+                "comparison_note": "P/E 4.9x thuộc vùng đáy lịch sử và thấp hơn 66% so với thị trường; tỷ suất cổ tức tiền mặt 6.4% vượt trội so với lãi suất gửi tiết kiệm.",
             },
             "ACB": {
                 "sector": "Ngân hàng Thương mại",
                 "eps": Decimal("3820"),
                 "bvps": Decimal("18600"),
                 "roe": Decimal("21.5"),
-                "dividend_yield": Decimal("5.5"),
+                "dividend_yield": Decimal("4.4"),  # 1,000 đ tiền mặt / 22,500 đ
                 "market_pe": Decimal("14.5"),
                 "market_pb": Decimal("1.8"),
                 "market_roe": Decimal("13.5"),
@@ -286,12 +286,12 @@ class ValuationEngine:
                 "eps": Decimal("5090"),
                 "bvps": Decimal("21800"),
                 "roe": Decimal("23.8"),
-                "dividend_yield": Decimal("8.6"),
+                "dividend_yield": Decimal("7.8"),  # 3,200 đ tiền mặt / 40,800 đ
                 "market_pe": Decimal("14.5"),
                 "market_pb": Decimal("1.8"),
                 "market_roe": Decimal("13.5"),
                 "sector_pe": Decimal("13.5"),
-                "comparison_note": "P/E 8.0x thấp hơn trung bình ngành BĐS KCN; tỷ suất cổ tức tiền mặt đạt 8.6% cung cấp tấm đệm bảo vệ danh mục an toàn tối đa.",
+                "comparison_note": "P/E 8.0x thấp hơn trung bình ngành BĐS KCN; tỷ suất cổ tức tiền mặt đạt 7.8% cung cấp tấm đệm bảo vệ danh mục an toàn tối đa.",
             },
         }
 
