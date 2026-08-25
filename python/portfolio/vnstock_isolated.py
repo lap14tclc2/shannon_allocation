@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+import pandas as pd
 
 
 class VnstockIsolatedError(RuntimeError):
@@ -172,15 +173,36 @@ def _execute_task(task: str, payload: dict[str, Any]) -> dict:
                     item = dict(row)
                     item.setdefault("symbol", symbol)
                     rows.append(item)
-        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
-    if task == "company_info":
-        rows = _company_info(ref, str(payload["symbol"]).upper())
-        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    if task == "financial_statements":
+        symbol = str(payload.get("symbol") or "FPT").upper()
+        st_type = str(payload.get("statement_type") or "INCOME_STATEMENT")
+        period = str(payload.get("period") or "quarter")
+        try:
+            from vnstock import Vnstock
+            v = Vnstock().stock(symbol=symbol, source="VCI")
+            fin = v.finance
+            if "BALANCE" in st_type:
+                df = fin.balance_sheet(period=period, lang="vi")
+            elif "CASH" in st_type:
+                df = fin.cash_flow(period=period, lang="vi")
+            else:
+                df = fin.income_statement(period=period, lang="vi")
+            rows = _records(df)
+            return {"status": "success", "data": rows, "provider": "vnstock", "symbol": symbol, "statement_type": st_type}
+        except Exception as exc:
+            return {"status": "error", "error": str(exc), "symbol": symbol}
     raise RuntimeError(f"Unknown Vnstock task: {task}")
 
 
 def _worker_main() -> int:
     """JSON stdin/stdout worker so QPort can use a different Python runtime."""
+    import io
+    # Strip current directory and python/ from sys.path to avoid shadowing stdlib locale
+    portfolio_dir = str(Path(__file__).resolve().parent)
+    python_dir = str(Path(__file__).resolve().parents[1])
+    sys.path = [p for p in sys.path if p not in (portfolio_dir, python_dir, "", ".")]
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     try:
         request = json.loads(sys.stdin.read() or "{}")
         result = _execute_task(str(request.get("task") or ""), dict(request.get("payload") or {}))
@@ -212,14 +234,22 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
     python_exe = configured_python()
     if not Path(python_exe).exists() and python_exe != sys.executable:
         raise VnstockIsolatedError(f"QPORT_VNSTOCK_PYTHON does not exist: {python_exe}")
+    worker_env = dict(os.environ)
+    worker_env.pop("PYTHONPATH", None)
+    worker_env["PYTHONIOENCODING"] = "utf-8"
+    root_dir = str(Path(__file__).resolve().parents[2])
     try:
         proc = subprocess.run(
             [python_exe, str(_WORKER_PATH), "--worker"],
             input=json.dumps({"task": task, "payload": payload}, ensure_ascii=False),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=timeout,
             check=False,
+            env=worker_env,
+            cwd=root_dir,
         )
     except subprocess.TimeoutExpired as exc:
         raise VnstockIsolatedError(f"Vnstock {task} timed out after {timeout:g}s") from exc

@@ -1,4 +1,6 @@
-from portfolio.locale import normalize_locale, resolve_locale
+from __future__ import annotations
+
+from portfolio.i18n_locale import normalize_locale, resolve_locale
 
 
 def test_normalize_locale_supports_en_vi_only():

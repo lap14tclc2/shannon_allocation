@@ -22,7 +22,7 @@ from portfolio.auth import AuthError, AuthStore, SESSION_DAYS
 from portfolio.correctable_service import CorrectablePortfolioService
 from portfolio.dividend_store import SqliteDividendService
 from portfolio.dividends import DividendLookupError
-from portfolio.locale import resolve_locale
+from portfolio.i18n_locale import resolve_locale
 from portfolio.scheduler import DailySyncScheduler
 from portfolio.storage import PortfolioStore
 from portfolio.validation import InputValidationError

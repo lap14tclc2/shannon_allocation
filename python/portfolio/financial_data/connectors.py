@@ -122,26 +122,31 @@ class VnstockApiAdapter:
         self,
         symbol: str,
         statement_type: StatementType = StatementType.INCOME_STATEMENT,
+        period: str = "quarter",
     ) -> RawEnvelope:
         """
-        Live network fetch using Vnstock.
+        Live network fetch using crash-isolated and rate-limit safe Vnstock worker.
         """
-        from vnstock import Vnstock
-        stock = Vnstock().stock(symbol=symbol, source="VCI")
+        from ..vnstock_isolated import run_vnstock_task
         req_iso = datetime.now(timezone.utc).isoformat()
         
-        if statement_type == StatementType.BALANCE_SHEET:
-            df = stock.finance.balance_sheet(period="quarter", lang="vi")
-        elif statement_type == StatementType.CASH_FLOW:
-            df = stock.finance.cash_flow(period="quarter", lang="vi")
-        else:
-            df = stock.finance.income_statement(period="quarter", lang="vi")
+        result = run_vnstock_task(
+            "financial_statements",
+            {
+                "symbol": symbol.upper(),
+                "statement_type": statement_type.value,
+                "period": period,
+            },
+            timeout=120.0,
+            max_attempts=3,
+        )
 
-        payload_dict = {"symbol": symbol, "items": json.loads(df.to_json(orient="records", force_ascii=False))}
+        items = result.get("data", [])
+        payload_dict = {"symbol": symbol.upper(), "items": items}
         return self.create_envelope(
-            symbol=symbol,
+            symbol=symbol.upper(),
             statement_type=statement_type,
-            period_type=PeriodType.QUARTER,
+            period_type=PeriodType.QUARTER if period == "quarter" else PeriodType.FY,
             year=datetime.now(timezone.utc).year,
             quarter=None,
             raw_dict=payload_dict,
