@@ -407,10 +407,10 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     <section className="risk-valuation-section">
       <div className="risk-valuation-head">
         <div>
-          <span className="eyebrow">Giá trị & Biên an toàn</span>
-          <h2>Định giá nội tại các mã đang nắm giữ</h2>
+          <span className="eyebrow">Định giá & Biên an toàn</span>
+          <h2>Định giá nội tại & Sức khỏe doanh nghiệp</h2>
           <p>
-            Tổng hợp dữ liệu theo kỳ Báo cáo Quý/Năm. Đánh giá tất định theo triết lý Warren Buffett & Charlie Munger (Owner Earnings DCF, EPV & Reverse DCF).
+            Đánh giá khách quan theo triết lý Warren Buffett & Benjamin Graham. Sử dụng dòng tiền thật của chủ sở hữu sau khi đã trừ chi phí tái đầu tư.
           </p>
         </div>
         <button
@@ -423,6 +423,37 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
         </button>
       </div>
 
+      {/* Banner giải thích ngắn gọn & dễ hiểu phương pháp định giá */}
+      <div className="risk-val-method-banner">
+        <div className="risk-val-method-title">
+          <span className="risk-val-method-icon">💡</span>
+          <strong>Cách QPort tính Giá trị nội tại (Intrinsic Value):</strong>
+        </div>
+        <div className="risk-val-method-grid">
+          <div className="risk-val-method-step">
+            <span className="step-num">1</span>
+            <div>
+              <b>Lợi nhuận tiền tươi</b>
+              <p>Lấy lợi nhuận ròng trừ đi chi phí bảo trì máy móc/nhà xưởng (Owner Earnings), chỉ tính dòng tiền thực về tay cổ đông.</p>
+            </div>
+          </div>
+          <div className="risk-val-method-step">
+            <span className="step-num">2</span>
+            <div>
+              <b>Chiết khấu thận trọng</b>
+              <p>Chiết khấu dòng tiền 5 năm tới với lãi suất an toàn 11.5% - 13%, giả định tăng trưởng vừa phải (10% - 12%), không vẽ viễn cảnh màu hồng.</p>
+            </div>
+          </div>
+          <div className="risk-val-method-step">
+            <span className="step-num">3</span>
+            <div>
+              <b>Trừ hết nợ vay</b>
+              <p>Lấy toàn bộ giá trị tương lai trừ sạch nợ vay ngân hàng và cộng tiền mặt dự trữ để ra giá trị thực cho mỗi cổ phiếu.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {valuationLoading && Object.keys(valuations).length === 0 ? (
         <div className="empty-state compact-empty">Đang trích xuất BCTC và tính toán định giá cho các mã trong danh mục…</div>
       ) : Object.keys(valuations).length === 0 ? (
@@ -430,84 +461,107 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           Chưa có dữ liệu định giá BCTC. Bấm nút <b>"Tải lại định giá BCTC"</b> để nạp dữ liệu.
         </div>
       ) : (
-        <div className="risk-valuation-grid">
+        <div className="risk-valuation-list">
           {symbolRows.map(({ symbol }) => {
             const val = valuations[symbol];
             if (!val) return null;
             const assess = val.assessment || {};
             const baseDcf = val.scenarios?.BASE?.intrinsic_value_per_share;
+            const bearDcf = val.scenarios?.BEAR?.intrinsic_value_per_share;
             const mos = val.scenarios?.BASE?.margin_of_safety_pct;
+            const price = val.current_market_price;
+            const isAttractive = mos && mos > 20;
 
             return (
-              <article key={symbol} className="risk-valuation-card">
-                <div className="risk-val-card-top">
-                  <div className="risk-val-symbol-wrap">
-                    <span className="risk-val-symbol">{symbol}</span>
-                    <span className="risk-val-period">Kỳ {val.fiscal_period_latest}</span>
-                  </div>
-                  <div className="risk-val-badges">
+              <details key={symbol} className="risk-val-accordion" open>
+                <summary className="risk-val-accordion-summary">
+                  <div className="risk-val-acc-left">
+                    <span className="risk-val-acc-symbol">{symbol}</span>
+                    <span className="risk-val-acc-period">Kỳ BCTC: {val.fiscal_period_latest}</span>
                     {assess.moat_rating && (
-                      <span className="risk-level risk-level-good">
-                        Hào kinh tế: {assess.moat_rating === 'WIDE' ? 'Sâu rộng (Wide Moat)' : 'Hẹp (Narrow)'}
+                      <span className="risk-val-pill-moat">
+                        🛡️ {assess.moat_rating === 'WIDE' ? 'Lợi thế bền vững (Wide Moat)' : 'Lợi thế trung bình'}
                       </span>
                     )}
-                    <span className={`risk-level ${val.confidence_level === 'HIGH' ? 'risk-level-good' : 'risk-level-watch'}`}>
-                      Tin cậy: {val.confidence_level}
-                    </span>
                   </div>
-                </div>
-
-                {/* Kết luận định giá & Biên an toàn theo trường phái giá trị */}
-                <div className="risk-val-verdict-box">
-                  <div className="risk-val-verdict-text">
-                    {assess.valuation_verdict || 'Đang tổng hợp đánh giá đầu tư giá trị…'}
-                  </div>
-                  <div className="risk-val-metrics-bar">
-                    <div className="risk-val-metric-col">
-                      <span>Thị giá</span>
-                      <strong>{formatMoney(val.current_market_price, false, locale)} ₫</strong>
+                  <div className="risk-val-acc-right">
+                    <div className="risk-val-acc-stat">
+                      <small>Thị giá</small>
+                      <b>{formatMoney(price, false, locale)} ₫</b>
                     </div>
-                    <div className="risk-val-metric-col">
-                      <span>Nội tại (Base)</span>
-                      <strong style={{ color: 'var(--accent)' }}>
-                        {baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}
-                      </strong>
+                    <div className="risk-val-acc-stat">
+                      <small>Giá trị thực</small>
+                      <b className="val-target">{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</b>
                     </div>
-                    <div className="risk-val-metric-col">
-                      <span>Biên an toàn</span>
-                      <strong style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                    <div className="risk-val-acc-stat">
+                      <small>Biên an toàn</small>
+                      <b className={mos && mos > 0 ? 'val-mos-pos' : 'val-mos-neg'}>
                         {mos ? `${Number(mos).toFixed(1)}%` : '-'}
-                      </strong>
+                      </b>
+                    </div>
+                    <span className="risk-val-toggle-arrow">▾</span>
+                  </div>
+                </summary>
+
+                <div className="risk-val-acc-body">
+                  {/* Hộp kết luận định giá bằng ngôn ngữ thân thiện */}
+                  <div className={`risk-val-verdict-card ${isAttractive ? 'verdict-attractive' : ''}`}>
+                    <div className="risk-val-verdict-badge">
+                      {isAttractive ? '✨ VÙNG GIÁ HẤP DẪN' : '⚖️ ĐỊNH GIÁ HỢP LÝ'}
+                    </div>
+                    <p className="risk-val-verdict-msg">
+                      {assess.valuation_verdict || `Thị giá hiện tại (${formatMoney(price, false, locale)} ₫) đang thấp hơn giá trị thực (${formatMoney(baseDcf, false, locale)} ₫), mang lại biên an toàn ${mos ? Number(mos).toFixed(1) : 0}% cho nhà đầu tư nắm giữ dài hạn.`}
+                    </p>
+                    {bearDcf && (
+                      <div className="risk-val-stress-note">
+                        🛡️ <b>Mức sàn an toàn (Khủng hoảng / Bão hòa):</b> Nếu doanh nghiệp chỉ tăng trưởng 6%/năm và bị chiết khấu khắt khe 13%, giá trị sàn vẫn đạt <b>{formatMoney(bearDcf, false, locale)} ₫</b>.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4 Trụ cột sức khỏe doanh nghiệp giải thích bình dân, dễ hiểu */}
+                  <div className="risk-val-pillars-grid">
+                    <div className="risk-val-pillar-item">
+                      <div className="pillar-item-head">
+                        <span className="pillar-icon">🛡️</span>
+                        <b>Lợi thế cạnh tranh</b>
+                      </div>
+                      <p>{assess.moat_summary || 'Doanh nghiệp có vị thế đầu ngành, chi phí chuyển đổi của khách hàng cao hoặc sở hữu lợi thế độc quyền chi phí.'}</p>
+                    </div>
+
+                    <div className="risk-val-pillar-item">
+                      <div className="pillar-item-head">
+                        <span className="pillar-icon">🏛️</span>
+                        <b>Hiệu quả sử dụng vốn</b>
+                      </div>
+                      <p>{assess.capital_allocation_diagnosis || 'Lợi nhuận được tái đầu tư với tỷ suất sinh lời cao (ROE/ROIC tốt), cổ tức tiền mặt đều đặn và không pha loãng bừa bãi.'}</p>
+                    </div>
+
+                    <div className="risk-val-pillar-item">
+                      <div className="pillar-item-head">
+                        <span className="pillar-icon">💧</span>
+                        <b>Chất lượng dòng tiền</b>
+                      </div>
+                      <p>{assess.earnings_quality_diagnosis || 'Lợi nhuận thu về bằng tiền thật dồi dào, không bị ứ đọng nhiều ở nợ xấu hay hàng tồn kho khó bán.'}</p>
+                    </div>
+
+                    <div className="risk-val-pillar-item">
+                      <div className="pillar-item-head">
+                        <span className="pillar-icon">⚓</span>
+                        <b>Sức chịu đựng tài chính</b>
+                      </div>
+                      <p>{assess.financial_resilience_diagnosis || 'Tiền mặt dự trữ dồi dào, nợ vay ngân hàng thấp giúp công ty an toàn tuyệt đối qua mọi biến động kinh tế.'}</p>
                     </div>
                   </div>
-                </div>
 
-                {/* 4 Trụ cột chất lượng doanh nghiệp theo Buffett - Munger */}
-                <div className="risk-val-pillars">
-                  <div className="risk-val-pillar-row">
-                    <span className="risk-val-pillar-label">🛡️ Lợi thế cạnh tranh:</span>
-                    <span className="risk-val-pillar-desc">{assess.moat_summary || 'Dựa trên chi phí chuyển đổi cao và quy mô.'}</span>
-                  </div>
-                  <div className="risk-val-pillar-row">
-                    <span className="risk-val-pillar-label">🏛️ Phân bổ vốn:</span>
-                    <span className="risk-val-pillar-desc">{assess.capital_allocation_diagnosis || 'Owner Earnings chuyển hóa bền vững vào tài sản sinh lời thực tế.'}</span>
-                  </div>
-                  <div className="risk-val-pillar-row">
-                    <span className="risk-val-pillar-label">💧 Chất lượng LN:</span>
-                    <span className="risk-val-pillar-desc">{assess.earnings_quality_diagnosis || 'Dòng tiền kinh doanh (CFO) cao, tương ứng thực tế với lợi nhuận kế toán.'}</span>
-                  </div>
-                  <div className="risk-val-pillar-row">
-                    <span className="risk-val-pillar-label">⚓ Vững tài chính:</span>
-                    <span className="risk-val-pillar-desc">{assess.financial_resilience_diagnosis || 'Cơ cấu bảng cân đối kế toán lành mạnh, nợ vay trong tầm kiểm soát.'}</span>
-                  </div>
                   {val.reverse_dcf_result?.verdict && (
-                    <div className="risk-val-reverse-box">
-                      <span className="risk-val-reverse-label">🔍 Kỳ vọng thị trường:</span>
-                      <span className="risk-val-reverse-desc">{val.reverse_dcf_result.verdict}</span>
+                    <div className="risk-val-expectation-bar">
+                      <span className="exp-label">🔍 Góc nhìn thị trường:</span>
+                      <span className="exp-desc">{val.reverse_dcf_result.verdict}</span>
                     </div>
                   )}
                 </div>
-              </article>
+              </details>
             );
           })}
         </div>

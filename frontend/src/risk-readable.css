@@ -889,115 +889,311 @@
   color: var(--text-secondary);
 }
 
-.risk-val-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-.risk-val-verdict-box {
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel) 90%, var(--bg));
-  border-left: 4px solid var(--accent);
+/* Method explainer banner */
+.risk-val-method-banner {
+  background: color-mix(in srgb, var(--panel) 75%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.risk-val-verdict-text {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
+.risk-val-method-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
   color: var(--text);
 }
 
-.risk-val-metrics-bar {
+.risk-val-method-icon {
+  font-size: 16px;
+}
+
+.risk-val-method-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  gap: 14px;
 }
 
-.risk-val-metric-col {
+.risk-val-method-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface-soft);
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.risk-val-method-step .step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.risk-val-method-step b {
+  font-size: 12.5px;
+  color: var(--text);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.risk-val-method-step p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* Accordion list */
+.risk-valuation-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 14px;
 }
 
-.risk-val-metric-col span {
-  font-size: 11px;
+.risk-val-accordion {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.risk-val-accordion[open] {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.risk-val-accordion-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--panel) 95%, var(--bg));
+  user-select: none;
+  gap: 16px;
+}
+
+.risk-val-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.risk-val-acc-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.risk-val-acc-symbol {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.risk-val-acc-period {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--surface-soft);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.risk-val-pill-moat {
+  font-size: 11.5px;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+
+.risk-val-acc-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.risk-val-acc-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.risk-val-acc-stat small {
+  font-size: 10.5px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: 0.03em;
 }
 
-.risk-val-metric-col strong {
-  font-size: 14px;
+.risk-val-acc-stat b {
+  font-size: 14.5px;
   font-weight: 700;
-  font-family: var(--font-mono-num, inherit);
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.risk-val-pillars {
+.risk-val-acc-stat b.val-target {
+  color: var(--accent);
+}
+
+.risk-val-acc-stat b.val-mos-pos {
+  color: var(--success);
+}
+
+.risk-val-acc-stat b.val-mos-neg {
+  color: var(--danger);
+}
+
+.risk-val-toggle-arrow {
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.risk-val-accordion[open] .risk-val-toggle-arrow {
+  transform: rotate(180deg);
+}
+
+/* Accordion body */
+.risk-val-acc-body {
+  padding: 18px 20px 22px;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 4px;
+  gap: 16px;
 }
 
-.risk-val-pillar-row {
+.risk-val-verdict-card {
+  background: color-mix(in srgb, var(--surface-soft) 80%, var(--bg));
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.risk-val-verdict-card.verdict-attractive {
+  border-left-color: var(--success);
+  background: color-mix(in srgb, var(--success) 6%, var(--panel));
+}
+
+.risk-val-verdict-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--success);
+}
+
+.risk-val-verdict-msg {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.risk-val-stress-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.risk-val-pillars-grid {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: 10px;
-  align-items: baseline;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.risk-val-pillar-item {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pillar-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
+  color: var(--text);
+}
+
+.pillar-icon {
+  font-size: 14px;
+}
+
+.risk-val-pillar-item p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.risk-val-expectation-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
-.risk-val-pillar-label {
-  color: var(--text-secondary);
-  font-weight: 600;
+.risk-val-expectation-bar .exp-label {
+  font-weight: 700;
+  color: var(--accent);
   white-space: nowrap;
 }
 
-.risk-val-pillar-desc {
+.risk-val-expectation-bar .exp-desc {
   color: var(--text);
 }
 
-.risk-val-reverse-box {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: 10px;
-  align-items: baseline;
-  font-size: 12px;
-  padding-top: 8px;
-  margin-top: 2px;
-  border-top: 1px dashed var(--border);
-}
-
-.risk-val-reverse-label {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.risk-val-reverse-desc {
-  color: var(--text);
-}
-
-@media (max-width: 720px) {
-  .risk-valuation-grid {
+@media (max-width: 768px) {
+  .risk-val-method-grid {
     grid-template-columns: 1fr;
   }
-  .risk-val-pillar-row,
-  .risk-val-reverse-box {
+  .risk-val-pillars-grid {
     grid-template-columns: 1fr;
-    gap: 2px;
   }
-  .risk-val-metrics-bar {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  .risk-val-accordion-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .risk-val-acc-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .risk-val-acc-stat {
+    align-items: flex-start;
   }
 }
