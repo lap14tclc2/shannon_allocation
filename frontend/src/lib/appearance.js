@@ -1,29 +1,29 @@
-const STORAGE_KEY = 'qport-appearance-v2';
+const STORAGE_KEY = 'qport-appearance-v3';
 
 export const DEFAULT_APPEARANCE = Object.freeze({
-  background: '#14171a',
-  text: '#ede8df',
-  secondary: '#b8b1a7',
-  muted: '#8e9cae',
-  accent: '#ff4d36',
-  success: '#3fb68b',
-  warning: '#e5b54f',
-  danger: '#ff5a36',
-  info: '#86a9c7',
+  background: '#1a1916',
+  text: '#eee7d7',
+  secondary: '#c1b8a7',
+  muted: '#aaa18f',
+  accent: '#dc5a43',
+  success: '#72a47b',
+  warning: '#d0a957',
+  danger: '#e36a52',
+  info: '#9cafb7',
 });
 
 export const TOKYO_SUMI_APPEARANCE = DEFAULT_APPEARANCE;
 
 export const SHOWA_PAPER_APPEARANCE = Object.freeze({
-  background: '#f5f0e6',
-  text: '#1a1d20',
-  secondary: '#4e5660',
-  muted: '#646d76',
-  accent: '#c8382b',
-  success: '#236e47',
-  warning: '#966115',
-  danger: '#b92e24',
-  info: '#3d6380',
+  background: '#f2ead8',
+  text: '#24211c',
+  secondary: '#514d45',
+  muted: '#625f58',
+  accent: '#b0402e',
+  success: '#2f6b4d',
+  warning: '#875d1c',
+  danger: '#a93e31',
+  info: '#3f6570',
 });
 
 const VARIABLE_BY_FIELD = {

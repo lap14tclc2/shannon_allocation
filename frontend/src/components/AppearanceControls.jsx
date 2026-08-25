@@ -106,19 +106,19 @@ export default function AppearanceControls({ locale = 'en' }) {
       <div className="appearance-presets" aria-label={text('Japanese theme presets', 'Preset giao diện Nhật Bản')}>
         <button
           type="button"
-          className={palette.background === '#14171a' ? 'active' : ''}
+          className={palette.background === '#1a1916' ? 'active' : ''}
           onClick={() => applyPreset('tokyo-sumi')}
         >
           <span className="preset-swatch tokyo-sumi-swatch" aria-hidden="true" />
-          <span><strong>東京墨</strong><small>Tokyo Sumi</small></span>
+          <span><strong>Tokyo Sumi</strong><small>Retro tối</small></span>
         </button>
         <button
           type="button"
-          className={palette.background === '#f5f0e6' ? 'active' : ''}
+          className={palette.background === '#f2ead8' ? 'active' : ''}
           onClick={() => applyPreset('showa-paper')}
         >
           <span className="preset-swatch showa-paper-swatch" aria-hidden="true" />
-          <span><strong>昭和紙</strong><small>Showa Paper</small></span>
+          <span><strong>Showa Paper</strong><small>Retro sáng</small></span>
         </button>
       </div>
 
