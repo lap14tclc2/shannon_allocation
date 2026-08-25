@@ -1,5 +1,23 @@
 let authRedirectInProgress = false;
 const getCache = new Map();
+const PORTFOLIO_SCOPE_KEY = 'qport.activePortfolioId';
+let portfolioScopeId = (() => {
+  if (typeof window === 'undefined') return '';
+  return String(window.localStorage.getItem(PORTFOLIO_SCOPE_KEY) || '');
+})();
+
+function setPortfolioScope(value) {
+  portfolioScopeId = value ? String(value) : '';
+  if (typeof window === 'undefined') return;
+  if (portfolioScopeId) window.localStorage.setItem(PORTFOLIO_SCOPE_KEY, portfolioScopeId);
+  else window.localStorage.removeItem(PORTFOLIO_SCOPE_KEY);
+}
+
+function scopedHeaders(headers = {}) {
+  return portfolioScopeId
+    ? { ...headers, 'X-QPort-Portfolio-Id': portfolioScopeId }
+    : headers;
+}
 
 function apiError(data, fallback) {
   const err = new Error(data?.error || fallback);
@@ -33,7 +51,7 @@ async function handleResponse(res, url) {
 }
 
 async function getJSON(url, signal) {
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal, headers: scopedHeaders() });
   return handleResponse(res, url);
 }
 
@@ -61,7 +79,7 @@ function clearGetCache() {
 }
 
 async function sendJSON(url, method, body) {
-  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
+  const res = await fetch(url, { method, headers: scopedHeaders({ 'Content-Type': 'application/json' }), body: body == null ? undefined : JSON.stringify(body) });
   const data = await handleResponse(res, url);
   if (method !== 'GET') clearGetCache();
   return data;
@@ -69,9 +87,23 @@ async function sendJSON(url, method, body) {
 
 // Authentication
 export const getCurrentUser = () => getJSONCached('/api/auth/me', 60_000);
-export const loginUser = (username, password = '') => sendJSON('/api/auth/login', 'POST', { username, password });
-export const registerUser = (username) => sendJSON('/api/auth/register', 'POST', { username });
-export const logoutUser = () => sendJSON('/api/auth/logout', 'POST', {});
+export async function loginUser(username, password = '') {
+  const result = await sendJSON('/api/auth/login', 'POST', { username, password });
+  setPortfolioScope('');
+  return result;
+}
+export async function registerUser(username) {
+  const result = await sendJSON('/api/auth/register', 'POST', { username });
+  setPortfolioScope('');
+  return result;
+}
+export async function logoutUser() {
+  try {
+    return await sendJSON('/api/auth/logout', 'POST', {});
+  } finally {
+    setPortfolioScope('');
+  }
+}
 export const listUsers = () => getJSON('/api/auth/users');
 export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)}`, 'DELETE', {});
 export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
@@ -79,11 +111,27 @@ export const getAdminUserPortfolio = (userId) => getJSON(`/api/admin/users/${Num
 
 // Multi-portfolio registry. The active portfolio is persisted server-side per user,
 // so all existing portfolio endpoints remain safely scoped without client headers.
-export const listPortfolios = () => getJSON('/api/portfolios');
+export async function listPortfolios() {
+  const result = await getJSON('/api/portfolios');
+  if (result.active_portfolio_id) setPortfolioScope(result.active_portfolio_id);
+  return result;
+}
 export const createPortfolio = (name) => sendJSON('/api/portfolios', 'POST', { name });
 export const renamePortfolio = (portfolioId, name) => sendJSON(`/api/portfolios/${Number(portfolioId)}`, 'PATCH', { name });
-export const activatePortfolio = (portfolioId) => sendJSON(`/api/portfolios/${Number(portfolioId)}/select`, 'POST', {});
-export const removePortfolio = (portfolioId, confirmation) => sendJSON(`/api/portfolios/${Number(portfolioId)}`, 'DELETE', { confirmation });
+export async function activatePortfolio(portfolioId) {
+  const result = await sendJSON(`/api/portfolios/${Number(portfolioId)}/select`, 'POST', {});
+  setPortfolioScope(result.active_portfolio_id || portfolioId);
+  clearGetCache();
+  return result;
+}
+export async function removePortfolio(portfolioId, confirmation) {
+  const result = await sendJSON(`/api/portfolios/${Number(portfolioId)}`, 'DELETE', { confirmation });
+  if (result.portfolio?.next_active_portfolio_id) {
+    setPortfolioScope(result.portfolio.next_active_portfolio_id);
+  }
+  clearGetCache();
+  return result;
+}
 
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
 export async function getPortfolioHoldingSymbols() {
