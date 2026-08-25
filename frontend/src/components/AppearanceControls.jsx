@@ -1,46 +1,38 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  DEFAULT_APPEARANCE,
-  getStoredAppearance,
-  resetAppearance,
-  saveAppearance,
-  useAppearancePreset,
-} from '../lib/appearance.js';
+import { getStoredTheme, saveTheme } from '../lib/appearance.js';
 
-const FIELDS = [
-  ['background', 'Background', 'Nền'],
-  ['text', 'Primary text', 'Chữ chính'],
-  ['secondary', 'Secondary text', 'Chữ phụ'],
-  ['muted', 'Muted text', 'Chữ mờ'],
-  ['accent', 'Accent / links', 'Accent / link'],
-  ['success', 'Positive / ready', 'Tăng / sẵn sàng'],
-  ['warning', 'Warning / building', 'Cảnh báo / đang xây'],
-  ['danger', 'Negative / error', 'Giảm / lỗi'],
-  ['info', 'Information', 'Thông tin'],
+const THEMES = [
+  {
+    id: 'retro',
+    name: 'Retro Japanese',
+    shortName: 'Retro',
+    description: 'Ấm, hoài cổ và giống một sổ tài sản được in thủ công.',
+    descriptionEn: 'Warm, tactile and inspired by a carefully printed asset ledger.',
+  },
+  {
+    id: 'cyber',
+    name: 'Cyber Fantasy',
+    shortName: 'Cyber',
+    description: 'Tối, sắc nét và giàu năng lượng cho dữ liệu phân tích.',
+    descriptionEn: 'Dark, precise and energetic for analytical data.',
+  },
 ];
-
-function isHex(value) {
-  return /^#[0-9a-f]{6}$/i.test(String(value || '').trim());
-}
 
 export default function AppearanceControls({ locale = 'en' }) {
   const text = (en, vi) => locale === 'vi' ? vi : en;
   const [open, setOpen] = useState(false);
-  const [palette, setPalette] = useState({ ...DEFAULT_APPEARANCE });
-  const [drafts, setDrafts] = useState({ ...DEFAULT_APPEARANCE });
+  const [theme, setTheme] = useState(getStoredTheme);
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
-
-  useEffect(() => {
-    const current = getStoredAppearance() || { ...DEFAULT_APPEARANCE };
-    setPalette(current);
-    setDrafts(current);
-  }, []);
+  const currentTheme = THEMES.find(item => item.id === theme) || THEMES[0];
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const onKey = event => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
     };
     const onPointer = event => {
       if (panelRef.current?.contains(event.target) || buttonRef.current?.contains(event.target)) return;
@@ -54,25 +46,8 @@ export default function AppearanceControls({ locale = 'en' }) {
     };
   }, [open]);
 
-  function updateColor(field, value) {
-    if (!isHex(value)) return;
-    const normalized = value.toLowerCase();
-    const next = { ...palette, [field]: normalized };
-    setPalette(next);
-    setDrafts(current => ({ ...current, [field]: normalized }));
-    saveAppearance(next);
-  }
-
-  function reset() {
-    const next = resetAppearance();
-    setPalette(next);
-    setDrafts(next);
-  }
-
-  function applyPreset(name) {
-    const next = useAppearancePreset(name);
-    setPalette(next);
-    setDrafts(next);
+  function selectTheme(value) {
+    setTheme(saveTheme(value));
   }
 
   return <div className="appearance-control">
@@ -83,78 +58,52 @@ export default function AppearanceControls({ locale = 'en' }) {
       aria-haspopup="dialog"
       aria-expanded={open}
       onClick={() => setOpen(value => !value)}
-      title={text('Customize QPort colors', 'Tùy chỉnh màu QPort')}
+      title={text('Choose QPort theme', 'Chọn giao diện QPort')}
     >
-      <span className="appearance-swatch" style={{ background: palette.accent }} aria-hidden="true" />
-      <span>{text('colors', 'màu')}</span>
+      <span className={`theme-trigger-mark theme-trigger-${theme}`} aria-hidden="true"><i /><i /></span>
+      <span className="theme-trigger-copy"><small>{text('Theme', 'Giao diện')}</small><strong>{currentTheme.shortName}</strong></span>
+      <span className="theme-trigger-chevron" aria-hidden="true">⌄</span>
     </button>
 
-    {open && <div ref={panelRef} className="appearance-popover" role="dialog" aria-label={text('Appearance colors', 'Màu giao diện')}>
+    {open && <div ref={panelRef} className="appearance-popover" role="dialog" aria-label={text('Choose interface theme', 'Chọn giao diện')}>
       <div className="appearance-head">
         <div>
-          <b>{text('Appearance', 'Giao diện')}</b>
-          <span>{text('Saved automatically', 'Tự động lưu')}</span>
+          <b>{text('Interface theme', 'Giao diện')}</b>
+          <span>{text('Choose one complete QPort visual system', 'Chọn một phong cách hoàn chỉnh cho QPort')}</span>
         </div>
         <button type="button" className="appearance-close" onClick={() => setOpen(false)} aria-label={text('Close', 'Đóng')}>×</button>
       </div>
 
+      <div className="theme-options" role="radiogroup" aria-label={text('Available themes', 'Các giao diện hiện có')}>
+        {THEMES.map(item => {
+          const selected = item.id === theme;
+          return <button
+            key={item.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className={`theme-option ${selected ? 'active' : ''}`}
+            onClick={() => selectTheme(item.id)}
+          >
+            <span className={`theme-preview theme-preview-${item.id}`} aria-hidden="true">
+              <i className="theme-preview-nav" />
+              <i className="theme-preview-card" />
+              <i className="theme-preview-line" />
+              <i className="theme-preview-accent" />
+            </span>
+            <span className="theme-option-copy">
+              <strong>{item.name}</strong>
+              <small>{locale === 'vi' ? item.description : item.descriptionEn}</small>
+            </span>
+            <span className="theme-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+          </button>;
+        })}
+      </div>
+
       <p className="appearance-note">{text(
-        'Choose a Japanese ledger preset or fine-tune its semantic colors.',
-        'Chọn một preset sổ cái Nhật Bản hoặc tinh chỉnh màu theo ngữ nghĩa.'
+        'Your choice is applied immediately and saved on this device.',
+        'Lựa chọn được áp dụng ngay và lưu trên thiết bị này.'
       )}</p>
-
-      <div className="appearance-presets" aria-label={text('Japanese theme presets', 'Preset giao diện Nhật Bản')}>
-        <button
-          type="button"
-          className={palette.background === '#1a1916' ? 'active' : ''}
-          onClick={() => applyPreset('tokyo-sumi')}
-        >
-          <span className="preset-swatch tokyo-sumi-swatch" aria-hidden="true" />
-          <span><strong>Tokyo Sumi</strong><small>Retro tối</small></span>
-        </button>
-        <button
-          type="button"
-          className={palette.background === '#f2ead8' ? 'active' : ''}
-          onClick={() => applyPreset('showa-paper')}
-        >
-          <span className="preset-swatch showa-paper-swatch" aria-hidden="true" />
-          <span><strong>Showa Paper</strong><small>Retro sáng</small></span>
-        </button>
-      </div>
-
-      <div className="appearance-fields">
-        {FIELDS.map(([field, en, vi]) => <label className="appearance-row" key={field}>
-          <span>{text(en, vi)}</span>
-          <span className="appearance-inputs">
-            <input
-              type="color"
-              value={palette[field]}
-              onChange={event => updateColor(field, event.target.value)}
-              aria-label={text(`${en} color`, `Màu ${vi}`)}
-            />
-            <input
-              className="appearance-hex"
-              value={drafts[field]}
-              maxLength={7}
-              spellCheck="false"
-              onChange={event => {
-                const value = event.target.value;
-                setDrafts(current => ({ ...current, [field]: value }));
-                if (isHex(value)) updateColor(field, value);
-              }}
-              onBlur={() => {
-                if (!isHex(drafts[field])) setDrafts(current => ({ ...current, [field]: palette[field] }));
-              }}
-              aria-label={text(`${en} hex value`, `Mã hex ${vi}`)}
-            />
-          </span>
-        </label>)}
-      </div>
-
-      <div className="appearance-actions">
-        <button type="button" className="btn-ghost appearance-reset" onClick={reset}>{text('Reset Tokyo Sumi', 'Khôi phục Tokyo Sumi')}</button>
-        <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>{text('Done', 'Xong')}</button>
-      </div>
     </div>}
   </div>;
 }
