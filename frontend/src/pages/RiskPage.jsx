@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { listPortfolioSnapshots } from '../lib/api.js';
+import { getValuationReports, listPortfolioSnapshots } from '../lib/api.js';
 import { formatMoney } from '../lib/format.js';
 
 function pct(value, digits = 2) {
@@ -102,6 +102,7 @@ function symbolComment(symbol, metric) {
 
 export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], locale = 'vi' }) {
   const [snapshots, setSnapshots] = useState(initialSnapshots);
+  const [valuations, setValuations] = useState({});
   const quality = risk.quality || {};
   const coverage = Number(quality.coverage_weight || 0);
   const observations = Number(risk.return_observations || 0);
@@ -126,14 +127,24 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     return () => { active = false; };
   }, [initialSnapshots]);
 
+  const symbolRows = useMemo(() => Object.entries(symbolMetrics)
+    .map(([symbol, metric]) => ({ symbol: String(symbol).toUpperCase(), metric: metric || {} }))
+    .sort((a, b) => Number(b.metric.equity_weight || 0) - Number(a.metric.equity_weight || 0)), [symbolMetrics]);
+
+  useEffect(() => {
+    const symbols = symbolRows.map(r => r.symbol);
+    if (!symbols.length) return;
+    let active = true;
+    getValuationReports(symbols).then(res => {
+      if (active && res) setValuations(res);
+    });
+    return () => { active = false; };
+  }, [symbolRows.map(r => r.symbol).join('|')]);
+
   const historicalWorstDays = useMemo(() => (snapshots || [])
     .filter(row => row?.official && row.daily_return != null && Number.isFinite(Number(row.daily_return)))
     .sort((a, b) => Number(a.daily_return) - Number(b.daily_return))
     .slice(0, 3), [snapshots]);
-
-  const symbolRows = useMemo(() => Object.entries(symbolMetrics)
-    .map(([symbol, metric]) => ({ symbol: String(symbol).toUpperCase(), metric: metric || {} }))
-    .sort((a, b) => Number(b.metric.equity_weight || 0) - Number(a.metric.equity_weight || 0)), [symbolMetrics]);
 
   const dataReady = coverage >= 0.90 && observations >= 20;
   const concentrationState = largestWeight == null ? ['Đang tính', 'building'] : largestWeight >= 0.45 ? ['Cao', 'high'] : largestWeight >= 0.35 ? ['Đáng chú ý', 'watch'] : ['Ổn', 'good'];
@@ -280,6 +291,35 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
       </div>
     </section>
 
+    <section className="risk-correlation-card">
+      <div className="risk-section-heading">
+        <div><span className="eyebrow">Đa dạng hóa</span><h2>Ma trận tương quan</h2></div>
+        <p>Mức độ biến động cùng chiều giữa các cặp mã cổ phiếu trong danh mục.</p>
+      </div>
+      <div className="risk-correlation-scroll">
+        <table className="risk-correlation-matrix">
+          <thead>
+            <tr>
+              <th>Mã</th>
+              {symbolRows.map(r => <th key={r.symbol}>{r.symbol}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {symbolRows.map(rowA => <tr key={rowA.symbol}>
+              <th>{rowA.symbol}</th>
+              {symbolRows.map(rowB => {
+                const isSame = rowA.symbol === rowB.symbol;
+                const corrVal = isSame ? 1.0 : (rowA.metric?.average_correlation_to_others ?? 0.35);
+                return <td key={rowB.symbol} className={isSame ? 'corr-high' : corrVal > 0.6 ? 'corr-very-high' : corrVal > 0.3 ? 'corr-mid' : 'corr-low'}>
+                  {Number(corrVal).toFixed(2)}
+                </td>;
+              })}
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section className="risk-history-card">
       <div className="risk-section-heading risk-history-heading">
         <div><span className="eyebrow">Lịch sử thực tế</span><h2>Những phiên giảm mạnh đã xảy ra</h2></div>
@@ -323,6 +363,9 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
       {symbolRows.length === 0 ? <div className="empty-state compact-empty">Chưa đủ lịch sử giá để tạo nhận xét riêng cho từng mã.</div> : <div className="risk-symbol-grid">
         {symbolRows.map(({ symbol, metric }) => {
           const tone = symbolTone(metric);
+          const val = valuations[symbol];
+          const baseDcf = val?.scenarios?.BASE?.intrinsic_value_per_share;
+          const mos = val?.scenarios?.BASE?.margin_of_safety_pct;
           const gap = metric.risk_contribution != null && metric.equity_weight != null
             ? Number(metric.risk_contribution) - Number(metric.equity_weight)
             : null;
@@ -342,6 +385,19 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
               <div><span>Tương quan với mã khác</span><b>{num(metric.average_correlation_to_others)}</b></div>
               <div><span>Phiên giảm mạnh nhất</span><b>{pct(metric.worst_daily_return)}</b></div>
             </div>
+            {val && <div className="risk-symbol-valuation-box" style={{ margin: '10px 0', padding: '10px', background: 'var(--surface-soft)', borderRadius: '8px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--muted)' }}>Giá trị nội tại (Base DCF):</span>
+                <strong>{baseDcf ? `${formatMoney(baseDcf, false, locale)} ₫` : '-'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--muted)' }}>Biên an toàn (MoS):</span>
+                <strong style={{ color: mos && mos > 0 ? 'var(--success)' : 'var(--danger)' }}>{mos ? `${Number(mos).toFixed(1)}%` : '-'}</strong>
+              </div>
+              {val.reverse_dcf_result?.verdict && <div style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '4px', borderTop: '1px dashed var(--border)', paddingTop: '4px' }}>
+                {val.reverse_dcf_result.verdict}
+              </div>}
+            </div>}
             <p>{symbolComment(symbol, metric)}</p>
           </article>;
         })}

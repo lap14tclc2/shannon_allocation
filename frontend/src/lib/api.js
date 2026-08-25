@@ -180,6 +180,27 @@ export const getDividendHistory = (symbol, options = {}) => {
   return refresh ? getJSON(url) : getJSONCached(url, 5 * 60_000);
 };
 
+export const getValuationReport = (symbol) => {
+  const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
+  return getJSONCached(`/api/portfolio/valuation/${ticker}`, 10 * 60_000);
+};
+
+export async function getValuationReports(symbols) {
+  const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
+  const results = {};
+  await Promise.all(unique.map(async symbol => {
+    try {
+      const res = await getValuationReport(symbol);
+      if (res?.ok && res.report) {
+        results[symbol] = res.report;
+      }
+    } catch {
+      // Ignored for symbols without complete statements
+    }
+  }));
+  return results;
+}
+
 export async function getDividendHistories(symbols, options = {}) {
   const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
   const concurrency = Math.max(1, Math.min(Number(options.concurrency) || 6, 10));
