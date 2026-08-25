@@ -109,20 +109,46 @@ def latest_corrections(store) -> dict[int, dict]:
     return latest
 
 
-def effective_events(store, start: str | None = None, end: str | None = None) -> list[LedgerEvent]:
-    """Return the user-visible/effective ledger without mutating source rows."""
-    originals = raw_events(store)
-    latest = latest_corrections(store)
-    out: list[LedgerEvent] = []
-    for original in originals:
-        correction = latest.get(int(original.id)) if original.id is not None else None
-        if correction and correction["action"] == "DELETE":
-            # Keep support for historical DELETE corrections written by older
-            # QPort versions. New transaction deletion is disabled below.
-            continue
+def transaction_versions(store) -> list[dict]:
+    """Resolve every immutable source event to its current display version/status."""
+    corrections_by_event: dict[int, list[dict]] = {}
+    for correction in list_corrections(store):
+        corrections_by_event.setdefault(int(correction["event_id"]), []).append(correction)
+
+    out: list[dict] = []
+    for original in raw_events(store):
         event = original
-        if correction and correction["action"] == "EDIT" and correction.get("replacement"):
-            event = _payload_to_event(correction["replacement"], event_id=int(original.id), fallback=original)
+        status = "ACTIVE"
+        latest = None
+        for correction in corrections_by_event.get(int(original.id or 0), []):
+            if (
+                status == "ACTIVE"
+                and correction["action"] == "EDIT"
+                and correction.get("replacement")
+            ):
+                event = _payload_to_event(
+                    correction["replacement"],
+                    event_id=int(original.id),
+                    fallback=event,
+                )
+            elif correction["action"] == "DELETE":
+                status = "SOFT_DELETED"
+            latest = correction
+        out.append({
+            "event": event,
+            "status": status,
+            "correction": latest,
+        })
+    return out
+
+
+def effective_events(store, start: str | None = None, end: str | None = None) -> list[LedgerEvent]:
+    """Return active ledger events without mutating immutable source rows."""
+    out: list[LedgerEvent] = []
+    for version in transaction_versions(store):
+        if version["status"] == "SOFT_DELETED":
+            continue
+        event = version["event"]
         if start and event.event_date < start:
             continue
         if end and event.event_date > end:
@@ -202,12 +228,31 @@ def append_edit(store, event_id: int, replacement: LedgerEvent, *, reason: str, 
 
 
 def append_delete(store, event_id: int, *, reason: str, created_by: str = "local") -> int:
-    # Product policy: transaction history is append/correct only. Historical
-    # DELETE corrections remain readable for backward compatibility, but no new
-    # effective deletion can be created through the service/API.
-    raise CorrectionError(
-        "Transaction deletion is disabled. Correct quantity, price or broker instead."
-    )
+    """Append a soft-delete marker while preserving the immutable source row."""
+    if raw_event(store, event_id) is None:
+        raise CorrectionError("Transaction not found.")
+    if effective_event(store, event_id) is None:
+        raise CorrectionError("Transaction is already soft-deleted.")
+    reason = str(reason or "").strip()
+    if not reason:
+        raise CorrectionError("Discard reason is required.")
+    if len(reason) > 500:
+        raise CorrectionError("Discard reason must be at most 500 characters.")
+
+    with store.connect() as db:
+        cur = db.execute(
+            """
+            INSERT INTO ledger_corrections(event_id, action, replacement_json, reason, created_by, created_at)
+            VALUES (?, 'DELETE', NULL, ?, ?, ?)
+            """,
+            (
+                int(event_id),
+                reason,
+                str(created_by or "local")[:100],
+                store._now(),
+            ),
+        )
+        return int(cur.lastrowid)
 
 
 def audit_log(store) -> list[dict]:
@@ -217,6 +262,7 @@ def audit_log(store) -> list[dict]:
     for row in reversed(corrections):
         out.append({
             **row,
+            "action": "SOFT_DELETE" if row["action"] == "DELETE" else row["action"],
             "original": originals.get(int(row["event_id"])),
         })
     return out
