@@ -142,9 +142,9 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
 
     fee = 0.0
     tax = 0.0
-    if event_type in {EventType.BUY, EventType.SELL, EventType.CASH_DIVIDEND}:
+    if event_type in {EventType.BUY, EventType.RIGHTS_ISSUE, EventType.SELL, EventType.CASH_DIVIDEND}:
         tax = _finite_number(payload.get("tax"), "tax", minimum=0, maximum=MAX_MONEY_VND)
-    if event_type in {EventType.BUY, EventType.SELL}:
+    if event_type in {EventType.BUY, EventType.RIGHTS_ISSUE, EventType.SELL}:
         fee = _finite_number(payload.get("fee"), "fee", minimum=0, maximum=MAX_MONEY_VND)
         gross = quantity * price
         if fee + tax > gross:
