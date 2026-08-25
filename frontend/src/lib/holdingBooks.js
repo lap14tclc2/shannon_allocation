@@ -69,6 +69,7 @@ export function deriveHoldingBooks(transactions = []) {
   let sequence = 0;
 
   for (const row of sortEvents(transactions)) {
+    if (String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED') continue;
     const type = String(row?.event_type || '').toUpperCase();
     const symbol = String(row?.symbol || '').toUpperCase();
     if (!symbol) continue;
@@ -77,7 +78,7 @@ export function deriveHoldingBooks(transactions = []) {
     const accountId = accountOf(row);
     const quantity = quantityOf(row?.quantity);
 
-    if ((type === 'POSITION_IMPORT' || type === 'BUY') && quantity > EPSILON) {
+    if ((type === 'POSITION_IMPORT' || type === 'BUY' || type === 'RIGHTS_ISSUE') && quantity > EPSILON) {
       lots.push({
         symbol,
         broker_code: brokerCode,

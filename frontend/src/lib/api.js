@@ -86,7 +86,9 @@ export async function listPortfolioTransactions() { const d = await getJSON('/ap
 export async function listPortfolioTransactionAudit() { const d = await getJSON('/api/portfolio/transaction-audit'); return d.corrections || []; }
 export const createPortfolioTransaction = (payload) => sendJSON('/api/portfolio/transactions', 'POST', payload);
 export const updatePortfolioTransaction = (eventId, payload) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'PATCH', payload);
-export const deletePortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+export const discardPortfolioTransaction = (eventId, reason) => sendJSON(`/api/portfolio/transactions/${Number(eventId)}`, 'DELETE', { reason });
+// Backward-compatible alias for older clients. The server never physically deletes the ledger row.
+export const deletePortfolioTransaction = discardPortfolioTransaction;
 export const deletePortfolio = (confirmation) => sendJSON('/api/portfolio', 'DELETE', { confirmation });
 export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
 export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');

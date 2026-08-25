@@ -33,16 +33,61 @@ def test_edit_changes_effective_state_but_preserves_source_row(tmp_path):
     assert svc.book.restatements()==[]
 
 
-def test_delete_is_disabled_and_preserves_effective_ledger(tmp_path):
+def test_soft_delete_preserves_source_row_and_updates_effective_cash(tmp_path):
     svc=make_service(tmp_path)
     keep=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":50_000_000})
     extra=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
-    with pytest.raises(CorrectionError, match="deletion is disabled"):
-        svc.delete_event(extra["event_id"],"Duplicate cash entry")
-    assert svc.current_state().cash==pytest.approx(60_000_000)
+
+    result=svc.delete_event(extra["event_id"],"Duplicate cash entry")
+
+    assert result["action"]=="SOFT_DELETE"
+    assert result["status"]=="SOFT_DELETED"
+    assert svc.current_state().cash==pytest.approx(50_000_000)
     assert [e.id for e in raw_events(svc.store)]==[keep["event_id"],extra["event_id"]]
-    assert len(svc.transactions())==2
-    assert svc.transaction_audit()==[]
+
+    rows={row["id"]:row for row in svc.transactions()}
+    assert len(rows)==2
+    assert rows[keep["event_id"]]["status"]=="ACTIVE"
+    assert rows[extra["event_id"]]["status"]=="SOFT_DELETED"
+    assert rows[extra["event_id"]]["correction"]["reason"]=="Duplicate cash entry"
+    assert svc.transaction_audit()[0]["action"]=="SOFT_DELETE"
+
+
+def test_soft_delete_buy_rebuilds_holdings_and_restores_cash(tmp_path):
+    svc=make_service(tmp_path)
+    svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
+    buy=svc.append_event({
+        "event_type":"BUY",
+        "event_date":"2026-08-21",
+        "symbol":"FPT",
+        "quantity":100,
+        "price":70_000,
+    })
+    before=svc.current_state()
+    assert before.positions["FPT"].shares==pytest.approx(100)
+    assert before.cash==pytest.approx(3_000_000)
+
+    svc.delete_event(buy["event_id"],"Trade was entered by mistake")
+
+    after=svc.current_state()
+    assert "FPT" not in after.positions
+    assert after.cash==pytest.approx(10_000_000)
+
+
+def test_automatic_transaction_cannot_be_discarded_directly(tmp_path):
+    svc=make_service(tmp_path)
+    event=svc.append_event({
+        "event_type":"CASH_DEPOSIT",
+        "event_date":"2026-08-20",
+        "amount":10_000_000,
+        "metadata":{"auto_generated":True},
+    })
+
+    with pytest.raises(InputValidationError) as exc:
+        svc.delete_event(event["event_id"],"Remove generated event")
+
+    assert exc.value.code=="AUTOMATED_TRANSACTION_DISCARD_FORBIDDEN"
+    assert svc.current_state().cash==pytest.approx(10_000_000)
 
 
 def test_delete_never_removes_required_funding(tmp_path):
@@ -92,6 +137,53 @@ def test_edit_only_allows_quantity_price_and_broker(tmp_path):
         svc.update_event(event_id,{"symbol":"ACB","correction_reason":"not allowed"})
     with pytest.raises(CorrectionError, match="account_id"):
         svc.update_event(event_id,{"account_id":"MARGIN","correction_reason":"not allowed"})
+
+
+def test_stock_transaction_type_can_change_to_paid_share_issuance(tmp_path):
+    svc = make_service(tmp_path)
+    svc.append_event({
+        "event_type": "CASH_DEPOSIT",
+        "event_date": "2026-08-19",
+        "amount": 20_000_000,
+    })
+    event_id = svc.append_event({
+        "event_type": "POSITION_IMPORT",
+        "event_date": "2026-08-20",
+        "symbol": "FPT",
+        "quantity": 100,
+        "price": 70_000,
+        "broker_code": "DNSE",
+        "account_id": "PRIMARY",
+    })["event_id"]
+
+    result = svc.update_event(event_id, {
+        "event_type": "RIGHTS_ISSUE",
+        "correction_reason": "This was a paid additional issuance",
+    })
+
+    assert result["event"]["event_type"] == "RIGHTS_ISSUE"
+    state = svc.current_state()
+    assert state.positions["FPT"].shares == pytest.approx(100)
+    assert state.positions["FPT"].cost_basis == pytest.approx(7_000_000)
+    assert state.cash == pytest.approx(13_000_000)
+
+
+def test_cash_transaction_type_cannot_change_to_stock_type(tmp_path):
+    svc = make_service(tmp_path)
+    event_id = svc.append_event({
+        "event_type": "CASH_DEPOSIT",
+        "event_date": "2026-08-20",
+        "amount": 20_000_000,
+    })["event_id"]
+
+    with pytest.raises(CorrectionError, match="only be changed among"):
+        svc.update_event(event_id, {
+            "event_type": "POSITION_IMPORT",
+            "symbol": "FPT",
+            "quantity": 100,
+            "price": 70_000,
+            "correction_reason": "Invalid cross-family change",
+        })
 
 
 def test_corporate_action_requires_authoritative_verification_and_explicit_post(tmp_path):

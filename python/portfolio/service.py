@@ -114,7 +114,7 @@ class PortfolioService:
                 "price_source": quote.get("source") if quote else None,
                 "cost_value": cost_value,
                 "market_value": value,
-                "unrealized_pnl": value - cost_value if quote else 0.0,
+                "unrealized_pnl": value - cost_value if quote else None,
                 "unrealized_return": (value / cost_value - 1.0 if quote and cost_value > 0 else None),
             })
         nav = equity + state.cash
@@ -137,10 +137,19 @@ class PortfolioService:
     @staticmethod
     def _live_accounting(state, positions: list[dict], nav: float) -> dict:
         cost_value = sum(float(p.get("cost_value") or 0) for p in positions)
-        unrealized = sum(float(p.get("unrealized_pnl") or 0) for p in positions)
+        valuation_complete = all(p.get("price") is not None for p in positions)
+        unrealized = (
+            sum(float(p.get("unrealized_pnl") or 0) for p in positions)
+            if valuation_complete
+            else None
+        )
         contributions = float(state.net_external_contributions)
-        total_pnl = float(nav) - contributions
-        accounting_return = (total_pnl / contributions) if contributions > 0 else None
+        total_pnl = float(nav) - contributions if valuation_complete else None
+        accounting_return = (
+            total_pnl / contributions
+            if total_pnl is not None and contributions > 0
+            else None
+        )
         return {
             "cost_value": cost_value,
             "unrealized_pnl": unrealized,

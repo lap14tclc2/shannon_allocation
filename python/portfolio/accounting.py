@@ -126,9 +126,9 @@ def apply_event(state: PortfolioState, event: LedgerEvent) -> None:
         state.external_contributions += cost
         return
 
-    if et == EventType.BUY:
+    if et in {EventType.BUY, EventType.RIGHTS_ISSUE}:
         if not event.symbol:
-            raise AccountingError("BUY requires symbol")
+            raise AccountingError(f"{et.value} requires symbol")
         qty = _positive(event.quantity, "quantity")
         price = _positive(event.price, "price")
         p = _position(state, event.symbol)

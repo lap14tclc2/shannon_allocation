@@ -115,7 +115,7 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
             "broker_code",
         )
 
-    symbol_required = event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL, EventType.CASH_DIVIDEND, EventType.STOCK_DIVIDEND, EventType.SPLIT}
+    symbol_required = event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.RIGHTS_ISSUE, EventType.SELL, EventType.CASH_DIVIDEND, EventType.STOCK_DIVIDEND, EventType.SPLIT}
     symbol = normalize_symbol(payload.get("symbol"))
     if symbol_required and not symbol:
         raise InputValidationError("SYMBOL_REQUIRED", "symbol is required for this event.", "symbol")
@@ -123,11 +123,11 @@ def normalize_event_payload(payload: dict, *, today: str) -> dict:
         symbol = None
 
     quantity = 0.0
-    if event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL, EventType.STOCK_DIVIDEND}:
+    if event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.RIGHTS_ISSUE, EventType.SELL, EventType.STOCK_DIVIDEND}:
         quantity = _positive(payload.get("quantity"), "quantity", MAX_SHARES)
 
     price = 0.0
-    if event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.SELL}:
+    if event_type in {EventType.POSITION_IMPORT, EventType.BUY, EventType.RIGHTS_ISSUE, EventType.SELL}:
         price = _positive(payload.get("price"), "price", MAX_PRICE_VND)
         if price < MIN_EQUITY_PRICE_VND:
             raise InputValidationError("PRICE_UNIT_SUSPECT", "price must be full VND per share (for example 72,000, not 72).", "price")

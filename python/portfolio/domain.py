@@ -8,6 +8,7 @@ from typing import Any
 class EventType(str, Enum):
     POSITION_IMPORT = "POSITION_IMPORT"
     BUY = "BUY"
+    RIGHTS_ISSUE = "RIGHTS_ISSUE"
     SELL = "SELL"
     CASH_DEPOSIT = "CASH_DEPOSIT"
     CASH_WITHDRAW = "CASH_WITHDRAW"

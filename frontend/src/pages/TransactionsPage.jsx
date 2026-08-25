@@ -1,21 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
-import { createPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
+import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
 import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
 
-const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'CASH_WITHDRAW', 'SPLIT', 'FEE'];
+const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'RIGHTS_ISSUE', 'CASH_WITHDRAW', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
-const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'SELL']);
+const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL']);
 const TYPE_LABELS = {
   POSITION_IMPORT: 'Nhập danh mục ban đầu',
   CASH_DEPOSIT: 'Nạp tiền',
-  BUY: 'Mua cổ phiếu',
+  BUY: 'Mua thêm cổ phiếu',
   SELL: 'Bán cổ phiếu',
+  RIGHTS_ISSUE: 'Phát hành thêm',
   CASH_WITHDRAW: 'Rút tiền',
-  SPLIT: 'Tách / gộp cổ phiếu',
+  SPLIT: 'Tách / gộp cổ phiếu (giao dịch cũ)',
   FEE: 'Ghi nhận phí',
   CASH_DIVIDEND: 'Cổ tức tiền mặt',
   STOCK_DIVIDEND: 'Cổ tức cổ phiếu',
@@ -44,15 +45,17 @@ function brokerName(code) {
   return BROKERS.find(item => item.code === code)?.name || code || 'Chưa gán';
 }
 
-function sellIntentFromLocation() {
-  if (typeof window === 'undefined') return { active: false, locked: false };
+function tradeIntentFromLocation() {
+  if (typeof window === 'undefined') return { active: false, locked: false, type: 'POSITION_IMPORT' };
   const params = new URLSearchParams(window.location.search || '');
-  const active = params.get('action') === 'sell';
+  const action = params.get('action');
+  const active = action === 'buy' || action === 'sell';
   const symbol = String(params.get('symbol') || '').toUpperCase();
   const broker_code = String(params.get('broker') || '').toUpperCase();
   const account_id = String(params.get('account') || '').toUpperCase();
   return {
     active,
+    type: action === 'buy' ? 'BUY' : action === 'sell' ? 'SELL' : 'POSITION_IMPORT',
     symbol,
     broker_code,
     account_id,
@@ -65,12 +68,12 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
   const holdingBooks = useMemo(() => deriveHoldingBooks(transactions), [transactions]);
-  const intent = useMemo(() => sellIntentFromLocation(), []);
+  const intent = useMemo(() => tradeIntentFromLocation(), []);
   const intentBook = useMemo(() => intent.locked
     ? findHoldingBook(holdingBooks, intent.symbol, intent.broker_code, intent.account_id)
     : null, [holdingBooks, intent]);
 
-  const [type, setType] = useState(intent.active ? 'SELL' : 'POSITION_IMPORT');
+  const [type, setType] = useState(intent.type);
   const [form, setForm] = useState(() => {
     const initial = EMPTY_FORM(today || '');
     if (!intent.locked) return initial;
@@ -89,14 +92,30 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [discardTarget, setDiscardTarget] = useState(null);
+  const [discardReason, setDiscardReason] = useState('');
+  const [discardError, setDiscardError] = useState('');
+  const [discarding, setDiscarding] = useState(false);
 
+  const activeTransactionCount = useMemo(
+    () => transactions.filter(row => String(row?.status || 'ACTIVE').toUpperCase() !== 'SOFT_DELETED').length,
+    [transactions],
+  );
+
+  const holdingSymbols = useMemo(
+    () => [...new Set(holdingBooks.map(book => book.symbol))].sort(),
+    [holdingBooks],
+  );
+  const selectedSymbolBooks = useMemo(
+    () => holdingBooks.filter(book => book.symbol === form.symbol),
+    [holdingBooks, form.symbol],
+  );
   const selectedSellBook = useMemo(() => {
     if (!selectedSellKey) return null;
     return holdingBooks.find(row => holdingBookKey(row) === selectedSellKey) || null;
   }, [holdingBooks, selectedSellKey]);
 
-  const lockedSell = !editingId && type === 'SELL' && intent.locked;
-  const sellBook = lockedSell ? intentBook : selectedSellBook;
+  const sellBook = selectedSellBook || (type === 'SELL' ? intentBook : null);
   const isSellCreate = !editingId && type === 'SELL';
   const estimatedSellPrice = isSellCreate && Number(form.quantity) > 0 && String(form.amount || '').trim()
     ? (() => {
@@ -109,17 +128,23 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     : null;
 
   const requirements = useMemo(() => ({
-    symbol: ['POSITION_IMPORT', 'BUY', 'SELL', 'SPLIT'].includes(type),
-    quantity: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
-    price: ['POSITION_IMPORT', 'BUY', 'SELL'].includes(type),
+    symbol: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    quantity: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    price: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
     amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'FEE'].includes(type),
-    ratio: type === 'SPLIT',
+    ratio: false,
     trade: ['BUY', 'SELL'].includes(type),
+    holding: ['BUY', 'RIGHTS_ISSUE'].includes(type),
   }), [type]);
 
   function set(key, value) {
     setForm(current => ({ ...current, [key]: value }));
     setFieldErrors(current => ({ ...current, [key]: undefined }));
+  }
+
+  function applyHoldingSymbol(symbol) {
+    const firstBook = holdingBooks.find(book => book.symbol === symbol);
+    applySellBook(firstBook ? holdingBookKey(firstBook) : '');
   }
 
   function applySellBook(key) {
@@ -144,7 +169,6 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   function changeType(value) {
-    if (intent.locked && value !== 'SELL') return;
     setType(value);
     setEditingId(null);
     setCorrectionReason('');
@@ -160,7 +184,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     setMessage('');
     setFieldErrors({});
     if (intent.active) {
-      setType('SELL');
+      setType(intent.type);
       setSelectedSellKey(intent.locked ? `${intent.symbol}|${intent.broker_code}|${intent.account_id}` : '');
       setForm({
         ...EMPTY_FORM(today || ''),
@@ -176,7 +200,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   function startEdit(row) {
-    if (DIVIDEND_TYPES.has(row.event_type) || !EDITABLE_TYPES.has(row.event_type)) return;
+    if (
+      String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED'
+      || DIVIDEND_TYPES.has(row.event_type)
+      || !EDITABLE_TYPES.has(row.event_type)
+    ) return;
     setEditingId(row.id);
     setType(row.event_type);
     setCorrectionReason('');
@@ -202,9 +230,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
   function validateSellSelection() {
     if (!sellBook) {
-      const error = new Error(lockedSell
-        ? 'Nguồn cổ phiếu đã chọn không còn tồn tại trong danh mục. Hãy quay lại Danh mục và chọn lại nơi bán.'
-        : 'Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
+      const error = new Error('Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
       error.field = 'sell_source';
       throw error;
     }
@@ -262,6 +288,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     try {
       if (editingId) {
         await updatePortfolioTransaction(editingId, {
+          event_type: payload.event_type,
           quantity: payload.quantity,
           price: payload.price,
           broker_code: payload.broker_code,
@@ -278,11 +305,54 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     }
   }
 
+  function startDiscard(row) {
+    if (
+      String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED'
+      || row?.metadata?.auto_generated
+    ) return;
+    setDiscardTarget(row);
+    setDiscardReason('');
+    setDiscardError('');
+  }
+
+  function cancelDiscard() {
+    if (discarding) return;
+    setDiscardTarget(null);
+    setDiscardReason('');
+    setDiscardError('');
+  }
+
+  async function confirmDiscard() {
+    const reason = discardReason.trim();
+    if (!reason) {
+      setDiscardError('Hãy nhập lý do loại bỏ giao dịch.');
+      return;
+    }
+    setDiscarding(true);
+    setDiscardError('');
+    try {
+      await discardPortfolioTransaction(discardTarget.id, reason);
+      window.location.replace('/transactions');
+    } catch (error) {
+      setDiscardError(error.message);
+      setDiscarding(false);
+    }
+  }
+
   function rowActions(row) {
+    const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+    if (softDeleted) return <span className="status-pill status-soft-deleted">Đã loại bỏ</span>;
+
+    const automatic = Boolean(row?.metadata?.auto_generated);
     const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
-    const editable = !dividendEvent && EDITABLE_TYPES.has(row.event_type);
-    if (!editable) return <span className="status-pill">Chỉ đọc</span>;
-    return <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>;
+    const editable = !automatic && !dividendEvent && EDITABLE_TYPES.has(row.event_type);
+    const discardable = !automatic;
+
+    if (!editable && !discardable) return <span className="status-pill">Chỉ đọc</span>;
+    return <div className="transaction-row-actions">
+      {editable && <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>}
+      {discardable && <button className="btn-small btn-discard" type="button" onClick={() => startDiscard(row)}>Loại bỏ</button>}
+    </div>;
   }
 
   return <div className="page investor-transactions-page">
@@ -292,7 +362,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       <div>
         <div className="eyebrow">Sổ giao dịch</div>
         <h1>Giao dịch</h1>
-        <p className="muted">Giao dịch đã ghi không thể xóa. Khi cần chỉnh dữ liệu, QPort chỉ cho sửa số lượng, giá và CTCK để giữ lịch sử nhất quán.</p>
+        <p className="muted">Giao dịch đã ghi không bị xóa vật lý. Bạn có thể sửa dữ liệu hoặc loại bỏ một giao dịch khỏi sổ hiệu lực; QPort luôn giữ bản ghi gốc để kiểm tra sau này.</p>
       </div>
     </header>
 
@@ -301,46 +371,49 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         <div>
           <h2>{editingId ? `Sửa giao dịch #${editingId}` : isSellCreate ? 'Bán cổ phiếu' : 'Thêm giao dịch'}</h2>
           <p className="muted">{editingId
-            ? 'Ngày, mã cổ phiếu, loại giao dịch và tài khoản được khóa. Chỉ số lượng, giá và CTCK có thể sửa.'
+            ? 'Ngày, mã cổ phiếu và tài khoản được khóa. Bạn có thể đổi loại trong nhóm giao dịch cổ phiếu, đồng thời sửa số lượng, giá và CTCK.'
             : isSellCreate
-              ? 'Chọn đúng nơi đang giữ cổ phiếu. Sau khi chọn, mã, CTCK, tài khoản và ngày giao dịch sẽ được khóa.'
+              ? 'Chọn đúng mã và CTCK/tài khoản đang giữ cổ phiếu; QPort chỉ cho bán trong số lượng khả dụng tại nguồn đó.'
               : 'Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.'}</p>
         </div>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy sửa</button>}
       </div>
 
       <label>Loại giao dịch
-        <select value={type} onChange={event => changeType(event.target.value)} disabled={saving || editingId != null || intent.locked}>
-          {TYPE_VALUES.map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
+        <select value={type} onChange={event => editingId ? setType(event.target.value) : changeType(event.target.value)} disabled={saving}>
+          {(editingId ? TYPE_VALUES.filter(value => EDITABLE_TYPES.has(value)) : TYPE_VALUES).map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
         </select>
       </label>
 
       {type === 'POSITION_IMPORT' && !editingId && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại.</div>}
-      {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Ghi đúng CTCK và tài khoản nhận cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
+      {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Chọn mã và đúng CTCK/tài khoản nhận thêm cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
+      {type === 'RIGHTS_ISSUE' && !editingId && <div className="info-callout transaction-buy-note">Ghi nhận cổ phiếu phát hành thêm theo số lượng và giá thực trả; tiền và giá vốn sẽ được cập nhật tương ứng.</div>}
 
       {isSellCreate ? <>
         <div className="sell-source-panel">
           <div className="sell-source-title"><b>Nguồn cổ phiếu cần bán</b><span>CTCK đang lưu ký</span></div>
-          {lockedSell ? <div className="sell-source-locked">
-            <strong>{intent.symbol}</strong>
-            <span>{brokerName(intent.broker_code)} · {intent.account_id}</span>
-            <span>{intentBook ? `${shares(intentBook.shares)} CP khả dụng` : 'Nguồn này hiện không còn cổ phiếu khả dụng'}</span>
-          </div> : <label>Chọn mã / CTCK / tài khoản
-            <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
-              <option value="">-- Chọn cổ phiếu cần bán --</option>
-              {holdingBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
-                {book.symbol} · {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP
-              </option>)}
-            </select>
-            <FieldError error={fieldErrors.sell_source} />
-          </label>}
+          <div className="form-grid">
+            <label>Mã cổ phiếu
+              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
+                <option value="">-- Chọn mã cổ phiếu --</option>
+                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+              </select>
+            </label>
+            <label>CTCK / tài khoản
+              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.sell_source}>
+                <option value="">-- Chọn CTCK / tài khoản --</option>
+                {selectedSymbolBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
+                  {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP
+                </option>)}
+              </select>
+              <FieldError error={fieldErrors.sell_source} />
+            </label>
+          </div>
         </div>
 
         <div className="form-grid sell-readonly-grid">
           <label>Ngày giao dịch<input type="date" value={today || form.event_date} readOnly /></label>
-          <label>Mã cổ phiếu<input value={sellBook?.symbol || intent.symbol || ''} readOnly /></label>
-          <label>CTCK<input value={brokerName(sellBook?.broker_code || intent.broker_code)} readOnly /></label>
-          <label>Tài khoản<input value={sellBook?.account_id || intent.account_id || ''} readOnly /></label>
+          <label>Nguồn đã chọn<input value={sellBook ? `${sellBook.symbol} · ${brokerName(sellBook.broker_code)} · ${sellBook.account_id}` : ''} readOnly /></label>
         </div>
 
         <div className="form-grid sell-input-grid">
@@ -381,12 +454,34 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           <FieldError error={fieldErrors.correction_reason} />
         </label>
       </> : <>
+        {requirements.holding && <div className="sell-source-panel">
+          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : 'Nguồn nhận cổ phiếu phát hành thêm'}</b><span>Chọn từ danh mục đang nắm giữ</span></div>
+          <div className="form-grid">
+            <label>Mã cổ phiếu
+              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.symbol}>
+                <option value="">-- Chọn mã cổ phiếu --</option>
+                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+              </select>
+              <FieldError error={fieldErrors.symbol} />
+            </label>
+            <label>CTCK / tài khoản
+              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.broker_code}>
+                <option value="">-- Chọn CTCK / tài khoản --</option>
+                {selectedSymbolBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
+                  {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP hiện có
+                </option>)}
+              </select>
+              <FieldError error={fieldErrors.broker_code} />
+            </label>
+          </div>
+          {holdingBooks.length === 0 && <div className="empty-state compact-empty">Chưa có cổ phiếu trong danh mục. Hãy nhập danh mục ban đầu trước.</div>}
+        </div>}
         <div className="form-grid">
           <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
             <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
             <FieldError error={fieldErrors.event_date} />
           </label>
-          {requirements.symbol && <label>Mã cổ phiếu
+          {requirements.symbol && !requirements.holding && <label>Mã cổ phiếu
             <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
             <FieldError error={fieldErrors.symbol} />
           </label>}
@@ -410,16 +505,16 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         <details className="disclosure-card transaction-advanced">
           <summary><b>Thông tin CTCK & chi phí</b><span className="muted">Nơi lưu ký cổ phiếu, tài khoản, phí và thuế</span></summary>
           <div className="form-grid">
-            <label>Công ty chứng khoán
+            {!requirements.holding && <label>Công ty chứng khoán
               <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)}>
                 {BROKERS.map(broker => <option key={broker.code} value={broker.code}>{broker.name}</option>)}
               </select>
               <FieldError error={fieldErrors.broker_code} />
-            </label>
-            <label>Tài khoản
+            </label>}
+            {!requirements.holding && <label>Tài khoản
               <input value={form.account_id} maxLength={32} onChange={event => set('account_id', event.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, ''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id} />
               <FieldError error={fieldErrors.account_id} />
-            </label>
+            </label>}
             {requirements.trade && <label>Ngày thanh toán
               <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={event => set('settlement_date', event.target.value)} aria-invalid={!!fieldErrors.settlement_date} />
               <FieldError error={fieldErrors.settlement_date} />
@@ -432,21 +527,57 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </>}
 
       <div className="button-row">
-        <button className="btn-primary" type="submit" disabled={saving || (lockedSell && !intentBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
+        <button className="btn-primary" type="submit" disabled={saving || (!editingId && requirements.holding && !selectedSellBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
     </form>
 
+    {discardTarget && <section className="card transaction-discard-confirmation" role="dialog" aria-labelledby="discard-transaction-title">
+      <div className="section-head">
+        <div>
+          <div className="eyebrow">Loại khỏi sổ hiệu lực</div>
+          <h2 id="discard-transaction-title">Loại bỏ giao dịch #{discardTarget.id}?</h2>
+          <p className="muted">Bản ghi gốc vẫn được giữ với trạng thái Đã loại bỏ. QPort sẽ tính lại số cổ phiếu, tiền, giá vốn, lãi/lỗ và snapshot từ các giao dịch còn hiệu lực.</p>
+        </div>
+      </div>
+      <div className="discard-transaction-summary">
+        <b>{TYPE_LABELS[discardTarget.event_type] || discardTarget.event_type}</b>
+        <span>{discardTarget.event_date}</span>
+        <span>{discardTarget.symbol || 'Không có mã cổ phiếu'}</span>
+      </div>
+      <label>Lý do loại bỏ
+        <textarea
+          maxLength={500}
+          value={discardReason}
+          onChange={event => {
+            setDiscardReason(event.target.value);
+            setDiscardError('');
+          }}
+          aria-invalid={!!discardError}
+          placeholder="Ví dụ: giao dịch bị nhập trùng"
+          autoFocus
+        />
+        <FieldError error={discardError} />
+      </label>
+      <div className="button-row">
+        <button className="btn-danger" type="button" onClick={confirmDiscard} disabled={discarding}>
+          {discarding ? 'Đang tính lại danh mục…' : 'Xác nhận loại bỏ'}
+        </button>
+        <button className="btn-variant" type="button" onClick={cancelDiscard} disabled={discarding}>Hủy</button>
+      </div>
+    </section>}
+
     <section className="card investor-transaction-history">
-      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận · Không thể xóa</div></div></div>
+      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{activeTransactionCount} đang hiệu lực · {transactions.length - activeTransactionCount} đã loại bỏ · Bản ghi gốc luôn được giữ</div></div></div>
       {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <>
         <div className="holding-mobile-list transaction-mobile-list">
           {transactions.map(row => {
             const hasSymbol = Boolean(row.symbol);
             const symbol = row.symbol ? String(row.symbol).toUpperCase() : '';
             const mainValue = row.amount ? money(row.amount) : row.price ? `${money(row.price)}/CP` : row.quantity ? `${shares(row.quantity)} CP` : '-';
-            return <article className="holding-mobile-card transaction-mobile-card" key={`mobile-${row.id}`}>
+            const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+            return <article className={`holding-mobile-card transaction-mobile-card ${softDeleted ? 'transaction-soft-deleted' : ''}`} key={`mobile-${row.id}`}>
               <div className="holding-mobile-head">
                 <div className="holding-mobile-symbol">
                   <strong>{symbol || TYPE_LABELS[row.event_type] || row.event_type}</strong>
@@ -454,7 +585,9 @@ export default function TransactionsPage({ transactions: initialTransactions = [
                 </div>
                 <div className="holding-mobile-value">
                   <strong>{mainValue}</strong>
-                  {row.correction && <span>Đã chỉnh sửa</span>}
+                  {softDeleted
+                    ? <span className="status-soft-deleted">Đã loại bỏ</span>
+                    : row.correction && <span>Đã chỉnh sửa</span>}
                   {row.metadata?.auto_generated && <span>Tự động ghi nhận</span>}
                 </div>
               </div>
@@ -477,9 +610,12 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             </tr></thead>
             <tbody>{transactions.map(row => {
               const hasSymbol = Boolean(row.symbol);
-              return <tr key={row.id}>
+              const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+              return <tr className={softDeleted ? 'transaction-soft-deleted' : ''} key={row.id}>
                 <td>{row.event_date}</td>
-                <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
+                <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{softDeleted
+                  ? <div className="status-pill status-soft-deleted">Đã loại bỏ</div>
+                  : row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
                 <td>{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
                 <td>{hasSymbol ? (row.metadata?.broker_code || '-') : '-'}</td>
                 <td>{hasSymbol ? (row.metadata?.account_id || '-') : '-'}</td>
