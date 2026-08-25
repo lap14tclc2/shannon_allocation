@@ -57,6 +57,25 @@ def test_live_total_pnl_does_not_require_a_snapshot(tmp_path):
     assert dashboard["portfolio"]["positions"][0]["status"] == "MONITOR"
 
 
+def test_missing_market_price_keeps_live_pnl_unknown(tmp_path):
+    svc = make_service(tmp_path)
+    svc.append_event({
+        "event_type": "POSITION_IMPORT",
+        "event_date": "2026-01-02",
+        "symbol": "FPT",
+        "quantity": 100,
+        "price": 20_000,
+    })
+
+    dashboard = svc.dashboard()
+
+    assert dashboard["market_data"]["status"] == "MISSING"
+    assert dashboard["portfolio"]["positions"][0]["price"] is None
+    assert dashboard["portfolio"]["positions"][0]["unrealized_pnl"] is None
+    assert dashboard["portfolio"]["total_pnl"] is None
+    assert dashboard["portfolio"]["accounting_return"] is None
+
+
 def test_no_history_drawdown_is_unknown_not_zero(tmp_path):
     svc = make_service(tmp_path)
     svc.append_event({"event_type": "POSITION_IMPORT", "event_date": svc.today_vn(), "symbol": "FPT", "quantity": 100, "price": 20_000})
