@@ -139,6 +139,8 @@ class ValuationReport:
     epv_result: Optional[EPVResult]
     reverse_dcf_result: Optional[ReverseDCFResult]
     sensitivity_matrix: Optional[SensitivityMatrix]
-    source_fact_ids: List[str]
-    engine_version: str
-    computed_at: str
+    valuation_multiples: Optional[Dict[str, Any]] = None
+    market_comparison: Optional[Dict[str, Any]] = None
+    source_fact_ids: List[str] = field(default_factory=list)
+    engine_version: str = "1.0.0"
+    computed_at: str = ""

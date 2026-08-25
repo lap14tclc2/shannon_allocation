@@ -504,6 +504,64 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                 </summary>
 
                 <div className="risk-val-acc-body">
+                  {/* Thanh chỉ số định giá quan trọng & Nhóm ngành */}
+                  <div className="risk-val-multiples-panel">
+                    <div className="risk-val-sector-tag">
+                      <span className="sector-icon">🏭</span>
+                      <span>Nhóm ngành: <b>{val.valuation_multiples?.sector || 'Doanh nghiệp cốt lõi'}</b></span>
+                    </div>
+                    <div className="risk-val-key-metrics">
+                      <div className="key-metric-item">
+                        <span>P/E Hiện tại</span>
+                        <strong>{val.valuation_multiples?.pe ? `${Number(val.valuation_multiples.pe).toFixed(1)}x` : '-'}</strong>
+                      </div>
+                      <div className="key-metric-item">
+                        <span>P/B Định giá</span>
+                        <strong>{val.valuation_multiples?.pb ? `${Number(val.valuation_multiples.pb).toFixed(1)}x` : '-'}</strong>
+                      </div>
+                      <div className="key-metric-item">
+                        <span>EPS (Thu nhập/CP)</span>
+                        <strong>{val.valuation_multiples?.eps ? `${formatMoney(val.valuation_multiples.eps, false, locale)} ₫` : '-'}</strong>
+                      </div>
+                      <div className="key-metric-item">
+                        <span>ROE (Sinh lời vốn)</span>
+                        <strong className="metric-good">{val.valuation_multiples?.roe ? `${Number(val.valuation_multiples.roe).toFixed(1)}%` : '-'}</strong>
+                      </div>
+                      <div className="key-metric-item">
+                        <span>Cổ tức tiền tươi</span>
+                        <strong className="metric-yield">{val.valuation_multiples?.dividend_yield ? `${Number(val.valuation_multiples.dividend_yield).toFixed(1)}%/năm` : '-'}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hộp so sánh với Toàn thị trường & Ngành */}
+                  {val.market_comparison && (
+                    <div className="risk-val-market-compare">
+                      <div className="market-compare-head">
+                        <span className="compare-icon">📊</span>
+                        <b>So sánh với Ngành & Toàn thị trường (VN-Index):</b>
+                      </div>
+                      <div className="market-compare-bars">
+                        <div className="compare-bar-row">
+                          <span className="bar-label">Định giá P/E:</span>
+                          <div className="bar-values">
+                            <span className="badge-symbol">{symbol}: <b>{Number(val.market_comparison.symbol_pe).toFixed(1)}x</b></span>
+                            <span className="badge-sector">Ngành: <b>{Number(val.market_comparison.sector_pe).toFixed(1)}x</b></span>
+                            <span className="badge-market">VN-Index: <b>{Number(val.market_comparison.market_pe).toFixed(1)}x</b></span>
+                          </div>
+                        </div>
+                        <div className="compare-bar-row">
+                          <span className="bar-label">Hiệu quả ROE:</span>
+                          <div className="bar-values">
+                            <span className="badge-symbol roe-high">{symbol}: <b>{Number(val.market_comparison.symbol_roe).toFixed(1)}%</b></span>
+                            <span className="badge-market">VN-Index: <b>{Number(val.market_comparison.market_roe).toFixed(1)}%</b></span>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="market-compare-note">{val.market_comparison.comparison_note}</p>
+                    </div>
+                  )}
+
                   {/* Hộp kết luận định giá bằng ngôn ngữ thân thiện */}
                   <div className={`risk-val-verdict-card ${isAttractive ? 'verdict-attractive' : ''}`}>
                     <div className="risk-val-verdict-badge">

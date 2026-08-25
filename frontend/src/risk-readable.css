@@ -1082,6 +1082,140 @@
   gap: 16px;
 }
 
+/* Multiples & Fundamentals Panel */
+.risk-val-multiples-panel {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.risk-val-sector-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.risk-val-sector-tag b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.risk-val-key-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.key-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.key-metric-item span {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.key-metric-item strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.key-metric-item strong.metric-good {
+  color: var(--success);
+}
+
+.key-metric-item strong.metric-yield {
+  color: var(--accent);
+}
+
+/* Market Comparison Box */
+.risk-val-market-compare {
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.market-compare-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.market-compare-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compare-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.compare-bar-row .bar-label {
+  min-width: 100px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.bar-values {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bar-values span {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.bar-values .badge-symbol {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.bar-values .badge-symbol.roe-high {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  border-color: var(--success);
+}
+
+.market-compare-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding-top: 4px;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
+}
+
 .risk-val-verdict-card {
   background: color-mix(in srgb, var(--surface-soft) 80%, var(--bg));
   border: 1px solid var(--border);
@@ -1180,6 +1314,14 @@
 @media (max-width: 768px) {
   .risk-val-method-grid {
     grid-template-columns: 1fr;
+  }
+  .risk-val-key-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .compare-bar-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
   .risk-val-pillars-grid {
     grid-template-columns: 1fr;
