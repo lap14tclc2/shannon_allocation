@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
-import { createPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
+import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
 import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
@@ -89,6 +89,15 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [discardTarget, setDiscardTarget] = useState(null);
+  const [discardReason, setDiscardReason] = useState('');
+  const [discardError, setDiscardError] = useState('');
+  const [discarding, setDiscarding] = useState(false);
+
+  const activeTransactionCount = useMemo(
+    () => transactions.filter(row => String(row?.status || 'ACTIVE').toUpperCase() !== 'SOFT_DELETED').length,
+    [transactions],
+  );
 
   const selectedSellBook = useMemo(() => {
     if (!selectedSellKey) return null;
@@ -176,7 +185,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }
 
   function startEdit(row) {
-    if (DIVIDEND_TYPES.has(row.event_type) || !EDITABLE_TYPES.has(row.event_type)) return;
+    if (
+      String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED'
+      || DIVIDEND_TYPES.has(row.event_type)
+      || !EDITABLE_TYPES.has(row.event_type)
+    ) return;
     setEditingId(row.id);
     setType(row.event_type);
     setCorrectionReason('');
@@ -278,11 +291,54 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     }
   }
 
+  function startDiscard(row) {
+    if (
+      String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED'
+      || row?.metadata?.auto_generated
+    ) return;
+    setDiscardTarget(row);
+    setDiscardReason('');
+    setDiscardError('');
+  }
+
+  function cancelDiscard() {
+    if (discarding) return;
+    setDiscardTarget(null);
+    setDiscardReason('');
+    setDiscardError('');
+  }
+
+  async function confirmDiscard() {
+    const reason = discardReason.trim();
+    if (!reason) {
+      setDiscardError('Hãy nhập lý do loại bỏ giao dịch.');
+      return;
+    }
+    setDiscarding(true);
+    setDiscardError('');
+    try {
+      await discardPortfolioTransaction(discardTarget.id, reason);
+      window.location.replace('/transactions');
+    } catch (error) {
+      setDiscardError(error.message);
+      setDiscarding(false);
+    }
+  }
+
   function rowActions(row) {
+    const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+    if (softDeleted) return <span className="status-pill status-soft-deleted">Đã loại bỏ</span>;
+
+    const automatic = Boolean(row?.metadata?.auto_generated);
     const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
-    const editable = !dividendEvent && EDITABLE_TYPES.has(row.event_type);
-    if (!editable) return <span className="status-pill">Chỉ đọc</span>;
-    return <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>;
+    const editable = !automatic && !dividendEvent && EDITABLE_TYPES.has(row.event_type);
+    const discardable = !automatic;
+
+    if (!editable && !discardable) return <span className="status-pill">Chỉ đọc</span>;
+    return <div className="transaction-row-actions">
+      {editable && <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>}
+      {discardable && <button className="btn-small btn-discard" type="button" onClick={() => startDiscard(row)}>Loại bỏ</button>}
+    </div>;
   }
 
   return <div className="page investor-transactions-page">
@@ -292,7 +348,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       <div>
         <div className="eyebrow">Sổ giao dịch</div>
         <h1>Giao dịch</h1>
-        <p className="muted">Giao dịch đã ghi không thể xóa. Khi cần chỉnh dữ liệu, QPort chỉ cho sửa số lượng, giá và CTCK để giữ lịch sử nhất quán.</p>
+        <p className="muted">Giao dịch đã ghi không bị xóa vật lý. Bạn có thể sửa dữ liệu hoặc loại bỏ một giao dịch khỏi sổ hiệu lực; QPort luôn giữ bản ghi gốc để kiểm tra sau này.</p>
       </div>
     </header>
 
@@ -438,15 +494,51 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       {message && <div className="run-message">{message}</div>}
     </form>
 
+    {discardTarget && <section className="card transaction-discard-confirmation" role="dialog" aria-labelledby="discard-transaction-title">
+      <div className="section-head">
+        <div>
+          <div className="eyebrow">Loại khỏi sổ hiệu lực</div>
+          <h2 id="discard-transaction-title">Loại bỏ giao dịch #{discardTarget.id}?</h2>
+          <p className="muted">Bản ghi gốc vẫn được giữ với trạng thái Đã loại bỏ. QPort sẽ tính lại số cổ phiếu, tiền, giá vốn, lãi/lỗ và snapshot từ các giao dịch còn hiệu lực.</p>
+        </div>
+      </div>
+      <div className="discard-transaction-summary">
+        <b>{TYPE_LABELS[discardTarget.event_type] || discardTarget.event_type}</b>
+        <span>{discardTarget.event_date}</span>
+        <span>{discardTarget.symbol || 'Không có mã cổ phiếu'}</span>
+      </div>
+      <label>Lý do loại bỏ
+        <textarea
+          maxLength={500}
+          value={discardReason}
+          onChange={event => {
+            setDiscardReason(event.target.value);
+            setDiscardError('');
+          }}
+          aria-invalid={!!discardError}
+          placeholder="Ví dụ: giao dịch bị nhập trùng"
+          autoFocus
+        />
+        <FieldError error={discardError} />
+      </label>
+      <div className="button-row">
+        <button className="btn-danger" type="button" onClick={confirmDiscard} disabled={discarding}>
+          {discarding ? 'Đang tính lại danh mục…' : 'Xác nhận loại bỏ'}
+        </button>
+        <button className="btn-variant" type="button" onClick={cancelDiscard} disabled={discarding}>Hủy</button>
+      </div>
+    </section>}
+
     <section className="card investor-transaction-history">
-      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận · Không thể xóa</div></div></div>
+      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{activeTransactionCount} đang hiệu lực · {transactions.length - activeTransactionCount} đã loại bỏ · Bản ghi gốc luôn được giữ</div></div></div>
       {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <>
         <div className="holding-mobile-list transaction-mobile-list">
           {transactions.map(row => {
             const hasSymbol = Boolean(row.symbol);
             const symbol = row.symbol ? String(row.symbol).toUpperCase() : '';
             const mainValue = row.amount ? money(row.amount) : row.price ? `${money(row.price)}/CP` : row.quantity ? `${shares(row.quantity)} CP` : '-';
-            return <article className="holding-mobile-card transaction-mobile-card" key={`mobile-${row.id}`}>
+            const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+            return <article className={`holding-mobile-card transaction-mobile-card ${softDeleted ? 'transaction-soft-deleted' : ''}`} key={`mobile-${row.id}`}>
               <div className="holding-mobile-head">
                 <div className="holding-mobile-symbol">
                   <strong>{symbol || TYPE_LABELS[row.event_type] || row.event_type}</strong>
@@ -454,7 +546,9 @@ export default function TransactionsPage({ transactions: initialTransactions = [
                 </div>
                 <div className="holding-mobile-value">
                   <strong>{mainValue}</strong>
-                  {row.correction && <span>Đã chỉnh sửa</span>}
+                  {softDeleted
+                    ? <span className="status-soft-deleted">Đã loại bỏ</span>
+                    : row.correction && <span>Đã chỉnh sửa</span>}
                   {row.metadata?.auto_generated && <span>Tự động ghi nhận</span>}
                 </div>
               </div>
@@ -477,9 +571,12 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             </tr></thead>
             <tbody>{transactions.map(row => {
               const hasSymbol = Boolean(row.symbol);
-              return <tr key={row.id}>
+              const softDeleted = String(row?.status || 'ACTIVE').toUpperCase() === 'SOFT_DELETED';
+              return <tr className={softDeleted ? 'transaction-soft-deleted' : ''} key={row.id}>
                 <td>{row.event_date}</td>
-                <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
+                <td><b>{TYPE_LABELS[row.event_type] || row.event_type}</b>{softDeleted
+                  ? <div className="status-pill status-soft-deleted">Đã loại bỏ</div>
+                  : row.correction && <div className="muted">Đã chỉnh sửa</div>}{row.metadata?.auto_generated && <div className="muted">Tự động</div>}</td>
                 <td>{row.symbol ? String(row.symbol).toUpperCase() : '-'}</td>
                 <td>{hasSymbol ? (row.metadata?.broker_code || '-') : '-'}</td>
                 <td>{hasSymbol ? (row.metadata?.account_id || '-') : '-'}</td>
