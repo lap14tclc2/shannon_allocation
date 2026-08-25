@@ -802,3 +802,202 @@
     padding: 16px 17px;
   }
 }
+
+/* ==========================================================================
+   Valuation & Value Investing Section Redesign (QVE-201, QVE-080)
+   ========================================================================== */
+
+.risk-valuation-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 82%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--bg-elevated, var(--panel-2)));
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .10);
+}
+
+.risk-valuation-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.risk-valuation-head h2 {
+  margin: 4px 0 6px;
+  font-size: clamp(20px, 2.5vw, 26px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.risk-valuation-head p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: 720px;
+}
+
+.risk-valuation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+.risk-valuation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 65%, var(--bg));
+  transition: transform .15s ease, border-color .15s ease;
+}
+
+.risk-valuation-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.risk-val-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.risk-val-symbol-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.risk-val-symbol {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: var(--text);
+}
+
+.risk-val-period {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.risk-val-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.risk-val-verdict-box {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg));
+  border-left: 4px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.risk-val-verdict-text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.risk-val-metrics-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.risk-val-metric-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.risk-val-metric-col span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.risk-val-metric-col strong {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono-num, inherit);
+  white-space: nowrap;
+}
+
+.risk-val-pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.risk-val-pillar-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.risk-val-pillar-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.risk-val-pillar-desc {
+  color: var(--text);
+}
+
+.risk-val-reverse-box {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--border);
+}
+
+.risk-val-reverse-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.risk-val-reverse-desc {
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .risk-valuation-grid {
+    grid-template-columns: 1fr;
+  }
+  .risk-val-pillar-row,
+  .risk-val-reverse-box {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .risk-val-metrics-bar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
