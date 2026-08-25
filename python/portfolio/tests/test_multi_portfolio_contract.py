@@ -84,7 +84,8 @@ def test_spa_uses_persisted_redux_and_refreshes_without_page_reload():
     assert "CACHE_MAX_AGE_MS" in store
     assert "routeKey(pathname, portfolioId" in store
     assert "await syncPortfolio()" in store
-    assert "data: { dashboard: await getPortfolioDashboard() }" in store
+    assert "data: { dashboard: result.dashboard }" in store
+    assert 'return {**sync_result, "dashboard": dashboard}' in APP_MAIN.read_text(encoding="utf-8")
     assert "<Provider store={store}>" in entry
     assert "NAVIGATION_EVENT" in entry
     assert "window.addEventListener('popstate'" in entry
