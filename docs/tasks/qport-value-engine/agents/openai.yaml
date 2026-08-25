@@ -1,0 +1,4 @@
+interface:
+  display_name: "QPort Value Engine"
+  short_description: "Auditable Buffett-inspired valuation guidance"
+  default_prompt: "Use $qport-value-engine to design or review an auditable QPort valuation workflow."

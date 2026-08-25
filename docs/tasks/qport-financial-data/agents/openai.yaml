@@ -1,0 +1,4 @@
+interface:
+  display_name: "QPort Financial Data"
+  short_description: "Traceable Vietnamese financial data guidance"
+  default_prompt: "Use $qport-financial-data to design or review a traceable Vietnamese financial-data pipeline."
