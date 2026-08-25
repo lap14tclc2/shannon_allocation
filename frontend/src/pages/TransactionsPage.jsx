@@ -133,7 +133,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     price: ['POSITION_IMPORT', 'BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
     amount: ['CASH_DEPOSIT', 'CASH_WITHDRAW', 'FEE'].includes(type),
     ratio: false,
-    trade: ['BUY', 'RIGHTS_ISSUE', 'SELL'].includes(type),
+    trade: ['BUY', 'SELL'].includes(type),
     holding: ['BUY', 'RIGHTS_ISSUE'].includes(type),
   }), [type]);
 
