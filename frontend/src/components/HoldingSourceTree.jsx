@@ -48,16 +48,16 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
             <span>{formatShares(position.shares, locale)} CP</span>
           </div>
           <div className="holding-source-symbol-value">
-            <strong>{money(position.market_value, locale)}</strong>
-            <span className={pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}>{pnl == null ? '-' : `${pnl >= 0 ? '+' : ''}${money(pnl, locale)}`} · {pct(position.unrealized_return)}</span>
+            <strong data-sensitive="money">{money(position.market_value, locale)}</strong>
+            <span data-sensitive="pnl" className={pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}>{pnl == null ? '-' : `${pnl >= 0 ? '+' : ''}${money(pnl, locale)}`} · {pct(position.unrealized_return)}</span>
           </div>
           <span className="holding-source-weight">{formatWeight(position.weight)}</span>
         </summary>
 
         <div className="holding-source-children">
           <div className="holding-source-meta">
-            <span>Giá vốn <b>{money(position.average_cost, locale)}</b></span>
-            <span>Giá hiện tại <b>{money(position.price, locale)}</b></span>
+            <span>Giá vốn <b data-sensitive="money">{money(position.average_cost, locale)}</b></span>
+            <span>Giá hiện tại <b data-sensitive="money">{money(position.price, locale)}</b></span>
             <span>{position.price_date ? `Giá ngày ${position.price_date}` : 'Giá chưa cập nhật'}</span>
           </div>
 
@@ -76,7 +76,7 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
                       </div>
                       <div className="holding-source-book-numbers">
                         <div><span>Số lượng tại CTCK</span><b>{formatShares(book.shares, locale)} CP</b></div>
-                        <div><span>Giá trị ước tính</span><b>{money(sourceValue, locale)}</b></div>
+                        <div><span>Giá trị ước tính</span><b data-sensitive="money">{money(sourceValue, locale)}</b></div>
                       </div>
                       <div className="holding-source-book-action">
                         {assigned

@@ -21,7 +21,7 @@
   height: var(--header-height);
   padding: 0 24px;
   display: grid;
-  grid-template-columns: auto minmax(390px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
   background: transparent;
@@ -106,24 +106,30 @@
   display: none !important;
 }
 
-.desktop-portfolio-context {
+.desktop-workspace-navbar {
   position: relative;
   z-index: 390;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   background: color-mix(in srgb, var(--bg) 94%, var(--panel));
 }
 
-.desktop-portfolio-context-shell {
+.desktop-workspace-navbar-shell {
   width: min(100%, 1380px);
   min-height: 58px;
   margin: 0 auto;
   padding: 7px 24px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
   align-items: center;
+  gap: 18px;
 }
 
-.desktop-portfolio-context .header-portfolio-menu {
-  width: min(360px, 100%);
+.desktop-workspace-navbar .header-portfolio-menu {
+  width: 100%;
+}
+
+.workspace-route-links {
+  justify-content: flex-end;
 }
 
 .header-portfolio-menu {
@@ -385,12 +391,14 @@
   color: var(--muted);
 }
 
-.header-v2 .app-nav-links {
+.header-v2 .app-nav-links,
+.desktop-workspace-navbar .app-nav-links {
   justify-content: center;
   gap: 3px;
 }
 
-.header-v2 .app-nav-links a {
+.header-v2 .app-nav-links a,
+.desktop-workspace-navbar .app-nav-links a {
   position: relative;
   min-height: 40px;
   gap: 7px;
@@ -403,13 +411,15 @@
   font-weight: 570;
 }
 
-.header-v2 .app-nav-links a:hover {
+.header-v2 .app-nav-links a:hover,
+.desktop-workspace-navbar .app-nav-links a:hover {
   border-color: color-mix(in srgb, var(--border) 68%, transparent);
   background: color-mix(in srgb, var(--panel-hover) 65%, transparent);
   color: var(--text);
 }
 
-.header-v2 .app-nav-links a.active {
+.header-v2 .app-nav-links a.active,
+.desktop-workspace-navbar .app-nav-links a.active {
   border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
@@ -417,12 +427,14 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.header-v2 .app-nav-links a.active svg {
+.header-v2 .app-nav-links a.active svg,
+.desktop-workspace-navbar .app-nav-links a.active svg {
   color: var(--accent);
   filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 25%, transparent));
 }
 
 .header-v2 .app-nav-footer {
+  grid-column: 3;
   gap: 7px;
 }
 
@@ -606,12 +618,12 @@
 
 @media (max-width: 1180px) {
   .header-v2 .nav-shell {
-    grid-template-columns: auto minmax(350px, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 11px;
     padding-inline: 18px;
   }
 
-  .header-v2 .app-nav-links a {
+  .desktop-workspace-navbar .app-nav-links a {
     gap: 5px;
     padding-inline: 8px;
   }
@@ -623,14 +635,20 @@
 
 @media (max-width: 960px) and (min-width: 720px) {
   .header-v2 .nav-shell {
-    grid-template-columns: auto minmax(330px, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .header-v2 .desktop-nav-footer {
     display: none;
   }
 
-  .header-v2 .app-nav-links a svg {
+  .desktop-workspace-navbar-shell {
+    grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
+    gap: 10px;
+    padding-inline: 18px;
+  }
+
+  .desktop-workspace-navbar .app-nav-links a svg {
     display: none;
   }
 }
@@ -674,7 +692,7 @@
     display: block;
   }
 
-  .desktop-portfolio-context,
+  .desktop-workspace-navbar,
   .portfolio-menu-popover,
   .portfolio-menu-backdrop,
   .header-v2 .header-portfolio-menu,

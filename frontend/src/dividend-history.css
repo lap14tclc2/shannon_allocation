@@ -88,9 +88,9 @@
 .dividend-tree-events {
   display: grid;
   gap: 8px;
-  padding: 0 10px 10px 30px;
+  padding: 0 10px 10px 14px;
   border-left: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  margin-left: 20px;
+  margin-left: 12px;
 }
 
 .dividend-tree-symbol > summary,
@@ -188,9 +188,9 @@
   .dividend-tree-node > summary { min-height: 46px; padding: 10px; }
   .dividend-tree-children,
   .dividend-tree-events {
-    margin-left: 12px;
-    padding-left: 14px;
-    padding-right: 8px;
+    margin-left: 8px;
+    padding-left: 10px;
+    padding-right: 6px;
   }
 
   .dividend-tree-event-main,

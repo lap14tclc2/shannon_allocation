@@ -231,12 +231,6 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
           </button>
         </div>
 
-        <div className="app-nav-links desktop-nav-links">
-          {adminMode ? <a href="/admin" className="active" aria-current="page"><NavIcon name="risk" /><span>Quản trị</span></a> : LINKS.map(([href, key, label]) => (
-            <a key={href} href={href} className={active === key ? 'active' : ''} aria-current={active === key ? 'page' : undefined}><NavIcon name={key} /><span>{label}</span></a>
-          ))}
-        </div>
-
         <div className="app-nav-footer desktop-nav-footer">
           {!adminMode && <button type="button" className={`header-privacy-button ${privacyMode ? 'active' : ''}`} onClick={() => setPrivacyMode(value => !value)} aria-pressed={privacyMode} title={privacyMode ? 'Hiện số dư' : 'Ẩn số dư'}>
             <NavIcon name={privacyMode ? 'eye-off' : 'eye'} /><span>{privacyMode ? 'Hiện số' : 'Ẩn số'}</span>
@@ -251,9 +245,16 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         </div>
       </nav>
     </header>
-    {!adminMode && portfolios.length > 0 && <div className="desktop-portfolio-context" aria-label="Danh mục hiện tại">
-      <div className="desktop-portfolio-context-shell"><DesktopPortfolioSwitcher /></div>
-    </div>}
+    <div className="desktop-workspace-navbar">
+      <div className="desktop-workspace-navbar-shell">
+        {!adminMode && portfolios.length > 0 && <DesktopPortfolioSwitcher />}
+        <nav className="app-nav-links desktop-nav-links workspace-route-links" aria-label="Điều hướng các trang">
+          {adminMode ? <a href="/admin" className="active" aria-current="page"><NavIcon name="risk" /><span>Quản trị</span></a> : LINKS.map(([href, key, label]) => (
+            <a key={href} href={href} className={active === key ? 'active' : ''} aria-current={active === key ? 'page' : undefined}><NavIcon name={key} /><span>{label}</span></a>
+          ))}
+        </nav>
+      </div>
+    </div>
     {desktopPortfolioMenu}
     {mobileChrome}
   </>;

@@ -177,7 +177,7 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
         <div className={`hero-return ${totalPositive == null ? '' : totalPositive ? 'pos' : 'neg'}`}>
           <strong data-sensitive="money">{signedMoney(totalPnl, locale)}</strong>
           <span>{hasCompleteValuation
-            ? `${pct(portfolio.accounting_return)} từ giá vốn và dòng tiền đã ghi nhận`
+            ? <><span data-sensitive="pnl">{pct(portfolio.accounting_return)}</span> từ giá vốn và dòng tiền đã ghi nhận</>
             : 'Chờ cập nhật đủ dữ liệu giá để tính lãi/lỗ'}</span>
         </div>
         <div className="hero-meta">

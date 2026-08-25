@@ -494,17 +494,20 @@ button:active {
   color: var(--retro-hanko);
 }
 
-.header-v2 .app-nav-links a {
+.header-v2 .app-nav-links a,
+.desktop-workspace-navbar .app-nav-links a {
   border-radius: 1px;
 }
 
-.header-v2 .app-nav-links a.active {
+.header-v2 .app-nav-links a.active,
+.desktop-workspace-navbar .app-nav-links a.active {
   border-color: var(--retro-hanko);
   background: color-mix(in srgb, var(--retro-hanko) 8%, transparent);
   box-shadow: 2px 2px 0 color-mix(in srgb, var(--retro-hanko) 18%, transparent);
 }
 
-.header-v2 .app-nav-links a.active svg {
+.header-v2 .app-nav-links a.active svg,
+.desktop-workspace-navbar .app-nav-links a.active svg {
   color: var(--retro-hanko);
 }
 
@@ -532,15 +535,28 @@ button:active {
   color: var(--retro-hanko);
 }
 
-/* Persisted privacy mask: returns and percentages remain readable. */
-.privacy-mode [data-sensitive="money"] {
-  filter: blur(7px);
+/* Persisted privacy mask: conceal values without leaving readable silhouettes. */
+.privacy-mode [data-sensitive] {
+  --privacy-mask-size: 13px;
+  color: transparent !important;
+  filter: none !important;
+  font-size: 0 !important;
+  line-height: 1 !important;
   user-select: none;
-  transition: filter .2s ease;
+  white-space: nowrap;
 }
 
-.privacy-mode [data-sensitive="money"]::selection {
-  background: transparent;
+.privacy-mode [data-sensitive]::after {
+  content: "*** \1F511";
+  color: var(--text) !important;
+  font-family: var(--font-ui);
+  font-size: var(--privacy-mask-size);
+  font-weight: 750;
+  letter-spacing: .04em;
+}
+
+.privacy-mode .portfolio-hero h1[data-sensitive] {
+  --privacy-mask-size: clamp(22px, 4vw, 34px);
 }
 
 /* Appearance presets */
@@ -663,13 +679,6 @@ button:active {
     grid-column: 1 / -1;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .privacy-mode [data-sensitive="money"] {
-    transition: none;
-  }
-}
-
 
 /* Portaled controls must keep viewport positioning. The shared retro surface
    rule above intentionally styles their frame, but must not make them relative. */
