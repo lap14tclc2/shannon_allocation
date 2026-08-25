@@ -12,8 +12,8 @@ from .corrections import (
     effective_event,
     effective_events,
     ensure_schema,
-    latest_corrections,
     raw_events,
+    transaction_versions,
 )
 from .domain import EventType, LedgerEvent, PortfolioState
 from .institutional import InstitutionalBook
@@ -118,14 +118,26 @@ class CorrectablePortfolioService(PortfolioService):
         return {"logs": list_activity(self.store, limit=limit, category=category), "integrity": verify_activity_chain(self.store)}
 
     def transactions(self) -> list[dict]:
-        latest = latest_corrections(self.store)
         rows = []
-        for event in reversed(effective_events(self.store)):
+        for version in reversed(transaction_versions(self.store)):
+            event = version["event"]
+            correction = version["correction"]
             row = self._serialize_event(event)
-            correction = latest.get(int(event.id or 0))
+            row["status"] = version["status"]
             row["correction"] = (
-                {"id": correction["id"], "action": "EDIT", "reason": correction["reason"], "created_by": correction["created_by"], "created_at": correction["created_at"]}
-                if correction and correction.get("action") == "EDIT" else None
+                {
+                    "id": correction["id"],
+                    "action": (
+                        "SOFT_DELETE"
+                        if correction["action"] == "DELETE"
+                        else correction["action"]
+                    ),
+                    "reason": correction["reason"],
+                    "created_by": correction["created_by"],
+                    "created_at": correction["created_at"],
+                }
+                if correction
+                else None
             )
             rows.append(row)
         return rows
@@ -220,21 +232,65 @@ class CorrectablePortfolioService(PortfolioService):
         return {"ok": True, "event_id": int(event_id), "correction_id": correction_id, "action": "EDIT", "event": self._serialize_event(replacement), "affected_from": affected_from, "history": history}
 
     def delete_event(self, event_id: int, reason: str, created_by: str = "local") -> dict:
+        """Soft-delete a transaction and rebuild all state derived from the ledger."""
         reason = str(reason or "").strip()
         if not reason:
-            raise InputValidationError("DELETION_REASON_REQUIRED", "reason is required when deleting a transaction.", "reason")
+            raise InputValidationError(
+                "DISCARD_REASON_REQUIRED",
+                "reason is required when discarding a transaction.",
+                "reason",
+            )
         current = effective_event(self.store, int(event_id))
         if current is None:
-            raise CorrectionError("Transaction not found or already deleted.")
-        self._validate_ledger([e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)])
-        correction_id = append_delete(self.store, int(event_id), reason=reason, created_by=created_by)
-        self._mark_restatement_if_needed(current.event_date, f"DELETE transaction #{event_id}: {reason}", int(event_id))
+            raise CorrectionError("Transaction not found or already soft-deleted.")
+        if bool((current.metadata or {}).get("auto_generated")):
+            raise InputValidationError(
+                "AUTOMATED_TRANSACTION_DISCARD_FORBIDDEN",
+                "Automatically generated transactions must be corrected through their source workflow.",
+                "event_id",
+            )
+
+        remaining = [
+            event
+            for event in effective_events(self.store)
+            if int(event.id or 0) != int(event_id)
+        ]
+        self._validate_ledger(remaining)
+        correction_id = append_delete(
+            self.store,
+            int(event_id),
+            reason=reason,
+            created_by=created_by,
+        )
+        self._mark_restatement_if_needed(
+            current.event_date,
+            f"SOFT_DELETE transaction #{event_id}: {reason}",
+            int(event_id),
+        )
         history = self._refresh_derived_history()
         self._log(
-            "USER", created_by, "LEDGER", "TRANSACTION_DELETED_EFFECTIVE", f"Removed transaction #{event_id} from the effective ledger.",
-            entity_type="TRANSACTION", entity_id=event_id, details={"correction_id": correction_id, "reason": reason, "original": self._serialize_event(current)},
+            "USER",
+            created_by,
+            "LEDGER",
+            "TRANSACTION_SOFT_DELETED",
+            f"Soft-deleted transaction #{event_id} from the effective ledger.",
+            entity_type="TRANSACTION",
+            entity_id=event_id,
+            details={
+                "correction_id": correction_id,
+                "reason": reason,
+                "original": self._serialize_event(current),
+            },
         )
-        return {"ok": True, "event_id": int(event_id), "correction_id": correction_id, "action": "DELETE", "affected_from": current.event_date, "history": history}
+        return {
+            "ok": True,
+            "event_id": int(event_id),
+            "correction_id": correction_id,
+            "action": "SOFT_DELETE",
+            "status": "SOFT_DELETED",
+            "affected_from": current.event_date,
+            "history": history,
+        }
 
     def set_reference_weights(self, weights: dict[str, float]) -> dict:
         result = super().set_reference_weights(weights)
