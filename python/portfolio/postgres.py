@@ -26,6 +26,9 @@ from .storage import PortfolioStore
 DATABASE_URL_ENV = "DATABASE_URL"
 AUTH_SCHEMA = "qport_auth"
 USER_SCHEMA_PREFIX = "qport_user_"
+MAX_PORTFOLIOS_PER_USER = 20
+DEFAULT_PORTFOLIO_NAME = "Danh mục mặc định"
+PORTFOLIO_SCHEMA_RE = re.compile(r"^qport_user_[0-9]+(?:_portfolio_[a-f0-9]{12})?$")
 
 
 def database_url() -> str:
@@ -44,6 +47,23 @@ def database_url() -> str:
 
 def user_schema(user_id: int) -> str:
     return f"{USER_SCHEMA_PREFIX}{int(user_id)}"
+
+
+def portfolio_schema(user_id: int, token: str) -> str:
+    value = f"{user_schema(user_id)}_portfolio_{str(token).lower()}"
+    if not PORTFOLIO_SCHEMA_RE.fullmatch(value):
+        raise ValueError("Invalid portfolio schema name.")
+    return value
+
+
+def _validate_portfolio_schema(user_id: int, schema_name: str) -> str:
+    value = str(schema_name or "")
+    prefix = user_schema(user_id)
+    if not PORTFOLIO_SCHEMA_RE.fullmatch(value) or not (
+        value == prefix or value.startswith(prefix + "_portfolio_")
+    ):
+        raise ValueError("Portfolio schema does not belong to this user.")
+    return value
 
 
 def _replace_qmark_placeholders(statement: str) -> str:
@@ -252,8 +272,8 @@ def _ensure_schema(schema: str) -> None:
             cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema)))
 
 
-def drop_user_schema(user_id: int) -> bool:
-    schema = user_schema(user_id)
+def drop_portfolio_schema(user_id: int, schema_name: str) -> bool:
+    schema = _validate_portfolio_schema(user_id, schema_name)
     with psycopg.connect(database_url(), autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -265,12 +285,38 @@ def drop_user_schema(user_id: int) -> bool:
     return existed
 
 
-class PostgresPortfolioStore(PortfolioStore):
-    """PortfolioStore contract backed by one PostgreSQL schema per QPort user."""
+def reset_portfolio_schema(user_id: int, schema_name: str) -> bool:
+    schema = _validate_portfolio_schema(user_id, schema_name)
+    existed = drop_portfolio_schema(user_id, schema)
+    _ensure_schema(schema)
+    return existed
 
-    def __init__(self, user_id: int) -> None:
+
+def drop_user_schema(user_id: int) -> bool:
+    """Drop every portfolio schema owned by a user, including the legacy default."""
+    prefix = user_schema(user_id)
+    with psycopg.connect(database_url(), autocommit=True) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT schema_name FROM information_schema.schemata WHERE schema_name=%s OR schema_name LIKE %s",
+                (prefix, prefix + "_portfolio_%"),
+            )
+            schemas = [row["schema_name"] for row in cur.fetchall()]
+            for schema_name in schemas:
+                _validate_portfolio_schema(user_id, schema_name)
+                cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema_name)))
+    return bool(schemas)
+
+
+class PostgresPortfolioStore(PortfolioStore):
+    """PortfolioStore contract backed by one isolated PostgreSQL schema per portfolio."""
+
+    def __init__(self, user_id: int, schema_name: str | None = None) -> None:
         self.user_id = int(user_id)
-        self.schema = user_schema(self.user_id)
+        self.schema = _validate_portfolio_schema(
+            self.user_id,
+            schema_name or user_schema(self.user_id),
+        )
         # ``path`` remains informational for code/tests that expose the backing
         # persistence location. It is never opened as a filesystem path here.
         self.path = Path(f"/{self.schema}.postgres")
@@ -307,11 +353,29 @@ class PostgresAuthStore:
                     username TEXT NOT NULL,
                     role TEXT NOT NULL CHECK(role IN ('USER','ADMIN')),
                     password_hash TEXT,
+                    active_portfolio_id INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_qport_users_username_ci
                     ON users (LOWER(username));
+
+                CREATE TABLE IF NOT EXISTS portfolios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    schema_name TEXT NOT NULL UNIQUE,
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolios_user_name_ci
+                    ON portfolios(user_id, LOWER(name));
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolios_one_default
+                    ON portfolios(user_id) WHERE is_default=1;
+                CREATE INDEX IF NOT EXISTS idx_portfolios_user
+                    ON portfolios(user_id, id);
 
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash TEXT PRIMARY KEY,
@@ -324,6 +388,12 @@ class PostgresAuthStore:
                 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
                 """
             )
+            user_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()
+            }
+            if "active_portfolio_id" not in user_columns:
+                db.execute("ALTER TABLE users ADD COLUMN active_portfolio_id INTEGER")
+
             admin = db.execute("SELECT id FROM users WHERE role='ADMIN' LIMIT 1").fetchone()
             if admin is None:
                 password = str(os.environ.get("QPORT_ADMIN_PASSWORD") or "").strip()
@@ -338,6 +408,12 @@ class PostgresAuthStore:
                     "INSERT INTO users(username,role,password_hash,created_at,updated_at) VALUES (?,?,?,?,?)",
                     (DEFAULT_ADMIN_USERNAME, "ADMIN", _hash_password(password), now, now),
                 )
+        with self.connect() as db:
+            existing_users = db.execute(
+                "SELECT id FROM users WHERE role='USER' ORDER BY id"
+            ).fetchall()
+        for row in existing_users:
+            self.ensure_default_portfolio(int(row["id"]))
         self.cleanup_expired_sessions()
 
     @staticmethod
@@ -350,12 +426,195 @@ class PostgresAuthStore:
     def _public_user(row) -> dict | None:
         if row is None:
             return None
+        data = dict(row)
         return {
-            "id": int(row["id"]),
-            "username": row["username"],
-            "role": row["role"],
-            "created_at": row["created_at"],
+            "id": int(data["id"]),
+            "username": data["username"],
+            "role": data["role"],
+            "active_portfolio_id": (
+                int(data["active_portfolio_id"])
+                if data.get("active_portfolio_id") is not None
+                else None
+            ),
+            "created_at": data["created_at"],
         }
+
+    @staticmethod
+    def _public_portfolio(row) -> dict | None:
+        if row is None:
+            return None
+        data = dict(row)
+        return {
+            "id": int(data["id"]),
+            "user_id": int(data["user_id"]),
+            "name": data["name"],
+            "schema_name": data["schema_name"],
+            "is_default": bool(data["is_default"]),
+            "created_at": data["created_at"],
+            "updated_at": data["updated_at"],
+        }
+
+    @staticmethod
+    def normalize_portfolio_name(name: str) -> str:
+        value = " ".join(str(name or "").strip().split())
+        if not value:
+            raise AuthError("PORTFOLIO_NAME_REQUIRED", "Portfolio name is required.", "name")
+        if len(value) > 60:
+            raise AuthError("PORTFOLIO_NAME_TOO_LONG", "Portfolio name must be at most 60 characters.", "name")
+        return value
+
+    def ensure_default_portfolio(self, user_id: int) -> dict:
+        user_id = int(user_id)
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM portfolios WHERE user_id=? AND is_default=1 LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                now = _iso()
+                try:
+                    cur = db.execute(
+                        """
+                        INSERT INTO portfolios(user_id,name,schema_name,is_default,created_at,updated_at)
+                        VALUES (?,?,?,1,?,?)
+                        """,
+                        (user_id, DEFAULT_PORTFOLIO_NAME, user_schema(user_id), now, now),
+                    )
+                    row = db.execute(
+                        "SELECT * FROM portfolios WHERE id=?",
+                        (int(cur.lastrowid),),
+                    ).fetchone()
+                except psycopg.IntegrityError:
+                    row = db.execute(
+                        "SELECT * FROM portfolios WHERE user_id=? AND is_default=1 LIMIT 1",
+                        (user_id,),
+                    ).fetchone()
+            user = db.execute(
+                "SELECT active_portfolio_id FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+            if user and user.get("active_portfolio_id") is None:
+                db.execute(
+                    "UPDATE users SET active_portfolio_id=?,updated_at=? WHERE id=?",
+                    (int(row["id"]), _iso(), user_id),
+                )
+        PostgresPortfolioStore(user_id, user_schema(user_id))
+        return self._public_portfolio(row)
+
+    def list_portfolios(self, user_id: int) -> list[dict]:
+        self.ensure_default_portfolio(user_id)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM portfolios WHERE user_id=? ORDER BY is_default DESC, LOWER(name), id",
+                (int(user_id),),
+            ).fetchall()
+        return [self._public_portfolio(row) for row in rows]
+
+    def portfolio_for_user(self, user_id: int, portfolio_id: int) -> dict | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM portfolios WHERE id=? AND user_id=?",
+                (int(portfolio_id), int(user_id)),
+            ).fetchone()
+        return self._public_portfolio(row)
+
+    def active_portfolio(self, user_id: int) -> dict:
+        default = self.ensure_default_portfolio(user_id)
+        with self.connect() as db:
+            user = db.execute(
+                "SELECT active_portfolio_id FROM users WHERE id=?",
+                (int(user_id),),
+            ).fetchone()
+        active_id = user.get("active_portfolio_id") if user else None
+        active = self.portfolio_for_user(user_id, int(active_id)) if active_id is not None else None
+        if active is None:
+            self.select_portfolio(user_id, default["id"])
+            return default
+        return active
+
+    def create_portfolio(self, user_id: int, name: str) -> dict:
+        import secrets
+
+        user_id = int(user_id)
+        name = self.normalize_portfolio_name(name)
+        if len(self.list_portfolios(user_id)) >= MAX_PORTFOLIOS_PER_USER:
+            raise AuthError(
+                "PORTFOLIO_LIMIT_REACHED",
+                f"Each account may have at most {MAX_PORTFOLIOS_PER_USER} portfolios.",
+                "name",
+            )
+        schema_name = portfolio_schema(user_id, secrets.token_hex(6))
+        now = _iso()
+        try:
+            with self.connect() as db:
+                cur = db.execute(
+                    """
+                    INSERT INTO portfolios(user_id,name,schema_name,is_default,created_at,updated_at)
+                    VALUES (?,?,?,0,?,?)
+                    """,
+                    (user_id, name, schema_name, now, now),
+                )
+                row = db.execute("SELECT * FROM portfolios WHERE id=?", (int(cur.lastrowid),)).fetchone()
+        except psycopg.IntegrityError as exc:
+            raise AuthError("PORTFOLIO_NAME_TAKEN", "A portfolio with this name already exists.", "name") from exc
+        try:
+            PostgresPortfolioStore(user_id, schema_name)
+        except Exception:
+            with self.connect() as db:
+                db.execute("DELETE FROM portfolios WHERE id=? AND user_id=?", (int(row["id"]), user_id))
+            drop_portfolio_schema(user_id, schema_name)
+            raise
+        return self._public_portfolio(row)
+
+    def rename_portfolio(self, user_id: int, portfolio_id: int, name: str) -> dict:
+        name = self.normalize_portfolio_name(name)
+        current = self.portfolio_for_user(user_id, portfolio_id)
+        if current is None:
+            raise AuthError("PORTFOLIO_NOT_FOUND", "Portfolio does not exist.", "portfolio_id")
+        try:
+            with self.connect() as db:
+                db.execute(
+                    "UPDATE portfolios SET name=?,updated_at=? WHERE id=? AND user_id=?",
+                    (name, _iso(), int(portfolio_id), int(user_id)),
+                )
+                row = db.execute("SELECT * FROM portfolios WHERE id=?", (int(portfolio_id),)).fetchone()
+        except psycopg.IntegrityError as exc:
+            raise AuthError("PORTFOLIO_NAME_TAKEN", "A portfolio with this name already exists.", "name") from exc
+        return self._public_portfolio(row)
+
+    def select_portfolio(self, user_id: int, portfolio_id: int) -> dict:
+        row = self.portfolio_for_user(user_id, portfolio_id)
+        if row is None:
+            raise AuthError("PORTFOLIO_NOT_FOUND", "Portfolio does not exist.", "portfolio_id")
+        with self.connect() as db:
+            db.execute(
+                "UPDATE users SET active_portfolio_id=?,updated_at=? WHERE id=?",
+                (int(portfolio_id), _iso(), int(user_id)),
+            )
+        return row
+
+    def delete_portfolio(self, user_id: int, portfolio_id: int) -> dict:
+        row = self.portfolio_for_user(user_id, portfolio_id)
+        if row is None:
+            raise AuthError("PORTFOLIO_NOT_FOUND", "Portfolio does not exist.", "portfolio_id")
+        if row["is_default"]:
+            raise AuthError(
+                "DEFAULT_PORTFOLIO_DELETE_FORBIDDEN",
+                "The default portfolio cannot be deleted. Clear its data instead.",
+                "portfolio_id",
+            )
+        default = self.ensure_default_portfolio(user_id)
+        with self.connect() as db:
+            db.execute(
+                "UPDATE users SET active_portfolio_id=?,updated_at=? WHERE id=? AND active_portfolio_id=?",
+                (default["id"], _iso(), int(user_id), int(portfolio_id)),
+            )
+            db.execute(
+                "DELETE FROM portfolios WHERE id=? AND user_id=?",
+                (int(portfolio_id), int(user_id)),
+            )
+        removed = drop_portfolio_schema(user_id, row["schema_name"])
+        return {**row, "portfolio_data_removed": removed, "next_active_portfolio_id": default["id"]}
 
     def user_by_username(self, username: str) -> dict | None:
         try:
@@ -391,10 +650,11 @@ class PostgresAuthStore:
             if "idx_qport_users_username_ci" in str(exc) or "username" in str(exc).lower():
                 raise AuthError("USERNAME_TAKEN", "Username is already registered.", "username") from exc
             raise
-        # Create the user's isolated portfolio schema immediately so registration
-        # is atomic from the application's point of view.
+        # Preserve the legacy user schema as the default portfolio so existing
+        # data migrates without copy/rewrite operations.
         PostgresPortfolioStore(int(row["id"]))
-        return self._public_user(row)
+        self.ensure_default_portfolio(int(row["id"]))
+        return self._public_user(self.user_by_id(int(row["id"])))
 
     def login(self, username: str, password: str | None = None) -> tuple[dict, str]:
         username = self.normalize_username(username)
