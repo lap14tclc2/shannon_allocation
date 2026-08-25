@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
-import { createPortfolioTransaction, deletePortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
+import { createPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
-import { validateTransactionForm } from '../lib/validation.js';
+import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
+import { parseVndMoneyInput, validateTransactionForm } from '../lib/validation.js';
 
 const TYPE_VALUES = ['POSITION_IMPORT', 'CASH_DEPOSIT', 'BUY', 'SELL', 'CASH_WITHDRAW', 'SPLIT', 'FEE'];
 const DIVIDEND_TYPES = new Set(['CASH_DIVIDEND', 'STOCK_DIVIDEND']);
+const EDITABLE_TYPES = new Set(['POSITION_IMPORT', 'BUY', 'SELL']);
 const TYPE_LABELS = {
   POSITION_IMPORT: 'Nhập danh mục ban đầu',
   CASH_DEPOSIT: 'Nạp tiền',
@@ -38,19 +40,73 @@ function FieldError({ error }) {
   return error ? <span className="field-error">{error}</span> : null;
 }
 
+function brokerName(code) {
+  return BROKERS.find(item => item.code === code)?.name || code || 'Chưa gán';
+}
+
+function sellIntentFromLocation() {
+  if (typeof window === 'undefined') return { active: false, locked: false };
+  const params = new URLSearchParams(window.location.search || '');
+  const active = params.get('action') === 'sell';
+  const symbol = String(params.get('symbol') || '').toUpperCase();
+  const broker_code = String(params.get('broker') || '').toUpperCase();
+  const account_id = String(params.get('account') || '').toUpperCase();
+  return {
+    active,
+    symbol,
+    broker_code,
+    account_id,
+    locked: active && Boolean(symbol && broker_code && account_id),
+  };
+}
+
 export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'vi' }) {
-  const money = value => value == null ? '-' : `${formatMoney(value, false, locale)} ₫`;
+  const money = value => value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
   const shares = value => formatShares(value, locale);
   const [transactions] = useState(initialTransactions);
-  const [type, setType] = useState('POSITION_IMPORT');
-  const [form, setForm] = useState(EMPTY_FORM(today || ''));
+  const holdingBooks = useMemo(() => deriveHoldingBooks(transactions), [transactions]);
+  const intent = useMemo(() => sellIntentFromLocation(), []);
+  const intentBook = useMemo(() => intent.locked
+    ? findHoldingBook(holdingBooks, intent.symbol, intent.broker_code, intent.account_id)
+    : null, [holdingBooks, intent]);
+
+  const [type, setType] = useState(intent.active ? 'SELL' : 'POSITION_IMPORT');
+  const [form, setForm] = useState(() => {
+    const initial = EMPTY_FORM(today || '');
+    if (!intent.locked) return initial;
+    return {
+      ...initial,
+      symbol: intent.symbol,
+      broker_code: intent.broker_code,
+      account_id: intent.account_id,
+    };
+  });
+  const [selectedSellKey, setSelectedSellKey] = useState(() => intent.locked
+    ? `${intent.symbol}|${intent.broker_code}|${intent.account_id}`
+    : '');
   const [editingId, setEditingId] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const [deleteRowId, setDeleteRowId] = useState(null);
-  const [deleteReason, setDeleteReason] = useState('');
+
+  const selectedSellBook = useMemo(() => {
+    if (!selectedSellKey) return null;
+    return holdingBooks.find(row => holdingBookKey(row) === selectedSellKey) || null;
+  }, [holdingBooks, selectedSellKey]);
+
+  const lockedSell = !editingId && type === 'SELL' && intent.locked;
+  const sellBook = lockedSell ? intentBook : selectedSellBook;
+  const isSellCreate = !editingId && type === 'SELL';
+  const estimatedSellPrice = isSellCreate && Number(form.quantity) > 0 && String(form.amount || '').trim()
+    ? (() => {
+        try {
+          return parseVndMoneyInput(form.amount, 'amount', 'vi') / Number(form.quantity);
+        } catch {
+          return null;
+        }
+      })()
+    : null;
 
   const requirements = useMemo(() => ({
     symbol: ['POSITION_IMPORT', 'BUY', 'SELL', 'SPLIT'].includes(type),
@@ -66,35 +122,74 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     setFieldErrors(current => ({ ...current, [key]: undefined }));
   }
 
+  function applySellBook(key) {
+    setSelectedSellKey(key);
+    const book = holdingBooks.find(row => holdingBookKey(row) === key);
+    setForm(current => ({
+      ...current,
+      event_date: today || current.event_date,
+      symbol: book?.symbol || '',
+      broker_code: book?.broker_code || 'UNASSIGNED',
+      account_id: book?.account_id || 'PRIMARY',
+      quantity: '',
+      amount: '',
+      price: '',
+      fee: '',
+      tax: '',
+      note: '',
+      settlement_date: '',
+    }));
+    setFieldErrors({});
+    setMessage('');
+  }
+
   function changeType(value) {
+    if (intent.locked && value !== 'SELL') return;
     setType(value);
+    setEditingId(null);
+    setCorrectionReason('');
     setMessage('');
     setFieldErrors({});
-    setForm(current => ({ ...current, symbol: '', quantity: '', price: '', amount: '', ratio: '', fee: '', tax: '', settlement_date: '' }));
+    setSelectedSellKey('');
+    setForm(EMPTY_FORM(today || ''));
   }
 
   function resetForm() {
     setEditingId(null);
     setCorrectionReason('');
-    setType('POSITION_IMPORT');
-    setForm(EMPTY_FORM(today || ''));
+    setMessage('');
     setFieldErrors({});
+    if (intent.active) {
+      setType('SELL');
+      setSelectedSellKey(intent.locked ? `${intent.symbol}|${intent.broker_code}|${intent.account_id}` : '');
+      setForm({
+        ...EMPTY_FORM(today || ''),
+        symbol: intent.locked ? intent.symbol : '',
+        broker_code: intent.locked ? intent.broker_code : 'UNASSIGNED',
+        account_id: intent.locked ? intent.account_id : 'PRIMARY',
+      });
+    } else {
+      setType('POSITION_IMPORT');
+      setSelectedSellKey('');
+      setForm(EMPTY_FORM(today || ''));
+    }
   }
 
   function startEdit(row) {
-    if (DIVIDEND_TYPES.has(row.event_type)) return;
+    if (DIVIDEND_TYPES.has(row.event_type) || !EDITABLE_TYPES.has(row.event_type)) return;
     setEditingId(row.id);
     setType(row.event_type);
     setCorrectionReason('');
     setMessage('');
     setFieldErrors({});
+    setSelectedSellKey('');
     setForm({
       event_date: row.event_date || today || '',
       symbol: row.symbol || '',
       quantity: row.quantity ? String(row.quantity) : '',
       price: row.price ? String(row.price) : '',
-      amount: row.amount ? String(row.amount) : '',
-      ratio: row.ratio ? String(row.ratio) : '',
+      amount: '',
+      ratio: '',
       fee: row.fee ? String(row.fee) : '',
       tax: row.tax ? String(row.tax) : '',
       note: row.note || '',
@@ -105,15 +200,57 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function validateSellSelection() {
+    if (!sellBook) {
+      const error = new Error(lockedSell
+        ? 'Nguồn cổ phiếu đã chọn không còn tồn tại trong danh mục. Hãy quay lại Danh mục và chọn lại nơi bán.'
+        : 'Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
+      error.field = 'sell_source';
+      throw error;
+    }
+    const quantity = Number(form.quantity);
+    if (Number.isFinite(quantity) && quantity > Number(sellBook.shares) + 1e-8) {
+      const error = new Error(`Bạn chỉ có ${shares(sellBook.shares)} CP ${sellBook.symbol} tại ${brokerName(sellBook.broker_code)} · ${sellBook.account_id}.`);
+      error.field = 'quantity';
+      throw error;
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     setMessage('');
     setFieldErrors({});
     let payload;
     try {
-      payload = validateTransactionForm(type, form, today, 'vi');
+      let validationForm = form;
+      if (isSellCreate) {
+        validateSellSelection();
+        const grossAmount = parseVndMoneyInput(form.amount, 'amount', 'vi');
+        const quantity = Number(form.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          const error = new Error('Số lượng bán phải lớn hơn 0.');
+          error.field = 'quantity';
+          throw error;
+        }
+        validationForm = {
+          ...form,
+          event_date: today || form.event_date,
+          symbol: sellBook.symbol,
+          broker_code: sellBook.broker_code,
+          account_id: sellBook.account_id,
+          price: String(grossAmount / quantity),
+          fee: '',
+          tax: '',
+          note: '',
+          settlement_date: '',
+        };
+      }
+
+      payload = validateTransactionForm(type, validationForm, today, 'vi');
       if (editingId && !correctionReason.trim()) {
-        throw Object.assign(new Error('Hãy nhập lý do sửa giao dịch để lịch sử thay đổi có thể được kiểm tra lại sau này.'), { field: 'correction_reason' });
+        const error = new Error('Hãy nhập lý do sửa giao dịch để lịch sử thay đổi có thể được kiểm tra lại sau này.');
+        error.field = 'correction_reason';
+        throw error;
       }
     } catch (error) {
       setFieldErrors(error.field ? { [error.field]: error.message } : {});
@@ -123,9 +260,17 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
     setSaving(true);
     try {
-      if (editingId) await updatePortfolioTransaction(editingId, { ...payload, correction_reason: correctionReason.trim() });
-      else await createPortfolioTransaction(payload);
-      window.location.reload();
+      if (editingId) {
+        await updatePortfolioTransaction(editingId, {
+          quantity: payload.quantity,
+          price: payload.price,
+          broker_code: payload.broker_code,
+          correction_reason: correctionReason.trim(),
+        });
+      } else {
+        await createPortfolioTransaction(payload);
+      }
+      window.location.replace('/transactions');
     } catch (error) {
       if (error.field) setFieldErrors({ [error.field]: error.message });
       setMessage(error.message);
@@ -133,35 +278,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     }
   }
 
-  async function confirmDelete(row) {
-    if (DIVIDEND_TYPES.has(row.event_type)) return;
-    if (!deleteReason.trim()) {
-      setMessage('Hãy nhập lý do xóa giao dịch.');
-      return;
-    }
-    try {
-      await deletePortfolioTransaction(row.id, deleteReason.trim());
-      window.location.reload();
-    } catch (error) {
-      setMessage(error.message);
-    }
-  }
-
   function rowActions(row) {
-    const deleting = deleteRowId === row.id;
     const dividendEvent = DIVIDEND_TYPES.has(row.event_type);
-    if (dividendEvent) return <span className="status-pill">Chỉ đọc</span>;
-    if (deleting) return <div className="inline-delete">
-      <input value={deleteReason} onChange={event => setDeleteReason(event.target.value)} placeholder="Lý do xóa" />
-      <div className="row-actions">
-        <button className="btn-danger btn-small" type="button" onClick={() => confirmDelete(row)}>Xác nhận</button>
-        <button className="btn-small" type="button" onClick={() => { setDeleteRowId(null); setDeleteReason(''); }}>Hủy</button>
-      </div>
-    </div>;
-    return <div className="row-actions">
-      <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>
-      <button className="btn-danger btn-small" type="button" onClick={() => { setDeleteRowId(row.id); setDeleteReason(''); }}>Xóa</button>
-    </div>;
+    const editable = !dividendEvent && EDITABLE_TYPES.has(row.event_type);
+    if (!editable) return <span className="status-pill">Chỉ đọc</span>;
+    return <button className="btn-small" type="button" onClick={() => startEdit(row)}>Sửa</button>;
   }
 
   return <div className="page investor-transactions-page">
@@ -171,92 +292,154 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       <div>
         <div className="eyebrow">Sổ giao dịch</div>
         <h1>Giao dịch</h1>
-        <p className="muted">Ghi đúng những gì đã thực sự xảy ra trong tài khoản chứng khoán. Danh mục, giá vốn và lãi/lỗ sẽ được tính lại từ lịch sử này.</p>
+        <p className="muted">Giao dịch đã ghi không thể xóa. Khi cần chỉnh dữ liệu, QPort chỉ cho sửa số lượng, giá và CTCK để giữ lịch sử nhất quán.</p>
       </div>
     </header>
 
-    <form className={`card ${editingId ? 'correction-form' : ''}`} onSubmit={submit} noValidate>
+    <form className={`card ${editingId ? 'correction-form' : ''} ${isSellCreate ? 'transaction-sell-form' : ''}`} onSubmit={submit} noValidate>
       <div className="section-head">
         <div>
-          <h2>{editingId ? `Sửa giao dịch #${editingId}` : 'Thêm giao dịch'}</h2>
-          <p className="muted">Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.</p>
+          <h2>{editingId ? `Sửa giao dịch #${editingId}` : isSellCreate ? 'Bán cổ phiếu' : 'Thêm giao dịch'}</h2>
+          <p className="muted">{editingId
+            ? 'Ngày, mã cổ phiếu, loại giao dịch và tài khoản được khóa. Chỉ số lượng, giá và CTCK có thể sửa.'
+            : isSellCreate
+              ? 'Chọn đúng nơi đang giữ cổ phiếu. Sau khi chọn, mã, CTCK, tài khoản và ngày giao dịch sẽ được khóa.'
+              : 'Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.'}</p>
         </div>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy sửa</button>}
       </div>
 
       <label>Loại giao dịch
-        <select value={type} onChange={event => changeType(event.target.value)} disabled={saving}>
+        <select value={type} onChange={event => changeType(event.target.value)} disabled={saving || editingId != null || intent.locked}>
           {TYPE_VALUES.map(value => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
         </select>
       </label>
 
-      {type === 'POSITION_IMPORT' && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại, không cần tạo giao dịch mua giả trong quá khứ.</div>}
-      {type === 'BUY' && <div className="info-callout transaction-buy-note">Dùng cho lệnh mua thông thường hoặc mua cổ phiếu phát hành thêm/quyền mua có trả tiền. Nhập số cổ phiếu thực nhận và giá thực trả.</div>}
+      {type === 'POSITION_IMPORT' && !editingId && <div className="info-callout">Dùng mục này khi bạn đã sở hữu cổ phiếu trước khi bắt đầu dùng QPort. Nhập đúng số lượng và giá vốn hiện tại.</div>}
+      {type === 'BUY' && !editingId && <div className="info-callout transaction-buy-note">Ghi đúng CTCK và tài khoản nhận cổ phiếu. Thông tin này sẽ quyết định nguồn cổ phiếu có thể bán về sau.</div>}
 
-      <div className="form-grid">
-        <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
-          <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
-          <FieldError error={fieldErrors.event_date} />
-        </label>
-        {requirements.symbol && <label>Mã cổ phiếu
-          <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
-          <FieldError error={fieldErrors.symbol} />
-        </label>}
-        {requirements.quantity && <label>Số lượng cổ phiếu
-          <input type="number" step="0.0001" min="0.0001" value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
-          <FieldError error={fieldErrors.quantity} />
-        </label>}
-        {requirements.price && <label>{type === 'SELL' ? 'Giá bán (VND/CP)' : 'Giá mua / giá vốn (VND/CP)'}
-          <input type="number" step="1" min="1000" value={form.price} onChange={event => set('price', event.target.value)} placeholder="72000" aria-invalid={!!fieldErrors.price} />
-          <FieldError error={fieldErrors.price} />
-        </label>}
-        {requirements.amount && <label>Số tiền (VND)
-          <input value={form.amount} onChange={event => set('amount', event.target.value)} aria-invalid={!!fieldErrors.amount} />
-          <FieldError error={fieldErrors.amount} />
-        </label>}
-        {requirements.ratio && <label>Tỷ lệ sau tách/gộp
-          <input type="number" step="0.0001" min="0.0001" value={form.ratio} onChange={event => set('ratio', event.target.value)} />
-        </label>}
-      </div>
+      {isSellCreate ? <>
+        <div className="sell-source-panel">
+          <div className="sell-source-title"><b>Nguồn cổ phiếu cần bán</b><span>CTCK đang lưu ký</span></div>
+          {lockedSell ? <div className="sell-source-locked">
+            <strong>{intent.symbol}</strong>
+            <span>{brokerName(intent.broker_code)} · {intent.account_id}</span>
+            <span>{intentBook ? `${shares(intentBook.shares)} CP khả dụng` : 'Nguồn này hiện không còn cổ phiếu khả dụng'}</span>
+          </div> : <label>Chọn mã / CTCK / tài khoản
+            <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
+              <option value="">-- Chọn cổ phiếu cần bán --</option>
+              {holdingBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
+                {book.symbol} · {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP
+              </option>)}
+            </select>
+            <FieldError error={fieldErrors.sell_source} />
+          </label>}
+        </div>
 
-      <details className="disclosure-card transaction-advanced">
-        <summary><b>Thông tin bổ sung</b><span className="muted">Công ty chứng khoán, tài khoản, phí, thuế và ngày thanh toán</span></summary>
+        <div className="form-grid sell-readonly-grid">
+          <label>Ngày giao dịch<input type="date" value={today || form.event_date} readOnly /></label>
+          <label>Mã cổ phiếu<input value={sellBook?.symbol || intent.symbol || ''} readOnly /></label>
+          <label>CTCK<input value={brokerName(sellBook?.broker_code || intent.broker_code)} readOnly /></label>
+          <label>Tài khoản<input value={sellBook?.account_id || intent.account_id || ''} readOnly /></label>
+        </div>
+
+        <div className="form-grid sell-input-grid">
+          <label>Số lượng bán
+            <input type="number" step="0.0001" min="0.0001" max={sellBook?.shares || undefined} value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+            <FieldError error={fieldErrors.quantity} />
+            {sellBook && <span className="field-hint">Tối đa {shares(sellBook.shares)} CP tại {brokerName(sellBook.broker_code)}</span>}
+          </label>
+          <label>Tổng tiền bán trước phí/thuế (VND)
+            <input inputMode="numeric" value={form.amount} onChange={event => set('amount', event.target.value)} placeholder="Ví dụ 72.000.000" aria-invalid={!!fieldErrors.amount} />
+            <FieldError error={fieldErrors.amount} />
+            <span className="field-hint">Giá bán bình quân: {estimatedSellPrice == null ? '-' : `${money(estimatedSellPrice)}/CP`}</span>
+          </label>
+        </div>
+        <div className="info-callout">QPort sẽ ghi SELL đúng tại <b>{sellBook ? `${brokerName(sellBook.broker_code)} · ${sellBook.account_id}` : 'CTCK/tài khoản đã chọn'}</b>. Cổ phiếu ở CTCK khác không được dùng để bù cho lệnh bán này.</div>
+      </> : editingId ? <>
         <div className="form-grid">
-          <label>Công ty chứng khoán
-            <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)}>
+          <label>Ngày giao dịch<input type="date" value={form.event_date} readOnly /></label>
+          <label>Mã cổ phiếu<input value={form.symbol || '-'} readOnly /></label>
+          <label>Tài khoản<input value={form.account_id || 'PRIMARY'} readOnly /></label>
+          <label>Số lượng
+            <input type="number" step="0.0001" min="0.0001" value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+            <FieldError error={fieldErrors.quantity} />
+          </label>
+          <label>Giá (VND/CP)
+            <input type="number" step="1" min="1000" value={form.price} onChange={event => set('price', event.target.value)} aria-invalid={!!fieldErrors.price} />
+            <FieldError error={fieldErrors.price} />
+          </label>
+          <label>CTCK
+            <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)} aria-invalid={!!fieldErrors.broker_code}>
               {BROKERS.map(broker => <option key={broker.code} value={broker.code}>{broker.name}</option>)}
             </select>
             <FieldError error={fieldErrors.broker_code} />
           </label>
-          <label>Tài khoản
-            <input value={form.account_id} maxLength={32} onChange={event => set('account_id', event.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, ''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id} />
-            <FieldError error={fieldErrors.account_id} />
-          </label>
-          {requirements.trade && <label>Ngày thanh toán
-            <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={event => set('settlement_date', event.target.value)} aria-invalid={!!fieldErrors.settlement_date} />
-            <FieldError error={fieldErrors.settlement_date} />
-          </label>}
-          {requirements.trade && <label>Phí giao dịch (VND)<input type="number" min="0" step="1" value={form.fee} onChange={event => set('fee', event.target.value)} /></label>}
-          {requirements.trade && <label>Thuế (VND)<input type="number" min="0" step="1" value={form.tax} onChange={event => set('tax', event.target.value)} /></label>}
         </div>
-      </details>
+        <label>Lý do sửa dữ liệu
+          <textarea maxLength={500} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} aria-invalid={!!fieldErrors.correction_reason} placeholder="Ví dụ: nhập nhầm giá khớp lệnh" />
+          <FieldError error={fieldErrors.correction_reason} />
+        </label>
+      </> : <>
+        <div className="form-grid">
+          <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
+            <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
+            <FieldError error={fieldErrors.event_date} />
+          </label>
+          {requirements.symbol && <label>Mã cổ phiếu
+            <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
+            <FieldError error={fieldErrors.symbol} />
+          </label>}
+          {requirements.quantity && <label>Số lượng cổ phiếu
+            <input type="number" step="0.0001" min="0.0001" value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+            <FieldError error={fieldErrors.quantity} />
+          </label>}
+          {requirements.price && <label>Giá mua / giá vốn (VND/CP)
+            <input type="number" step="1" min="1000" value={form.price} onChange={event => set('price', event.target.value)} placeholder="72000" aria-invalid={!!fieldErrors.price} />
+            <FieldError error={fieldErrors.price} />
+          </label>}
+          {requirements.amount && <label>Số tiền (VND)
+            <input value={form.amount} onChange={event => set('amount', event.target.value)} aria-invalid={!!fieldErrors.amount} />
+            <FieldError error={fieldErrors.amount} />
+          </label>}
+          {requirements.ratio && <label>Tỷ lệ sau tách/gộp
+            <input type="number" step="0.0001" min="0.0001" value={form.ratio} onChange={event => set('ratio', event.target.value)} />
+          </label>}
+        </div>
 
-      <label>Ghi chú<textarea maxLength={500} value={form.note} onChange={event => set('note', event.target.value)} placeholder="Thông tin cần nhớ về giao dịch này" /></label>
-
-      {editingId && <label>Lý do sửa dữ liệu
-        <textarea maxLength={500} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} aria-invalid={!!fieldErrors.correction_reason} />
-        <FieldError error={fieldErrors.correction_reason} />
-      </label>}
+        <details className="disclosure-card transaction-advanced">
+          <summary><b>Thông tin CTCK & chi phí</b><span className="muted">Nơi lưu ký cổ phiếu, tài khoản, phí và thuế</span></summary>
+          <div className="form-grid">
+            <label>Công ty chứng khoán
+              <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)}>
+                {BROKERS.map(broker => <option key={broker.code} value={broker.code}>{broker.name}</option>)}
+              </select>
+              <FieldError error={fieldErrors.broker_code} />
+            </label>
+            <label>Tài khoản
+              <input value={form.account_id} maxLength={32} onChange={event => set('account_id', event.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, ''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id} />
+              <FieldError error={fieldErrors.account_id} />
+            </label>
+            {requirements.trade && <label>Ngày thanh toán
+              <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={event => set('settlement_date', event.target.value)} aria-invalid={!!fieldErrors.settlement_date} />
+              <FieldError error={fieldErrors.settlement_date} />
+            </label>}
+            {requirements.trade && <label>Phí giao dịch (VND)<input type="number" min="0" step="1" value={form.fee} onChange={event => set('fee', event.target.value)} /></label>}
+            {requirements.trade && <label>Thuế (VND)<input type="number" min="0" step="1" value={form.tax} onChange={event => set('tax', event.target.value)} /></label>}
+          </div>
+        </details>
+        <label>Ghi chú<textarea maxLength={500} value={form.note} onChange={event => set('note', event.target.value)} placeholder="Thông tin cần nhớ về giao dịch này" /></label>
+      </>}
 
       <div className="button-row">
-        <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : 'Lưu giao dịch'}</button>
+        <button className="btn-primary" type="submit" disabled={saving || (lockedSell && !intentBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
     </form>
 
     <section className="card investor-transaction-history">
-      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận</div></div></div>
+      <div className="section-head"><div><h2>Lịch sử giao dịch</h2><div className="muted">{transactions.length} giao dịch / sự kiện đã ghi nhận · Không thể xóa</div></div></div>
       {transactions.length === 0 ? <div className="empty-state">Chưa có giao dịch nào.</div> : <>
         <div className="holding-mobile-list transaction-mobile-list">
           {transactions.map(row => {

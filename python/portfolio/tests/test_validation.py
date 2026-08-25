@@ -50,9 +50,22 @@ def test_trade_date_settlement_and_account_are_normalized():
     assert "settlement_status" not in clean["metadata"]
 
 
+def test_sell_requires_explicit_custody_broker():
+    assert_code("SELL_BROKER_REQUIRED", lambda: normalize_event_payload({
+        "event_type":"SELL","event_date":"2026-08-21","symbol":"FPT","quantity":10,"price":72_000,
+    }, today=TODAY))
+    clean = normalize_event_payload({
+        "event_type":"SELL","event_date":"2026-08-21","symbol":"FPT","quantity":10,"price":72_000,
+        "broker_code":"DNSE","account_id":"PRIMARY",
+    }, today=TODAY)
+    assert clean["metadata"]["broker_code"] == "DNSE"
+    assert clean["metadata"]["account_id"] == "PRIMARY"
+
+
 def test_settlement_cannot_precede_trade_date():
     assert_code("SETTLEMENT_BEFORE_TRADE", lambda: normalize_event_payload({
-        "event_type":"SELL","event_date":"2026-08-21","symbol":"FPT","quantity":10,"price":72_000,"settlement_date":"2026-08-20",
+        "event_type":"SELL","event_date":"2026-08-21","symbol":"FPT","quantity":10,"price":72_000,
+        "broker_code":"DNSE","settlement_date":"2026-08-20",
     }, today=TODAY))
 
 
