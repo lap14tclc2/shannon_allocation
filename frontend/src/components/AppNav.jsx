@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logoutUser } from '../lib/api.js';
@@ -52,6 +52,8 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
   const dispatch = useDispatch();
   const [accountOpen, setAccountOpen] = useState(false);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
+  const [portfolioAnchor, setPortfolioAnchor] = useState(null);
+  const portfolioTriggerRef = useRef(null);
   const [mounted, setMounted] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(() => (
@@ -66,6 +68,22 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
   const userInitial = currentUser?.username?.slice(0, 1)?.toUpperCase() || 'U';
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    setPortfolioOpen(false);
+    setAccountOpen(false);
+  }, [active]);
+
+  useEffect(() => {
+    if (!portfolioOpen || typeof window === 'undefined') return undefined;
+    const closePortfolioMenu = () => setPortfolioOpen(false);
+    window.addEventListener('resize', closePortfolioMenu);
+    window.addEventListener('scroll', closePortfolioMenu, true);
+    return () => {
+      window.removeEventListener('resize', closePortfolioMenu);
+      window.removeEventListener('scroll', closePortfolioMenu, true);
+    };
+  }, [portfolioOpen]);
 
   useEffect(() => {
     if (!mounted || typeof document === 'undefined') return undefined;
@@ -98,9 +116,31 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     window.location.replace('/login?logged_out=1');
   }
 
+  function togglePortfolioMenu() {
+    if (portfolioOpen) {
+      setPortfolioOpen(false);
+      return;
+    }
+    const rect = portfolioTriggerRef.current?.getBoundingClientRect();
+    if (!rect || typeof window === 'undefined') return;
+    const width = Math.min(330, window.innerWidth - 24);
+    setPortfolioAnchor({
+      top: Math.round(rect.bottom + 8),
+      left: Math.round(Math.min(Math.max(12, rect.left), window.innerWidth - width - 12)),
+      width,
+    });
+    setAccountOpen(false);
+    setPortfolioOpen(true);
+  }
+
   async function switchPortfolio(value) {
     const id = Number(value);
-    if (!id || String(id) === activePortfolioId) return;
+    if (!id) return;
+    if (String(id) === activePortfolioId) {
+      setPortfolioOpen(false);
+      setAccountOpen(false);
+      return;
+    }
     setSwitching(true);
     try {
       await dispatch(selectPortfolio(id)).unwrap();
@@ -133,7 +173,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
           {selected && <span className="portfolio-option-status">Đang xem</span>}
         </button>;
       })}
-      <a className="portfolio-menu-manage" href="/portfolios"><span className="portfolio-menu-plus">+</span><span><strong>Quản lý danh mục</strong><small>Tạo, đổi tên hoặc sắp xếp</small></span><span aria-hidden="true">→</span></a>
+      <a className="portfolio-menu-manage" href="/portfolios" onClick={() => { setPortfolioOpen(false); setAccountOpen(false); }}><span className="portfolio-menu-plus">+</span><span><strong>Quản lý danh mục</strong><small>Tạo, đổi tên hoặc sắp xếp</small></span><span aria-hidden="true">→</span></a>
     </div>;
   }
 
@@ -141,19 +181,28 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     if (adminMode || portfolios.length === 0) return null;
     return <div className={`header-portfolio-menu ${portfolioOpen ? 'open' : ''}`}>
       <button
+        ref={portfolioTriggerRef}
         type="button"
         className="header-portfolio-trigger"
         aria-expanded={portfolioOpen}
         aria-haspopup="menu"
-        onClick={() => setPortfolioOpen(value => !value)}
+        aria-controls="desktop-portfolio-menu"
+        onClick={togglePortfolioMenu}
       >
         <span className="header-context-icon"><NavIcon name="portfolio-stack" size={17} /></span>
         <span className="header-context-copy"><small>Danh mục đang xem</small><strong>{activePortfolio?.name || 'Danh mục'}</strong></span>
         <span className="header-context-chevron"><NavIcon name="chevron" size={16} /></span>
       </button>
-      {portfolioOpen && <div className="portfolio-menu-popover" role="menu"><PortfolioList /></div>}
     </div>;
   }
+
+  const desktopPortfolioMenu = mounted && portfolioOpen && portfolioAnchor && typeof document !== 'undefined' ? createPortal(
+    <>
+      <button type="button" className="portfolio-menu-backdrop" aria-label="Đóng danh sách danh mục" onClick={() => setPortfolioOpen(false)} />
+      <div id="desktop-portfolio-menu" className="portfolio-menu-popover" role="menu" style={portfolioAnchor}><PortfolioList /></div>
+    </>,
+    document.body,
+  ) : null;
 
   const mobileChrome = mounted && typeof document !== 'undefined' ? createPortal(
     <>
@@ -197,7 +246,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
             <BrandMark />
             <span className="brand-copy"><strong>QPort</strong><small>{adminMode ? 'Quản trị' : 'Sổ tài sản'}</small></span>
           </a>
-          <button type="button" className="nav-toggle header-user-button" aria-expanded={accountOpen} aria-label="Mở tài khoản và tùy chọn" onClick={() => setAccountOpen(value => !value)}>
+          <button type="button" className="nav-toggle header-user-button" aria-expanded={accountOpen} aria-label="Mở tài khoản và tùy chọn" onClick={() => { setPortfolioOpen(false); setAccountOpen(value => !value); }}>
             <span className="header-user-avatar">{userInitial}</span><NavIcon name="chevron" size={15} />
           </button>
         </div>
@@ -224,7 +273,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         </div>
       </nav>
     </header>
-    {portfolioOpen && <button type="button" className="portfolio-menu-backdrop" aria-label="Đóng danh sách danh mục" onClick={() => setPortfolioOpen(false)} />}
+    {desktopPortfolioMenu}
     {mobileChrome}
   </>;
 }

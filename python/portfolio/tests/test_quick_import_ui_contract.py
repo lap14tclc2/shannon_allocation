@@ -12,18 +12,16 @@ def _quick_import_css() -> str:
     return (FRONTEND / "quick-import.css").read_text(encoding="utf-8")
 
 
-def test_current_balance_mode_has_no_date_input():
+def test_quick_import_is_current_balance_only_without_date_controls():
     panel = _panel()
     assert 'type="date"' not in panel
-    assert 'className="quick-import-textarea"' in panel
-
-
-def test_current_balance_mode_shows_system_controlled_start_date():
-    panel = _panel()
-    assert "Ngày bắt đầu được hệ thống tự động ghi là hôm nay" in panel
-    assert "không thể chọn hoặc sửa" in panel
-    # The preview still surfaces the server-decided date, but it is not editable.
-    assert "row.event_date" in panel
+    assert "Lịch sử đầy đủ" not in panel
+    assert "HISTORICAL" not in panel
+    assert "import-mode-switch" not in panel
+    assert "mode: 'CURRENT'" in panel
+    assert "<th>Ngày</th>" not in panel
+    assert "row.event_date" not in panel
+    assert "QPort tự ghi ngày hôm nay" in panel
 
 
 def test_field_label_and_helper_use_adjusted_cost_basis():
@@ -46,44 +44,41 @@ def test_guide_explains_split_and_stock_dividend_examples():
 
 def test_guide_is_expandable_and_accessible_via_keyboard():
     panel = _panel()
-    assert "<details className=\"cost-basis-guide\">" in panel
+    assert '<details className="cost-basis-guide">' in panel
     assert "<summary>" in panel
-    assert "aria-describedby" in panel
+    assert 'aria-describedby="quick-import-guidance quick-import-cost-guidance"' in panel
 
 
 def test_guidance_styles_are_present_for_mobile():
     css = _quick_import_css()
     assert ".cost-basis-guidance" in css
     assert ".cost-basis-guide" in css
-    assert ".quick-import-date-note" in css
 
 
 def test_current_balance_mode_requires_cost_basis_confirmation():
     panel = _panel()
-    assert "type=\"checkbox\"" in panel
-    assert "confirmed" in panel
-    assert "Tôi xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách" in panel
-    # The confirmation must be required (not pre-checked) and sent to the backend.
+    assert 'type="checkbox"' in panel
     assert "checked={confirmed}" in panel
-    assert "cost_basis_adjusted: mode === 'CURRENT' ? confirmed : undefined" in panel
-    # Preview stays disabled until confirmed in CURRENT mode.
-    assert "mode === 'CURRENT' && !confirmed" in panel
+    assert "Tôi xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách" in panel
+    assert "cost_basis_adjusted: confirmed" in panel
+    assert "disabled={busy || !text.trim() || !confirmed}" in panel
 
 
-def test_historical_mode_does_not_require_confirmation():
-    panel = _panel()
-    # Confirmation gate is scoped to CURRENT only.
-    assert "mode === 'CURRENT' && !confirmed" in panel
-    assert "mode === 'CURRENT' && <div className=\"cost-basis-guidance\"" in panel
-
-
-def test_standard_transaction_form_keeps_date_field_defaulting_to_today():
+def test_standard_transactions_keep_date_but_opening_position_hides_it():
     transactions = (FRONTEND / "pages" / "TransactionsPage.jsx").read_text(encoding="utf-8")
     assert 'type="date"' in transactions
     assert "event_date: today" in transactions
-    assert "max={today || undefined}" in transactions
-    assert "{type !== 'POSITION_IMPORT' && <label>" in transactions
-    # Opening-position entry and Quick Import both use the server-controlled current date.
-    # Other standard transaction types retain their visible date field.
-    panel = _panel()
-    assert 'type="date"' not in panel
+    assert "const isOpeningPosition = type === 'POSITION_IMPORT'" in transactions
+    assert '{!isOpeningPosition && <label className="transaction-date-field">' in transactions
+    assert "data-event-type={type}" in transactions
+
+
+def test_desktop_portfolio_menu_uses_body_portal_and_closes_on_navigation():
+    nav = (FRONTEND / "components" / "AppNav.jsx").read_text(encoding="utf-8")
+    css = (FRONTEND / "header-v2.css").read_text(encoding="utf-8")
+    assert "const desktopPortfolioMenu" in nav
+    assert 'id="desktop-portfolio-menu"' in nav
+    assert "portfolioTriggerRef.current?.getBoundingClientRect()" in nav
+    assert "setPortfolioOpen(false);" in nav
+    assert "position: fixed;" in css
+    assert "z-index: 611;" in css

@@ -120,6 +120,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   }, [holdingBooks, selectedSellKey]);
 
   const sellBook = selectedSellBook || (type === 'SELL' ? intentBook : null);
+  const isOpeningPosition = type === 'POSITION_IMPORT';
   const isSellCreate = !editingId && type === 'SELL';
   const estimatedSellPrice = isSellCreate && Number(form.quantity) > 0 && String(form.amount || '').trim()
     ? (() => {
@@ -257,7 +258,9 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     setFieldErrors({});
     let payload;
     try {
-      let validationForm = form;
+      let validationForm = isOpeningPosition && !editingId
+        ? { ...form, event_date: today || form.event_date }
+        : form;
       if (isSellCreate) {
         validateSellSelection();
         const grossAmount = parseVndMoneyInput(form.amount, 'amount', 'vi');
@@ -381,7 +384,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       onCommitted={() => dispatch(loadRoute({ pathname: '/transactions' })).unwrap()}
     />
 
-    <form className={`card ${editingId ? 'correction-form' : ''} ${isSellCreate ? 'transaction-sell-form' : ''}`} onSubmit={submit} noValidate>
+    <form className={`card ${editingId ? 'correction-form' : ''} ${isSellCreate ? 'transaction-sell-form' : ''}`} data-event-type={type} onSubmit={submit} noValidate>
       <div className="section-head">
         <div>
           <h2>{editingId ? `Sửa giao dịch #${editingId}` : isSellCreate ? 'Bán cổ phiếu' : 'Thêm giao dịch'}</h2>
@@ -495,7 +498,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           {holdingBooks.length === 0 && <div className="empty-state compact-empty">Chưa có cổ phiếu trong danh mục. Hãy nhập danh mục ban đầu trước.</div>}
         </div>}
         <div className="form-grid">
-          {type !== 'POSITION_IMPORT' && <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
+          {!isOpeningPosition && <label className="transaction-date-field">{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
             <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
             <FieldError error={fieldErrors.event_date} />
           </label>}

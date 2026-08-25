@@ -32,7 +32,7 @@ from .validation import (
 
 AUTHORITATIVE_CA_HOSTS = ("vsd.vn", "hnx.vn", "hsx.vn", "hose.vn")
 IMPORT_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]{8,128}$")
-IMPORT_MODES = {"CURRENT", "HISTORICAL"}
+IMPORT_MODES = {"CURRENT"}
 CURRENT_IMPORT_TYPES = {EventType.POSITION_IMPORT, EventType.CASH_DEPOSIT}
 
 
@@ -323,7 +323,7 @@ class CorrectablePortfolioService(PortfolioService):
             raise InputValidationError("INVALID_IMPORT", "Import request must be an object.", "rows")
         mode = str(payload.get("mode") or "CURRENT").strip().upper()
         if mode not in IMPORT_MODES:
-            raise InputValidationError("INVALID_IMPORT_MODE", "mode must be CURRENT or HISTORICAL.", "mode")
+            raise InputValidationError("INVALID_IMPORT_MODE", "mode must be CURRENT.", "mode")
         rows = payload.get("rows")
         if not isinstance(rows, list) or not rows:
             raise InputValidationError("IMPORT_ROWS_REQUIRED", "Provide at least one import row.", "rows")
@@ -335,7 +335,7 @@ class CorrectablePortfolioService(PortfolioService):
         # midnight cannot split the batch across two dates or break idempotency.
         batch_date = self.today_vn()
         cost_basis_adjusted = bool(payload.get("cost_basis_adjusted") is True)
-        if mode == "CURRENT" and not cost_basis_adjusted:
+        if not cost_basis_adjusted:
             raise InputValidationError(
                 "COST_BASIS_CONFIRMATION_REQUIRED",
                 "Chế độ Số dư hiện tại yêu cầu xác nhận số lượng và giá vốn đã phản ánh toàn bộ chia/tách, "
@@ -348,17 +348,16 @@ class CorrectablePortfolioService(PortfolioService):
             if not isinstance(raw, dict):
                 raise InputValidationError("INVALID_IMPORT_ROW", f"Import row {index} must be an object.", f"rows[{index - 1}]")
             candidate = dict(raw)
-            if mode == "CURRENT":
-                candidate["event_date"] = batch_date
-                candidate["event_type"] = str(candidate.get("event_type") or "POSITION_IMPORT").upper()
+            candidate["event_date"] = batch_date
+            candidate["event_type"] = str(candidate.get("event_type") or "POSITION_IMPORT").upper()
             try:
                 clean = normalize_event_payload(candidate, today=batch_date)
             except InputValidationError as exc:
                 raise InputValidationError(exc.code, f"Dòng {index}: {exc.message}", f"rows[{index - 1}].{exc.field or 'row'}") from exc
-            if mode == "CURRENT" and clean["event_type"] not in CURRENT_IMPORT_TYPES:
+            if clean["event_type"] not in CURRENT_IMPORT_TYPES:
                 raise InputValidationError(
                     "CURRENT_IMPORT_EVENT_TYPE",
-                    f"Dòng {index}: chế độ Số dư hiện tại chỉ nhận POSITION_IMPORT hoặc CASH_DEPOSIT. Chọn Lịch sử đầy đủ cho {clean['event_type'].value}.",
+                    f"Dòng {index}: Nhập nhanh chỉ nhận POSITION_IMPORT hoặc CASH_DEPOSIT; {clean['event_type'].value} phải dùng form giao dịch thường.",
                     f"rows[{index - 1}].event_type",
                 )
             clean_rows.append(clean)
@@ -383,7 +382,7 @@ class CorrectablePortfolioService(PortfolioService):
         # event date is server policy, not client data, so it is excluded: a retry
         # across midnight must resolve to the original stored batch.
         hash_rows = [
-            {key: value for key, value in row.items() if not (mode == "CURRENT" and key == "event_date")}
+            {key: value for key, value in row.items() if key != "event_date"}
             for row in canonical
         ]
         payload_hash = hashlib.sha256(json.dumps(

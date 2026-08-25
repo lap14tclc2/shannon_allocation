@@ -82,30 +82,21 @@ def test_current_import_rejects_historical_trade_without_partial_write(tmp_path)
     assert svc.transactions() == []
 
 
-def test_historical_import_keeps_every_supported_transaction_type(tmp_path):
+def test_historical_import_feature_is_rejected_without_partial_write(tmp_path):
     svc = service(tmp_path)
-    rows = [
-        {"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 200_000_000},
-        {"event_type": "POSITION_IMPORT", "event_date": "2024-01-01", "symbol": "FPT", "quantity": 100, "price": 60_000, "broker_code": "TCBS"},
-        {"event_type": "BUY", "event_date": "2024-01-02", "symbol": "FPT", "quantity": 100, "price": 70_000, "broker_code": "TCBS"},
-        {"event_type": "RIGHTS_ISSUE", "event_date": "2024-02-01", "symbol": "FPT", "quantity": 20, "price": 40_000, "broker_code": "TCBS"},
-        {"event_type": "CASH_DIVIDEND", "event_date": "2024-03-01", "symbol": "FPT", "amount": 200_000, "tax": 10_000, "broker_code": "TCBS"},
-        {"event_type": "STOCK_DIVIDEND", "event_date": "2024-04-01", "symbol": "FPT", "quantity": 22, "broker_code": "TCBS"},
-        {"event_type": "SPLIT", "event_date": "2024-05-01", "symbol": "FPT", "ratio": 2, "broker_code": "TCBS"},
-        {"event_type": "SELL", "event_date": "2024-06-01", "symbol": "FPT", "quantity": 20, "price": 80_000, "broker_code": "TCBS"},
-        {"event_type": "CASH_WITHDRAW", "event_date": "2024-07-01", "amount": 1_000_000},
-        {"event_type": "FEE", "event_date": "2024-08-01", "amount": 100_000},
-    ]
-    result = svc.import_events({"mode": "HISTORICAL", "rows": rows}, created_by="alice")
-    assert result["row_count"] == len(rows)
-    retry = svc.import_events({"mode": "HISTORICAL", "rows": rows}, created_by="alice")
-    assert retry["deduplicated"] is True
-    assert retry["event_ids"] == result["event_ids"]
-    assert {row["event_type"] for row in svc.transactions()} == {
-        "POSITION_IMPORT", "CASH_DEPOSIT", "BUY", "SELL", "RIGHTS_ISSUE",
-        "CASH_WITHDRAW", "CASH_DIVIDEND", "STOCK_DIVIDEND", "SPLIT", "FEE",
+    payload = {
+        "mode": "HISTORICAL",
+        "rows": [
+            {"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 200_000_000},
+        ],
     }
-    assert svc._tracking_boundary()["initialization_mode"] == "HISTORICAL"
+    with pytest.raises(InputValidationError) as error:
+        svc.preview_import(payload)
+    assert error.value.code == "INVALID_IMPORT_MODE"
+    with pytest.raises(InputValidationError) as error:
+        svc.import_events(payload)
+    assert error.value.code == "INVALID_IMPORT_MODE"
+    assert svc.transactions() == []
 
 
 def test_idempotency_key_cannot_be_reused_for_other_payload(tmp_path):
@@ -207,13 +198,17 @@ def test_current_portfolio_accepts_receipt_after_tracking_start(tmp_path):
     assert result["ok"] is True
 
 
-def test_historical_portfolio_still_allows_historical_receipts(tmp_path):
+def test_legacy_historical_portfolio_still_allows_existing_receipts(tmp_path):
     svc = service(tmp_path)
-    svc.import_events({"mode": "HISTORICAL", "rows": [
-        {"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 200_000_000},
-    ]})
+    with svc.store.connect() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('initialization_mode', 'HISTORICAL')"
+        )
     action_id = _seed_corporate_action(svc, "2024-03-01")
-    result = svc.record_corporate_action_receipt(action_id, {"received_date": "2024-03-01", "actual_cash": 100_000})
+    result = svc.record_corporate_action_receipt(
+        action_id,
+        {"received_date": "2024-03-01", "actual_cash": 100_000},
+    )
     assert result["ok"] is True
 
 
@@ -249,26 +244,16 @@ def test_current_import_uses_one_server_date_for_whole_batch(monkeypatch, tmp_pa
     assert {row["event_date"] for row in svc.transactions()} == {"2026-08-24"}
 
 
-@pytest.mark.parametrize(
-    ("first_mode", "second_payload"),
-    [
-        ("CURRENT", {"mode": "HISTORICAL", "rows": [{"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 1_000_000}]}),
-        ("HISTORICAL", current_payload()),
-    ],
-)
-def test_portfolio_rejects_mixed_import_modes(tmp_path, first_mode, second_payload):
+def test_legacy_historical_portfolio_rejects_new_current_quick_import(tmp_path):
     svc = service(tmp_path)
-    if first_mode == "CURRENT":
-        svc.import_events(current_payload())
-    else:
-        svc.import_events({"mode": "HISTORICAL", "rows": [
-            {"event_type": "CASH_DEPOSIT", "event_date": "2024-01-01", "amount": 1_000_000},
-        ]})
-    before = list(svc.transactions())
+    with svc.store.connect() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('initialization_mode', 'HISTORICAL')"
+        )
     with pytest.raises(InputValidationError) as error:
-        svc.import_events(second_payload)
+        svc.import_events(current_payload())
     assert error.value.code == "IMPORT_MODE_CONFLICT"
-    assert svc.transactions() == before
+    assert svc.transactions() == []
 
 
 def test_failed_import_does_not_persist_tracking_boundary(monkeypatch, tmp_path):
