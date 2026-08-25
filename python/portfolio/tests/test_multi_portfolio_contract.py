@@ -42,6 +42,8 @@ def test_api_exposes_registry_selection_and_active_scope():
     assert '"POSTGRESQL_SCHEMA_PER_PORTFOLIO"' in source
     assert 'result["portfolio_context"]' in source
     assert "reset_portfolio_schema" in source
+    assert 'request.headers.get("X-QPort-Portfolio-Id")' in source
+    assert "portfolio_for_user(user_id, requested_id)" in source
 
 
 def test_frontend_has_wealth_manager_and_global_switcher():
@@ -61,3 +63,5 @@ def test_frontend_has_wealth_manager_and_global_switcher():
     assert "renamePortfolio" in api
     assert "activatePortfolio" in api
     assert "removePortfolio" in api
+    assert "'X-QPort-Portfolio-Id': portfolioScopeId" in api
+    assert "let portfolioScopeId" in api
