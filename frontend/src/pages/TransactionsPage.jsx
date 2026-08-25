@@ -102,6 +102,14 @@ export default function TransactionsPage({ transactions: initialTransactions = [
     [transactions],
   );
 
+  const holdingSymbols = useMemo(
+    () => [...new Set(holdingBooks.map(book => book.symbol))].sort(),
+    [holdingBooks],
+  );
+  const selectedSymbolBooks = useMemo(
+    () => holdingBooks.filter(book => book.symbol === form.symbol),
+    [holdingBooks, form.symbol],
+  );
   const selectedSellBook = useMemo(() => {
     if (!selectedSellKey) return null;
     return holdingBooks.find(row => holdingBookKey(row) === selectedSellKey) || null;
@@ -132,6 +140,11 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   function set(key, value) {
     setForm(current => ({ ...current, [key]: value }));
     setFieldErrors(current => ({ ...current, [key]: undefined }));
+  }
+
+  function applyHoldingSymbol(symbol) {
+    const firstBook = holdingBooks.find(book => book.symbol === symbol);
+    applySellBook(firstBook ? holdingBookKey(firstBook) : '');
   }
 
   function applySellBook(key) {
@@ -217,9 +230,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
   function validateSellSelection() {
     if (!sellBook) {
-      const error = new Error(false
-        ? 'Nguồn cổ phiếu đã chọn không còn tồn tại trong danh mục. Hãy quay lại Danh mục và chọn lại nơi bán.'
-        : 'Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
+      const error = new Error('Hãy chọn mã cổ phiếu và CTCK bạn muốn bán.');
       error.field = 'sell_source';
       throw error;
     }
@@ -362,7 +373,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           <p className="muted">{editingId
             ? 'Ngày, mã cổ phiếu và tài khoản được khóa. Bạn có thể đổi loại trong nhóm giao dịch cổ phiếu, đồng thời sửa số lượng, giá và CTCK.'
             : isSellCreate
-              ? 'Chọn đúng nơi đang giữ cổ phiếu. Sau khi chọn, mã, CTCK, tài khoản và ngày giao dịch sẽ được khóa.'
+              ? 'Chọn đúng mã và CTCK/tài khoản đang giữ cổ phiếu; QPort chỉ cho bán trong số lượng khả dụng tại nguồn đó.'
               : 'Chọn đúng loại giao dịch. Chỉ các trường cần thiết cho loại đó mới được yêu cầu.'}</p>
         </div>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy sửa</button>}
@@ -381,26 +392,28 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       {isSellCreate ? <>
         <div className="sell-source-panel">
           <div className="sell-source-title"><b>Nguồn cổ phiếu cần bán</b><span>CTCK đang lưu ký</span></div>
-          {false ? <div className="sell-source-locked">
-            <strong>{intent.symbol}</strong>
-            <span>{brokerName(intent.broker_code)} · {intent.account_id}</span>
-            <span>{intentBook ? `${shares(intentBook.shares)} CP khả dụng` : 'Nguồn này hiện không còn cổ phiếu khả dụng'}</span>
-          </div> : <label>Chọn mã / CTCK / tài khoản
-            <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
-              <option value="">-- Chọn cổ phiếu cần bán --</option>
-              {holdingBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
-                {book.symbol} · {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP
-              </option>)}
-            </select>
-            <FieldError error={fieldErrors.sell_source} />
-          </label>}
+          <div className="form-grid">
+            <label>Mã cổ phiếu
+              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
+                <option value="">-- Chọn mã cổ phiếu --</option>
+                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+              </select>
+            </label>
+            <label>CTCK / tài khoản
+              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.sell_source}>
+                <option value="">-- Chọn CTCK / tài khoản --</option>
+                {selectedSymbolBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
+                  {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP
+                </option>)}
+              </select>
+              <FieldError error={fieldErrors.sell_source} />
+            </label>
+          </div>
         </div>
 
         <div className="form-grid sell-readonly-grid">
           <label>Ngày giao dịch<input type="date" value={today || form.event_date} readOnly /></label>
-          <label>Mã cổ phiếu<input value={sellBook?.symbol || intent.symbol || ''} readOnly /></label>
-          <label>CTCK<input value={brokerName(sellBook?.broker_code || intent.broker_code)} readOnly /></label>
-          <label>Tài khoản<input value={sellBook?.account_id || intent.account_id || ''} readOnly /></label>
+          <label>Nguồn đã chọn<input value={sellBook ? `${sellBook.symbol} · ${brokerName(sellBook.broker_code)} · ${sellBook.account_id}` : ''} readOnly /></label>
         </div>
 
         <div className="form-grid sell-input-grid">
@@ -441,12 +454,34 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           <FieldError error={fieldErrors.correction_reason} />
         </label>
       </> : <>
+        {requirements.holding && <div className="sell-source-panel">
+          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : 'Nguồn nhận cổ phiếu phát hành thêm'}</b><span>Chọn từ danh mục đang nắm giữ</span></div>
+          <div className="form-grid">
+            <label>Mã cổ phiếu
+              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.symbol}>
+                <option value="">-- Chọn mã cổ phiếu --</option>
+                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+              </select>
+              <FieldError error={fieldErrors.symbol} />
+            </label>
+            <label>CTCK / tài khoản
+              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.broker_code}>
+                <option value="">-- Chọn CTCK / tài khoản --</option>
+                {selectedSymbolBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
+                  {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP hiện có
+                </option>)}
+              </select>
+              <FieldError error={fieldErrors.broker_code} />
+            </label>
+          </div>
+          {holdingBooks.length === 0 && <div className="empty-state compact-empty">Chưa có cổ phiếu trong danh mục. Hãy nhập danh mục ban đầu trước.</div>}
+        </div>}
         <div className="form-grid">
           <label>{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
             <input type="date" max={today || undefined} value={form.event_date} onChange={event => set('event_date', event.target.value)} aria-invalid={!!fieldErrors.event_date} />
             <FieldError error={fieldErrors.event_date} />
           </label>
-          {requirements.symbol && <label>Mã cổ phiếu
+          {requirements.symbol && !requirements.holding && <label>Mã cổ phiếu
             <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
             <FieldError error={fieldErrors.symbol} />
           </label>}
@@ -470,16 +505,16 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         <details className="disclosure-card transaction-advanced">
           <summary><b>Thông tin CTCK & chi phí</b><span className="muted">Nơi lưu ký cổ phiếu, tài khoản, phí và thuế</span></summary>
           <div className="form-grid">
-            <label>Công ty chứng khoán
+            {!requirements.holding && <label>Công ty chứng khoán
               <select value={form.broker_code} onChange={event => set('broker_code', event.target.value)}>
                 {BROKERS.map(broker => <option key={broker.code} value={broker.code}>{broker.name}</option>)}
               </select>
               <FieldError error={fieldErrors.broker_code} />
-            </label>
-            <label>Tài khoản
+            </label>}
+            {!requirements.holding && <label>Tài khoản
               <input value={form.account_id} maxLength={32} onChange={event => set('account_id', event.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, ''))} placeholder="PRIMARY" aria-invalid={!!fieldErrors.account_id} />
               <FieldError error={fieldErrors.account_id} />
-            </label>
+            </label>}
             {requirements.trade && <label>Ngày thanh toán
               <input type="date" min={form.event_date || undefined} value={form.settlement_date} onChange={event => set('settlement_date', event.target.value)} aria-invalid={!!fieldErrors.settlement_date} />
               <FieldError error={fieldErrors.settlement_date} />
@@ -492,7 +527,7 @@ export default function TransactionsPage({ transactions: initialTransactions = [
       </>}
 
       <div className="button-row">
-        <button className="btn-primary" type="submit" disabled={saving || (false && !intentBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
+        <button className="btn-primary" type="submit" disabled={saving || (requirements.holding && !selectedSellBook)}>{saving ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : isSellCreate ? 'Ghi nhận bán cổ phiếu' : 'Lưu giao dịch'}</button>
         {editingId && <button className="btn-variant" type="button" onClick={resetForm}>Hủy</button>}
       </div>
       {message && <div className="run-message">{message}</div>}
