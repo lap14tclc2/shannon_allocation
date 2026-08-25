@@ -173,6 +173,10 @@ def _execute_task(task: str, payload: dict[str, Any]) -> dict:
                     item = dict(row)
                     item.setdefault("symbol", symbol)
                     rows.append(item)
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
+    if task == "company_info":
+        rows = _company_info(ref, str(payload["symbol"]).upper())
+        return {"status": "success", "data": rows, "provider": provider, "api_variant": variant}
     if task == "financial_statements":
         symbol = str(payload.get("symbol") or "FPT").upper()
         st_type = str(payload.get("statement_type") or "INCOME_STATEMENT")
