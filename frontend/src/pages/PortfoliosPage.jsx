@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import {
@@ -34,6 +34,12 @@ export default function PortfoliosPage({ registry = {}, locale = 'vi' }) {
     () => portfolios.find(item => Number(item.id) === Number(activeId)) || null,
     [portfolios, activeId],
   );
+
+  useEffect(() => {
+    if (busy) return;
+    setPortfolios(registry.portfolios || []);
+    setActiveId(Number(registry.active_portfolio_id || 0));
+  }, [busy, registry]);
 
   async function create(event) {
     event.preventDefault();
