@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { logoutUser } from '../lib/api.js';
+import { navigate } from '../lib/navigation.js';
 import {
-  activatePortfolio,
-  getCurrentUser,
-  listPortfolios,
-  logoutUser,
-} from '../lib/api.js';
+  clearPersistedQPortState,
+  resetClientState,
+  selectPortfolio,
+  selectRegistry,
+  selectUser,
+} from '../lib/store.js';
 import AppearanceControls from './AppearanceControls.jsx';
 
 const LINKS = [
@@ -35,38 +39,18 @@ function MobileTabIcon({ name }) {
 }
 
 export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
+  const dispatch = useDispatch();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [portfolios, setPortfolios] = useState([]);
-  const [activePortfolioId, setActivePortfolioId] = useState('');
   const [switching, setSwitching] = useState(false);
+  const currentUser = useSelector(selectUser);
+  const registry = useSelector(selectRegistry);
+  const portfolios = registry?.portfolios || [];
+  const activePortfolioId = String(registry?.active_portfolio_id || '');
   const adminMode = active === 'admin' || currentUser?.role === 'ADMIN';
 
   useEffect(() => {
-    let live = true;
     setMounted(true);
-    getCurrentUser()
-      .then(result => {
-        if (!live) return;
-        const user = result.user || null;
-        setCurrentUser(user);
-        if (user?.role !== 'ADMIN') {
-          listPortfolios()
-            .then(registry => {
-              if (!live) return;
-              setPortfolios(registry.portfolios || []);
-              setActivePortfolioId(String(registry.active_portfolio_id || ''));
-            })
-            .catch(() => {
-              // Keep account navigation usable if the portfolio registry is temporarily unavailable.
-            });
-        }
-      })
-      .catch(() => {
-        if (live) setCurrentUser(null);
-      });
-    return () => { live = false; };
   }, []);
 
   useEffect(() => {
@@ -78,6 +62,8 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
   async function logout() {
     setOpen(false);
     try { await logoutUser(); } catch { /* Phiên có thể đã hết hạn. */ }
+    clearPersistedQPortState();
+    dispatch(resetClientState());
     window.location.replace('/login?logged_out=1');
   }
 
@@ -86,10 +72,10 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
     if (!id || String(id) === String(activePortfolioId)) return;
     setSwitching(true);
     try {
-      await activatePortfolio(id);
-      setActivePortfolioId(String(id));
+      await dispatch(selectPortfolio(id)).unwrap();
       setOpen(false);
-      window.location.assign('/');
+      setSwitching(false);
+      navigate('/');
     } catch (error) {
       window.alert(`Không thể chuyển danh mục: ${error.message}`);
       setSwitching(false);
