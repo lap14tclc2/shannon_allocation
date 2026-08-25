@@ -7,7 +7,7 @@ import pytest
 from portfolio.accounting import AccountingError
 from portfolio.correctable_service import CorrectablePortfolioService
 from portfolio.corporate_actions import CorporateAction
-from portfolio.corrections import raw_events
+from portfolio.corrections import CorrectionError, raw_events
 from portfolio.storage import PortfolioStore
 from portfolio.validation import InputValidationError
 
@@ -33,18 +33,19 @@ def test_edit_changes_effective_state_but_preserves_source_row(tmp_path):
     assert svc.book.restatements()==[]
 
 
-def test_delete_removes_event_from_effective_state_but_keeps_audit(tmp_path):
+def test_delete_is_disabled_and_preserves_effective_ledger(tmp_path):
     svc=make_service(tmp_path)
     keep=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":50_000_000})
     extra=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
-    svc.delete_event(extra["event_id"],"Duplicate cash entry")
-    assert svc.current_state().cash==pytest.approx(50_000_000)
+    with pytest.raises(CorrectionError, match="deletion is disabled"):
+        svc.delete_event(extra["event_id"],"Duplicate cash entry")
+    assert svc.current_state().cash==pytest.approx(60_000_000)
     assert [e.id for e in raw_events(svc.store)]==[keep["event_id"],extra["event_id"]]
-    assert [row["id"] for row in svc.transactions()]==[keep["event_id"]]
-    assert svc.transaction_audit()[0]["action"]=="DELETE"
+    assert len(svc.transactions())==2
+    assert svc.transaction_audit()==[]
 
 
-def test_delete_is_blocked_when_remaining_ledger_would_make_cash_negative(tmp_path):
+def test_delete_never_removes_required_funding(tmp_path):
     svc=make_service(tmp_path)
     funding=svc.append_event({"event_type":"CASH_DEPOSIT","event_date":"2026-08-20","amount":10_000_000})
     svc.append_event({"event_type":"BUY","event_date":"2026-08-21","symbol":"FPT","quantity":100,"price":70_000})
@@ -61,6 +62,36 @@ def test_edit_reuses_clean_input_validation(tmp_path):
     assert exc.value.code=="PRICE_UNIT_SUSPECT"
     with pytest.raises(InputValidationError) as exc: svc.update_event(event_id,{"price":71_000})
     assert exc.value.code=="CORRECTION_REASON_REQUIRED"
+
+
+def test_edit_only_allows_quantity_price_and_broker(tmp_path):
+    svc=make_service(tmp_path)
+    event_id=svc.append_event({
+        "event_type":"POSITION_IMPORT",
+        "event_date":"2026-08-20",
+        "symbol":"FPT",
+        "quantity":100,
+        "price":70_000,
+        "broker_code":"DNSE",
+        "account_id":"PRIMARY",
+    })["event_id"]
+
+    result=svc.update_event(event_id,{
+        "quantity":120,
+        "price":71_000,
+        "broker_code":"TCBS",
+        "correction_reason":"Correct quantity, price and broker",
+    })
+    assert result["event"]["quantity"]==pytest.approx(120)
+    assert result["event"]["price"]==pytest.approx(71_000)
+    assert result["event"]["metadata"]["broker_code"]=="TCBS"
+
+    with pytest.raises(CorrectionError, match="event_date"):
+        svc.update_event(event_id,{"event_date":"2026-08-21","correction_reason":"not allowed"})
+    with pytest.raises(CorrectionError, match="symbol"):
+        svc.update_event(event_id,{"symbol":"ACB","correction_reason":"not allowed"})
+    with pytest.raises(CorrectionError, match="account_id"):
+        svc.update_event(event_id,{"account_id":"MARGIN","correction_reason":"not allowed"})
 
 
 def test_corporate_action_requires_authoritative_verification_and_explicit_post(tmp_path):

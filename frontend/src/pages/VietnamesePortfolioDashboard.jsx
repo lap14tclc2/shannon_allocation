@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import DividendTree from '../components/DividendTree.jsx';
-import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
-import { getDividendHistories, syncPortfolio } from '../lib/api.js';
+import HoldingSourceTree from '../components/HoldingSourceTree.jsx';
+import { formatMoney } from '../lib/format.js';
+import { deriveHoldingBooks } from '../lib/holdingBooks.js';
+import { getDividendHistories, listPortfolioTransactions, syncPortfolio } from '../lib/api.js';
 
 function pct(value, digits = 2) {
   return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
@@ -40,34 +42,6 @@ function eventYear(event) {
   return Number.isInteger(year) && year >= 1900 ? year : null;
 }
 
-function HoldingMobileCard({ row, locale }) {
-  const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
-  const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
-  const positive = pnl == null ? null : pnl >= 0;
-  const symbol = String(row.symbol || '').toUpperCase();
-  const sharesText = formatShares(row.shares, locale);
-  return <article className="holding-mobile-card">
-    <div className="holding-mobile-head">
-      <div className="holding-mobile-symbol">
-        <strong>{symbol}</strong>
-        <span>{row.price_date ? `Giá ngày ${row.price_date}` : 'Giá chưa cập nhật'}</span>
-      </div>
-      <div className="holding-mobile-value">
-        <strong>{money(row.market_value, locale)}</strong>
-        <span className={positive == null ? '' : positive ? 'pos' : 'neg'}>
-          {signedMoney(row.unrealized_pnl, locale)} · {pct(row.unrealized_return)}
-        </span>
-      </div>
-    </div>
-    <div className="holding-mobile-facts">
-      <div><span>Số lượng</span><b>{sharesText === '-' ? '-' : `${sharesText} CP`}</b></div>
-      <div><span>Giá vốn</span><b>{money(row.average_cost, locale)}</b></div>
-      <div><span>Giá hiện tại</span><b>{money(row.price, locale)}</b></div>
-      <div><span>Tỷ trọng</span><b>{formatWeight(row.weight)}</b></div>
-    </div>
-  </article>;
-}
-
 export default function VietnamesePortfolioDashboard({ dashboard: initialDashboard = {}, locale = 'vi' }) {
   const [dashboard] = useState(initialDashboard);
   const [syncing, setSyncing] = useState(false);
@@ -75,6 +49,9 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const [query, setQuery] = useState('');
   const [dividends, setDividends] = useState([]);
   const [dividendLoading, setDividendLoading] = useState(false);
+  const [holdingTransactions, setHoldingTransactions] = useState([]);
+  const [holdingSourceLoading, setHoldingSourceLoading] = useState(false);
+  const [holdingSourceError, setHoldingSourceError] = useState('');
 
   const portfolio = dashboard.portfolio || {};
   const positions = portfolio.positions || [];
@@ -83,6 +60,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   const risk = dashboard.risk || {};
   const health = dashboard.health || {};
   const currentYear = currentVietnamYear();
+  const holdingBooks = useMemo(() => deriveHoldingBooks(holdingTransactions), [holdingTransactions]);
 
   const visiblePositions = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -159,6 +137,18 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
   }
 
   useEffect(() => {
+    if (!positions.length) return undefined;
+    let active = true;
+    setHoldingSourceLoading(true);
+    setHoldingSourceError('');
+    listPortfolioTransactions()
+      .then(rows => { if (active) setHoldingTransactions(rows || []); })
+      .catch(error => { if (active) setHoldingSourceError(`Không thể xác định CTCK đang lưu ký: ${error.message}`); })
+      .finally(() => { if (active) setHoldingSourceLoading(false); });
+    return () => { active = false; };
+  }, [positions.length]);
+
+  useEffect(() => {
     if (positions.length) loadDividends(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions.map(row => row.symbol).join('|')]);
@@ -215,7 +205,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         <div>
           <div className="eyebrow">Danh mục hiện tại</div>
           <h2>Cổ phiếu đang nắm giữ</h2>
-          <p className="muted">Theo dõi số lượng, giá vốn, giá hiện tại và lãi/lỗ của từng mã.</p>
+          <p className="muted">Mở từng mã để xem cổ phiếu đang nằm tại DNSE, TCBS hoặc CTCK nào. Khi bán, QPort chỉ dùng số cổ ở đúng CTCK và tài khoản đã chọn.</p>
         </div>
         {positions.length > 6 && <input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu…" aria-label="Tìm mã cổ phiếu" />}
       </div>
@@ -224,41 +214,13 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         <h3>Chưa có cổ phiếu trong danh mục</h3>
         <p>Hãy nhập danh mục hiện có hoặc ghi giao dịch mua đầu tiên.</p>
         <a className="btn-primary" href="/transactions">Nhập danh mục ban đầu</a>
-      </div> : visiblePositions.length === 0 ? <div className="empty-state compact-empty">Không tìm thấy mã phù hợp.</div> : <>
-        <div className="holding-mobile-list">
-          {visiblePositions.map(row => <HoldingMobileCard key={String(row.symbol || '').toUpperCase()} row={row} locale={locale} />)}
-        </div>
-        <div className="table-scroll portfolio-table-desktop">
-          <table className="ranking portfolio-table portfolio-table-core">
-            <thead><tr>
-              <th>Mã</th>
-              <th className="num">SL</th>
-              <th className="num">Giá vốn</th>
-              <th className="num">Giá hiện tại</th>
-              <th className="num">Giá trị</th>
-              <th className="num">Lãi/lỗ tạm tính</th>
-              <th className="num">% Lãi/lỗ</th>
-              <th className="num">Tỷ trọng</th>
-            </tr></thead>
-            <tbody>{visiblePositions.map(row => {
-              const hasPnl = row.unrealized_pnl != null && Number.isFinite(Number(row.unrealized_pnl));
-              const pnl = hasPnl ? Number(row.unrealized_pnl) : null;
-              const hasReturn = row.unrealized_return != null && Number.isFinite(Number(row.unrealized_return));
-              const symbol = String(row.symbol || '').toUpperCase();
-              return <tr key={symbol}>
-                <td><b>{symbol}</b>{row.price_date && <div className="muted">{row.price_date}</div>}</td>
-                <td className="num">{formatShares(row.shares, locale)}</td>
-                <td className="num">{money(row.average_cost, locale)}</td>
-                <td className="num">{money(row.price, locale)}</td>
-                <td className="num emphasis">{money(row.market_value, locale)}</td>
-                <td className={`num ${pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}`}>{signedMoney(row.unrealized_pnl, locale)}</td>
-                <td className={`num ${!hasReturn ? '' : Number(row.unrealized_return) >= 0 ? 'pos' : 'neg'}`}>{pct(row.unrealized_return)}</td>
-                <td className="num">{formatWeight(row.weight)}</td>
-              </tr>;
-            })}</tbody>
-          </table>
-        </div>
-      </>}
+      </div> : visiblePositions.length === 0 ? <div className="empty-state compact-empty">Không tìm thấy mã phù hợp.</div> : <HoldingSourceTree
+        positions={visiblePositions}
+        holdingBooks={holdingBooks}
+        locale={locale}
+        loading={holdingSourceLoading}
+        error={holdingSourceError}
+      />}
     </section>
 
     {positions.length > 0 && <section className="card dividend-card investor-dividend-card">
@@ -266,7 +228,7 @@ export default function VietnamesePortfolioDashboard({ dashboard: initialDashboa
         <div>
           <div className="eyebrow">Cổ tức & quyền</div>
           <h2>Cổ tức gần nhất theo từng mã</h2>
-          <p className="muted">Mỗi mã tự chọn năm gần nhất có dữ liệu đến {currentYear}. Ví dụ mã có dữ liệu 2026 sẽ hiện 2026; mã mới nhất chỉ có 2025 vẫn hiện đầy đủ các sự kiện 2025.</p>
+          <p className="muted">Mỗi mã tự chọn năm gần nhất có dữ liệu đến {currentYear}. Mở tree để xem năm, nguồn dữ liệu cổ tức và từng sự kiện.</p>
         </div>
         <div className="section-actions">
           <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>

@@ -26,6 +26,10 @@ function eventValue(event, locale) {
     : '-';
 }
 
+function sourceName(event) {
+  return String(event?.source || event?.provider || 'Không rõ nguồn').trim() || 'Không rõ nguồn';
+}
+
 function EventLeaf({ event, locale }) {
   return <article className="dividend-tree-event">
     <div className="dividend-tree-event-main">
@@ -40,7 +44,7 @@ function EventLeaf({ event, locale }) {
         <div><span>Ngày GDKHQ</span><b>{event.ex_date || '-'}</b></div>
         <div><span>Đăng ký cuối cùng</span><b>{event.record_date || '-'}</b></div>
         <div><span>Ngày công bố</span><b>{event.announcement_date || '-'}</b></div>
-        <div><span>Nguồn</span><b>{event.source || '-'}</b></div>
+        <div><span>Nguồn dữ liệu</span><b>{sourceName(event)}</b></div>
       </div>
     </details>
   </article>;
@@ -48,6 +52,29 @@ function EventLeaf({ event, locale }) {
 
 function byDateDesc(a, b) {
   return String(dividendEventDate(b) || '').localeCompare(String(dividendEventDate(a) || ''));
+}
+
+function SourceGroups({ events, symbol, year, locale }) {
+  const sources = [...new Set(events.map(sourceName))].sort((a, b) => a.localeCompare(b));
+  return <div className="dividend-tree-sources">
+    {sources.map(source => {
+      const sourceEvents = events.filter(event => sourceName(event) === source).sort(byDateDesc);
+      return <details className="dividend-tree-node dividend-tree-source" open key={`${symbol}-${year}-${source}`}>
+        <summary>
+          <span className="tree-caret" aria-hidden="true">›</span>
+          <strong>Nguồn dữ liệu: {source}</strong>
+          <span>{sourceEvents.length} sự kiện</span>
+        </summary>
+        <div className="dividend-tree-events">
+          {sourceEvents.map((event, index) => <EventLeaf
+            key={`${symbol}-${year}-${source}-${dividendEventDate(event)}-${event.dividend_type}-${event.source_event_id || index}`}
+            event={event}
+            locale={locale}
+          />)}
+        </div>
+      </details>;
+    })}
+  </div>;
 }
 
 export default function DividendTree({ rows = [], locale = 'vi', root = 'symbol', openLatest = true }) {
@@ -74,7 +101,7 @@ export default function DividendTree({ rows = [], locale = 'vi', root = 'symbol'
               const events = yearEvents.filter(event => event.symbol === symbol).sort(byDateDesc);
               return <details className="dividend-tree-node dividend-tree-symbol" open key={`${year}-${symbol}`}>
                 <summary><span className="tree-caret" aria-hidden="true">›</span><strong>{symbol}</strong><span>{events.length} sự kiện</span></summary>
-                <div className="dividend-tree-events">{events.map((event, index) => <EventLeaf key={`${symbol}-${dividendEventDate(event)}-${event.dividend_type}-${event.source_event_id || index}`} event={event} locale={locale} />)}</div>
+                <SourceGroups events={events} symbol={symbol} year={year} locale={locale} />
               </details>;
             })}
           </div>
@@ -93,7 +120,7 @@ export default function DividendTree({ rows = [], locale = 'vi', root = 'symbol'
             const events = row.events.filter(event => eventYear(event) === year).sort(byDateDesc);
             return <details className="dividend-tree-node dividend-tree-year" open={openLatest && yearIndex === 0} key={`${row.symbol}-${year}`}>
               <summary><span className="tree-caret" aria-hidden="true">›</span><strong>Năm {year}</strong><span>{events.length} sự kiện</span></summary>
-              <div className="dividend-tree-events">{events.map((event, index) => <EventLeaf key={`${row.symbol}-${dividendEventDate(event)}-${event.dividend_type}-${event.source_event_id || index}`} event={event} locale={locale} />)}</div>
+              <SourceGroups events={events} symbol={row.symbol} year={year} locale={locale} />
             </details>;
           })}
         </div>

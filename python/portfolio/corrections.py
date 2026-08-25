@@ -10,6 +10,20 @@ class CorrectionError(ValueError):
     pass
 
 
+_AUTOMATIC_TAX_METADATA = {
+    "cash_dividend_withholding_rate",
+    "cash_dividend_withholding_tax",
+    "cash_dividend_gross_amount",
+    "cash_dividend_net_amount",
+    "stock_dividend_sale_tax_rate",
+    "stock_dividend_sale_tax",
+    "stock_dividend_taxable_quantity",
+    "stock_dividend_tax_par_value",
+    "stock_dividend_tax_basis_per_share",
+    "stock_dividend_tax_basis_source",
+}
+
+
 def ensure_schema(store) -> None:
     with store.connect() as db:
         db.executescript(
@@ -103,6 +117,8 @@ def effective_events(store, start: str | None = None, end: str | None = None) ->
     for original in originals:
         correction = latest.get(int(original.id)) if original.id is not None else None
         if correction and correction["action"] == "DELETE":
+            # Keep support for historical DELETE corrections written by older
+            # QPort versions. New transaction deletion is disabled below.
             continue
         event = original
         if correction and correction["action"] == "EDIT" and correction.get("replacement"):
@@ -123,17 +139,55 @@ def effective_event(store, event_id: int) -> LedgerEvent | None:
     return None
 
 
+def _stable_metadata(event: LedgerEvent) -> dict:
+    metadata = dict(event.metadata or {})
+    metadata.pop("broker_code", None)
+    for key in _AUTOMATIC_TAX_METADATA:
+        metadata.pop(key, None)
+    return metadata
+
+
+def _enforce_edit_policy(current: LedgerEvent, replacement: LedgerEvent) -> None:
+    """Only quantity, price and broker may be user-corrected.
+
+    Tax and tax metadata may change as a derived consequence of changing
+    quantity/price. Everything that identifies the transaction stays immutable.
+    """
+    immutable_checks = (
+        ("event_type", current.event_type, replacement.event_type),
+        ("event_date", current.event_date, replacement.event_date),
+        ("symbol", current.symbol, replacement.symbol),
+        ("account_id", current.account_id, replacement.account_id),
+        ("fee", float(current.fee or 0), float(replacement.fee or 0)),
+        ("amount", float(current.amount or 0), float(replacement.amount or 0)),
+        ("ratio", float(current.ratio or 0), float(replacement.ratio or 0)),
+        ("note", current.note or "", replacement.note or ""),
+        ("settlement_date", current.settlement_date, replacement.settlement_date),
+        ("metadata", _stable_metadata(current), _stable_metadata(replacement)),
+    )
+    changed = [name for name, before, after in immutable_checks if before != after]
+    if changed:
+        fields = ", ".join(changed)
+        raise CorrectionError(
+            f"Only quantity, price and broker can be edited. Read-only field changed: {fields}."
+        )
+
+
 def append_edit(store, event_id: int, replacement: LedgerEvent, *, reason: str, created_by: str = "local") -> int:
     original = raw_event(store, event_id)
     if original is None:
         raise CorrectionError("Transaction not found.")
-    if effective_event(store, event_id) is None:
+    current = effective_event(store, event_id)
+    if current is None:
         raise CorrectionError("Deleted transactions cannot be edited.")
     reason = str(reason or "").strip()
     if not reason:
         raise CorrectionError("Correction reason is required.")
     if len(reason) > 500:
         raise CorrectionError("Correction reason must be at most 500 characters.")
+
+    _enforce_edit_policy(current, replacement)
+
     payload = _event_to_payload(replacement)
     payload["id"] = int(event_id)
     with store.connect() as db:
@@ -148,25 +202,12 @@ def append_edit(store, event_id: int, replacement: LedgerEvent, *, reason: str, 
 
 
 def append_delete(store, event_id: int, *, reason: str, created_by: str = "local") -> int:
-    original = raw_event(store, event_id)
-    if original is None:
-        raise CorrectionError("Transaction not found.")
-    if effective_event(store, event_id) is None:
-        raise CorrectionError("Transaction is already deleted.")
-    reason = str(reason or "").strip()
-    if not reason:
-        raise CorrectionError("Deletion reason is required.")
-    if len(reason) > 500:
-        raise CorrectionError("Deletion reason must be at most 500 characters.")
-    with store.connect() as db:
-        cur = db.execute(
-            """
-            INSERT INTO ledger_corrections(event_id, action, replacement_json, reason, created_by, created_at)
-            VALUES (?, 'DELETE', NULL, ?, ?, ?)
-            """,
-            (int(event_id), reason, str(created_by or "local")[:100], store._now()),
-        )
-        return int(cur.lastrowid)
+    # Product policy: transaction history is append/correct only. Historical
+    # DELETE corrections remain readable for backward compatibility, but no new
+    # effective deletion can be created through the service/API.
+    raise CorrectionError(
+        "Transaction deletion is disabled. Correct quantity, price or broker instead."
+    )
 
 
 def audit_log(store) -> list[dict]:
