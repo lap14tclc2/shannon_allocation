@@ -4,6 +4,7 @@ import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
+import PortfoliosPage from './pages/PortfoliosPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
@@ -23,6 +24,7 @@ import {
   getPortfolioPerformance,
   getPortfolioRisk,
   listPortfolioSnapshots,
+  listPortfolios,
   listPortfolioTransactionAudit,
   listPortfolioTransactions,
 } from './lib/api.js';
@@ -43,6 +45,7 @@ import './risk-readable.css';
 import './guide-friendly.css';
 import './dividend-history.css';
 import './settings-friendly.css';
+import './portfolio-manager.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 
@@ -130,6 +133,8 @@ async function loadPage(pathname, locale) {
       const dashboard = await getPortfolioDashboard();
       return { Page: PortfolioPage, props: { ...common, dashboard } };
     }
+    case '/portfolios':
+      return { Page: PortfoliosPage, props: { ...common, registry: await listPortfolios() } };
     case '/transactions': {
       const [transactions, corrections] = await Promise.all([
         listPortfolioTransactions(),
