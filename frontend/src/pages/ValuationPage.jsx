@@ -85,10 +85,18 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
   async function load() {
     if (!normalized.length) return;
     setLoading(true);
-    const result = await getValuationReports(normalized);
-    setReports(result.reports);
-    setErrors(result.errors);
-    setLoading(false);
+    try {
+      const result = await getValuationReports(normalized);
+      setReports(result.reports);
+      setErrors(result.errors);
+    } catch (error) {
+      setErrors(Object.fromEntries(normalized.map(symbol => [
+        symbol,
+        { code: error?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: error?.message || 'Không thể tải dữ liệu định giá.' },
+      ])));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
