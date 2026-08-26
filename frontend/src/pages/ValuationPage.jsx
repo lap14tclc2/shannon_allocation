@@ -126,14 +126,14 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
     <AppNav active="valuation" locale={locale} />
     <main className="valuation-page">
       <header className="valuation-header">
-        <div><span className="eyebrow">BCTC mới nhất theo từng mã</span><h1>Định giá cổ phiếu</h1><p>Dữ liệu được tải mới trực tiếp cho từng mã; QPort không dùng hồ sơ định giá chung hoặc giá trị hard-code.</p></div>
-        <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>{loading ? 'Đang tải…' : 'Tải lại dữ liệu mới'}</button>
+        <div><span className="eyebrow">BCTC mới nhất theo từng mã</span><h1>Định giá cổ phiếu</h1><p>Dữ liệu định giá lấy từ Finance Data đã được admin đồng bộ; nếu thiếu dữ liệu, hãy contact admin.</p></div>
+        <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>{loading ? 'Đang tải…' : 'Làm mới dữ liệu đã đồng bộ'}</button>
       </header>
       <MethodologyGuide />
       {!normalized.length ? <div className="empty-state">Danh mục chưa có cổ phiếu để định giá.</div> : <div className="valuation-grid">
         {normalized.map(symbol => <ValuationCard key={symbol} symbol={symbol} report={reports[symbol]} error={errors[symbol]} locale={locale} />)}
       </div>}
-      {loading && Object.keys(reports).length === 0 && Object.keys(errors).length === 0 && <div className="empty-state" role="status">Đang tải BCTC mới nhất từ Vnstock…</div>}
+      {loading && Object.keys(reports).length === 0 && Object.keys(errors).length === 0 && <div className="empty-state" role="status">Đang tải dữ liệu định giá đã đồng bộ…</div>}
     </main>
   </div>;
 }
