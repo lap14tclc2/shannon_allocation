@@ -454,7 +454,7 @@ def admin_finance_data_retry(
 ):
     admin = require_admin(qport_session)
     result = crawl_symbol(symbol, int(admin["id"]), retry_failed_only=True)
-    if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
+    if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
     return result
 
