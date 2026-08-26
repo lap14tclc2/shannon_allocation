@@ -285,23 +285,59 @@ def _payload_rows(payload: str | None) -> list[dict[str, Any]]:
 
 
 def _number(value: Any) -> float | None:
-    if value in (None, ""):
+    if value in (None, "") or isinstance(value, bool):
         return None
     try:
-        return float(str(value).replace(",", ""))
+        text = str(value).strip().replace("\u00a0", "").replace(" ", "")
+        # Provider payloads are normally VND numbers. Accept both JSON decimal
+        # notation and Vietnamese thousands separators without guessing units.
+        if "," in text and "." in text:
+            text = text.replace(".", "").replace(",", ".")
+        elif text.count(".") > 1:
+            text = text.replace(".", "")
+        elif "," in text:
+            text = text.replace(",", ".")
+        return float(text)
     except (TypeError, ValueError):
         return None
 
 
+def _token(value: Any) -> str:
+    import unicodedata
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return "".join(char.lower() for char in text if char.isalnum())
+
+
 def _value(row: dict[str, Any], *aliases: str) -> float | None:
-    normalized = {str(key).lower().replace("_", "").replace(" ", ""): value for key, value in row.items()}
-    for alias in aliases:
-        key = alias.lower().replace("_", "").replace(" ", "")
+    """Read provider rows in both column-oriented and label/value shapes."""
+    if not isinstance(row, dict):
+        return None
+    normalized = {_token(key): value for key, value in row.items()}
+    wanted = [_token(alias) for alias in aliases]
+    # Direct field aliases (e.g. net_profit, outstanding_shares).
+    for alias in wanted:
         for candidate, value in normalized.items():
-            if candidate == key or candidate.endswith(key):
+            if candidate == alias or candidate.endswith(alias):
                 parsed = _number(value)
                 if parsed is not None:
                     return parsed
+    # TCBS/CafeF often return {itemName/itemCode/label, value/amount}.
+    label = " ".join(
+        str(normalized.get(key, ""))
+        for key in ("itemname", "itemcode", "label", "name", "title", "description", "namevn")
+    )
+    label_token = _token(label)
+    if any(alias in label_token or label_token in alias for alias in wanted):
+        for key in ("value", "amount", "numericvalue", "rawvalue", "current", "latest", "data"):
+            parsed = _number(normalized.get(key))
+            if parsed is not None:
+                return parsed
+        # Some responses expose the first numeric period as an arbitrary key.
+        for value in normalized.values():
+            parsed = _number(value)
+            if parsed is not None:
+                return parsed
     return None
 
 
@@ -309,15 +345,15 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
     rows = _payload_rows(payload)
     mappings = {
         "FINANCIAL_STATEMENTS": (
-            ("BS.DEBT.TOTAL", ("total_debt", "debt", "borrowings")),
-            ("BS.ASSETS.CASH_AND_EQUIVALENTS", ("cash_and_cash_equivalents", "cash", "cash_equivalents")),
+            ("BS.DEBT.TOTAL", ("total_debt", "debt", "borrowings", "total liabilities", "tong no", "no phai tra")),
+            ("BS.ASSETS.CASH_AND_EQUIVALENTS", ("cash_and_cash_equivalents", "cash", "cash_equivalents", "cash and cash equivalents", "tien va tuong duong tien")),
             ("BS.LIABILITIES.SHORT_TERM_BORROWINGS", ("short_term_borrowings", "short_term_debt")),
             ("BS.LIABILITIES.LONG_TERM_BORROWINGS", ("long_term_borrowings", "long_term_debt")),
         ),
         "INCOME_STATEMENT": (
-            ("IS.PROFIT.NET", ("net_profit", "net_profit_after_tax", "profit_after_tax", "net_income")),
-            ("IS.PROFIT.OPERATING", ("operating_profit", "profit_from_operation")),
-            ("IS.SHARES.OUTSTANDING", ("outstanding_shares", "outstanding_share", "shares_outstanding", "shares")),
+            ("IS.PROFIT.NET", ("net_profit", "net_profit_after_tax", "profit_after_tax", "net_income", "net profit after tax", "loi nhuan sau thue", "loi nhuan sau thue cua co dong cong ty me")),
+            ("IS.PROFIT.OPERATING", ("operating_profit", "profit_from_operation", "operating income", "loi nhuan thuan tu hoat dong kinh doanh")),
+            ("IS.SHARES.OUTSTANDING", ("outstanding_shares", "outstanding_share", "shares_outstanding", "shares", "shares outstanding", "so luong co phieu dang luu hanh")),
         ),
         "CASH_FLOW": (
             ("CF.OPERATING.DEPRECIATION", ("depreciation", "depreciation_amortization")),
