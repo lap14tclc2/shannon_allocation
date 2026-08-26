@@ -19,6 +19,24 @@ _WORKER_PATH = Path(__file__).resolve()
 _HEALTH_CACHE: dict[str, tuple[float, dict]] = {}
 
 
+def _writable_runtime_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Point third-party config/cache writes at Vercel's writable /tmp."""
+    env = dict(base or os.environ)
+    runtime_dir = Path(env.get("QPORT_VNSTOCK_RUNTIME_DIR") or "/tmp/qport-vnstock")
+    paths = {
+        "HOME": runtime_dir,
+        "USERPROFILE": runtime_dir,
+        "XDG_CONFIG_HOME": runtime_dir / "config",
+        "XDG_CACHE_HOME": runtime_dir / "cache",
+        "XDG_DATA_HOME": runtime_dir / "data",
+        "MPLCONFIGDIR": runtime_dir / "matplotlib",
+    }
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+    env.update({key: str(path) for key, path in paths.items()})
+    return env
+
+
 def configured_python() -> str:
     """Python interpreter used exclusively for Vnstock calls.
 
@@ -260,6 +278,7 @@ def _execute_task(task: str, payload: dict[str, Any]) -> dict:
 def _worker_main() -> int:
     """JSON stdin/stdout worker so QPort can use a different Python runtime."""
     import io
+    os.environ.update(_writable_runtime_env())
     # Strip current directory and python/ from sys.path to avoid shadowing stdlib locale
     portfolio_dir = str(Path(__file__).resolve().parent)
     python_dir = str(Path(__file__).resolve().parents[1])
@@ -301,7 +320,7 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
     # Check if running in a serverless environment (e.g. Vercel / AWS Lambda)
     is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
     
-    worker_env = dict(os.environ)
+    worker_env = _writable_runtime_env()
     worker_env.pop("PYTHONPATH", None)
     worker_env["PYTHONIOENCODING"] = "utf-8"
     root_dir = str(Path(__file__).resolve().parents[2])
@@ -331,6 +350,7 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
     
     # Fallback to direct in-process execution for Serverless / restricted runtimes
     try:
+        os.environ.update(_writable_runtime_env())
         direct_result = _execute_task(task, payload)
         direct_result.setdefault("worker_python", sys.executable)
         return direct_result
