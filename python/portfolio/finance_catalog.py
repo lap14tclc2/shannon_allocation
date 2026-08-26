@@ -510,6 +510,9 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
     return {
         "ok": True, "symbol": ticker, "provider": "finance_catalog",
         "fetched_at": latest["IS.PROFIT.NET"]["observed_at"],
+        "fiscal_year": latest["IS.PROFIT.NET"]["fiscal_year"],
+        "fiscal_quarter": latest["IS.PROFIT.NET"].get("fiscal_quarter"),
+        "period_end": latest["IS.PROFIT.NET"].get("period_end"),
         "income_statement": [{"net_profit": latest["IS.PROFIT.NET"]["value"], "operating_profit": latest.get("IS.PROFIT.OPERATING", {}).get("value")}],
         "balance_sheet": [{"total_debt": latest.get("BS.DEBT.TOTAL", {}).get("value"), "cash": latest.get("BS.ASSETS.CASH_AND_EQUIVALENTS", {}).get("value")}],
         "cash_flow": [{"depreciation": latest.get("CF.OPERATING.DEPRECIATION", {}).get("value"), "capex": latest.get("CF.CAPEX", {}).get("value"), "operating_cash_flow": latest.get("CF.OPERATING.NET", {}).get("value")}],
