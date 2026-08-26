@@ -10,6 +10,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -29,17 +30,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _url_json(url: str, *, headers: dict[str, str] | None = None, timeout: float = 15) -> tuple[int, str]:
+def _url_json(url: str, *, headers: dict[str, str] | None = None, timeout: float = 15, retries: int = 2) -> tuple[int, str]:
+    """Fetch uncached provider data with bounded retry/backoff."""
     request = urllib.request.Request(
         url,
         headers={
             "User-Agent": "QPort-FinanceData/1.0",
             "Accept": "application/json, text/plain, */*",
+            "Cache-Control": "no-cache",
             **(headers or {}),
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return int(response.status), response.read().decode("utf-8", errors="replace")
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                status = int(response.status)
+                body = response.read().decode("utf-8", errors="replace")
+                if not body.strip():
+                    raise RuntimeError("Provider returned an empty response")
+                return status, body
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in {408, 425, 429} and exc.code < 500:
+                raise
+        except (urllib.error.URLError, TimeoutError, RuntimeError) as exc:
+            last_error = exc
+        if attempt < retries:
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"provider request failed after {retries + 1} attempts: {last_error}")
 
 
 def initialize_finance_schema() -> None:
@@ -287,14 +306,29 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
     return {"ok": True, "queued": queued, "message": f"Đã xếp hàng {queued} mã cho external worker."}
 
 
+
+def _validate_crawl_runtime() -> None:
+    """Provider calls are allowed only in an explicitly named local worker."""
+    runtime = str(os.environ.get("QPORT_FINANCE_RUNTIME") or "").strip().lower()
+    if runtime not in {"local", "worker"}:
+        raise RuntimeError(
+            "CRAWL_RUNTIME_INVALID: set QPORT_FINANCE_RUNTIME=local (or worker) "
+            "on the external crawler; Vercel is database-read-only"
+        )
+    if os.environ.get("VERCEL"):
+        raise RuntimeError("CRAWL_RUNTIME_INVALID: provider crawling is disabled on Vercel")
+
+
 def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
     _ensure()
     symbol = str(symbol).upper().strip()
     if not symbol:
         return {"ok": False, "code": "INVALID_SYMBOL"}
     ensure_required_documents(symbol)
-    if os.environ.get("VERCEL") and os.environ.get("QPORT_ALLOW_FINANCE_CRAWL") != "1":
-        return {"ok": False, "code": "CRAWL_DISABLED_ON_VERCEL", "message": "Finance crawling is disabled on Vercel; run the external worker and sync the database."}
+    try:
+        _validate_crawl_runtime()
+    except RuntimeError as exc:
+        return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     with _schema_connection(FINANCE_SCHEMA) as db:
         row = db.execute("INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) VALUES(?,?,?,1) RETURNING id", (requested_by, "RUNNING", _now())).fetchone()
         run_id = int(row["id"])
@@ -328,8 +362,10 @@ def sync_universe() -> dict[str, Any]:
     Vercel remains read-only unless explicitly opted in, preventing serverless
     provider calls and filesystem/runtime failures.
     """
-    if os.environ.get("VERCEL") and os.environ.get("QPORT_ALLOW_FINANCE_CRAWL") != "1":
-        return {"ok": False, "code": "CRAWL_DISABLED_ON_VERCEL", "message": "Finance crawling is disabled on Vercel; run the external worker and sync the database."}
+    try:
+        _validate_crawl_runtime()
+    except RuntimeError as exc:
+        return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     try:
         from vnstock import Listing  # type: ignore
         listing = Listing()
