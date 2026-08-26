@@ -53,7 +53,10 @@ async function handleResponse(res, url) {
 }
 
 async function getJSON(url, signal, retryScope = true) {
-  const res = await fetch(url, { signal, headers: scopedHeaders() });
+  const res = await fetch(url, { signal, cache: 'no-store', headers: scopedHeaders({
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  }) });
   try {
     return await handleResponse(res, url);
   } catch (error) {
@@ -182,22 +185,25 @@ export const getDividendHistory = (symbol, options = {}) => {
 
 export const getValuationReport = (symbol) => {
   const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
-  return getJSONCached(`/api/portfolio/valuation/${ticker}`, 10 * 60_000);
+  return getJSON(`/api/portfolio/valuation/${ticker}?fresh=${Date.now()}`);
 };
 
 export async function getValuationReports(symbols) {
   const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
   const results = {};
-  await Promise.all(unique.map(async symbol => {
-    try {
-      const res = await getValuationReport(symbol);
-      if (res?.ok && res.report) {
-        results[symbol] = res.report;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < unique.length) {
+      const symbol = unique[cursor++];
+      try {
+        const res = await getValuationReport(symbol);
+        if (res?.ok && res.report) results[symbol] = res.report;
+      } catch {
+        // Missing provider data remains visibly absent; never reuse another ticker.
       }
-    } catch {
-      // Ignored for symbols without complete statements
     }
-  }));
+  }
+  await Promise.all(Array.from({ length: Math.min(2, unique.length) }, () => worker()));
   return results;
 }
 

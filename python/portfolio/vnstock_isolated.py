@@ -161,6 +161,65 @@ def _execute_task(task: str, payload: dict[str, Any]) -> dict:
         rows = _records(_ohlcv(Market(), payload["symbol"], payload["start"], payload["end"]))
         return {"status": "success", "data": rows, "provider": "vnstock", "api_variant": variant}
 
+    if task == "valuation_snapshot":
+        from datetime import date, timedelta
+
+        symbol = str(payload.get("symbol") or "").upper().strip()
+        if not re.fullmatch(r"[A-Z0-9]{3,10}", symbol):
+            raise RuntimeError("Invalid symbol")
+
+        def call(method, **kwargs):
+            try:
+                return _records(method(**kwargs))
+            except TypeError:
+                kwargs.pop("lang", None)
+                return _records(method(**kwargs))
+
+        profile_rows: list[dict] = []
+        try:
+            Reference, _, _ = _reference_factory()
+            profile_rows = _company_info(Reference(), symbol)
+        except Exception:
+            profile_rows = []
+
+        try:
+            from vnstock import Fundamental
+            equity = Fundamental().equity(symbol)
+            income = call(equity.income_statement, period="quarter", lang="en")
+            balance = call(equity.balance_sheet, period="quarter", lang="en")
+            cash_flow = call(equity.cash_flow, period="quarter", lang="en")
+            ratios = call(equity.ratio, period="quarter", lang="en")
+            api_variant = "unified_fundamental_v4"
+        except Exception:
+            from vnstock import Vnstock
+            finance = Vnstock().stock(symbol=symbol, source="VCI").finance
+            income = call(finance.income_statement, period="quarter", lang="en")
+            balance = call(finance.balance_sheet, period="quarter", lang="en")
+            cash_flow = call(finance.cash_flow, period="quarter", lang="en")
+            ratios = call(finance.ratio, period="quarter", lang="en")
+            api_variant = "legacy_finance_vci"
+
+        end = date.today()
+        start = end - timedelta(days=14)
+        Market, market_variant = _market_factory()
+        prices = _records(_ohlcv(Market(), symbol, start.isoformat(), end.isoformat()))
+        if not any((income, balance, cash_flow, ratios)):
+            raise RuntimeError(f"No financial data returned for {symbol}")
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "provider": "vnstock",
+            "api_variant": api_variant,
+            "market_variant": market_variant,
+            "fetched_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "profile": profile_rows,
+            "income_statement": income,
+            "balance_sheet": balance,
+            "cash_flow": cash_flow,
+            "ratios": ratios,
+            "prices": prices,
+        }
+
     Reference, provider, variant = _reference_factory()
     ref = Reference()
     if task == "events":
@@ -358,3 +417,5 @@ def vnstock_available() -> bool:
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         raise SystemExit(_worker_main())
+
+

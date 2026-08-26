@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, Cookie, FastAPI, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -563,153 +564,202 @@ def portfolio_symbol_valuation(
     symbol: str,
     qport_session: str | None = Cookie(default=None),
 ):
-    """
-    Informational-only valuation report (QVE-022, QVE-170, QVE-190).
-    Never creates transactions or modifies ledger state.
-    """
-    user = require_portfolio_user(qport_session)
-    svc = portfolio(user)
-    ticker = str(symbol or "").upper().strip()
-    
-    # 1. Get actual latest market price from store or dashboard
-    latest_row = svc.store.latest_price(ticker)
-    current_price = None
-    if latest_row:
-        current_price = latest_row.get("close")
-    
-    if current_price is None:
-        dash = svc.dashboard()
-        market_rows = dash.get("market_data", {}).get("rows", [])
-        for row in market_rows:
-            if str(row.get("symbol", "")).upper() == ticker:
-                current_price = row.get("price") or row.get("close")
-                break
+    """Build a valuation from a fresh, symbol-scoped provider snapshot."""
+    import re
+    from dataclasses import asdict
+    from datetime import datetime, timezone
+    from decimal import Decimal, InvalidOperation
 
-    from decimal import Decimal
     from portfolio.financial_data.models import (
         CanonicalFact,
         ConsolidationScope,
         EntityType,
         FactIdentityKey,
         PeriodType,
-        ProviderFact,
         QualityStatus,
         StatementType,
     )
-    from portfolio.financial_data.store import FinancialDataStore
+    from portfolio.vnstock_isolated import run_vnstock_task
 
-    # Stock-specific fundamental profiles (shares, entity type, annual base metrics)
-    PROFILES = {
-        "FPT": {
-            "shares": Decimal("1460485900"),
-            "diluted": Decimal("1480000000"),
-            "fallback_price": Decimal("71400"),
-            "entity_type": EntityType.NORMAL_ENTERPRISE,
-            "annual_oe": Decimal("10281624000000"),  # ~10.28k tỷ
-            "net_debt": Decimal("-8000000000000"),   # Net cash ~8k tỷ
-            "growth_rate": Decimal("0.15"),
-            "discount_rate": Decimal("0.11"),
-        },
-        "DGC": {
-            "shares": Decimal("379794000"),
-            "diluted": Decimal("385000000"),
-            "fallback_price": Decimal("43900"),
-            "entity_type": EntityType.NORMAL_ENTERPRISE,
-            "annual_oe": Decimal("3450000000000"),   # ~3.45k tỷ
-            "net_debt": Decimal("-7500000000000"),   # Net cash ~7.5k tỷ
-            "growth_rate": Decimal("0.12"),
-            "discount_rate": Decimal("0.115"),
-        },
-        "ACB": {
-            "shares": Decimal("4466699000"),
-            "diluted": Decimal("4500000000"),
-            "fallback_price": Decimal("22500"),
-            "entity_type": EntityType.BANK,
-            "annual_oe": Decimal("16500000000000"),  # ~16.5k tỷ
-            "net_debt": Decimal("0"),
-            "growth_rate": Decimal("0.12"),
-            "discount_rate": Decimal("0.12"),
-        },
-    }
+    require_portfolio_user(qport_session)
+    ticker = str(symbol or "").upper().strip()
+    if not re.fullmatch(r"[A-Z0-9]{3,10}", ticker):
+        raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
 
-    profile = PROFILES.get(ticker, {
-        "shares": Decimal("1000000000"),
-        "diluted": Decimal("1000000000"),
-        "fallback_price": Decimal("50000"),
-        "entity_type": EntityType.NORMAL_ENTERPRISE,
-        "annual_oe": Decimal("2500000000000"),
-        "net_debt": Decimal("0"),
-        "growth_rate": Decimal("0.12"),
-        "discount_rate": Decimal("0.11"),
-    })
+    try:
+        snapshot = run_vnstock_task(
+            "valuation_snapshot",
+            {"symbol": ticker},
+            timeout=240.0,
+            max_attempts=2,
+        )
+    except Exception as exc:
+        raise ApiError(503, f"Không thể tải dữ liệu mới nhất cho {ticker}: {exc}", "VALUATION_SOURCE_UNAVAILABLE") from exc
 
-    price_dec = Decimal(str(current_price)) if current_price else profile["fallback_price"]
-    
-    # 2. Build verified Canonical facts from audited profiles
-    facts = [
-        CanonicalFact(
-            canonical_fact_id=f"cf-{ticker.lower()}-net-income",
+    if str(snapshot.get("symbol") or "").upper() != ticker:
+        raise ApiError(502, "Provider returned data for a different symbol.", "VALUATION_SYMBOL_MISMATCH")
+
+    def normalized_key(value: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+    def field(rows: list[dict], *aliases: str, reverse: bool = False):
+        wanted = [normalized_key(alias) for alias in aliases]
+        source = list(reversed(rows or [])) if reverse else list(rows or [])
+        for row in source:
+            if not isinstance(row, dict):
+                continue
+            normalized = {normalized_key(key): value for key, value in row.items()}
+            for alias in wanted:
+                for key, value in normalized.items():
+                    if value is not None and value != "" and (key == alias or key.endswith(alias)):
+                        return value
+        return None
+
+    def number(value) -> Decimal | None:
+        if value is None or value == "":
+            return None
+        try:
+            parsed = Decimal(str(value).replace(",", ""))
+            return parsed if parsed.is_finite() else None
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    income = list(snapshot.get("income_statement") or [])
+    balance = list(snapshot.get("balance_sheet") or [])
+    cash_flow = list(snapshot.get("cash_flow") or [])
+    ratios = list(snapshot.get("ratios") or [])
+    profile = list(snapshot.get("profile") or [])
+    prices = list(snapshot.get("prices") or [])
+    fetched_at = str(snapshot.get("fetched_at") or datetime.now(timezone.utc).isoformat())
+
+    current_price = number(field(prices, "close", "close_price", reverse=True))
+    net_income = number(field(income, "net_profit", "net_profit_after_tax", "profit_after_tax", "net_income"))
+    operating_profit = number(field(income, "operating_profit", "profit_from_operation"))
+    total_debt = number(field(balance, "total_debt", "debt", "borrowings"))
+    short_debt = number(field(balance, "short_term_borrowings", "short_term_debt"))
+    long_debt = number(field(balance, "long_term_borrowings", "long_term_debt"))
+    cash = number(field(balance, "cash_and_cash_equivalents", "cash", "cash_equivalents"))
+    short_investments = number(field(balance, "short_term_investments", "short_term_investment"))
+    equity = number(field(balance, "equity", "owners_equity", "owner_equity"))
+    depreciation = number(field(cash_flow, "depreciation", "depreciation_amortization"))
+    capex = number(field(cash_flow, "capex", "purchase_of_fixed_assets", "fixed_asset_purchases"))
+    operating_cash = number(field(cash_flow, "operating_cash_flow", "net_cash_from_operating_activities"))
+
+    eps = number(field(ratios, "eps", "earning_per_share"))
+    bvps = number(field(ratios, "bvps", "book_value_per_share"))
+    pe = number(field(ratios, "pe", "price_to_earnings"))
+    pb = number(field(ratios, "pb", "price_to_book"))
+    roe = number(field(ratios, "roe", "return_on_equity"))
+    dividend_yield = number(field(ratios, "dividend_yield", "cash_dividend_yield"))
+    shares = number(field(ratios, "outstanding_share", "outstanding_shares", "shares_outstanding"))
+    if shares is None:
+        shares = number(field(profile, "outstanding_share", "outstanding_shares", "shares_outstanding"))
+    if shares is None and net_income is not None and eps is not None and eps > 0:
+        shares = net_income / eps
+
+    sector = field(profile, "industry", "industry_name", "sector", "icb_name3", "icb_name2")
+    company_type = str(field(profile, "company_type", "type", "industry") or "")
+    entity_type = EntityType.BANK if any(token in f"{sector or ''} {company_type}".lower() for token in ("bank", "ngân hàng")) else EntityType.NORMAL_ENTERPRISE
+
+    if current_price is None or current_price <= 0:
+        raise ApiError(422, f"Provider không trả giá mới nhất hợp lệ cho {ticker}.", "VALUATION_PRICE_MISSING")
+    if net_income is None or shares is None or shares <= 0:
+        raise ApiError(422, f"BCTC mới nhất của {ticker} chưa đủ lợi nhuận và số cổ phiếu lưu hành để định giá.", "VALUATION_DATA_INCOMPLETE")
+
+    fiscal_year_raw = number(field(income, "year_report", "report_year", "fiscal_year", "year"))
+    fiscal_quarter_raw = number(field(income, "length_report", "quarter", "fiscal_quarter"))
+    fiscal_year = int(fiscal_year_raw) if fiscal_year_raw and 2000 <= fiscal_year_raw <= 2200 else datetime.now(timezone.utc).year
+    fiscal_quarter = int(fiscal_quarter_raw) if fiscal_quarter_raw and 1 <= fiscal_quarter_raw <= 4 else None
+    quarter_ends = {1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31"}
+    period_end = f"{fiscal_year}-{quarter_ends[fiscal_quarter]}" if fiscal_quarter else f"{fiscal_year}-12-31"
+
+    facts: list[CanonicalFact] = []
+
+    def add_fact(code: str, statement_type: StatementType, value: Decimal | None, period_type: PeriodType) -> None:
+        if value is None:
+            return
+        fact_id = f"live-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
+        facts.append(CanonicalFact(
+            canonical_fact_id=fact_id,
             identity=FactIdentityKey(
                 security_id=f"sec-{ticker.lower()}",
-                statement_type=StatementType.INCOME_STATEMENT,
-                period_end="2026-06-30",
-                period_type=PeriodType.QUARTER,
-                fiscal_year=2026,
-                fiscal_quarter=2,
+                statement_type=statement_type,
+                period_end=period_end,
+                period_type=period_type,
+                fiscal_year=fiscal_year,
+                fiscal_quarter=fiscal_quarter,
                 consolidation_scope=ConsolidationScope.CONSOLIDATED,
-                line_item_code="IS.PROFIT.NET",
+                line_item_code=code,
                 currency="VND",
             ),
-            value=profile["annual_oe"] / Decimal("4"),
-            quality_status=QualityStatus.CROSS_SOURCE_VERIFIED,
-            decision_id=f"dec-{ticker.lower()}-01",
-            winning_candidate_id=f"pf-{ticker.lower()}-01",
+            value=value,
+            quality_status=QualityStatus.SINGLE_SOURCE,
+            decision_id=f"live-{ticker.lower()}-{fetched_at[:19]}",
+            winning_candidate_id=f"vnstock-{ticker.lower()}-{code.lower()}",
             candidate_ids=[],
-            observed_at="2026-06-30T00:00:00Z",
-            valid_from="2026-06-30T00:00:00Z",
-            reason="Cross-verified from CafeF & Vnstock audited disclosures",
-        ),
-        CanonicalFact(
-            canonical_fact_id=f"cf-{ticker.lower()}-debt",
-            identity=FactIdentityKey(
-                security_id=f"sec-{ticker.lower()}",
-                statement_type=StatementType.BALANCE_SHEET,
-                period_end="2026-06-30",
-                period_type=PeriodType.INSTANT,
-                fiscal_year=2026,
-                fiscal_quarter=2,
-                consolidation_scope=ConsolidationScope.CONSOLIDATED,
-                line_item_code="BS.DEBT.TOTAL",
-                currency="VND",
-            ),
-            value=profile["net_debt"] if profile["net_debt"] > 0 else Decimal("0"),
-            quality_status=QualityStatus.CROSS_SOURCE_VERIFIED,
-            decision_id=f"dec-{ticker.lower()}-02",
-            winning_candidate_id=f"pf-{ticker.lower()}-02",
-            candidate_ids=[],
-            observed_at="2026-06-30T00:00:00Z",
-            valid_from="2026-06-30T00:00:00Z",
-            reason="Cross-verified from CafeF & Vnstock audited disclosures",
-        ),
-    ]
+            observed_at=fetched_at,
+            valid_from=fetched_at,
+            reason=f"Fresh symbol-scoped snapshot from {snapshot.get('provider')} ({snapshot.get('api_variant')})",
+        ))
+
+    add_fact("IS.PROFIT.NET", StatementType.INCOME_STATEMENT, net_income, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+    add_fact("IS.PROFIT.OPERATING", StatementType.INCOME_STATEMENT, operating_profit, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+    add_fact("BS.DEBT.TOTAL", StatementType.BALANCE_SHEET, total_debt, PeriodType.INSTANT)
+    add_fact("BS.LIABILITIES.SHORT_TERM_BORROWINGS", StatementType.BALANCE_SHEET, short_debt, PeriodType.INSTANT)
+    add_fact("BS.LIABILITIES.LONG_TERM_BORROWINGS", StatementType.BALANCE_SHEET, long_debt, PeriodType.INSTANT)
+    add_fact("BS.ASSETS.CASH_AND_EQUIVALENTS", StatementType.BALANCE_SHEET, cash, PeriodType.INSTANT)
+    add_fact("BS.ASSETS.SHORT_TERM_INVESTMENTS", StatementType.BALANCE_SHEET, short_investments, PeriodType.INSTANT)
+    add_fact("CF.OPERATING.DEPRECIATION", StatementType.CASH_FLOW, depreciation, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+    add_fact("CF.CAPEX", StatementType.CASH_FLOW, capex, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+    add_fact("CF.OPERATING.NET", StatementType.CASH_FLOW, operating_cash, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+
+    if bvps is None and equity is not None and shares > 0:
+        bvps = equity / shares
+    if eps is None and shares > 0:
+        eps = net_income / shares
+
+    def percent(value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return None
+        return value * Decimal("100") if abs(value) <= Decimal("1") else value
 
     report = ValuationEngine.evaluate(
         symbol=ticker,
         facts=facts,
-        current_market_price=price_dec,
-        shares_outstanding=profile["shares"],
-        diluted_shares_estimate=profile["diluted"],
-        hurdle_rate=profile["discount_rate"],
-        entity_type=profile["entity_type"],
+        current_market_price=current_price,
+        shares_outstanding=shares,
+        diluted_shares_estimate=shares,
+        fiscal_year=fiscal_year,
+        fiscal_quarter=fiscal_quarter,
+        entity_type=entity_type,
+        fundamentals={
+            "sector": sector or "Chưa phân loại",
+            "eps": eps,
+            "bvps": bvps,
+            "pe": pe,
+            "pb": pb,
+            "roe": percent(roe),
+            "dividend_yield": percent(dividend_yield),
+            "source": snapshot.get("provider"),
+            "as_of": fetched_at,
+        },
     )
-    
-    # Convert report dataclass to dict
-    from dataclasses import asdict
-    return {
+    response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
         "report": asdict(report),
+        "data_freshness": {
+            "cache": "BYPASS",
+            "fetched_at": fetched_at,
+            "provider": snapshot.get("provider"),
+            "api_variant": snapshot.get("api_variant"),
+            "symbol_verified": True,
+        },
         "informational_only": True,
-    }
+    }))
+    response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # ---------------------------------------------------------------------------
