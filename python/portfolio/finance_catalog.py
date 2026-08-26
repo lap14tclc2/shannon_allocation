@@ -258,19 +258,22 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
 
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
     if provider == "tcbs":
-        endpoint = {
-            "FINANCIAL_STATEMENTS": "balancesheet",
-            "INCOME_STATEMENT": "incomestatement",
-            "CASH_FLOW": "cashflow",
-        }.get(document_type, "incomestatement")
-        yearly = "1" if period_type == "FY" else "0"
-        url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}?yearly={yearly}&isAll=true"
+        if document_type == "DIVIDEND":
+            url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/dividend-payment-histories?page=0&size=200"
+        else:
+            endpoint = {
+                "FINANCIAL_STATEMENTS": "balancesheet",
+                "INCOME_STATEMENT": "incomestatement",
+                "CASH_FLOW": "cashflow",
+            }.get(document_type, "incomestatement")
+            yearly = "1" if period_type == "FY" else "0"
+            url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}?yearly={yearly}&isAll=true"
         headers = {"Referer": "https://tcinvest.tcbs.com.vn/", "Origin": "https://tcinvest.tcbs.com.vn"}
     else:
         if document_type == "DIVIDEND":
             url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
         else:
-            segment = "IncSta" if document_type in {"INCOME_STATEMENT", "FINANCIAL_STATEMENTS"} else "CashFlow"
+            segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BalSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
             q = quarter or 4
             url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{q}/0/0/bctc.chn"
         headers = {}
