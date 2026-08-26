@@ -95,12 +95,22 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
     let active = true;
     if (!normalized.length) return undefined;
     setLoading(true);
-    getValuationReports(normalized).then(result => {
-      if (!active) return;
-      setReports(result.reports);
-      setErrors(result.errors);
-      setLoading(false);
-    });
+    getValuationReports(normalized)
+      .then(result => {
+        if (!active) return;
+        setReports(result.reports);
+        setErrors(result.errors);
+      })
+      .catch(error => {
+        if (!active) return;
+        setErrors(Object.fromEntries(normalized.map(symbol => [
+          symbol,
+          { code: error?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: error?.message || 'Không thể tải dữ liệu định giá.' },
+        ])));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => { active = false; };
   }, [symbolKey]);
 
