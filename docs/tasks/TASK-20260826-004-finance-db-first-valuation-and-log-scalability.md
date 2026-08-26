@@ -206,7 +206,7 @@ Implemented on branch `dev`:
 - Admin Logs UI renders partial responses safely, warns about failed portfolios, and blocks forward navigation while totals/pages are unknown.
 - Added contract tests under `tests/test_finance_db_contract.py` for DB-only routes, period coherence, bounded log merging and partial-pagination UI behavior.
 
-Remaining validation: implement partial-pagination handling in Admin Logs UI, then run the required integration tests, full Python suite, production Vite build, and admin/non-admin smoke tests.
+Remaining validation: run the required integration tests, full Python suite, production Vite build, and admin/non-admin smoke tests.
 
 ## Result
 
