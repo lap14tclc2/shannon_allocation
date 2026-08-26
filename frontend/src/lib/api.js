@@ -130,6 +130,7 @@ export const getAdminFinanceData = (params = {}) => {
   return getJSON(`/api/admin/finance-data${query.toString() ? `?${query}` : ''}`);
 };
 export const crawlAdminFinanceUniverse = () => sendJSON('/api/admin/finance-data/universe', 'POST', {});
+export const queueAdminFinanceCrawl = (exchange = '') => sendJSON('/api/admin/finance-data/crawl-all', 'POST', exchange ? { exchange } : {});
 export const crawlAdminFinanceData = (symbol) => sendJSON('/api/admin/finance-data/crawl', 'POST', { symbol });
 export const retryAdminFinanceData = (symbol) => sendJSON(`/api/admin/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}/retry`, 'POST', {});
 export const getPortfolioFinanceData = (symbol) => getJSON(`/api/portfolio/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}`);

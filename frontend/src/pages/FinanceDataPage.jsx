@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceData, retryAdminFinanceData } from '../lib/api.js';
+import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceData, queueAdminFinanceCrawl, retryAdminFinanceData } from '../lib/api.js';
 
 const PAGE_SIZE = 50;
 
@@ -59,6 +59,19 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     }
   }
 
+  async function queueCrawl() {
+    setBusySymbol('*');
+    setMessage('');
+    try {
+      const result = await queueAdminFinanceCrawl(exchange);
+      setMessage(result.message || 'Đã xếp hàng crawl dữ liệu.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusySymbol('');
+    }
+  }
+
   async function crawl(symbol, retry = false) {
     setBusySymbol(symbol);
     setMessage('');
@@ -82,9 +95,14 @@ export default function FinanceDataPage({ locale = 'vi' }) {
           <h1>Finance Data</h1>
           <p className="muted">Catalog BCTC dùng chung. User chỉ đọc dữ liệu đã lưu trong database, không tự crawl provider.</p>
         </div>
-        <button className="btn-primary" type="button" disabled={Boolean(busySymbol)} onClick={syncUniverse}>
-          {busySymbol === '*' ? 'Đang cập nhật danh sách…' : 'Cập nhật danh sách mã'}
-        </button>
+        <div className="finance-data-actions">
+          <button className="btn-secondary" type="button" disabled={Boolean(busySymbol)} onClick={syncUniverse}>
+            {busySymbol === '*' ? 'Đang cập nhật danh sách…' : 'Cập nhật danh sách mã'}
+          </button>
+          <button className="btn-primary" type="button" disabled={Boolean(busySymbol) || !total} onClick={queueCrawl}>
+            Xếp hàng crawl {exchange || 'tất cả'}
+          </button>
+        </div>
       </header>
 
       {message && <div className="run-message banner-message" role="status">{message}</div>}

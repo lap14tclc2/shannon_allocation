@@ -70,6 +70,19 @@ def initialize_finance_schema() -> None:
             error TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS crawl_queue (
+            id BIGSERIAL PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            requested_by INTEGER,
+            status TEXT NOT NULL CHECK(status IN ('QUEUED','RUNNING','COMPLETED','FAILED')),
+            requested_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            error TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_queue_active
+            ON crawl_queue(symbol) WHERE status IN ('QUEUED','RUNNING');
+
         CREATE TABLE IF NOT EXISTS documents (
             id BIGSERIAL PRIMARY KEY,
             symbol TEXT NOT NULL,
@@ -169,6 +182,47 @@ def _periods() -> list[tuple[str, int, int | None, str]]:
     return periods
 
 
+
+def ensure_required_documents(symbol: str) -> None:
+    """Create auditable PENDING placeholders for every required period/provider."""
+    symbol = str(symbol).upper().strip()
+    if not symbol:
+        return
+    _ensure()
+    periods = _periods()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        for period_type, year, quarter, period_end in periods:
+            for document_type in REQUIRED_DOCUMENTS:
+                for provider in PROVIDERS:
+                    if provider == "tcbs":
+                        endpoint = {
+                            "FINANCIAL_STATEMENTS": "incomestatement",
+                            "INCOME_STATEMENT": "incomestatement",
+                            "CASH_FLOW": "cashflow",
+                            "DIVIDEND": "dividend-payment-histories",
+                        }[document_type]
+                        url = (
+                            f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}"
+                            if document_type != "DIVIDEND"
+                            else f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/{endpoint}"
+                        )
+                    elif document_type == "DIVIDEND":
+                        url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
+                    else:
+                        segment = "IncSta" if document_type in {"INCOME_STATEMENT", "FINANCIAL_STATEMENTS"} else "CashFlow"
+                        url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/bctc.chn"
+                    db.execute(
+                        """INSERT INTO documents(
+                           symbol, provider, document_type, period_type, fiscal_year,
+                           fiscal_quarter, period_end, status, source_url, fetched_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter)
+                        DO NOTHING""",
+                        (symbol, provider, document_type, period_type, year, quarter,
+                         period_end, "PENDING", url, _now()),
+                    )
+
+
 def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -213,11 +267,32 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         return False
 
 
+def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
+    """Queue all active securities for an external worker; never crawls in request time."""
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
+            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1 AND exchange=?", (exchange.upper(),)).fetchall()
+        else:
+            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1").fetchall()
+        queued = 0
+        for row in rows:
+            result = db.execute(
+                """INSERT INTO crawl_queue(symbol, requested_by, status, requested_at)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT DO NOTHING""",
+                (row["symbol"], requested_by, "QUEUED", _now()),
+            )
+            queued += int(result.rowcount or 0)
+    return {"ok": True, "queued": queued, "message": f"Đã xếp hàng {queued} mã cho external worker."}
+
+
 def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
     _ensure()
     symbol = str(symbol).upper().strip()
     if not symbol:
         return {"ok": False, "code": "INVALID_SYMBOL"}
+    ensure_required_documents(symbol)
     if os.environ.get("VERCEL") and os.environ.get("QPORT_ALLOW_FINANCE_CRAWL") != "1":
         return {"ok": False, "code": "CRAWL_DISABLED_ON_VERCEL", "message": "Finance crawling is disabled on Vercel; run the external worker and sync the database."}
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -279,6 +354,7 @@ def sync_universe() -> dict[str, Any]:
             industry = next((lowered.get(k) for k in ("industry", "industry_name", "icb_name3") if lowered.get(k)), None)
             if symbol:
                 upsert_security(str(symbol), str(exchange), str(name) if name else None, str(industry) if industry else None)
+                ensure_required_documents(str(symbol))
                 count += 1
         return {"ok": count > 0, "count": count, "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã."}
     except Exception as exc:
