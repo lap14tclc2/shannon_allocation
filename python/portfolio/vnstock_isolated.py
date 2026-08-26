@@ -371,6 +371,20 @@ def _wait_seconds(text: str) -> int:
     return 15
 
 
+def vnstock_crawling_enabled() -> bool:
+    """Return whether provider crawling is allowed in this runtime.
+
+    Vercel is database/read-only by default; local or external workers may opt
+    in explicitly with QPORT_VNSTOCK_ENABLED=1.
+    """
+    configured = str(os.environ.get("QPORT_VNSTOCK_ENABLED") or "").strip().lower()
+    if configured in {"0", "false", "no", "off"}:
+        return False
+    if configured in {"1", "true", "yes", "on"}:
+        return True
+    return not bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+
 def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120.0, max_attempts: int = 3) -> dict:
     """Run Vnstock in a crash-isolated, optionally separate Python environment.
 
@@ -379,8 +393,8 @@ def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120
     the QPort web server may remain on another Python runtime while all Vnstock
     calls execute in the known-good data environment.
     """
-    if os.environ.get("VERCEL"):
-        raise VnstockIsolatedError("Live Vnstock crawling is disabled on Vercel; use the external sync worker.")
+    if not vnstock_crawling_enabled():
+        raise VnstockIsolatedError("Live Vnstock crawling is disabled in this runtime; use the external sync worker.")
     last_error = "unknown Vnstock failure"
     for attempt in range(1, max(1, int(max_attempts)) + 1):
         try:
