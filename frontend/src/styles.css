@@ -684,3 +684,22 @@ table {
   .log-filters { grid-template-columns: 1fr; }
   .log-console-caption { font-size: 10px; }
 }
+
+.runtime-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line, #d8ccb7);
+  background: color-mix(in srgb, var(--panel, #fffaf0) 82%, var(--accent, #a63f30));
+  font-size: 13px;
+}
+.runtime-banner span { color: var(--muted, #6c6257); }
+.runtime-readonly { border-left: 4px solid var(--accent, #a63f30); }
+.runtime-worker { border-left: 4px solid #2f7d57; }
+@media (max-width: 760px) {
+  .runtime-banner { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .finance-data-actions { width: 100%; display: grid; grid-template-columns: 1fr; }
+  .finance-data-actions button { width: 100%; }
+}
