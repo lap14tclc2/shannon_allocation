@@ -32,7 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
-from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, get_canonical_dividend_events, latest_documents_for_user, list_securities, sync_universe, valuation_snapshot_from_catalog
+from portfolio.finance_catalog import get_canonical_dividend_events, latest_documents_for_user, list_securities, valuation_snapshot_from_catalog
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
@@ -420,6 +420,7 @@ def admin_finance_data(
 @app.post("/api/admin/finance-data/universe")
 def admin_finance_data_universe(qport_session: str | None = Cookie(default=None)):
     require_admin(qport_session)
+    from portfolio.finance_catalog import sync_universe
     result = sync_universe()
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
@@ -431,6 +432,7 @@ def admin_finance_data_crawl_all(
     qport_session: str | None = Cookie(default=None),
 ):
     admin = require_admin(qport_session)
+    from portfolio.finance_catalog import enqueue_crawl_all
     exchange = str(body.get("exchange") or "").upper().strip() or None
     result = enqueue_crawl_all(int(admin["id"]), exchange)
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
@@ -444,6 +446,7 @@ def admin_finance_data_crawl(
     qport_session: str | None = Cookie(default=None),
 ):
     admin = require_admin(qport_session)
+    from portfolio.finance_catalog import crawl_symbol
     symbol = str(body.get("symbol") or "").upper().strip()
     if not symbol:
         raise ApiError(400, "Provide a symbol for an explicit crawl request.", "SYMBOL_REQUIRED", "symbol")
@@ -459,6 +462,7 @@ def admin_finance_data_retry(
     qport_session: str | None = Cookie(default=None),
 ):
     admin = require_admin(qport_session)
+    from portfolio.finance_catalog import crawl_symbol
     result = crawl_symbol(symbol, int(admin["id"]), retry_failed_only=True)
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
