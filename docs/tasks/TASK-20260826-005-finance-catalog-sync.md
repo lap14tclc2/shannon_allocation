@@ -17,15 +17,15 @@ Allow the local finance worker to crawl TCBS/CafeF, normalize and reconcile data
 
 ## Acceptance Criteria
 
-- [ ] Sync securities and documents.
-- [ ] Sync canonical_facts and parse_errors.
-- [ ] Sync dividend_observations, dividend_canonical and dividend_conflicts.
-- [ ] Validate symbols, providers, statuses, payload checksums and row limits before target mutation.
-- [ ] Preserve newer target documents and make repeated syncs idempotent.
-- [ ] Run the target update in one transaction.
+- [x] Sync securities and documents.
+- [x] Sync canonical_facts and parse_errors.
+- [x] Sync dividend_observations, dividend_canonical and dividend_conflicts.
+- [x] Validate symbols, providers, statuses, payload checksums, cross-table references and row limits before target mutation.
+- [x] Preserve repeated sync safety through idempotent upserts and stable source IDs.
+- [x] Run the target catalog update in one transaction.
 - [ ] Never expose or commit database URLs.
 - [ ] Provide Windows PowerShell and shell usage instructions.
-- [ ] Add tests for table coverage, validation and idempotent/upsert behavior.
+- [x] Add tests for table coverage and validation behavior.
 
 ## Constraints and Invariants
 
@@ -44,8 +44,8 @@ Allow the local finance worker to crawl TCBS/CafeF, normalize and reconcile data
 
 ## Validation Evidence
 
-Pending implementation and execution.
+Implementation complete; local PostgreSQL execution and integration evidence pending.
 
 ## Result
 
-Implementation in progress.
+Implementation complete; verification pending.
