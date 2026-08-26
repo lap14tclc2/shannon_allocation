@@ -32,7 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
-from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, get_canonical_dividend_events, latest_documents_for_user, list_securities, sync_universe
+from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, get_canonical_dividend_events, latest_documents_for_user, list_securities, sync_universe, valuation_snapshot_from_catalog
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
@@ -768,7 +768,7 @@ def portfolio_symbol_valuation(
     symbol: str,
     qport_session: str | None = Cookie(default=None),
 ):
-    """Build a valuation from a fresh, symbol-scoped provider snapshot."""
+    """Build a valuation from validated Finance DB facts only."""
     import re
     from dataclasses import asdict
     from datetime import datetime, timezone
@@ -783,31 +783,24 @@ def portfolio_symbol_valuation(
         QualityStatus,
         StatementType,
     )
-    from portfolio.vnstock_isolated import run_valuation_snapshot, vnstock_crawling_enabled
-
     require_portfolio_user(qport_session)
     ticker = str(symbol or "").upper().strip()
     if not re.fullmatch(r"[A-Z0-9]{3,10}", ticker):
         raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
 
-    # Live crawling is disabled in Vercel Serverless. A separate scheduled worker
-    # will sync provider data into the database before this feature is re-enabled.
-    if not vnstock_crawling_enabled():
-        response = JSONResponse(status_code=503, content={
+    svc = portfolio(current_user(qport_session))
+    latest_row = svc.store.latest_price(ticker)
+    market_price = latest_row.get("close") if latest_row else None
+    snapshot = valuation_snapshot_from_catalog(ticker, market_price)
+    if not snapshot.get("ok"):
+        return JSONResponse(status_code=404, content={
             "ok": False,
-            "code": "VALUATION_CRAWL_DISABLED_ON_VERCEL",
-            "error": "Live valuation crawling is temporarily disabled in this runtime. Sync provider data from the external worker first.",
+            "code": snapshot.get("code", "FINANCE_DATA_INCOMPLETE"),
+            "error": snapshot.get("message", "contact admin"),
             "field": None,
             "symbol": ticker,
+            "missing": snapshot.get("missing", []),
         })
-        response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        return response
-
-    try:
-        snapshot = run_valuation_snapshot(ticker, timeout=240.0, max_attempts=2)
-    except Exception as exc:
-        raise ApiError(503, f"Không thể tải dữ liệu mới nhất cho {ticker}: {exc}", "VALUATION_SOURCE_UNAVAILABLE") from exc
 
     if str(snapshot.get("symbol") or "").upper() != ticker:
         raise ApiError(502, "Provider returned data for a different symbol.", "VALUATION_SYMBOL_MISMATCH")
