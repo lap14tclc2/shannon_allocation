@@ -215,7 +215,7 @@ def ensure_required_documents(symbol: str) -> None:
                 for provider in PROVIDERS:
                     if provider == "tcbs":
                         endpoint = {
-                            "FINANCIAL_STATEMENTS": "incomestatement",
+                            "FINANCIAL_STATEMENTS": "balancesheet",
                             "INCOME_STATEMENT": "incomestatement",
                             "CASH_FLOW": "cashflow",
                             "DIVIDEND": "dividend-payment-histories",
@@ -228,7 +228,7 @@ def ensure_required_documents(symbol: str) -> None:
                     elif document_type == "DIVIDEND":
                         url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
                     else:
-                        segment = "IncSta" if document_type in {"INCOME_STATEMENT", "FINANCIAL_STATEMENTS"} else "CashFlow"
+                        segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BalSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
                         url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/bctc.chn"
                     db.execute(
                         """INSERT INTO documents(
@@ -259,7 +259,7 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
     if provider == "tcbs":
         endpoint = {
-            "FINANCIAL_STATEMENTS": "incomestatement",
+            "FINANCIAL_STATEMENTS": "balancesheet",
             "INCOME_STATEMENT": "incomestatement",
             "CASH_FLOW": "cashflow",
         }.get(document_type, "incomestatement")
