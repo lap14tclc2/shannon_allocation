@@ -682,7 +682,7 @@ def admin_logs(
 @app.get("/api/portfolio/logs")
 def portfolio_logs(qport_session: str | None = Cookie(default=None)):
     # The legacy path is intentionally admin-only; normal users cannot inspect logs.
-    return admin_logs(qport_session)
+    return admin_logs(qport_session=qport_session)
 
 
 @app.get("/api/portfolio/dividends/health")
