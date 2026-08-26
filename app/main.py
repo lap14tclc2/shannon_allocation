@@ -726,24 +726,20 @@ def portfolio_latest_dividend(
             status="SUCCESS",
         )
         return result
-    # Production is DB-first: provider fallback remains an explicit local
-    # cache-aside escape hatch and can be removed when admin ingestion is full.
-    provider_fallback = (
-        os.environ.get("QPORT_DIVIDEND_PROVIDER_FETCH") == "1"
-        and not os.environ.get("VERCEL")
-    )
-    if not provider_fallback:
-        return JSONResponse(status_code=404, content={
-            "found": False,
-            "symbol": ticker,
-            "events": [],
-            "event_count": 0,
-            "data_origin": "DATABASE_CANONICAL",
-            "code": "FINANCE_DATA_MISSING",
-            "error": "contact admin",
-            "source_counts": {},
-            "errors": [],
-        })
+    # Normal user routes are database-only in every runtime. Provider crawling
+    # belongs to the admin/local-worker ingestion path and never runs as a
+    # cache-aside request from a user endpoint.
+    return JSONResponse(status_code=404, content={
+        "found": False,
+        "symbol": ticker,
+        "events": [],
+        "event_count": 0,
+        "data_origin": "DATABASE_CANONICAL",
+        "code": "FINANCE_DATA_MISSING",
+        "error": "contact admin",
+        "source_counts": {},
+        "errors": [],
+    })
     try:
         result = dividends(user).latest(ticker, force_refresh=refresh)
         svc._log(
