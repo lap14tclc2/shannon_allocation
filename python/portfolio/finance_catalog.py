@@ -317,6 +317,7 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
         "INCOME_STATEMENT": (
             ("IS.PROFIT.NET", ("net_profit", "net_profit_after_tax", "profit_after_tax", "net_income")),
             ("IS.PROFIT.OPERATING", ("operating_profit", "profit_from_operation")),
+            ("IS.SHARES.OUTSTANDING", ("outstanding_shares", "outstanding_share", "shares_outstanding", "shares")),
         ),
         "CASH_FLOW": (
             ("CF.OPERATING.DEPRECIATION", ("depreciation", "depreciation_amortization")),
