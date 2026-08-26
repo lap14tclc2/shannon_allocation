@@ -350,9 +350,6 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
       {symbolRows.length === 0 ? <div className="empty-state compact-empty">Chưa đủ lịch sử giá để tạo nhận xét riêng cho từng mã.</div> : <div className="risk-symbol-grid">
         {symbolRows.map(({ symbol, metric }) => {
           const tone = symbolTone(metric);
-          const val = valuations[symbol];
-          const baseDcf = val?.scenarios?.BASE?.intrinsic_value_per_share;
-          const mos = val?.scenarios?.BASE?.margin_of_safety_pct;
           const gap = metric.risk_contribution != null && metric.equity_weight != null
             ? Number(metric.risk_contribution) - Number(metric.equity_weight)
             : null;

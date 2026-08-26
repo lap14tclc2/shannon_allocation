@@ -13,7 +13,7 @@ function money(value, locale) {
 
 function MethodologyGuide() {
   return <section className="valuation-methodology">
-    <div className="valuation-methodology-head"><span className="eyebrow">Phương pháp minh bạch</span><h2>QPort định giá như thế nào?</h2><p>Kết quả là mô hình thông tin, không phải khuyến nghị mua hoặc bán. Mọi đầu vào đều lấy theo từng mã từ Vnstock, sau đó thử CafeF khi nguồn chính lỗi hoặc thiếu trường bắt buộc.</p></div>
+    <div className="valuation-methodology-head"><span className="eyebrow">Phương pháp minh bạch</span><h2>QPort định giá như thế nào?</h2></div>
     <div className="valuation-method-grid">
       <article><b>01 · Chuẩn hóa BCTC</b><p>Lấy lợi nhuận sau thuế, khấu hao, CAPEX, nợ vay, tiền mặt và số cổ phiếu lưu hành của kỳ mới nhất. Không dùng giá trị hard-code.</p></article>
       <article><b>02 · Owner Earnings</b><p><code>Lợi nhuận chủ sở hữu = LNST + Khấu hao − CAPEX duy trì − Thay đổi vốn lưu động</code>. Trường thiếu được thể hiện trong cầu nối số liệu.</p></article>
