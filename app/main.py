@@ -672,6 +672,7 @@ def admin_logs(
         "logs": filtered[start:end],
         "pagination": {"page": page, "page_size": page_size, "total": len(filtered), "pages": max(1, (len(filtered) + page_size - 1) // page_size)},
         "filters": {"category": category or "ALL", "actor_type": actor_type or "ALL", "status": status or "ALL", "q": q or ""},
+        "categories": sorted({str(row.get("category") or "") for row in logs if row.get("category")}),
         "integrity": {"status": "VERIFIED" if integrity_ok else "BROKEN", "records": len(logs)},
     }
 
