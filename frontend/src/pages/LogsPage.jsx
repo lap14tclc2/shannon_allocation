@@ -24,6 +24,26 @@ export default function LogsPage({ activity: initialActivity = {}, locale = 'en'
   const logs = activity.logs || [];
   const pagination = activity.pagination || { page: 1, page_size: PAGE_SIZE, total: logs.length, pages: 1 };
   const integrity = activity.integrity || {};
+  const pageSizeValue = Number(pagination.page_size);
+  const pageValue = Number(pagination.page);
+  const totalValue = Number(pagination.total);
+  const pagesValue = Number(pagination.pages);
+  const pageSize = Number.isFinite(pageSizeValue) && pageSizeValue > 0 ? pageSizeValue : PAGE_SIZE;
+  const currentPage = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : page;
+  const hasKnownTotal = pagination.total !== null && pagination.total !== undefined && Number.isFinite(totalValue) && totalValue >= 0;
+  const hasKnownPages = pagination.pages !== null && pagination.pages !== undefined && Number.isFinite(pagesValue) && pagesValue >= 1;
+  const isPartial = pagination.partial === true || !hasKnownTotal || !hasKnownPages;
+  const failedPortfolios = Array.isArray(pagination.failed_portfolios) ? pagination.failed_portfolios : [];
+  const failedCount = failedPortfolios.length;
+  const unknownLabel = text('Unknown', 'Chưa xác định');
+  const formatCount = value => value === null || value === undefined ? unknownLabel : String(value);
+  const partialMessage = failedCount
+    ? text(`Partial result: ${failedCount} portfolio read(s) failed; totals and forward pagination are unavailable.`, `Kết quả một phần: ${failedCount} portfolio không đọc được; tổng số và phân trang tới chưa xác định.`)
+    : text('Partial result: some portfolio logs could not be read; totals and forward pagination are unavailable.', 'Kết quả một phần: không đọc được log của một số portfolio; tổng số và phân trang tới chưa xác định.');
+  const startRecord = logs.length ? ((currentPage - 1) * pageSize + 1) : 0;
+  const endRecord = logs.length
+    ? (hasKnownTotal ? Math.min(currentPage * pageSize, totalValue) : startRecord + logs.length - 1)
+    : 0;
   const categories = useMemo(() => ['ALL', ...(activity.categories || Array.from(new Set(logs.map(x => x.category).filter(Boolean))).sort())], [activity.categories, logs]);
 
   async function refresh(nextPage = page) {
@@ -64,12 +84,13 @@ export default function LogsPage({ activity: initialActivity = {}, locale = 'en'
     </header>
 
     {error && <div className="banner-message status-missing" role="alert">{error}</div>}
+    {isPartial && <div className="banner-message status-stale" role="status" aria-live="polite">{partialMessage}</div>}
 
     <div className="metric-grid compact-metrics">
       <div className="metric-card"><span>{text('Integrity', 'Toàn vẹn')}</span><b className={integrity.status === 'VERIFIED' ? 'pos' : 'neg'}>{integrity.status || '-'}</b></div>
-      <div className="metric-card"><span>{text('Total records', 'Tổng bản ghi')}</span><b>{integrity.records ?? pagination.total}</b></div>
-      <div className="metric-card"><span>{text('Matching', 'Phù hợp')}</span><b>{pagination.total}</b></div>
-      <div className="metric-card"><span>{text('Page', 'Trang')}</span><b>{pagination.page} / {pagination.pages}</b></div>
+      <div className="metric-card"><span>{text('Total records', 'Tổng bản ghi')}</span><b>{formatCount(integrity.records ?? (hasKnownTotal ? totalValue : null))}</b></div>
+      <div className="metric-card"><span>{text('Matching', 'Phù hợp')}</span><b>{formatCount(hasKnownTotal ? totalValue : null)}</b></div>
+      <div className="metric-card"><span>{text('Page', 'Trang')}</span><b>{currentPage} / {hasKnownPages ? pagesValue : unknownLabel}</b></div>
     </div>
 
     <section className="card log-console">
@@ -101,8 +122,8 @@ export default function LogsPage({ activity: initialActivity = {}, locale = 'en'
       </div>
       {!loading && logs.length === 0 && <div className="empty-state">{text('No logs match the current filters.', 'Không có log phù hợp bộ lọc hiện tại.')}</div>}
       <footer className="pagination-controls log-pagination">
-        <span>{text('Showing', 'Hiển thị')} {logs.length ? ((pagination.page - 1) * pagination.page_size + 1) : 0}–{Math.min(pagination.page * pagination.page_size, pagination.total)} / {pagination.total}</span>
-        <div><button className="btn-secondary" type="button" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>‹ {text('Previous', 'Trước')}</button><button className="btn-secondary" type="button" disabled={loading || page >= pagination.pages} onClick={() => setPage(value => value + 1)}>{text('Next', 'Sau')} ›</button></div>
+        <span>{text('Showing', 'Hiển thị')} {startRecord}–{endRecord} / {hasKnownTotal ? totalValue : unknownLabel}</span>
+        <div><button className="btn-secondary" type="button" disabled={loading || currentPage <= 1} onClick={() => setPage(value => value - 1)}>‹ {text('Previous', 'Trước')}</button><button className="btn-secondary" type="button" disabled={loading || isPartial || !hasKnownPages || currentPage >= pagesValue} onClick={() => setPage(value => value + 1)}>{text('Next', 'Sau')} ›</button></div>
       </footer>
     </section>
   </div>;
