@@ -756,7 +756,7 @@ def portfolio_symbol_valuation(
         QualityStatus,
         StatementType,
     )
-    from portfolio.vnstock_isolated import run_valuation_snapshot
+    from portfolio.vnstock_isolated import run_valuation_snapshot, vnstock_crawling_enabled
 
     require_portfolio_user(qport_session)
     ticker = str(symbol or "").upper().strip()
@@ -765,11 +765,11 @@ def portfolio_symbol_valuation(
 
     # Live crawling is disabled in Vercel Serverless. A separate scheduled worker
     # will sync provider data into the database before this feature is re-enabled.
-    if os.environ.get("VERCEL"):
+    if not vnstock_crawling_enabled():
         response = JSONResponse(status_code=503, content={
             "ok": False,
             "code": "VALUATION_CRAWL_DISABLED_ON_VERCEL",
-            "error": "Live valuation crawling is temporarily disabled on Vercel. Sync provider data from the external worker first.",
+            "error": "Live valuation crawling is temporarily disabled in this runtime. Sync provider data from the external worker first.",
             "field": None,
             "symbol": ticker,
         })
