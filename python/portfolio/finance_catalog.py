@@ -496,9 +496,21 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
             "symbol": ticker,
             "conflicts": conflicts,
         }
-    latest = {}
-    for fact in facts:
-        latest.setdefault(fact["line_item_code"], fact)
+    # All facts in one valuation must describe one compatible reporting
+    # period. Selecting each line-item independently can silently combine,
+    # for example, FY income with a newer quarterly share count.
+    net_candidates = [fact for fact in facts if fact.get("line_item_code") == "IS.PROFIT.NET"]
+    if not net_candidates:
+        return {"ok": False, "code": "FINANCE_DATA_INCOMPLETE", "message": "contact admin", "symbol": ticker, "missing": ["net_income"]}
+    selected_period = (
+        int(net_candidates[0]["fiscal_year"]),
+        net_candidates[0].get("fiscal_quarter"),
+    )
+    latest = {
+        str(fact["line_item_code"]): fact
+        for fact in facts
+        if (int(fact["fiscal_year"]), fact.get("fiscal_quarter")) == selected_period
+    }
     missing = []
     if latest.get("IS.PROFIT.NET") is None:
         missing.append("net_income")
