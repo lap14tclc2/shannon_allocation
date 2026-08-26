@@ -16,11 +16,12 @@ const LINKS = [
   ['/', 'portfolio', 'Tổng quan'],
   ['/transactions', 'transactions', 'Giao dịch'],
   ['/performance', 'performance', 'Hiệu quả'],
+  ['/valuation', 'valuation', 'Định giá'],
   ['/risk', 'risk', 'Phân tích'],
 ];
 
 const NAVIGATION_LINKS = [
-  ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : 'Rủi ro và mức độ tập trung']),
+  ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : 'Rủi ro và mức độ tập trung']),
   ['/dividends', 'dividends', 'Cổ tức', 'Sự kiện và khoản thực nhận'],
   ['/snapshots', 'snapshots', 'Nhật ký NAV', 'Các mốc dữ liệu chính thức'],
   ['/operations', 'operations', 'Vận hành', 'Đồng bộ và chất lượng dữ liệu'],
@@ -53,6 +54,7 @@ function NavIcon({ name, size = 18 }) {
   if (name === 'portfolio') return <svg {...common}><path d="M4 10.5 12 4l8 6.5" /><path d="M6.5 9.5V20h11V9.5" /><path d="M9.5 20v-6h5v6" /></svg>;
   if (name === 'transactions') return <svg {...common}><path d="M7 4v15" /><path d="m3.5 7.5 3.5-3.5 3.5 3.5" /><path d="M17 20V5" /><path d="m13.5 16.5 3.5 3.5 3.5-3.5" /></svg>;
   if (name === 'performance') return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
+  if (name === 'valuation') return <svg {...common}><path d="M5 3h14v18H5z" /><path d="M8 8h8M8 12h5M8 16h8" /></svg>;
   if (name === 'risk') return <svg {...common}><path d="M12 3 19 6v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6Z" /><path d="M9 12h6" /></svg>;
   if (name === 'portfolio-stack') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8M8 13h5" /></svg>;
   if (name === 'chevron') return <svg {...common}><path d="m8 10 4 4 4-4" /></svg>;
