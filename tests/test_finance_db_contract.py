@@ -113,6 +113,17 @@ def test_admin_logs_marks_pagination_unknown_when_later_page_fails(monkeypatch):
     assert result["integrity"]["status"] == "BROKEN"
 
 
+def test_logs_page_handles_partial_pagination_without_misleading_navigation():
+    source = (ROOT / "frontend" / "src" / "pages" / "LogsPage.jsx").read_text(encoding="utf-8")
+    assert "pagination.partial === true" in source
+    assert "failed_portfolios" in source
+    assert "const hasKnownTotal" in source
+    assert "const hasKnownPages" in source
+    assert "const unknownLabel" in source
+    assert "isPartial || !hasKnownPages" in source
+    assert "Math.min(pagination.page * pagination.page_size" not in source
+
+
 def test_dividend_reconciliation_detects_provider_mismatch():
     base = {"dividend_type": "CASH_DIVIDEND", "cash_per_share": 1000}
     assert _same_economics(base, {**base, "cash_per_share": 1000})
