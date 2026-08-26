@@ -406,7 +406,8 @@ def admin_finance_data_universe(qport_session: str | None = Cookie(default=None)
     if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
         raise ApiError(503, result["message"], result["code"])
     return result
-\n@app.post("/api/admin/finance-data/crawl")
+
+@app.post("/api/admin/finance-data/crawl")
 def admin_finance_data_crawl(
     body: dict = Body(default_factory=dict),
     qport_session: str | None = Cookie(default=None),
