@@ -122,6 +122,17 @@ export const listUsers = () => getJSON('/api/auth/users');
 export const removeUser = (userId) => sendJSON(`/api/auth/users/${Number(userId)}`, 'DELETE', {});
 export const changeAdminPassword = (currentPassword, newPassword) => sendJSON('/api/auth/admin/password', 'POST', { current_password: currentPassword, new_password: newPassword });
 export const getAdminUserPortfolio = (userId) => getJSON(`/api/admin/users/${Number(userId)}/portfolio`);
+export const getAdminFinanceData = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.offset != null) query.set('offset', String(params.offset));
+  if (params.limit != null) query.set('limit', String(params.limit));
+  if (params.exchange) query.set('exchange', String(params.exchange));
+  return getJSON(`/api/admin/finance-data${query.toString() ? `?${query}` : ''}`);
+};
+export const crawlAdminFinanceUniverse = () => sendJSON('/api/admin/finance-data/universe', 'POST', {});
+export const crawlAdminFinanceData = (symbol) => sendJSON('/api/admin/finance-data/crawl', 'POST', { symbol });
+export const retryAdminFinanceData = (symbol) => sendJSON(`/api/admin/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}/retry`, 'POST', {});
+export const getPortfolioFinanceData = (symbol) => getJSON(`/api/portfolio/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}`);
 
 // Multi-portfolio registry. The active portfolio is persisted server-side per user,
 // so all existing portfolio endpoints remain safely scoped without client headers.
