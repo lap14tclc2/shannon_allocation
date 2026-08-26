@@ -4,6 +4,7 @@ import { Provider, useDispatch, useSelector } from 'react-redux';
 import AuthPage from './pages/AuthPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import AdminAuthPage from './pages/AdminAuthPage.jsx';
+import FinanceDataPage from './pages/FinanceDataPage.jsx';
 import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
 import PortfoliosPage from './pages/PortfoliosPage.jsx';
@@ -74,6 +75,7 @@ const ROUTES = {
   '/guide': GuidePage,
   '/admin': AdminPage,
   '/admin/auth': AdminAuthPage,
+  '/admin/finance-data': FinanceDataPage,
 };
 
 applyStoredTheme();
@@ -161,7 +163,7 @@ function App() {
       navigate('/login', { replace: true });
       return;
     }
-    const adminPath = pathname === '/admin' || pathname === '/admin/auth' || pathname === '/logs' || /^\/admin\/users\/\d+$/.test(pathname);
+    const adminPath = pathname === '/admin' || pathname === '/admin/auth' || pathname === '/logs' || pathname === '/admin/finance-data' || /^\/admin\/users\/\d+$/.test(pathname);
     if (user.role === 'ADMIN' && !adminPath) {
       navigate('/admin', { replace: true });
       return;
