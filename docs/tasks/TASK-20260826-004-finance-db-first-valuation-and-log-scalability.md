@@ -154,7 +154,7 @@ Completed in the latest implementation pass:
 Remaining before verification:
 
 1. ~~**Fix partial-read pagination correctness.**~~ **Completed.** Later page failures now return `partial: true`, `total/pages: null`, `failed_portfolios`, and `integrity.status: BROKEN`; a regression test covers a second `list_activity_page` failure.
-2. **Handle partial log pagination in the Admin Logs UI.** `LogsPage` must show a clear partial-data warning and failed-portfolio count, render total/pages as unknown when the API returns `null`, avoid numeric math or comparisons with `null`, and disable forward navigation until a complete response is available. Add a frontend contract test for this response shape.
+2. ~~**Handle partial log pagination in the Admin Logs UI.**~~ **Completed.** `LogsPage` now warns on partial data, reports failed-portfolio count, renders unknown total/pages safely, avoids arithmetic/comparisons with `null`, disables forward navigation until a complete response, and has a frontend contract test.
 3. Add integration coverage for parser fixtures, crawl/seed → normalize → reconcile → valuation, missing/incomplete valuation, provider-not-called, duplicate-fetch and query-level pagination.
 4. Run the full Python test suite, production Vite build and admin/non-admin authorization smoke tests.
 5. Review whether a shared activity index or cursor API is needed for very large portfolio counts; the current k-way merge bounds rows per portfolio but still opens one bounded query per portfolio.
@@ -171,7 +171,7 @@ Remaining before verification:
 - [ ] One symbol/provider dividend history is fetched at most once per crawl run.
 - [ ] Conflicting dividend values produce a conflict record and are excluded from automatic canonical consumption (integration evidence pending).
 - [x] `/api/admin/logs` applies SQL filtering and bounded per-portfolio pages, then globally merges only the requested prefix.
-- [ ] Admin Logs UI safely handles partial/unknown pagination without misleading totals or forward navigation.
+- [x] Admin Logs UI safely handles partial/unknown pagination without misleading totals or forward navigation.
 - [x] Non-admin access to logs/admin finance endpoints returns authorization failure.
 - [x] Vercel Finance Data UI disables crawler controls while local/worker allows them.
 - [ ] Backend tests cover normalizer, readiness, valuation DB-only, dividend dedupe/conflict, and log SQL pagination.
@@ -203,10 +203,11 @@ Implemented on branch `dev`:
 - Dividend canonical tables are initialized on read, ingestion is normalized/reconciled, and worker-only crawling/queue endpoints reject Vercel.
 - Finance Data admin API exposes runtime capability; production UI controls remain read-only.
 - Admin logs use SQL predicates and bounded per-portfolio pages with a k-way global merge; no 5,000-row history is loaded per portfolio. Partial reads are explicit and never advertise a fabricated total/pages.
-- Added contract tests under `tests/test_finance_db_contract.py` for DB-only routes, period coherence and bounded log merging.
+- Admin Logs UI renders partial responses safely, warns about failed portfolios, and blocks forward navigation while totals/pages are unknown.
+- Added contract tests under `tests/test_finance_db_contract.py` for DB-only routes, period coherence, bounded log merging and partial-pagination UI behavior.
 
 Remaining validation: implement partial-pagination handling in Admin Logs UI, then run the required integration tests, full Python suite, production Vite build, and admin/non-admin smoke tests.
 
 ## Result
 
-Status: implementation updated; Admin Logs partial-pagination UI and integration validation pending.
+Status: implementation updated; partial log pagination UI is complete; integration validation pending.
