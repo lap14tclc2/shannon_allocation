@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import date, datetime, timedelta, timezone
 
 from .dividends import (
@@ -270,6 +271,7 @@ class SqliteDividendService:
         providers: list[DividendProvider] | None = None,
         *,
         stop_on_first_data: bool | None = None,
+        allow_provider_fetch: bool | None = None,
     ) -> None:
         using_defaults = providers is None
         self.store = store
@@ -281,6 +283,11 @@ class SqliteDividendService:
             False if stop_on_first_data is None else bool(stop_on_first_data)
         )
         self.single_source_runtime = using_defaults
+        # Cache-aside is enabled by default: first request may fetch VPS/CafeF;
+        # later requests read DB. Set QPORT_DIVIDEND_PROVIDER_FETCH=0 for
+        # admin/worker-only operation.
+        env_flag = str(os.environ.get("QPORT_DIVIDEND_PROVIDER_FETCH", "1")).strip().lower()
+        self.allow_provider_fetch = (env_flag not in {"0", "false", "no", "off"}) if allow_provider_fetch is None else bool(allow_provider_fetch)
         ensure_dividend_schema(store)
 
     @property
@@ -290,12 +297,13 @@ class SqliteDividendService:
     def health(self) -> dict:
         return {
             "provider": "sqlite_cached_canonical_dividend",
-            "strategy": "SQLITE_FIRST_PROVIDER_ON_CACHE_MISS",
+            "strategy": "CACHE_ASIDE_PROVIDER_ON_MISS",
             "provider_strategy": self.provider_strategy,
             "provider_order": [p.name for p in self.providers],
             "deduplication": "CANONICAL_EVENT_FAMILY_PLUS_PARSER_ARTIFACT_SUPPRESSION",
             "providers": [p.health() for p in self.providers],
-            "persistence": "SQLITE",
+            "persistence": "POSTGRESQL_SCHEMA_OR_SQLITE",
+            "allow_provider_fetch": self.allow_provider_fetch,
         }
 
     def _validate_symbol(self, symbol: str) -> str:
@@ -541,8 +549,9 @@ class SqliteDividendService:
             "retrieved_at": _now(),
             "cached_at": (state or {}).get("fetched_at"),
             "data_origin": origin,
-            "cache_hit": origin == "SQLITE_CACHE",
-            "persistence": "SQLITE",
+            "cache_hit": origin == "DATABASE_CACHE",
+            "persistence": "POSTGRESQL_SCHEMA_OR_SQLITE",
+            "allow_provider_fetch": self.allow_provider_fetch,
             "read_only": True,
         }
 
@@ -561,8 +570,19 @@ class SqliteDividendService:
         state = self._fetch_state(symbol)
         if state is not None and not force_refresh:
             return self._response(
-                symbol, origin="SQLITE_CACHE", state=state, start=start, end=end,
+                symbol, origin="DATABASE_CACHE", state=state, start=start, end=end,
             )
+
+        if not self.allow_provider_fetch:
+            response = self._response(
+                symbol, origin="DATABASE_MISS", state=state, start=start, end=end,
+            )
+            response.update({
+                "pending_sync": True,
+                "message": "Dữ liệu cổ tức chưa có trong database. Vui lòng contact admin.",
+                "cache_hit": False,
+            })
+            return response
 
         self._fetch_from_providers(symbol, start, end)
         state = self._fetch_state(symbol)
