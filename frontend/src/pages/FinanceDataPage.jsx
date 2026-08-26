@@ -31,6 +31,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [loading, setLoading] = useState(true);
   const [busySymbol, setBusySymbol] = useState('');
   const [message, setMessage] = useState('');
+  const [runtime, setRuntime] = useState({ name: 'unknown', can_crawl: false, read_only: true, message: 'Đang kiểm tra capability…' });
 
   async function refresh() {
     setLoading(true);
@@ -39,6 +40,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
       const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange });
       setItems(result.items || []);
       setTotal(Number(result.total || 0));
+      setRuntime(result.runtime || { name: 'unknown', can_crawl: false, read_only: true, message: 'Crawl chạy bằng Local/Worker; production chỉ đọc database.' });
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -52,6 +54,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
 
   async function syncUniverse() {
+    if (!runtime.can_crawl) { setMessage(runtime.message); return; }
     setBusySymbol('*');
     setMessage('');
     try {
@@ -67,6 +70,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   }
 
   async function queueCrawl() {
+    if (!runtime.can_crawl) { setMessage(runtime.message); return; }
     setBusySymbol('*');
     setMessage('');
     try {
@@ -80,6 +84,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   }
 
   async function crawl(symbol, retry = false) {
+    if (!runtime.can_crawl) { setMessage(runtime.message); return; }
     setBusySymbol(symbol);
     setMessage('');
     try {
@@ -103,16 +108,20 @@ export default function FinanceDataPage({ locale = 'vi' }) {
           <p className="muted">Catalog BCTC dùng chung. User chỉ đọc dữ liệu đã lưu trong database, không tự crawl provider.</p>
         </div>
         <div className="finance-data-actions">
-          <button className="btn-secondary" type="button" disabled={Boolean(busySymbol)} onClick={syncUniverse}>
+          <button className="btn-secondary" type="button" disabled={Boolean(busySymbol) || !runtime.can_crawl} onClick={syncUniverse}>
             {busySymbol === '*' ? 'Đang cập nhật danh sách…' : 'Cập nhật danh sách mã'}
           </button>
-          <button className="btn-primary" type="button" disabled={Boolean(busySymbol) || !total} onClick={queueCrawl}>
+          <button className="btn-primary" type="button" disabled={Boolean(busySymbol) || !total || !runtime.can_crawl} onClick={queueCrawl}>
             Xếp hàng crawl {exchange || 'tất cả'}
           </button>
         </div>
       </header>
 
       {message && <div className="run-message banner-message" role="status">{message}</div>}
+      <div className={`runtime-banner ${runtime.can_crawl ? 'runtime-worker' : 'runtime-readonly'}`} role="note">
+        <strong>{runtime.can_crawl ? 'Local/Worker runtime' : 'Production read-only'}</strong>
+        <span>{runtime.message}</span>
+      </div>
 
       <section className="card finance-data-toolbar">
         <label><span>Sàn</span><select value={exchange} onChange={event => { setPage(0); setExchange(event.target.value); }}><option value="">Tất cả sàn</option><option value="HOSE">HOSE</option><option value="HNX">HNX</option><option value="UPCOM">UPCOM</option></select></label>
@@ -135,12 +144,12 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                     <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => setExpanded(isOpen ? '' : item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
-                    <div className="section-head"><strong>File đã crawl: {item.symbol}</strong><button className="btn-primary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol)}>Crawl lại</button></div>
+                    <div className="section-head"><strong>File đã crawl: {item.symbol}</strong><button className="btn-primary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Crawl lại</button></div>
                     {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
                       const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
                       return <section className="finance-document-group" key={group.key}>
                         <h4>{group.label}</h4>
-                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={doc.status === 'SUCCESS' ? 'status-valid' : 'status-attention'}>{doc.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol)}>Retry</button>}</span></li>)}</ul>}
+                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={doc.status === 'SUCCESS' ? 'status-valid' : 'status-attention'}>{doc.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Retry</button>}</span></li>)}</ul>}
                       </section>;
                     })}
                   </div></td></tr>}
