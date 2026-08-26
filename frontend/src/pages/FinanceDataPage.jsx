@@ -4,6 +4,13 @@ import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceData, 
 
 const PAGE_SIZE = 50;
 
+const DOCUMENT_GROUPS = [
+  { key: 'FINANCIAL_STATEMENTS', label: 'Báo cáo tài chính' },
+  { key: 'INCOME_STATEMENT', label: 'Kết quả kinh doanh' },
+  { key: 'CASH_FLOW', label: 'Lưu chuyển tiền tệ' },
+  { key: 'DIVIDEND', label: 'Cổ tức' },
+];
+
 function documentLabel(type, periodType, year, quarter) {
   const label = {
     FINANCIAL_STATEMENTS: 'Báo cáo tài chính',
@@ -129,7 +136,13 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
                     <div className="section-head"><strong>File đã crawl: {item.symbol}</strong><button className="btn-primary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol)}>Crawl lại</button></div>
-                    {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : <ul>{item.documents.map((doc, index) => <li key={`${doc.provider}-${doc.document_type}-${doc.period_type}-${doc.fiscal_year}-${doc.fiscal_quarter || 'fy'}-${index}`}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={doc.status === 'SUCCESS' ? 'status-valid' : 'status-attention'}>{doc.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol)}>Retry</button>}</span></li>)}</ul>}
+                    {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
+                      const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
+                      return <section className="finance-document-group" key={group.key}>
+                        <h4>{group.label}</h4>
+                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={doc.status === 'SUCCESS' ? 'status-valid' : 'status-attention'}>{doc.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol)}>Retry</button>}</span></li>)}</ul>}
+                      </section>;
+                    })}
                   </div></td></tr>}
                 </React.Fragment>;
               })}
