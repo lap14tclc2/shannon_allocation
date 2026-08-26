@@ -169,6 +169,47 @@ def _periods() -> list[tuple[str, int, int | None, str]]:
     return periods
 
 
+
+def ensure_required_documents(symbol: str) -> None:
+    """Create auditable PENDING placeholders for every required period/provider."""
+    symbol = str(symbol).upper().strip()
+    if not symbol:
+        return
+    _ensure()
+    periods = _periods()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        for period_type, year, quarter, period_end in periods:
+            for document_type in REQUIRED_DOCUMENTS:
+                for provider in PROVIDERS:
+                    if provider == "tcbs":
+                        endpoint = {
+                            "FINANCIAL_STATEMENTS": "incomestatement",
+                            "INCOME_STATEMENT": "incomestatement",
+                            "CASH_FLOW": "cashflow",
+                            "DIVIDEND": "dividend-payment-histories",
+                        }[document_type]
+                        url = (
+                            f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}"
+                            if document_type != "DIVIDEND"
+                            else f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/{endpoint}"
+                        )
+                    elif document_type == "DIVIDEND":
+                        url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
+                    else:
+                        segment = "IncSta" if document_type in {"INCOME_STATEMENT", "FINANCIAL_STATEMENTS"} else "CashFlow"
+                        url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/bctc.chn"
+                    db.execute(
+                        """INSERT INTO documents(
+                           symbol, provider, document_type, period_type, fiscal_year,
+                           fiscal_quarter, period_end, status, source_url, fetched_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter)
+                        DO NOTHING""",
+                        (symbol, provider, document_type, period_type, year, quarter,
+                         period_end, "PENDING", url, _now()),
+                    )
+
+
 def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -218,6 +259,7 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
     symbol = str(symbol).upper().strip()
     if not symbol:
         return {"ok": False, "code": "INVALID_SYMBOL"}
+    ensure_required_documents(symbol)
     if os.environ.get("VERCEL") and os.environ.get("QPORT_ALLOW_FINANCE_CRAWL") != "1":
         return {"ok": False, "code": "CRAWL_DISABLED_ON_VERCEL", "message": "Finance crawling is disabled on Vercel; run the external worker and sync the database."}
     with _schema_connection(FINANCE_SCHEMA) as db:
