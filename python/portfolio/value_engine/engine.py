@@ -47,6 +47,7 @@ class ValuationEngine:
         hurdle_rate: Decimal = Decimal("0.11"),  # 11% Base Discount Rate
         terminal_growth: Decimal = Decimal("0.035"),  # 3.5% GDP-linked growth
         entity_type: EntityType = EntityType.NORMAL_ENTERPRISE,
+        fundamentals: Optional[Dict[str, object]] = None,
     ) -> ValuationReport:
         if diluted_shares_estimate is None or diluted_shares_estimate <= Decimal("0"):
             diluted_shares_estimate = shares_outstanding
@@ -188,150 +189,59 @@ class ValuationEngine:
             val_status = ValuationPill.OVERVALUED
             val_verdict = f"Thị giá đang giao dịch cao hơn giá trị nội tại Base {abs(mos_base):.1f}%. Kỳ vọng tương lai đang đòi hỏi tốc độ tăng trưởng cao hơn mức lịch sử."
 
-        # Moat & Capital Allocation Diagnostic tailored to specific corporate models
-        SYMBOL_DIAGNOSTICS = {
-            "FPT": {
-                "moat_rating": MoatRating.WIDE,
-                "moat_summary": "Hào kinh tế sâu rộng: Chi phí chuyển đổi (Switching Cost) cao trong giải pháp phần mềm/chuyển đổi số toàn cầu và thương hiệu giáo dục công nghệ hàng đầu.",
-                "cap_diag": "Hiệu suất tái đầu tư tuyệt vời: Tỷ suất sinh lời trên vốn đầu tư (ROIC > 22%), chính sách ESOP ổn định (~1-2%/năm) gắn liền hiệu quả nhân sự.",
-                "earn_diag": "Dòng tiền CFO mạnh mẽ: Doanh thu phần mềm nước ngoài thu ngoại tệ tiền tươi, tỷ lệ biến đổi Lợi nhuận ròng sang Tiền mặt (Cash Conversion) > 90%.",
-                "fin_diag": "Pháo đài tiền mặt: Lượng tiền gửi ròng (Net Cash) duy trì hơn 8.000 tỷ VND, khả năng chống chịu lãi suất và biến động vĩ mô tối đa.",
-            },
-            "DGC": {
-                "moat_rating": MoatRating.WIDE,
-                "moat_summary": "Lợi thế chi phí độc quyền: Công nghệ tuyển quặng Apatit độc quyền giúp hạ giá thành Phốt pho vàng (P4) thấp nhất khu vực, hưởng lợi từ chu kỳ bán dẫn toàn cầu.",
-                "cap_diag": "Tập trung thặng dư tiền mặt cho đại dự án Nghi Sơn; dòng tiền tự do (FCF) dồi dào tài trợ vốn tự có không cần vay nợ mạo hiểm.",
-                "earn_diag": "Chất lượng lợi nhuận thuần khiết: Ít nợ xấu, vòng quay tồn kho linh hoạt theo biến động giá hàng hóa hoá chất cơ bản.",
-                "fin_diag": "Không nợ vay: Lượng tiền mặt & tiền gửi chiếm áp đảo (Net Cash ~7.500 tỷ VND), bảng cân đối kế toán cực kỳ nguyên sơ (Pristine Balance Sheet).",
-            },
-            "ACB": {
-                "moat_rating": MoatRating.WIDE,
-                "moat_summary": "Thương hiệu bán lẻ uy tín và khẩu vị rủi ro thận trọng: Chi phí vốn (CASA) ổn định, tệp khách hàng cá nhân & SME trung thành.",
-                "cap_diag": "Chính sách phân bổ lợi nhuận mẫu mực: Duy trì ROE > 20% liên tục nhiều năm, cân bằng hoàn hảo giữa chia cổ tức tiền mặt (10-15%) và cổ tức cổ phiếu để tăng vốn tự có.",
-                "earn_diag": "Chất lượng tài sản hàng đầu ngành ngân hàng: Tỷ lệ nợ xấu (NPL) thuộc nhóm thấp nhất hệ thống (<1.3%), không phụ thuộc vào trái phiếu doanh nghiệp rủi ro cao.",
-                "fin_diag": "Đệm vốn vững chắc: Tỷ lệ an toàn vốn (CAR > 12.5%), tỷ lệ bao phủ nợ xấu dồi dào sẵn sàng hấp thụ mọi cú sốc chu kỳ tín dụng.",
-            },
-            "IDC": {
-                "moat_rating": MoatRating.NARROW,
-                "moat_summary": "Quỹ đất KCN sạch quy mô lớn tại các vị trí chiến lược (Bắc Ninh, Bà Rịa - Vũng Tàu), nhưng biên gộp tương lai chịu áp lực chi phí giải phóng mặt bằng.",
-                "cap_diag": "Cần theo dõi sát chu kỳ CapEx mới (~3.000 tỷ/năm) để phát triển quỹ đất gối đầu, ảnh hưởng trực tiếp đến dòng tiền chia cổ tức.",
-                "earn_diag": "Lưu ý phương pháp hạch toán 1 lần vs phân bổ dần; dòng tiền CFO thực tế phụ thuộc tiến độ bàn giao và thu tiền thuê KCN.",
-                "fin_diag": "Duy trì tỷ suất cổ tức tiền mặt cao (~8-9%/năm), cung cấp tấm đệm bảo vệ danh mục đầu tư giá trị trong dài hạn.",
-            },
-        }
+        # Qualitative and multiples data must come from the current provider
+        # snapshot. Never substitute ticker-specific or generic company values.
+        fundamentals = dict(fundamentals or {})
+        sector = str(fundamentals.get("sector") or "Chưa phân loại")
 
-        sym_data = SYMBOL_DIAGNOSTICS.get(symbol, {
-            "moat_rating": MoatRating.NARROW,
-            "moat_summary": "Lợi thế cạnh tranh dựa trên hiệu ứng quy mô và chi phí chuyển đổi trong ngành cốt lõi.",
-            "cap_diag": "Dòng tiền chủ sở hữu (Owner Earnings) chuyển hóa tốt sang tài sản sinh lời thực tế; không ghi nhận pha loãng đột biến ngoài tầm kiểm soát.",
-            "earn_diag": "Dòng tiền kinh doanh (CFO) đối ứng vững chắc với lợi nhuận kế toán (Net Income), không phụ thuộc vào tích luỹ bất thường.",
-            "fin_diag": "Cấu trúc vốn an toàn: Nợ vay nằm trong tầm kiểm soát an toàn của dòng tiền tự do.",
-        })
+        def metric(name: str) -> Optional[Decimal]:
+            value = fundamentals.get(name)
+            if value is None or value == "":
+                return None
+            try:
+                return Decimal(str(value))
+            except Exception:
+                return None
+
+        eps_val = metric("eps")
+        bvps_val = metric("bvps")
+        pe_val = metric("pe")
+        pb_val = metric("pb")
+        roe_val = metric("roe")
+        dividend_yield_val = metric("dividend_yield")
+        if pe_val is None and eps_val is not None and eps_val > 0:
+            pe_val = current_market_price / eps_val
+        if pb_val is None and bvps_val is not None and bvps_val > 0:
+            pb_val = current_market_price / bvps_val
 
         assessment = ValueInvestingAssessment(
-            moat_rating=sym_data["moat_rating"],
+            moat_rating=MoatRating.NONE,
             valuation_status=val_status,
-            moat_summary=sym_data["moat_summary"],
-            capital_allocation_diagnosis=sym_data["cap_diag"],
-            earnings_quality_diagnosis=sym_data["earn_diag"],
-            financial_resilience_diagnosis=sym_data["fin_diag"],
+            moat_summary="QPort chưa chấm điểm hào kinh tế khi chưa có bộ dữ liệu định tính có nguồn kiểm chứng.",
+            capital_allocation_diagnosis="Đánh giá phân bổ vốn chỉ được mở khi có đủ chuỗi BCTC và dữ liệu cổ tức theo mã.",
+            earnings_quality_diagnosis="Owner Earnings được tính từ các facts mới nhất mà nhà cung cấp trả về; các trường thiếu không được điền bằng giá trị giả.",
+            financial_resilience_diagnosis="Cấu trúc vốn được suy ra từ nợ và tiền mặt trong BCTC mới nhất, kèm trạng thái nguồn dữ liệu.",
             valuation_verdict=val_verdict,
             key_risks_and_invariants=[
+                "Dữ liệu nguồn có thể thiếu hoặc thay đổi; QPort không thay thế bằng profile hard-code.",
                 "Hệ thống chỉ giải thích và giám sát giá trị nội tại; không phát sinh lệnh Mua/Bán.",
-                "Biến động thị giá ngắn hạn không làm thay đổi giá trị nội tại của doanh nghiệp.",
                 "Cần kiểm tra lại định giá mỗi khi doanh nghiệp công bố BCTC quý/năm mới.",
             ],
         )
 
-        # 9. Stock Fundamentals Profile (Industry, Multiples & Market Comparison)
-        PROFILES_META = {
-            "FPT": {
-                "sector": "Công nghệ & Viễn thông",
-                "eps": Decimal("6850"),
-                "bvps": Decimal("24500"),
-                "roe": Decimal("27.8"),
-                "dividend_yield": Decimal("2.8"),  # 2,000 đ tiền mặt / 71,400 đ
-                "market_pe": Decimal("14.5"),
-                "market_pb": Decimal("1.8"),
-                "market_roe": Decimal("13.5"),
-                "sector_pe": Decimal("18.2"),
-                "comparison_note": "P/E thấp hơn 42% so với trung bình ngành công nghệ toàn cầu; ROE (27.8%) vượt trội hơn gấp đôi mức trung bình toàn sàn VN-Index (13.5%).",
-            },
-            "DGC": {
-                "sector": "Hóa chất & Bán dẫn cơ bản",
-                "eps": Decimal("8950"),
-                "bvps": Decimal("38200"),
-                "roe": Decimal("25.4"),
-                "dividend_yield": Decimal("6.4"),  # 2,800 đ tiền mặt / 43,900 đ
-                "market_pe": Decimal("14.5"),
-                "market_pb": Decimal("1.8"),
-                "market_roe": Decimal("13.5"),
-                "sector_pe": Decimal("12.0"),
-                "comparison_note": "P/E 4.9x thuộc vùng đáy lịch sử và thấp hơn 66% so với thị trường; tỷ suất cổ tức tiền mặt 6.4% vượt trội so với lãi suất gửi tiết kiệm.",
-            },
-            "ACB": {
-                "sector": "Ngân hàng Thương mại",
-                "eps": Decimal("3820"),
-                "bvps": Decimal("18600"),
-                "roe": Decimal("21.5"),
-                "dividend_yield": Decimal("4.4"),  # 1,000 đ tiền mặt / 22,500 đ
-                "market_pe": Decimal("14.5"),
-                "market_pb": Decimal("1.8"),
-                "market_roe": Decimal("13.5"),
-                "sector_pe": Decimal("8.5"),
-                "comparison_note": "P/E 5.9x và P/B 1.2x chiết khấu sâu so với hiệu quả sinh lời ROE 21.5% đứng top đầu hệ thống ngân hàng thương mại cổ phần.",
-            },
-            "IDC": {
-                "sector": "Bất động sản Khu công nghiệp",
-                "eps": Decimal("5090"),
-                "bvps": Decimal("21800"),
-                "roe": Decimal("23.8"),
-                "dividend_yield": Decimal("7.8"),  # 3,200 đ tiền mặt / 40,800 đ
-                "market_pe": Decimal("14.5"),
-                "market_pb": Decimal("1.8"),
-                "market_roe": Decimal("13.5"),
-                "sector_pe": Decimal("13.5"),
-                "comparison_note": "P/E 8.0x thấp hơn trung bình ngành BĐS KCN; tỷ suất cổ tức tiền mặt đạt 7.8% cung cấp tấm đệm bảo vệ danh mục an toàn tối đa.",
-            },
-        }
-
-        meta = PROFILES_META.get(symbol, {
-            "sector": "Doanh nghiệp Sản xuất & Dịch vụ",
-            "eps": (base_annual_oe / diluted_shares_estimate) if diluted_shares_estimate > 0 else Decimal("3000"),
-            "bvps": (current_market_price * Decimal("0.6")),
-            "roe": Decimal("18.0"),
-            "dividend_yield": Decimal("4.5"),
-            "market_pe": Decimal("14.5"),
-            "market_pb": Decimal("1.8"),
-            "market_roe": Decimal("13.5"),
-            "sector_pe": Decimal("14.0"),
-            "comparison_note": "Các chỉ số cơ bản phản ánh sức khỏe tài chính lành mạnh so với trung bình toàn thị trường.",
-        })
-
-        eps_val = meta["eps"]
-        bvps_val = meta["bvps"]
-        pe_val = (current_market_price / eps_val) if eps_val > 0 else Decimal("0")
-        pb_val = (current_market_price / bvps_val) if bvps_val > 0 else Decimal("0")
-
         multiples = {
-            "sector": meta["sector"],
-            "pe": float(pe_val),
-            "pb": float(pb_val),
-            "eps": float(eps_val),
-            "bvps": float(bvps_val),
-            "roe": float(meta["roe"]),
-            "dividend_yield": float(meta["dividend_yield"]),
+            "sector": sector,
+            "pe": float(pe_val) if pe_val is not None else None,
+            "pb": float(pb_val) if pb_val is not None else None,
+            "eps": float(eps_val) if eps_val is not None else None,
+            "bvps": float(bvps_val) if bvps_val is not None else None,
+            "roe": float(roe_val) if roe_val is not None else None,
+            "dividend_yield": float(dividend_yield_val) if dividend_yield_val is not None else None,
+            "source": fundamentals.get("source"),
+            "as_of": fundamentals.get("as_of"),
         }
 
-        comparison = {
-            "sector": meta["sector"],
-            "symbol_pe": float(pe_val),
-            "sector_pe": float(meta["sector_pe"]),
-            "market_pe": float(meta["market_pe"]),
-            "symbol_roe": float(meta["roe"]),
-            "market_roe": float(meta["market_roe"]),
-            "comparison_note": meta["comparison_note"],
-        }
+        comparison = None
 
         all_fact_ids = sorted([f.canonical_fact_id for f in facts if f.canonical_fact_id])
         now_utc = datetime.now(timezone.utc).isoformat()
@@ -363,3 +273,5 @@ class ValuationEngine:
             engine_version=cls.ENGINE_VERSION,
             computed_at=now_utc,
         )
+
+
