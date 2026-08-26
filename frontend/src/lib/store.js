@@ -81,6 +81,8 @@ async function fetchRoutePayload(pathname) {
       ]);
       return { risk, snapshots };
     }
+    case '/valuation':
+      return { symbols: await getPortfolioHoldingSymbols() };
     case '/dividends':
       return { symbols: await getPortfolioHoldingSymbols() };
     case '/snapshots':
