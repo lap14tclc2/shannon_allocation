@@ -32,6 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
+from portfolio.finance_catalog import crawl_symbol, get_symbol_documents, latest_documents_for_user, list_securities
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
@@ -385,6 +386,56 @@ def auth_change_admin_password(
     response = JSONResponse(status_code=200, content=result)
     _clear_session_cookie(response)
     return response
+
+
+@app.get("/api/admin/finance-data")
+def admin_finance_data(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    exchange: str | None = Query(default=None),
+    qport_session: str | None = Cookie(default=None),
+):
+    require_admin(qport_session)
+    return {"ok": True, **list_securities(offset, limit, exchange)}
+
+
+@app.post("/api/admin/finance-data/crawl")
+def admin_finance_data_crawl(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    admin = require_admin(qport_session)
+    symbol = str(body.get("symbol") or "").upper().strip()
+    if not symbol:
+        raise ApiError(400, "Provide a symbol for an explicit crawl request.", "SYMBOL_REQUIRED", "symbol")
+    result = crawl_symbol(symbol, int(admin["id"]))
+    if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
+        raise ApiError(503, result["message"], result["code"])
+    return result
+
+
+@app.post("/api/admin/finance-data/{symbol}/retry")
+def admin_finance_data_retry(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    admin = require_admin(qport_session)
+    result = crawl_symbol(symbol, int(admin["id"]), retry_failed_only=True)
+    if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
+        raise ApiError(503, result["message"], result["code"])
+    return result
+
+
+@app.get("/api/portfolio/finance-data/{symbol}")
+def portfolio_finance_data(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    require_portfolio_user(qport_session)
+    result = latest_documents_for_user(symbol)
+    if not result.get("ok"):
+        raise ApiError(404, result["message"], result["code"], "symbol")
+    return result
 
 
 # ---------------------------------------------------------------------------
