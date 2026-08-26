@@ -442,7 +442,7 @@ def admin_finance_data_crawl(
     if not symbol:
         raise ApiError(400, "Provide a symbol for an explicit crawl request.", "SYMBOL_REQUIRED", "symbol")
     result = crawl_symbol(symbol, int(admin["id"]))
-    if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
+    if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
     return result
 
