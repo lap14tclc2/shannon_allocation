@@ -321,6 +321,7 @@ def sync_universe() -> dict[str, Any]:
             industry = next((lowered.get(k) for k in ("industry", "industry_name", "icb_name3") if lowered.get(k)), None)
             if symbol:
                 upsert_security(str(symbol), str(exchange), str(name) if name else None, str(industry) if industry else None)
+                ensure_required_documents(str(symbol))
                 count += 1
         return {"ok": count > 0, "count": count, "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã."}
     except Exception as exc:
