@@ -598,6 +598,10 @@ def latest_documents_for_user(symbol: str) -> dict[str, Any]:
 
 def get_canonical_dividend_events(symbol: str) -> list[dict[str, Any]]:
     _ensure()
+    # Reconciliation owns the canonical/conflict tables. Ensure they exist
+    # before a read so a fresh deployment returns an empty catalog, not a 500.
+    from .dividend_reconciliation import ensure_reconciliation_schema
+    ensure_reconciliation_schema()
     ticker = str(symbol).upper().strip()
     with _schema_connection(FINANCE_SCHEMA) as db:
         rows = db.execute(
