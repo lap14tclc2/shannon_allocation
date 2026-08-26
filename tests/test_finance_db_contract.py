@@ -56,10 +56,32 @@ def test_log_pagination_uses_sql_limit_offset_before_materialization():
     assert "ORDER BY occurred_at DESC, id DESC" in page_source
     assert "LIMIT ? OFFSET ?" in page_source
 
+
+def test_global_admin_log_merge_does_not_use_load_all_or_5000_rows():
+    source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    route_source = source[source.index("@app.get(\"/api/admin/logs\")"):source.index("@app.get(\"/api/portfolio/logs\")")]
+    assert "list_activity(..., limit=5000)" not in route_source
+    assert "page_size=page_size" in route_source
+    assert "selected_rows" in route_source
+
 def test_dividend_reconciliation_detects_provider_mismatch():
     base = {"dividend_type": "CASH_DIVIDEND", "cash_per_share": 1000}
     assert _same_economics(base, {**base, "cash_per_share": 1000})
     assert not _same_economics(base, {**base, "cash_per_share": 1200})
+
+
+def test_valuation_requires_a_coherent_reporting_period():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+    valuation = source[source.index("def valuation_snapshot_from_catalog"):source.index("def _save_document")]
+    assert "selected_period" in valuation
+    assert "fiscal_quarter" in valuation
+
+
+def test_user_dividend_route_is_database_only():
+    source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    route = source[source.index("@app.get(\"/api/portfolio/dividends/latest/{symbol}\")"):source.index("@app.get(\"/api/portfolio/valuation/{symbol}\")")]
+    assert "dividends(user).latest" not in route
+    assert "DATABASE_CANONICAL" in route
 
 
 def test_dividend_history_is_one_endpoint_per_provider_run():
