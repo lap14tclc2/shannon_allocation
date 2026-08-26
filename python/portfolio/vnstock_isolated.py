@@ -354,7 +354,7 @@ def _run_once(task: str, payload: dict[str, Any], *, timeout: float) -> dict:
         direct_result = _execute_task(task, payload)
         direct_result.setdefault("worker_python", sys.executable)
         return direct_result
-    except Exception as exc:
+    except BaseException as exc:
         raise VnstockIsolatedError(f"Vnstock {task} in-process failed: {exc}") from exc
 
 
@@ -383,7 +383,7 @@ def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120
     for attempt in range(1, max(1, int(max_attempts)) + 1):
         try:
             return _run_once(task, dict(payload), timeout=timeout)
-        except Exception as exc:
+        except BaseException as exc:
             last_error = str(exc)
         if attempt < max_attempts:
             time.sleep(_wait_seconds(last_error) if _is_rate_limit(last_error) else min(10, 2 * attempt))
@@ -408,7 +408,7 @@ def run_valuation_snapshot(symbol: str, *, timeout: float = 120.0, max_attempts:
         if has_profit and has_shares:
             return snapshot
         vnstock_error = "Vnstock snapshot is missing net income or outstanding shares"
-    except Exception as exc:
+    except BaseException as exc:
         vnstock_error = str(exc)
 
     from portfolio.cafef_financials import cafef_valuation_snapshot
@@ -465,4 +465,3 @@ def vnstock_available() -> bool:
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         raise SystemExit(_worker_main())
-
