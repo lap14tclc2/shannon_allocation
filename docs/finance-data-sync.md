@@ -48,3 +48,23 @@ The script synchronizes the complete finance catalog required by Vercel reads:
 The source database is read and validated first. The target database is changed only inside one transaction. A failed validation stops before any target mutation.
 
 After sync, Vercel does not need a provider request or a second crawl. Its valuation route reads `canonical_facts`, and its dividend route reads only non-conflicted canonical dividend events.
+
+
+## Local universe-sync progress logs
+
+The universe endpoint continues to use Vnstock for the symbol list. Run it from
+the local worker with `QPORT_FINANCE_RUNTIME=local`. The terminal now prints
+`[finance-universe]` messages for runtime validation, Vnstock loading, the
+listing method call, received row count, persistence checkpoints, completion,
+and errors. While Vnstock is waiting on its listing request, a heartbeat is
+printed every 10 seconds, for example:
+
+    [finance-universe] calling Listing.all_symbols()
+    [finance-universe] Listing.all_symbols() still running (10s)
+    [finance-universe] received 3900 symbol rows via Listing.all_symbols
+    [finance-universe] persisted 390/3900 symbols (latest=AAA)
+    [finance-universe] completed count=3900 elapsed=...
+
+These logs are flushed immediately and do not include database URLs, tokens, or
+provider credentials. Finance document crawling remains separate and uses
+TCBS/CafeF.
