@@ -586,6 +586,20 @@ def portfolio_symbol_valuation(
     if not re.fullmatch(r"[A-Z0-9]{3,10}", ticker):
         raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
 
+    # Live crawling is disabled in Vercel Serverless. A separate scheduled worker
+    # will sync provider data into the database before this feature is re-enabled.
+    if os.environ.get("VERCEL"):
+        response = JSONResponse(status_code=503, content={
+            "ok": False,
+            "code": "VALUATION_CRAWL_DISABLED_ON_VERCEL",
+            "error": "Live valuation crawling is temporarily disabled on Vercel. Sync provider data from the external worker first.",
+            "field": None,
+            "symbol": ticker,
+        })
+        response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
     try:
         snapshot = run_valuation_snapshot(ticker, timeout=240.0, max_attempts=2)
     except Exception as exc:
