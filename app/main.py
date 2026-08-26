@@ -429,7 +429,10 @@ def admin_finance_data_crawl_all(
 ):
     admin = require_admin(qport_session)
     exchange = str(body.get("exchange") or "").upper().strip() or None
-    return enqueue_crawl_all(int(admin["id"]), exchange)
+    result = enqueue_crawl_all(int(admin["id"]), exchange)
+    if result.get("code") == "CRAWL_RUNTIME_INVALID":
+        raise ApiError(503, result["message"], result["code"])
+    return result
 
 
 @app.post("/api/admin/finance-data/crawl")
