@@ -33,6 +33,9 @@ def ensure_activity_schema(store) -> None:
             CREATE INDEX IF NOT EXISTS idx_activity_log_occurred_at ON activity_log(occurred_at DESC);
             CREATE INDEX IF NOT EXISTS idx_activity_log_category ON activity_log(category, occurred_at DESC);
             CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action, occurred_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_activity_log_actor ON activity_log(actor_type, actor_id, occurred_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_activity_log_status ON activity_log(status, occurred_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_activity_log_category_status ON activity_log(category, status, occurred_at DESC);
             """
         )
 
