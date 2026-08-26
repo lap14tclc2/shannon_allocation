@@ -24,7 +24,7 @@ export default function LogsPage({ activity: initialActivity = {}, locale = 'en'
   const logs = activity.logs || [];
   const pagination = activity.pagination || { page: 1, page_size: PAGE_SIZE, total: logs.length, pages: 1 };
   const integrity = activity.integrity || {};
-  const categories = useMemo(() => ['ALL', ...Array.from(new Set(logs.map(x => x.category).filter(Boolean))).sort()], [logs]);
+  const categories = useMemo(() => ['ALL', ...(activity.categories || Array.from(new Set(logs.map(x => x.category).filter(Boolean))).sort())], [activity.categories, logs]);
 
   async function refresh(nextPage = page) {
     setLoading(true);
