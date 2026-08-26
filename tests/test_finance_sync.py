@@ -73,3 +73,16 @@ def test_validate_rows_accepts_complete_minimal_catalog():
     data["parse_errors"] = []
     data["dividend_conflicts"] = []
     finance_sync.validate_rows(data)
+
+
+def test_universe_sync_progress_log_contract():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(
+        encoding="utf-8"
+    )
+    assert "provider=vnstock" in source
+    assert "calling Listing." in source
+    assert "still running" in source
+    assert "received {len(rows)} symbol rows" in source
+    assert "persisted {count}/{len(rows)} symbols" in source
+    assert "completed count={count}" in source
+    assert "flush=True" in source
