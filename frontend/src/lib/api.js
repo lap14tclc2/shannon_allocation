@@ -203,7 +203,7 @@ export const getDividendHistory = (symbol, options = {}) => {
 
 export const getValuationReport = (symbol) => {
   const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
-  return getJSON(`/api/portfolio/valuation/${ticker}?fresh=${Date.now()}`);
+  return getJSON(`/api/portfolio/valuation/${ticker}`);
 };
 
 export async function getValuationReports(symbols) {
