@@ -31,6 +31,20 @@ On PowerShell:
     python scripts/finance_sync.py --dry-run
     python scripts/finance_sync.py
 
-The sync validates that the source schema exists, symbols are known, providers/statuses are allowed, successful rows contain payloads, and payload checksums match. It then performs an idempotent transaction and never replaces a newer target document with an older source document.
+The sync copies securities, crawl metadata, raw documents, canonical facts, parse errors, dividend observations, canonical dividend events, and conflict records. It validates the source schema, symbols, providers/statuses, cross-table references, successful payloads, and checksums before opening the target transaction. Repeated runs are idempotent and never replace a newer target row with an older source document.
 
 Never expose either database URL to browser code or commit them to Git.
+
+
+## What is synchronized
+
+The script synchronizes the complete finance catalog required by Vercel reads:
+
+- `securities` and crawl metadata;
+- raw `documents`;
+- `canonical_facts` and `parse_errors`;
+- `dividend_observations`, `dividend_canonical`, and `dividend_conflicts`.
+
+The source database is read and validated first. The target database is changed only inside one transaction. A failed validation stops before any target mutation.
+
+After sync, Vercel does not need a provider request or a second crawl. Its valuation route reads `canonical_facts`, and its dividend route reads only non-conflicted canonical dividend events.
