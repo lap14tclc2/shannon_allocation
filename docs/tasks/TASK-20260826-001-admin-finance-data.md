@@ -1,7 +1,7 @@
 ---
 id: TASK-20260826-001
 title: Admin finance data catalog and database-first financial statements
-status: ready
+status: in-progress
 priority: high
 created: 2026-08-26
 updated: 2026-08-26
