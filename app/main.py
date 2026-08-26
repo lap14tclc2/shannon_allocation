@@ -4,6 +4,8 @@ import hmac
 import json
 import os
 import sys
+import time
+import uuid
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -62,7 +64,7 @@ class ApiError(Exception):
 
 @app.middleware("http")
 async def bind_portfolio_scope(request: Request, call_next):
-    """Pin every request to one owned portfolio, even across concurrent browser tabs."""
+    """Bind portfolio scope and emit portable structured request telemetry."""
     raw = str(request.headers.get("X-QPort-Portfolio-Id") or "").strip()
     requested = None
     if raw:
@@ -79,9 +81,36 @@ async def bind_portfolio_scope(request: Request, call_next):
                     "field": "portfolio_id",
                 },
             )
+    request_id = (
+        str(request.headers.get("X-Request-ID") or "").strip()[:128]
+        or str(request.headers.get("X-Vercel-ID") or "").strip()[:128]
+        or uuid.uuid4().hex
+    )
+    started = time.perf_counter()
+    print(json.dumps({
+        "level": "info", "event": "request.started", "request_id": request_id,
+        "method": request.method, "path": request.url.path,
+        "environment": "vercel" if os.environ.get("VERCEL") else "local",
+    }, ensure_ascii=False), flush=True)
     token = _requested_portfolio_id.set(requested)
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        response.headers["X-Request-ID"] = request_id
+        print(json.dumps({
+            "level": "info", "event": "request.completed", "request_id": request_id,
+            "method": request.method, "path": request.url.path,
+            "status_code": response.status_code, "duration_ms": duration_ms,
+        }, ensure_ascii=False), flush=True)
+        return response
+    except Exception as exc:
+        print(json.dumps({
+            "level": "error", "event": "request.failed", "request_id": request_id,
+            "method": request.method, "path": request.url.path,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            "error_type": type(exc).__name__, "error": str(exc)[:500],
+        }, ensure_ascii=False), flush=True)
+        raise
     finally:
         _requested_portfolio_id.reset(token)
 
@@ -501,9 +530,61 @@ def portfolio_operations(qport_session: str | None = Cookie(default=None)):
     return portfolio(require_portfolio_user(qport_session)).institutional_overview()
 
 
+@app.get("/api/admin/logs")
+def admin_logs(qport_session: str | None = Cookie(default=None)):
+    """Return a cross-portfolio audit view; admin authorization is mandatory."""
+    require_admin(qport_session)
+    from portfolio.activity import list_activity, verify_activity_chain
+
+    logs: list[dict] = []
+    integrity_ok = True
+    for user in auth().list_users():
+        if user.get("role") == "ADMIN":
+            continue
+        for selected in auth().list_portfolios(int(user["id"])):
+            try:
+                store = PostgresPortfolioStore(int(user["id"]), selected["schema_name"])
+                chain = verify_activity_chain(store)
+                integrity_ok = integrity_ok and chain.get("status") == "VERIFIED"
+                for row in list_activity(store, limit=5000):
+                    logs.append({
+                        **row,
+                        "user_id": int(user["id"]),
+                        "username": user["username"],
+                        "portfolio_id": int(selected["id"]),
+                        "portfolio_name": selected["name"],
+                    })
+            except Exception as exc:
+                integrity_ok = False
+                logs.append({
+                    "id": None,
+                    "occurred_at": None,
+                    "actor_type": "SYSTEM",
+                    "actor_id": "qport",
+                    "category": "SYSTEM",
+                    "action": "LOG_READ_FAILED",
+                    "entity_type": "PORTFOLIO",
+                    "entity_id": str(selected.get("id")),
+                    "status": "FAILURE",
+                    "summary": f"Không thể đọc log của portfolio {selected.get('name')}.",
+                    "details": {"error_type": type(exc).__name__, "error": str(exc)[:500]},
+                    "source": "QPORT",
+                    "user_id": int(user["id"]),
+                    "username": user["username"],
+                    "portfolio_id": int(selected["id"]),
+                    "portfolio_name": selected["name"],
+                })
+    logs.sort(key=lambda row: str(row.get("occurred_at") or ""), reverse=True)
+    return {
+        "logs": logs[:5000],
+        "integrity": {"status": "VERIFIED" if integrity_ok else "BROKEN", "records": len(logs)},
+    }
+
+
 @app.get("/api/portfolio/logs")
 def portfolio_logs(qport_session: str | None = Cookie(default=None)):
-    return portfolio(require_portfolio_user(qport_session)).activity_log(limit=1000)
+    # The legacy path is intentionally admin-only; normal users cannot inspect logs.
+    return admin_logs(qport_session)
 
 
 @app.get("/api/portfolio/dividends/health")
