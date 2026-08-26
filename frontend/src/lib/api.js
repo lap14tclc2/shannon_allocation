@@ -190,21 +190,23 @@ export const getValuationReport = (symbol) => {
 
 export async function getValuationReports(symbols) {
   const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
-  const results = {};
+  const reports = {};
+  const errors = {};
   let cursor = 0;
   async function worker() {
     while (cursor < unique.length) {
       const symbol = unique[cursor++];
       try {
         const res = await getValuationReport(symbol);
-        if (res?.ok && res.report) results[symbol] = res.report;
-      } catch {
-        // Missing provider data remains visibly absent; never reuse another ticker.
+        if (res?.ok && res.report) reports[symbol] = res.report;
+        else errors[symbol] = { code: res?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: res?.error || 'Nguồn dữ liệu không trả về báo cáo.' };
+      } catch (error) {
+        errors[symbol] = { code: error?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: error?.message || 'Không thể tải dữ liệu định giá.' };
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(2, unique.length) }, () => worker()));
-  return results;
+  return { reports, errors };
 }
 
 export async function getDividendHistories(symbols, options = {}) {
