@@ -32,7 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
-from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, latest_documents_for_user, list_securities, sync_universe
+from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, get_canonical_dividend_events, latest_documents_for_user, list_securities, sync_universe
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
@@ -697,6 +697,33 @@ def portfolio_latest_dividend(
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     ticker = str(symbol or "").upper().strip()
+    canonical_events = get_canonical_dividend_events(ticker)
+    if canonical_events:
+        events = []
+        for event in canonical_events:
+            events.append({
+                **event,
+                "source": "qport_finance_canonical",
+                "cross_source_match": event.get("quality_status") == "VERIFIED",
+            })
+        result = {
+            "found": True,
+            "symbol": ticker,
+            "events": events,
+            "event_count": len(events),
+            "latest": events[0] if events else None,
+            "data_origin": "DATABASE_CANONICAL",
+            "source_counts": {"qport_finance": len(events)},
+            "errors": [],
+        }
+        svc._log(
+            "USER", user["username"], "CORPORATE_ACTION", "DIVIDEND_HISTORY_LOOKUP",
+            f"Loaded canonical dividend history for {ticker}.",
+            entity_type="SECURITY", entity_id=ticker,
+            details={"event_count": len(events), "data_origin": "DATABASE_CANONICAL"},
+            status="SUCCESS",
+        )
+        return result
     try:
         result = dividends(user).latest(ticker, force_refresh=refresh)
         svc._log(
