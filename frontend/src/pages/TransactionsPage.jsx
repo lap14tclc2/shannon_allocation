@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import QuickImportPanel from '../components/QuickImportPanel.jsx';
@@ -70,7 +70,14 @@ export default function TransactionsPage({ transactions: initialTransactions = [
   const dispatch = useDispatch();
   const money = value => value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
   const shares = value => formatShares(value, locale);
-  const [transactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState(initialTransactions);
+
+  // Route data is reloaded after every ledger mutation. Keep the local working
+  // set in sync so imported/corrected events appear without a hard refresh.
+  useEffect(() => {
+    setTransactions(Array.isArray(initialTransactions) ? initialTransactions : []);
+  }, [initialTransactions]);
+
   const holdingBooks = useMemo(() => deriveHoldingBooks(transactions), [transactions]);
   const intent = useMemo(() => tradeIntentFromLocation(), []);
   const intentBook = useMemo(() => intent.locked
