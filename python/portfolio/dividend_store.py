@@ -549,7 +549,7 @@ class SqliteDividendService:
             "retrieved_at": _now(),
             "cached_at": (state or {}).get("fetched_at"),
             "data_origin": origin,
-            "cache_hit": origin == "DATABASE_CACHE",
+            "cache_hit": origin == "SQLITE_CACHE",
             "persistence": "POSTGRESQL_SCHEMA_OR_SQLITE",
             "allow_provider_fetch": self.allow_provider_fetch,
             "read_only": True,
@@ -570,7 +570,7 @@ class SqliteDividendService:
         state = self._fetch_state(symbol)
         if state is not None and not force_refresh:
             return self._response(
-                symbol, origin="DATABASE_CACHE", state=state, start=start, end=end,
+                symbol, origin="SQLITE_CACHE", state=state, start=start, end=end,
             )
 
         if not self.allow_provider_fetch:
