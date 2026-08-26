@@ -1,7 +1,7 @@
 ---
 id: TASK-20260826-004
 title: Finance DB-first valuation, dividend reconciliation, and scalable admin logs
-status: ready
+status: in_progress
 priority: P0
 created: 2026-08-26
 updated: 2026-08-26
@@ -175,6 +175,19 @@ Finance Data UI should state the current runtime capability. On Vercel, crawl/un
 - The current branch correctly excludes incomplete FY and quarterly dividend placeholders.
 - This task intentionally does not merge `dev` into `main`; merge only after validation is green.
 
+## Implementation Notes
+
+Implemented on branch `dev`:
+
+- Valuation now reads canonical Finance DB facts and the portfolio's stored market price only; provider crawling is absent from the user route.
+- Canonical facts accept TCBS/CafeF label/value payloads, record parse failures, expose reporting-period metadata, and reject material cross-provider conflicts.
+- Dividend canonical tables are initialized on read, ingestion is normalized/reconciled, production fallback crawling is disabled, and worker-only crawling/queue endpoints reject Vercel.
+- Finance Data admin API now exposes runtime capability; the UI disables crawl/retry/universe controls in read-only production and explains Local/Worker operation.
+- Admin logs use SQL predicates, count, stable ordering, LIMIT/OFFSET, and filter indexes.
+- Added provider/network-independent contract tests under `tests/test_finance_db_contract.py`.
+
+Validation still required in the target environment: run the Python test suite and production Vite build, then perform the admin/non-admin smoke tests.
+
 ## Result
 
-Status: ready for implementation by an AI coding agent.
+Status: implementation complete, validation pending.
