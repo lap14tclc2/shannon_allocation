@@ -64,6 +64,55 @@ def test_global_admin_log_merge_does_not_use_load_all_or_5000_rows():
     assert "page_size=page_size" in route_source
     assert "selected_rows" in route_source
 
+def test_admin_logs_marks_pagination_unknown_when_later_page_fails(monkeypatch):
+    import app.main as main
+
+    class FakeAuth:
+        def list_users(self):
+            return [{"id": 1, "username": "user", "role": "USER"}]
+
+        def list_portfolios(self, user_id):
+            return [{"id": 10, "schema_name": "qport_user_1_p10", "name": "Default"}]
+
+    calls = []
+
+    def fake_list_activity_page(store, *, page, page_size, category, actor_type, status, q):
+        calls.append(page)
+        if page == 1:
+            return [
+                {"occurred_at": "2026-08-26T10:00:00+00:00", "id": 2},
+                {"occurred_at": "2026-08-26T09:00:00+00:00", "id": 1},
+            ], 2
+        raise RuntimeError("schema read failed")
+
+    monkeypatch.setattr(main, "auth", lambda: FakeAuth())
+    monkeypatch.setattr(main, "require_admin", lambda token: {"id": 99, "role": "ADMIN"})
+    monkeypatch.setattr(main, "PostgresPortfolioStore", lambda user_id, schema: object())
+    monkeypatch.setattr("portfolio.activity.list_activity_page", fake_list_activity_page)
+
+    result = main.admin_logs(
+        page=2,
+        page_size=1,
+        category=None,
+        actor_type=None,
+        status=None,
+        q=None,
+        qport_session="admin-session",
+    )
+
+    assert calls == [1, 2]
+    assert result["pagination"]["partial"] is True
+    assert result["pagination"]["total"] is None
+    assert result["pagination"]["pages"] is None
+    assert result["pagination"]["failed_portfolios"] == [{
+        "user_id": 1,
+        "username": "user",
+        "portfolio_id": 10,
+        "portfolio_name": "Default",
+    }]
+    assert result["integrity"]["status"] == "BROKEN"
+
+
 def test_dividend_reconciliation_detects_provider_mismatch():
     base = {"dividend_type": "CASH_DIVIDEND", "cash_per_share": 1000}
     assert _same_economics(base, {**base, "cash_per_share": 1000})
