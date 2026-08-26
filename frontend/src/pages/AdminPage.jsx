@@ -119,6 +119,13 @@ export default function AdminPage({ locale = 'vi' }) {
           </div>
         </section>
 
+        <section className="card admin-logs-card">
+          <div className="eyebrow">Theo dõi hệ thống</div>
+          <h2>System Logs</h2>
+          <p className="muted">Xem request, lỗi runtime và audit log của tất cả user/portfolio.</p>
+          <a className="btn-primary" href="/logs">Mở trang Logs</a>
+        </section>
+
         <section className="card admin-password-card">
           <div className="eyebrow">Bảo mật admin</div>
           <h2>Đổi password admin</h2>
