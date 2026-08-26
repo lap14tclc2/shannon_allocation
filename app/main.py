@@ -609,71 +609,48 @@ def admin_logs(
     q: str | None = Query(default=None),
     qport_session: str | None = Cookie(default=None),
 ):
-    """Return a cross-portfolio audit view; admin authorization is mandatory."""
+    """Admin-only bounded log query; predicates and limits are applied per schema."""
     require_admin(qport_session)
-    from portfolio.activity import list_activity, verify_activity_chain
+    from portfolio.activity import list_activity_page
 
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 200))
+    # Fetch only enough rows from each portfolio to produce the requested
+    # globally sorted page. This avoids the former 5,000-row-per-portfolio load.
+    fetch_limit = min(2000, page * page_size)
     logs: list[dict] = []
-    integrity_ok = True
+    total = 0
+    failed_reads = 0
     for user in auth().list_users():
         if user.get("role") == "ADMIN":
             continue
         for selected in auth().list_portfolios(int(user["id"])):
             try:
                 store = PostgresPortfolioStore(int(user["id"]), selected["schema_name"])
-                chain = verify_activity_chain(store)
-                integrity_ok = integrity_ok and chain.get("status") == "VERIFIED"
-                for row in list_activity(store, limit=5000):
-                    logs.append({
-                        **row,
-                        "user_id": int(user["id"]),
-                        "username": user["username"],
-                        "portfolio_id": int(selected["id"]),
-                        "portfolio_name": selected["name"],
-                    })
-            except Exception as exc:
-                integrity_ok = False
-                logs.append({
-                    "id": None,
-                    "occurred_at": None,
-                    "actor_type": "SYSTEM",
-                    "actor_id": "qport",
-                    "category": "SYSTEM",
-                    "action": "LOG_READ_FAILED",
-                    "entity_type": "PORTFOLIO",
-                    "entity_id": str(selected.get("id")),
-                    "status": "FAILURE",
-                    "summary": f"Không thể đọc log của portfolio {selected.get('name')}.",
-                    "details": {"error_type": type(exc).__name__, "error": str(exc)[:500]},
-                    "source": "QPORT",
+                rows, count = list_activity_page(
+                    store, page=1, page_size=fetch_limit,
+                    category=category, actor_type=actor_type, status=status, q=q,
+                )
+                total += count
+                logs.extend({
+                    **row,
                     "user_id": int(user["id"]),
                     "username": user["username"],
                     "portfolio_id": int(selected["id"]),
                     "portfolio_name": selected["name"],
-                })
-    logs.sort(key=lambda row: str(row.get("occurred_at") or ""), reverse=True)
-    filtered = []
-    needle = str(q or "").strip().lower()
-    for row in logs:
-        if category and category.upper() != "ALL" and str(row.get("category") or "").upper() != category.upper():
-            continue
-        if actor_type and actor_type.upper() != "ALL" and str(row.get("actor_type") or "").upper() != actor_type.upper():
-            continue
-        if status and status.upper() != "ALL" and str(row.get("status") or "").upper() != status.upper():
-            continue
-        if needle:
-            haystack = " ".join(str(row.get(key) or "") for key in ("action", "summary", "entity_type", "entity_id", "actor_id", "request_id", "username")).lower()
-            if needle not in haystack:
-                continue
-        filtered.append(row)
+                } for row in rows)
+            except Exception:
+                failed_reads += 1
+    logs.sort(key=lambda row: (str(row.get("occurred_at") or ""), int(row.get("id") or 0)), reverse=True)
     start = (page - 1) * page_size
-    end = start + page_size
+    visible = logs[start:start + page_size]
+    pages = max(1, (total + page_size - 1) // page_size)
     return {
-        "logs": filtered[start:end],
-        "pagination": {"page": page, "page_size": page_size, "total": len(filtered), "pages": max(1, (len(filtered) + page_size - 1) // page_size)},
+        "logs": visible,
+        "pagination": {"page": page, "page_size": page_size, "total": total, "pages": pages},
         "filters": {"category": category or "ALL", "actor_type": actor_type or "ALL", "status": status or "ALL", "q": q or ""},
-        "categories": sorted({str(row.get("category") or "") for row in logs if row.get("category")}),
-        "integrity": {"status": "VERIFIED" if integrity_ok else "BROKEN", "records": len(logs)},
+        "categories": ["SYSTEM", "AUTH", "PORTFOLIO", "TRANSACTION", "CORPORATE_ACTION", "SYNC"],
+        "integrity": {"status": "DEFERRED" if failed_reads == 0 else "BROKEN", "records": total, "read_failures": failed_reads},
     }
 
 
