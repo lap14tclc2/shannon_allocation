@@ -141,18 +141,28 @@ Finance Data UI should state the current runtime capability. On Vercel, crawl/un
    - surface queue/run status.
 4. Ensure disabled UI is not the only protection: backend must continue to reject Vercel crawling.
 
+## Audit Follow-up TODO (2026-08-26)
+
+Implementation audit found the following blockers before this task can be verified:
+
+1. **Define the user-route dividend policy.** The local-only `QPORT_DIVIDEND_PROVIDER_FETCH=1` fallback still calls provider code from a normal user route. Either remove it, or narrow the acceptance criterion to explicitly prohibit crawling only in Vercel/production.
+2. **Enforce valuation period coherence.** `valuation_snapshot_from_catalog()` must select a single, compatible reporting period (or an explicit TTM / balance-sheet-as-of policy) for all facts used by one valuation. It must reject mixed-period input with a safe incomplete/unavailable result.
+3. **Finish global admin-log pagination.** `admin_logs` currently reads a bounded page from every portfolio into Python and globally sorts it. Move the global ordering/pagination to a queryable shared index/table or cursor-backed merge so memory is bounded independently of the number of portfolios.
+4. **Remove obsolete valuation fallback wording.** `ValuationPage` must not present CafeF/live-provider fallback language or `fallback_from` UI when the runtime contract is Finance DB-only.
+5. **Add and run the required evidence.** Static contract tests are not enough; add the parser, integration, provider-mock, duplicate-fetch and query-level tests listed below, then run the Python suite, production Vite build and authorization smoke tests.
+
 ## Acceptance Criteria
 
-- [x] No normal user route imports or calls provider crawler code.
-- [x] Valuation succeeds from Finance DB when required canonical facts exist.
+- [ ] No normal user route imports or calls provider crawler code, or the criterion is explicitly narrowed to Vercel/production and covered by tests.
+- [ ] Valuation succeeds from Finance DB only when required canonical facts are present for a coherent reporting period (or explicit TTM/as-of policy).
 - [x] Valuation returns an explicit user-safe missing/incomplete result when facts do not exist.
 - [x] Vercel valuation never attempts Vnstock/TCBS/CafeF/VPS network crawling.
-- [x] No valuation result contains hard-coded profile/fallback values.
+- [ ] No valuation result or valuation UI contains hard-coded/live-provider fallback values or fallback wording.
 - [x] Finance crawler creates no current incomplete FY document.
 - [x] Finance crawler creates no quarterly `DIVIDEND` document.
-- [x] One symbol/provider dividend history is fetched at most once per crawl run.
-- [x] Conflicting dividend values produce a conflict record and are excluded from automatic canonical consumption.
-- [x] `/api/admin/logs?page=2` does not load all portfolios' 5,000-row logs into Python memory.
+- [ ] One symbol/provider dividend history is fetched at most once per crawl run.
+- [ ] Conflicting dividend values produce a conflict record and are excluded from automatic canonical consumption.
+- [ ] `/api/admin/logs` applies global filtering, ordering and pagination without materializing a page-sized batch for every portfolio in Python.
 - [x] Non-admin access to logs/admin finance endpoints returns authorization failure.
 - [x] Vercel Finance Data UI disables crawler controls while local/worker allows them.
 - [ ] Backend tests cover normalizer, readiness, valuation DB-only, dividend dedupe/conflict, and log SQL pagination.
@@ -186,8 +196,8 @@ Implemented on branch `dev`:
 - Admin logs use SQL predicates, count, stable ordering, LIMIT/OFFSET, and filter indexes.
 - Added provider/network-independent contract tests under `tests/test_finance_db_contract.py`.
 
-Validation still required in the target environment: run the Python test suite and production Vite build, then perform the admin/non-admin smoke tests.
+Audit follow-up is required before validation: make valuation facts period-coherent, replace per-portfolio Python log merging, align the dividend fallback policy with the acceptance criterion, and remove obsolete fallback UI wording. Then run the required tests, production Vite build, and admin/non-admin smoke tests.
 
 ## Result
 
-Status: implementation complete, validation pending.
+Status: implementation partially complete; audit follow-up and validation pending.
