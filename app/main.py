@@ -874,10 +874,6 @@ def portfolio_symbol_valuation(
     roe = number(field(ratios, "roe", "return_on_equity"))
     dividend_yield = number(field(ratios, "dividend_yield", "cash_dividend_yield"))
     shares = number(field(ratios, "outstanding_share", "outstanding_shares", "shares_outstanding"))
-    if shares is None:
-        shares = number(field(profile, "outstanding_share", "outstanding_shares", "shares_outstanding"))
-    if shares is None and net_income is not None and eps is not None and eps > 0:
-        shares = net_income / eps
 
     sector = field(profile, "industry", "industry_name", "sector", "icb_name3", "icb_name2")
     company_type = str(field(profile, "company_type", "type", "industry") or "")
@@ -888,19 +884,22 @@ def portfolio_symbol_valuation(
     if net_income is None or shares is None or shares <= 0:
         raise ApiError(422, f"BCTC mới nhất của {ticker} chưa đủ lợi nhuận và số cổ phiếu lưu hành để định giá.", "VALUATION_DATA_INCOMPLETE")
 
-    fiscal_year_raw = number(field(income, "year_report", "report_year", "fiscal_year", "year"))
-    fiscal_quarter_raw = number(field(income, "length_report", "quarter", "fiscal_quarter"))
-    fiscal_year = int(fiscal_year_raw) if fiscal_year_raw and 2000 <= fiscal_year_raw <= 2200 else datetime.now(timezone.utc).year
+    fiscal_year_raw = number(snapshot.get("fiscal_year"))
+    fiscal_quarter_raw = number(snapshot.get("fiscal_quarter"))
+    if fiscal_year_raw is None or not 2000 <= fiscal_year_raw <= 2200:
+        raise ApiError(422, "Finance DB thiếu kỳ báo cáo hợp lệ.", "VALUATION_DATA_INCOMPLETE")
+    fiscal_year = int(fiscal_year_raw)
     fiscal_quarter = int(fiscal_quarter_raw) if fiscal_quarter_raw and 1 <= fiscal_quarter_raw <= 4 else None
-    quarter_ends = {1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31"}
-    period_end = f"{fiscal_year}-{quarter_ends[fiscal_quarter]}" if fiscal_quarter else f"{fiscal_year}-12-31"
+    period_end = str(snapshot.get("period_end") or "")
+    if not period_end:
+        raise ApiError(422, "Finance DB thiếu ngày kết thúc kỳ báo cáo.", "VALUATION_DATA_INCOMPLETE")
 
     facts: list[CanonicalFact] = []
 
     def add_fact(code: str, statement_type: StatementType, value: Decimal | None, period_type: PeriodType) -> None:
         if value is None:
             return
-        fact_id = f"live-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
+        fact_id = f"db-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
         facts.append(CanonicalFact(
             canonical_fact_id=fact_id,
             identity=FactIdentityKey(
@@ -916,12 +915,12 @@ def portfolio_symbol_valuation(
             ),
             value=value,
             quality_status=QualityStatus.SINGLE_SOURCE,
-            decision_id=f"live-{ticker.lower()}-{fetched_at[:19]}",
-            winning_candidate_id=f"vnstock-{ticker.lower()}-{code.lower()}",
+            decision_id=f"db-{ticker.lower()}-{fetched_at[:19]}",
+            winning_candidate_id=f"finance-db-{ticker.lower()}-{code.lower()}",
             candidate_ids=[],
             observed_at=fetched_at,
             valid_from=fetched_at,
-            reason=f"Fresh symbol-scoped snapshot from {snapshot.get('provider')} ({snapshot.get('api_variant')})",
+            reason=f"Validated Finance DB fact from {snapshot.get('provider')}",
         ))
 
     add_fact("IS.PROFIT.NET", StatementType.INCOME_STATEMENT, net_income, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
@@ -955,7 +954,7 @@ def portfolio_symbol_valuation(
         fiscal_quarter=fiscal_quarter,
         entity_type=entity_type,
         fundamentals={
-            "sector": sector or "Chưa phân loại",
+            "sector": sector,
             "eps": eps,
             "bvps": bvps,
             "pe": pe,
@@ -971,7 +970,7 @@ def portfolio_symbol_valuation(
         "report": {
             **asdict(report),
             "data_freshness": {
-                "cache": "BYPASS",
+                "cache": "DATABASE",
                 "fetched_at": fetched_at,
                 "provider": snapshot.get("provider"),
                 "api_variant": snapshot.get("api_variant"),
