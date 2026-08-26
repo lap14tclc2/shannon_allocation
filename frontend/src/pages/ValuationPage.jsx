@@ -20,7 +20,7 @@ function MethodologyGuide() {
       <article><b>03 · Ba kịch bản DCF</b><p>Bear/Base/Bull thay đổi tăng trưởng và tỷ lệ chiết khấu. Giá trị vốn chủ sở hữu bằng giá trị hiện tại của dòng tiền, cộng tiền và trừ nợ.</p></article>
       <article><b>04 · Kiểm tra chéo</b><p>EPV định giá sức kiếm tiền hiện tại; Reverse DCF suy ra tăng trưởng mà thị giá đang kỳ vọng; ma trận độ nhạy cho thấy kết quả đổi ra sao khi giả định thay đổi.</p></article>
     </div>
-    <p className="valuation-method-warning">CafeF là fallback HTML công khai và có thể thay đổi cấu trúc. QPort luôn hiển thị nguồn, thời điểm tải và chặn kết quả nếu thiếu giá, lợi nhuận hoặc số cổ phiếu.</p>
+    <p className="valuation-method-warning">Finance Data là nguồn dữ liệu duy nhất cho định giá. QPort luôn hiển thị nguồn, kỳ báo cáo và thời điểm đồng bộ; nếu thiếu dữ liệu, hãy contact admin.</p>
   </section>;
 }
 
@@ -71,7 +71,7 @@ function ValuationCard({ symbol, report, error, locale }) {
       <p>EPV/cổ phiếu: <b>{money(report.epv_result?.epv_per_share, locale)}</b>. {report.reverse_dcf_result?.verdict || 'Chưa đủ dữ liệu Reverse DCF.'}</p>
       <p>{report.assessment?.valuation_verdict}</p>
     </details>
-    <p className="valuation-source">Nguồn: {freshness.provider || multiples.source || 'Không rõ'}{freshness.fallback_from ? ` (fallback từ ${freshness.fallback_from})` : ''} · Kỳ dữ liệu: {report.fiscal_period_latest || 'không rõ'} · Tải lúc: {freshness.fetched_at ? new Date(freshness.fetched_at).toLocaleString('vi-VN') : 'không rõ'}</p>
+    <p className="valuation-source">Nguồn Finance DB: {freshness.provider || multiples.source || 'Không rõ'} · Kỳ dữ liệu: {report.fiscal_period_latest || 'không rõ'} · Tải lúc: {freshness.fetched_at ? new Date(freshness.fetched_at).toLocaleString('vi-VN') : 'không rõ'}</p>
   </article>;
 }
 
