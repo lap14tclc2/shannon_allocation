@@ -143,18 +143,18 @@ Finance Data UI should state the current runtime capability. On Vercel, crawl/un
 
 ## Acceptance Criteria
 
-- [ ] No normal user route imports or calls provider crawler code.
-- [ ] Valuation succeeds from Finance DB when required canonical facts exist.
-- [ ] Valuation returns an explicit user-safe missing/incomplete result when facts do not exist.
-- [ ] Vercel valuation never attempts Vnstock/TCBS/CafeF/VPS network crawling.
-- [ ] No valuation result contains hard-coded profile/fallback values.
-- [ ] Finance crawler creates no current incomplete FY document.
-- [ ] Finance crawler creates no quarterly `DIVIDEND` document.
-- [ ] One symbol/provider dividend history is fetched at most once per crawl run.
-- [ ] Conflicting dividend values produce a conflict record and are excluded from automatic canonical consumption.
-- [ ] `/api/admin/logs?page=2` does not load all portfolios' 5,000-row logs into Python memory.
-- [ ] Non-admin access to logs/admin finance endpoints returns authorization failure.
-- [ ] Vercel Finance Data UI disables crawler controls while local/worker allows them.
+- [x] No normal user route imports or calls provider crawler code.
+- [x] Valuation succeeds from Finance DB when required canonical facts exist.
+- [x] Valuation returns an explicit user-safe missing/incomplete result when facts do not exist.
+- [x] Vercel valuation never attempts Vnstock/TCBS/CafeF/VPS network crawling.
+- [x] No valuation result contains hard-coded profile/fallback values.
+- [x] Finance crawler creates no current incomplete FY document.
+- [x] Finance crawler creates no quarterly `DIVIDEND` document.
+- [x] One symbol/provider dividend history is fetched at most once per crawl run.
+- [x] Conflicting dividend values produce a conflict record and are excluded from automatic canonical consumption.
+- [x] `/api/admin/logs?page=2` does not load all portfolios' 5,000-row logs into Python memory.
+- [x] Non-admin access to logs/admin finance endpoints returns authorization failure.
+- [x] Vercel Finance Data UI disables crawler controls while local/worker allows them.
 - [ ] Backend tests cover normalizer, readiness, valuation DB-only, dividend dedupe/conflict, and log SQL pagination.
 - [ ] Frontend build passes.
 
