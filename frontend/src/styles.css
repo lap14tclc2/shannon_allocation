@@ -660,3 +660,27 @@ table {
 .tag-normal { background: rgba(63, 182, 139, 0.14); color: var(--success); }
 .tag-soft { background: rgba(212, 167, 44, 0.16); color: var(--warning); }
 .tag-hard { background: rgba(229, 83, 75, 0.16); color: var(--danger); }
+
+
+/* Azure-style admin log console */
+.log-console { overflow: hidden; }
+.log-console-toolbar { border-bottom: 1px solid var(--line, #d8ccb7); padding-bottom: 14px; }
+.log-console-caption { margin-top: 10px; font: 600 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; text-transform: uppercase; color: var(--muted, #756e62); }
+.log-live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #2c8a5a; box-shadow: 0 0 0 3px rgba(44,138,90,.14); }
+.azure-log-table { min-width: 980px; border-collapse: separate; border-spacing: 0; }
+.azure-log-table th { position: sticky; top: 0; z-index: 1; background: var(--panel, #fffaf0); font: 700 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .05em; text-transform: uppercase; }
+.azure-log-table td { vertical-align: top; padding: 11px 12px; border-bottom: 1px solid color-mix(in srgb, var(--line, #d8ccb7) 72%, transparent); }
+.azure-log-table tbody tr:hover { background: color-mix(in srgb, var(--accent, #a63f30) 6%, transparent); }
+.azure-log-table small { display: block; margin-top: 4px; color: var(--muted, #756e62); font-size: 11px; }
+.azure-log-table .log-time { white-space: nowrap; font: 600 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.azure-log-table .log-message { max-width: 520px; line-height: 1.45; }
+.azure-log-table .log-row-failure { background: color-mix(in srgb, #b42318 5%, transparent); }
+.log-details { margin-top: 7px; }
+.log-details summary { cursor: pointer; color: var(--accent, #a63f30); font-size: 12px; }
+.log-details pre { max-width: 520px; max-height: 220px; overflow: auto; padding: 10px; background: color-mix(in srgb, var(--panel, #fffaf0) 75%, #000); border: 1px solid var(--line, #d8ccb7); font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+.log-pagination { align-items: center; gap: 16px; }
+.log-pagination > div { display: flex; gap: 8px; }
+@media (max-width: 760px) {
+  .log-filters { grid-template-columns: 1fr; }
+  .log-console-caption { font-size: 10px; }
+}

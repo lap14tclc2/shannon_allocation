@@ -181,7 +181,13 @@ export async function listPortfolioSnapshots() { const d = await getJSON('/api/p
 export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
 export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
 export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
-export const getActivityLog = () => getJSON('/api/admin/logs');
+export const getActivityLog = (params = {}) => {
+  const query = new URLSearchParams();
+  for (const key of ['page', 'page_size', 'category', 'actor_type', 'status', 'q']) {
+    if (params[key] != null && params[key] !== '' && params[key] !== 'ALL') query.set(key, String(params[key]));
+  }
+  return getJSON(`/api/admin/logs${query.toString() ? `?${query}` : ''}`);
+};
 export const logClientActivity = (action, details = {}) => sendJSON('/api/portfolio/activity', 'POST', { action, details });
 
 // Institutional-lite operations
