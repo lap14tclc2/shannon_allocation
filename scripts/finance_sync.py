@@ -223,7 +223,7 @@ def sync(source_url: str, target_url: str, dry_run: bool) -> dict[str, Any]:
         data = fetch_source(source)
     validate_rows(data)
     digest = hashlib.sha256(
-        "".join(fingerprint(row, TABLE_COLUMNS[table]) for table in data[table] for table in TABLE_ORDER).encode("utf-8")
+        "".join(fingerprint(row, TABLE_COLUMNS[table]) for table in TABLE_ORDER for row in data[table]).encode("utf-8")
     ).hexdigest()
     counts = {table: len(rows) for table, rows in data.items()}
     if dry_run:
