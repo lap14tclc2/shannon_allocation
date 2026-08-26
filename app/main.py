@@ -32,7 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
-from portfolio.finance_catalog import crawl_symbol, latest_documents_for_user, list_securities, sync_universe
+from portfolio.finance_catalog import crawl_symbol, enqueue_crawl_all, latest_documents_for_user, list_securities, sync_universe
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
@@ -406,6 +406,16 @@ def admin_finance_data_universe(qport_session: str | None = Cookie(default=None)
     if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
         raise ApiError(503, result["message"], result["code"])
     return result
+
+@app.post("/api/admin/finance-data/crawl-all")
+def admin_finance_data_crawl_all(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    admin = require_admin(qport_session)
+    exchange = str(body.get("exchange") or "").upper().strip() or None
+    return enqueue_crawl_all(int(admin["id"]), exchange)
+
 
 @app.post("/api/admin/finance-data/crawl")
 def admin_finance_data_crawl(
