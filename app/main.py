@@ -579,7 +579,7 @@ def portfolio_symbol_valuation(
         QualityStatus,
         StatementType,
     )
-    from portfolio.vnstock_isolated import run_vnstock_task
+    from portfolio.vnstock_isolated import run_valuation_snapshot
 
     require_portfolio_user(qport_session)
     ticker = str(symbol or "").upper().strip()
@@ -587,12 +587,7 @@ def portfolio_symbol_valuation(
         raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
 
     try:
-        snapshot = run_vnstock_task(
-            "valuation_snapshot",
-            {"symbol": ticker},
-            timeout=240.0,
-            max_attempts=2,
-        )
+        snapshot = run_valuation_snapshot(ticker, timeout=240.0, max_attempts=2)
     except Exception as exc:
         raise ApiError(503, f"Không thể tải dữ liệu mới nhất cho {ticker}: {exc}", "VALUATION_SOURCE_UNAVAILABLE") from exc
 
@@ -746,7 +741,7 @@ def portfolio_symbol_valuation(
     )
     response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
-        "report": asdict(report),
+        "report": {\n            **asdict(report),\n            "data_freshness": {\n                "cache": "BYPASS",\n                "fetched_at": fetched_at,\n                "provider": snapshot.get("provider"),\n                "api_variant": snapshot.get("api_variant"),\n                "fallback_from": snapshot.get("fallback_from"),\n                "fallback_reason": snapshot.get("fallback_reason"),\n                "source_urls": snapshot.get("source_urls") or [],\n            },\n        },
         "data_freshness": {
             "cache": "BYPASS",
             "fetched_at": fetched_at,
