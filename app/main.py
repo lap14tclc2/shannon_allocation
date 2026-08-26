@@ -799,43 +799,6 @@ def portfolio_latest_dividend(
         "source_counts": {},
         "errors": [],
     })
-    try:
-        result = dividends(user).latest(ticker, force_refresh=refresh)
-        svc._log(
-            "USER",
-            user["username"],
-            "CORPORATE_ACTION",
-            "DIVIDEND_HISTORY_LOOKUP",
-            f"Loaded dividend history for {ticker}: {'FOUND' if result.get('found') else 'NOT_FOUND'} ({result.get('data_origin')}).",
-            entity_type="SECURITY",
-            entity_id=ticker,
-            details={
-                "found": result.get("found"),
-                "event_count": result.get("event_count"),
-                "latest": result.get("latest"),
-                "data_origin": result.get("data_origin"),
-                "source_counts": result.get("source_counts"),
-                "errors": result.get("errors"),
-            },
-            status="SUCCESS" if result.get("found") else "PARTIAL",
-        )
-        return result
-    except DividendLookupError as exc:
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(exc), "code": "INVALID_TICKER", "field": "symbol"},
-        )
-    except Exception as exc:
-        svc.log_failure(
-            method="GET",
-            path=f"/api/portfolio/dividends/latest/{ticker}",
-            error=str(exc),
-            code="DIVIDEND_LOOKUP_FAILED",
-        )
-        return JSONResponse(
-            status_code=502,
-            content={"error": str(exc), "code": "DIVIDEND_LOOKUP_FAILED", "field": None},
-        )
 
 
 @app.get("/api/portfolio/valuation/{symbol}")
