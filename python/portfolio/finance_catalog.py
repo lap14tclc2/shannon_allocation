@@ -70,6 +70,19 @@ def initialize_finance_schema() -> None:
             error TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS crawl_queue (
+            id BIGSERIAL PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            requested_by INTEGER,
+            status TEXT NOT NULL CHECK(status IN ('QUEUED','RUNNING','COMPLETED','FAILED')),
+            requested_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            error TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_queue_active
+            ON crawl_queue(symbol) WHERE status IN ('QUEUED','RUNNING');
+
         CREATE TABLE IF NOT EXISTS documents (
             id BIGSERIAL PRIMARY KEY,
             symbol TEXT NOT NULL,
@@ -252,6 +265,26 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         code = "PROVIDER_HTTP_ERROR" if isinstance(exc, urllib.error.HTTPError) else "PROVIDER_UNAVAILABLE"
         _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "FAILED", None, code, str(exc)[:500], run_id)
         return False
+
+
+def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
+    """Queue all active securities for an external worker; never crawls in request time."""
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
+            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1 AND exchange=?", (exchange.upper(),)).fetchall()
+        else:
+            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1").fetchall()
+        queued = 0
+        for row in rows:
+            result = db.execute(
+                """INSERT INTO crawl_queue(symbol, requested_by, status, requested_at)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT DO NOTHING""",
+                (row["symbol"], requested_by, "QUEUED", _now()),
+            )
+            queued += int(result.rowcount or 0)
+    return {"ok": True, "queued": queued, "message": f"Đã xếp hàng {queued} mã cho external worker."}
 
 
 def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
