@@ -60,7 +60,7 @@ def test_validate_rows_accepts_complete_minimal_catalog():
         "provider": "tcbs",
         "status": "SUCCESS",
         "payload": "{}",
-        "content_hash": "99914b932bd37a50b983c5e7c90ae93b",
+        "content_hash": "44136fa355b3678a1146ad16f7e8649e",
     }]
     data["canonical_facts"] = [{
         "symbol": "FPT",
