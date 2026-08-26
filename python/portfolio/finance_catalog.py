@@ -245,3 +245,41 @@ def latest_documents_for_user(symbol: str) -> dict[str, Any]:
     if not result["documents"]:
         return {"ok": False, "code": "FINANCE_DATA_MISSING", "message": "contact admin", "symbol": symbol}
     return {"ok": True, **result}
+
+
+def sync_universe() -> dict[str, Any]:
+    """Populate the exchange universe from Vnstock on an external worker.
+
+    Vercel remains read-only unless explicitly opted in, preventing serverless
+    provider calls and filesystem/runtime failures.
+    """
+    if os.environ.get("VERCEL") and os.environ.get("QPORT_ALLOW_FINANCE_CRAWL") != "1":
+        return {"ok": False, "code": "CRAWL_DISABLED_ON_VERCEL", "message": "Finance crawling is disabled on Vercel; run the external worker and sync the database."}
+    try:
+        from vnstock import Listing  # type: ignore
+        listing = Listing()
+        frame = None
+        for method_name in ("all_symbols", "symbols_by_exchange"):
+            method = getattr(listing, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                frame = method()
+                break
+            except TypeError:
+                frame = method(exchange="ALL")
+                break
+        rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+        count = 0
+        for row in rows:
+            lowered = {str(k).lower().strip(): v for k, v in dict(row).items()}
+            symbol = next((lowered.get(k) for k in ("symbol", "ticker", "code") if lowered.get(k)), None)
+            exchange = next((lowered.get(k) for k in ("exchange", "floor", "com_group_code", "market") if lowered.get(k)), "UNKNOWN")
+            name = next((lowered.get(k) for k in ("organ_name", "company_name", "name") if lowered.get(k)), None)
+            industry = next((lowered.get(k) for k in ("industry", "industry_name", "icb_name3") if lowered.get(k)), None)
+            if symbol:
+                upsert_security(str(symbol), str(exchange), str(name) if name else None, str(industry) if industry else None)
+                count += 1
+        return {"ok": count > 0, "count": count, "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã."}
+    except Exception as exc:
+        return {"ok": False, "code": "UNIVERSE_SYNC_FAILED", "message": str(exc)[:500]}
