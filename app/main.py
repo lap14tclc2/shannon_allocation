@@ -755,7 +755,18 @@ def portfolio_symbol_valuation(
     )
     response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
-        "report": {\n            **asdict(report),\n            "data_freshness": {\n                "cache": "BYPASS",\n                "fetched_at": fetched_at,\n                "provider": snapshot.get("provider"),\n                "api_variant": snapshot.get("api_variant"),\n                "fallback_from": snapshot.get("fallback_from"),\n                "fallback_reason": snapshot.get("fallback_reason"),\n                "source_urls": snapshot.get("source_urls") or [],\n            },\n        },
+        "report": {
+            **asdict(report),
+            "data_freshness": {
+                "cache": "BYPASS",
+                "fetched_at": fetched_at,
+                "provider": snapshot.get("provider"),
+                "api_variant": snapshot.get("api_variant"),
+                "fallback_from": snapshot.get("fallback_from"),
+                "fallback_reason": snapshot.get("fallback_reason"),
+                "source_urls": snapshot.get("source_urls") or [],
+            },
+        },
         "data_freshness": {
             "cache": "BYPASS",
             "fetched_at": fetched_at,
