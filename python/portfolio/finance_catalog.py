@@ -345,6 +345,44 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             )
 
 
+def _reconcile_dividend_document(symbol: str, provider: str, payload: str | None, source_document_id: int | None) -> None:
+    rows = _payload_rows(payload)
+    if not rows:
+        return
+    try:
+        from .dividend_reconciliation import normalize_observation, persist_observations, reconcile_symbol
+        observations = []
+        for row in rows:
+            title = str(row.get("title") or row.get("eventName") or row.get("event") or "")
+            kind = str(row.get("dividend_type") or row.get("type") or "").upper()
+            if "STOCK" in kind or "CỔ PHIẾU" in title.upper() or "CO PHIEU" in title.upper():
+                kind = "STOCK_DIVIDEND"
+            elif "CASH" in kind or "TIỀN" in title.upper() or "TIEN" in title.upper() or row.get("cash_per_share") is not None:
+                kind = "CASH_DIVIDEND"
+            else:
+                continue
+            event = {
+                "symbol": symbol,
+                "dividend_type": kind,
+                "source_event_id": row.get("id") or row.get("eventId") or row.get("event_id"),
+                "announcement_date": row.get("announcement_date") or row.get("announcementDate"),
+                "ex_date": row.get("ex_date") or row.get("exDate"),
+                "record_date": row.get("record_date") or row.get("recordDate"),
+                "payment_date": row.get("payment_date") or row.get("paymentDate"),
+                "cash_per_share": row.get("cash_per_share") or row.get("valuePerShare") or row.get("cash"),
+                "stock_ratio": row.get("stock_ratio") or row.get("exerciseRatio") or row.get("ratio"),
+                "raw_payload": row,
+            }
+            observations.append(normalize_observation(event, provider=provider, source_document_id=str(source_document_id or "")))
+        if observations:
+            persist_observations(observations)
+            reconcile_symbol(symbol)
+    except Exception:
+        # Raw document persistence must remain successful even when a provider
+        # payload needs a later parser revision or admin review.
+        return
+
+
 def get_canonical_facts(symbol: str) -> list[dict[str, Any]]:
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -402,7 +440,10 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
                 "SELECT id FROM documents WHERE symbol=? AND provider=? AND document_type=? AND period_type=? AND fiscal_year=? AND fiscal_quarter IS NOT DISTINCT FROM ?",
                 (symbol, provider, document_type, period_type, year, quarter),
             ).fetchone()
-            _canonicalize_document(symbol, provider, document_type, period_type, year, quarter, period_end, payload, int(row["id"]) if row else None)
+            document_id = int(row["id"]) if row else None
+            _canonicalize_document(symbol, provider, document_type, period_type, year, quarter, period_end, payload, document_id)
+            if document_type == "DIVIDEND":
+                _reconcile_dividend_document(symbol, provider, payload, document_id)
 
 
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
