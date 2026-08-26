@@ -708,15 +708,20 @@ def admin_logs(
         source = sources[best_index]
         selected_rows.append(source["rows"].pop(0))
         if not source["rows"] and (source["next_page"] - 1) * page_size < source["count"]:
-            rows, _ = list_activity_page(
-                source["store"],
-                page=source["next_page"],
-                page_size=page_size,
-                category=category,
-                actor_type=actor_type,
-                status=status,
-                q=q,
-            )
+            try:
+                rows, _ = list_activity_page(
+                    source["store"],
+                    page=source["next_page"],
+                    page_size=page_size,
+                    category=category,
+                    actor_type=actor_type,
+                    status=status,
+                    q=q,
+                )
+            except Exception:
+                failed_reads += 1
+                source["count"] = 0
+                rows = []
             source["next_page"] += 1
             source["rows"] = [{
                 **row,
