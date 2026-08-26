@@ -273,9 +273,10 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
             ['/admin', 'admin', 'Người dùng', 'Quản lý tài khoản và portfolio'],
             ['/logs', 'logs', 'System Logs', 'Theo dõi request, lỗi và audit log'],
             ['/admin/auth', 'admin-auth', 'Xác thực admin', 'Đổi password quản trị'],
+            ['/admin/finance-data', 'admin-finance-data', 'Finance Data', 'Crawl và quản lý BCTC'],
           ] : NAVIGATION_LINKS).map(([href, key, label, description]) => (
             <a key={href} href={href} className={active === key ? 'active' : ''} aria-current={active === key ? 'page' : undefined} onClick={() => setNavigationOpen(false)}>
-              <span className="navigation-option-icon"><NavIcon name={key === 'admin' ? 'risk' : key === 'admin-auth' ? 'settings' : key === 'logs' ? 'guide' : key} size={18} /></span>
+              <span className="navigation-option-icon"><NavIcon name={key === 'admin' ? 'risk' : key === 'admin-auth' ? 'settings' : key === 'logs' ? 'guide' : key === 'admin-finance-data' ? 'valuation' : key} size={18} /></span>
               <span><strong>{label}</strong><small>{description}</small></span>
               <span className="navigation-option-arrow" aria-hidden="true">→</span>
             </a>
