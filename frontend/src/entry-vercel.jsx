@@ -9,6 +9,7 @@ import PortfoliosPage from './pages/PortfoliosPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
+import ValuationPage from './pages/ValuationPage.jsx';
 import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
@@ -42,6 +43,7 @@ import './holding-info-row.css';
 import './accessibility-polish.css';
 import './appearance-controls.css';
 import './risk-readable.css';
+import './valuation-page.css';
 import './guide-friendly.css';
 import './dividend-history.css';
 import './settings-friendly.css';
@@ -62,6 +64,7 @@ const ROUTES = {
   '/transactions': TransactionsPage,
   '/performance': PerformancePage,
   '/risk': RiskPage,
+  '/valuation': ValuationPage,
   '/dividends': DividendHistoryPage,
   '/snapshots': SnapshotsPage,
   '/operations': OperationsPage,
