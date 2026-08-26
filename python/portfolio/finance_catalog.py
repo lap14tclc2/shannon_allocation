@@ -143,6 +143,17 @@ def initialize_finance_schema() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_finance_canonical_symbol
             ON canonical_facts(symbol, line_item_code, fiscal_year DESC, fiscal_quarter DESC);
+        CREATE TABLE IF NOT EXISTS parse_errors (
+            id BIGSERIAL PRIMARY KEY,
+            source_document_id BIGINT,
+            symbol TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            error_code TEXT NOT NULL,
+            error_message TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            UNIQUE(source_document_id)
+        );
         """)
 
 
@@ -361,6 +372,7 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             ("CF.OPERATING.NET", ("operating_cash_flow", "net_cash_from_operating_activities")),
         ),
     }
+    written = 0
     for code, aliases in mappings.get(document_type, ()):
         value = next((_value(row, *aliases) for row in rows if _value(row, *aliases) is not None), None)
         if value is None:
@@ -379,7 +391,26 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                  code, value, period_type, year, quarter, period_end, provider,
                  source_document_id, "SINGLE_SOURCE", _now()),
             )
-
+        written += 1
+    if written == 0:
+        with _schema_connection(FINANCE_SCHEMA) as db:
+            db.execute(
+                """INSERT INTO parse_errors(
+                    source_document_id, symbol, provider, document_type,
+                    error_code, error_message, observed_at
+                ) VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(source_document_id) DO UPDATE SET
+                    error_code=excluded.error_code,
+                    error_message=excluded.error_message,
+                    observed_at=excluded.observed_at""",
+                (
+                    source_document_id, symbol, provider, document_type,
+                    "PAYLOAD_UNPARSEABLE" if rows else "PAYLOAD_EMPTY",
+                    "Provider payload did not contain a supported canonical row shape."
+                    if rows else "Provider payload contained no tabular rows.",
+                    _now(),
+                ),
+            )
 
 def _reconcile_dividend_document(symbol: str, provider: str, payload: str | None, source_document_id: int | None) -> None:
     rows = _payload_rows(payload)
