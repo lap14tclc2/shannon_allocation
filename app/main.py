@@ -396,7 +396,22 @@ def admin_finance_data(
     qport_session: str | None = Cookie(default=None),
 ):
     require_admin(qport_session)
-    return {"ok": True, **list_securities(offset, limit, exchange)}
+    catalog = list_securities(offset, limit, exchange)
+    # Crawling is an external-worker concern. Keep the capability explicit so
+    # the admin UI can disable controls before a request reaches the backend.
+    runtime_name = "vercel" if os.environ.get("VERCEL") else "local"
+    worker_enabled = bool(os.environ.get("QPORT_FINANCE_WORKER")) and runtime_name != "vercel"
+    catalog["runtime"] = {
+        "name": runtime_name,
+        "can_crawl": worker_enabled,
+        "read_only": not worker_enabled,
+        "message": (
+            "Crawl chạy bằng Local/Worker; production chỉ đọc database."
+            if not worker_enabled else
+            "Local/Worker có thể crawl và đồng bộ dữ liệu."
+        ),
+    }
+    return {"ok": True, **catalog}
 
 
 @app.post("/api/admin/finance-data/universe")
