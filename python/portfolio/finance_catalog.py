@@ -467,6 +467,28 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
     facts = get_canonical_facts(ticker)
     if not facts:
         return {"ok": False, "code": "FINANCE_DATA_MISSING", "message": "contact admin", "symbol": ticker}
+    # Reconcile same-period facts across providers before valuation. A
+    # material disagreement is unavailable rather than silently selecting a
+    # provider, while identical observations remain safely interchangeable.
+    grouped: dict[tuple[str, int, int | None], list[dict[str, Any]]] = {}
+    for fact in facts:
+        key = (str(fact["line_item_code"]), int(fact["fiscal_year"]), fact.get("fiscal_quarter"))
+        grouped.setdefault(key, []).append(fact)
+    conflicts = []
+    for key, rows in grouped.items():
+        values = [float(row["value"]) for row in rows if row.get("value") is not None]
+        if len(values) > 1:
+            baseline = values[0]
+            if any(abs(value - baseline) > max(1.0, abs(baseline) * 0.001) for value in values[1:]):
+                conflicts.append({"line_item_code": key[0], "fiscal_year": key[1], "fiscal_quarter": key[2]})
+    if conflicts:
+        return {
+            "ok": False,
+            "code": "FINANCE_DATA_CONFLICT",
+            "message": "contact admin",
+            "symbol": ticker,
+            "conflicts": conflicts,
+        }
     latest = {}
     for fact in facts:
         latest.setdefault(fact["line_item_code"], fact)
