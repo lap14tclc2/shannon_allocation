@@ -125,6 +125,24 @@ def initialize_finance_schema() -> None:
             ON documents(symbol, fiscal_year DESC, fiscal_quarter DESC);
         CREATE INDEX IF NOT EXISTS idx_finance_documents_status
             ON documents(status, provider);
+        CREATE TABLE IF NOT EXISTS canonical_facts (
+            id BIGSERIAL PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            statement_type TEXT NOT NULL,
+            line_item_code TEXT NOT NULL,
+            value NUMERIC NOT NULL,
+            period_type TEXT NOT NULL,
+            fiscal_year INTEGER NOT NULL,
+            fiscal_quarter INTEGER,
+            period_end TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            source_document_id BIGINT,
+            quality_status TEXT NOT NULL DEFAULT 'SINGLE_SOURCE',
+            observed_at TEXT NOT NULL,
+            UNIQUE(symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
+        );
+        CREATE INDEX IF NOT EXISTS idx_finance_canonical_symbol
+            ON canonical_facts(symbol, line_item_code, fiscal_year DESC, fiscal_quarter DESC);
         """)
 
 
@@ -244,6 +262,128 @@ def ensure_required_documents(symbol: str) -> None:
                     )
 
 
+def _payload_rows(payload: str | None) -> list[dict[str, Any]]:
+    if not payload:
+        return []
+    try:
+        value = json.loads(payload)
+    except (TypeError, ValueError):
+        return []
+    if isinstance(value, list):
+        return [dict(row) for row in value if isinstance(row, dict)]
+    if isinstance(value, dict):
+        for key in ("data", "content", "rows", "items", "result"):
+            child = value.get(key)
+            if isinstance(child, list):
+                return [dict(row) for row in child if isinstance(row, dict)]
+            if isinstance(child, dict):
+                nested = _payload_rows(json.dumps(child))
+                if nested:
+                    return nested
+        return [value]
+    return []
+
+
+def _number(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _value(row: dict[str, Any], *aliases: str) -> float | None:
+    normalized = {str(key).lower().replace("_", "").replace(" ", ""): value for key, value in row.items()}
+    for alias in aliases:
+        key = alias.lower().replace("_", "").replace(" ", "")
+        for candidate, value in normalized.items():
+            if candidate == key or candidate.endswith(key):
+                parsed = _number(value)
+                if parsed is not None:
+                    return parsed
+    return None
+
+
+def _canonicalize_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, payload: str | None, source_document_id: int | None) -> None:
+    rows = _payload_rows(payload)
+    mappings = {
+        "FINANCIAL_STATEMENTS": (
+            ("BS.DEBT.TOTAL", ("total_debt", "debt", "borrowings")),
+            ("BS.ASSETS.CASH_AND_EQUIVALENTS", ("cash_and_cash_equivalents", "cash", "cash_equivalents")),
+            ("BS.LIABILITIES.SHORT_TERM_BORROWINGS", ("short_term_borrowings", "short_term_debt")),
+            ("BS.LIABILITIES.LONG_TERM_BORROWINGS", ("long_term_borrowings", "long_term_debt")),
+        ),
+        "INCOME_STATEMENT": (
+            ("IS.PROFIT.NET", ("net_profit", "net_profit_after_tax", "profit_after_tax", "net_income")),
+            ("IS.PROFIT.OPERATING", ("operating_profit", "profit_from_operation")),
+        ),
+        "CASH_FLOW": (
+            ("CF.OPERATING.DEPRECIATION", ("depreciation", "depreciation_amortization")),
+            ("CF.CAPEX", ("capex", "purchase_of_fixed_assets", "fixed_asset_purchases")),
+            ("CF.OPERATING.NET", ("operating_cash_flow", "net_cash_from_operating_activities")),
+        ),
+    }
+    for code, aliases in mappings.get(document_type, ()):
+        value = next((_value(row, *aliases) for row in rows if _value(row, *aliases) is not None), None)
+        if value is None:
+            continue
+        with _schema_connection(FINANCE_SCHEMA) as db:
+            db.execute(
+                """INSERT INTO canonical_facts(
+                   symbol, statement_type, line_item_code, value, period_type,
+                   fiscal_year, fiscal_quarter, period_end, provider,
+                   source_document_id, quality_status, observed_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
+                DO UPDATE SET value=excluded.value, source_document_id=excluded.source_document_id,
+                    quality_status='SINGLE_SOURCE', observed_at=excluded.observed_at""",
+                (symbol, "BALANCE_SHEET" if document_type == "FINANCIAL_STATEMENTS" else document_type,
+                 code, value, period_type, year, quarter, period_end, provider,
+                 source_document_id, "SINGLE_SOURCE", _now()),
+            )
+
+
+def get_canonical_facts(symbol: str) -> list[dict[str, Any]]:
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        rows = db.execute(
+            """SELECT * FROM canonical_facts
+               WHERE symbol=? AND quality_status NOT IN ('CONFLICT','QUARANTINED')
+               ORDER BY fiscal_year DESC, fiscal_quarter DESC NULLS LAST""",
+            (str(symbol).upper().strip(),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = None) -> dict[str, Any]:
+    ticker = str(symbol).upper().strip()
+    facts = get_canonical_facts(ticker)
+    if not facts:
+        return {"ok": False, "code": "FINANCE_DATA_MISSING", "message": "contact admin", "symbol": ticker}
+    latest = {}
+    for fact in facts:
+        latest.setdefault(fact["line_item_code"], fact)
+    missing = []
+    if latest.get("IS.PROFIT.NET") is None:
+        missing.append("net_income")
+    if latest.get("IS.SHARES.OUTSTANDING") is None:
+        missing.append("shares_outstanding")
+    if market_price is None or float(market_price) <= 0:
+        missing.append("market_price")
+    if missing:
+        return {"ok": False, "code": "FINANCE_DATA_INCOMPLETE", "message": "contact admin", "symbol": ticker, "missing": missing}
+    return {
+        "ok": True, "symbol": ticker, "provider": "finance_catalog",
+        "fetched_at": latest["IS.PROFIT.NET"]["observed_at"],
+        "income_statement": [{"net_profit": latest["IS.PROFIT.NET"]["value"], "operating_profit": latest.get("IS.PROFIT.OPERATING", {}).get("value")}],
+        "balance_sheet": [{"total_debt": latest.get("BS.DEBT.TOTAL", {}).get("value"), "cash": latest.get("BS.ASSETS.CASH_AND_EQUIVALENTS", {}).get("value")}],
+        "cash_flow": [{"depreciation": latest.get("CF.OPERATING.DEPRECIATION", {}).get("value"), "capex": latest.get("CF.CAPEX", {}).get("value"), "operating_cash_flow": latest.get("CF.OPERATING.NET", {}).get("value")}],
+        "ratios": [{"outstanding_shares": latest["IS.SHARES.OUTSTANDING"]["value"]}],
+        "profile": [{"sector": "Chưa phân loại"}], "prices": [{"close": market_price}],
+    }
+
+
 def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -256,6 +396,12 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
                error_message=excluded.error_message, crawl_run_id=excluded.crawl_run_id""",
             (symbol, provider, document_type, period_type, year, quarter, period_end, status, source_url, payload, body_hash, _now(), error_code, error_message, run_id),
         )
+        if status == "SUCCESS":
+            row = db.execute(
+                "SELECT id FROM documents WHERE symbol=? AND provider=? AND document_type=? AND period_type=? AND fiscal_year=? AND fiscal_quarter IS NOT DISTINCT FROM ?",
+                (symbol, provider, document_type, period_type, year, quarter),
+            ).fetchone()
+            _canonicalize_document(symbol, provider, document_type, period_type, year, quarter, period_end, payload, int(row["id"]) if row else None)
 
 
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
