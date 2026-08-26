@@ -95,6 +95,8 @@ async function fetchRoutePayload(pathname) {
       return { dashboard: await getPortfolioDashboard() };
     case '/guide':
     case '/admin':
+    case '/admin/auth':
+    case '/admin/finance-data':
       return {};
     default:
       throw new Error('Trang không tồn tại.');
