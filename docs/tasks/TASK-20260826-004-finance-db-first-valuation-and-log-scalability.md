@@ -149,11 +149,11 @@ Completed in the latest implementation pass:
 - Added coherent reporting-period selection for valuation facts.
 - Replaced per-portfolio 5,000-row loading with bounded per-portfolio SQL pages and a k-way global merge.
 - Removed obsolete CafeF/live-provider fallback wording from `ValuationPage`.
-- Added contract tests for the new DB-only, period-coherence and bounded-merge invariants.
+- Added contract tests for the new DB-only, period-coherence, bounded-merge and partial-pagination invariants.
 
 Remaining before verification:
 
-1. **Fix partial-read pagination correctness.** If a later per-portfolio log page fails, do not return a normal `total/pages` value that still counts unread records. Return explicit partial/unknown pagination metadata with the failed portfolio(s), or fail the request. Add a regression test that makes a second `list_activity_page` call fail.
+1. ~~**Fix partial-read pagination correctness.**~~ **Completed.** Later page failures now return `partial: true`, `total/pages: null`, `failed_portfolios`, and `integrity.status: BROKEN`; a regression test covers a second `list_activity_page` failure.
 2. Add integration coverage for parser fixtures, crawl/seed → normalize → reconcile → valuation, missing/incomplete valuation, provider-not-called, duplicate-fetch and query-level pagination.
 3. Run the full Python test suite, production Vite build and admin/non-admin authorization smoke tests.
 4. Review whether a shared activity index or cursor API is needed for very large portfolio counts; the current k-way merge bounds rows per portfolio but still opens one bounded query per portfolio.
@@ -200,7 +200,7 @@ Implemented on branch `dev`:
 - Canonical facts accept TCBS/CafeF label/value payloads, record parse failures, expose reporting-period metadata, and valuation rejects mixed-period required facts.
 - Dividend canonical tables are initialized on read, ingestion is normalized/reconciled, and worker-only crawling/queue endpoints reject Vercel.
 - Finance Data admin API exposes runtime capability; production UI controls remain read-only.
-- Admin logs use SQL predicates and bounded per-portfolio pages with a k-way global merge; no 5,000-row history is loaded per portfolio.
+- Admin logs use SQL predicates and bounded per-portfolio pages with a k-way global merge; no 5,000-row history is loaded per portfolio. Partial reads are explicit and never advertise a fabricated total/pages.
 - Added contract tests under `tests/test_finance_db_contract.py` for DB-only routes, period coherence and bounded log merging.
 
 Remaining validation: run the required integration tests, full Python suite, production Vite build, and admin/non-admin smoke tests.
