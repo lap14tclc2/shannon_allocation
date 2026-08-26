@@ -153,9 +153,10 @@ Completed in the latest implementation pass:
 
 Remaining before verification:
 
-1. Add integration coverage for parser fixtures, crawl/seed → normalize → reconcile → valuation, missing/incomplete valuation, provider-not-called, duplicate-fetch and query-level pagination.
-2. Run the full Python test suite, production Vite build and admin/non-admin authorization smoke tests.
-3. Review whether a shared activity index or cursor API is needed for very large portfolio counts; the current k-way merge bounds rows per portfolio but still opens one bounded query per portfolio.
+1. **Fix partial-read pagination correctness.** If a later per-portfolio log page fails, do not return a normal `total/pages` value that still counts unread records. Return explicit partial/unknown pagination metadata with the failed portfolio(s), or fail the request. Add a regression test that makes a second `list_activity_page` call fail.
+2. Add integration coverage for parser fixtures, crawl/seed → normalize → reconcile → valuation, missing/incomplete valuation, provider-not-called, duplicate-fetch and query-level pagination.
+3. Run the full Python test suite, production Vite build and admin/non-admin authorization smoke tests.
+4. Review whether a shared activity index or cursor API is needed for very large portfolio counts; the current k-way merge bounds rows per portfolio but still opens one bounded query per portfolio.
 
 ## Acceptance Criteria
 
