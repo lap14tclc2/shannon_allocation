@@ -486,9 +486,10 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         run_id = int(row["id"])
     results = []
     periods = _periods()
+    latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
     for period_type, year, quarter, period_end in periods:
         for document_type in REQUIRED_DOCUMENTS:
-            if document_type == "DIVIDEND" and period_type != "FY":
+            if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
                 continue
             for provider in PROVIDERS:
                 if retry_failed_only:
