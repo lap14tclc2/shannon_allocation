@@ -192,7 +192,7 @@ def get_symbol_documents(symbol: str) -> dict[str, Any]:
 
 def _periods() -> list[tuple[str, int, int | None, str]]:
     today = date.today()
-    periods = [("FY", year, None, f"{year}-12-31") for year in range(today.year - 4, today.year + 1)]
+    periods = [("FY", year, None, f"{year}-12-31") for year in range(today.year - 4, today.year)]
     quarter = ((today.month - 1) // 3)
     for q in range(1, quarter + 1):
         end_month = q * 3
@@ -212,6 +212,8 @@ def ensure_required_documents(symbol: str) -> None:
     with _schema_connection(FINANCE_SCHEMA) as db:
         for period_type, year, quarter, period_end in periods:
             for document_type in REQUIRED_DOCUMENTS:
+                if document_type == "DIVIDEND" and period_type != "FY":
+                    continue
                 for provider in PROVIDERS:
                     if provider == "tcbs":
                         endpoint = {
@@ -339,6 +341,8 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
     periods = _periods()
     for period_type, year, quarter, period_end in periods:
         for document_type in REQUIRED_DOCUMENTS:
+            if document_type == "DIVIDEND" and period_type != "FY":
+                continue
             for provider in PROVIDERS:
                 if retry_failed_only:
                     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -354,9 +358,13 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
 
 def latest_documents_for_user(symbol: str) -> dict[str, Any]:
     result = get_symbol_documents(symbol)
-    if not result["documents"]:
+    ready = [
+        row for row in result["documents"]
+        if str(row.get("status") or "").upper() == "SUCCESS"
+    ]
+    if not ready:
         return {"ok": False, "code": "FINANCE_DATA_MISSING", "message": "contact admin", "symbol": symbol}
-    return {"ok": True, **result}
+    return {"ok": True, "documents": ready, "symbol": result["symbol"]}
 
 
 def sync_universe() -> dict[str, Any]:
