@@ -11,6 +11,7 @@ import os
 import urllib.error
 import urllib.request
 import time
+import threading
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -698,35 +699,84 @@ def get_canonical_dividend_events(symbol: str) -> list[dict[str, Any]]:
                ORDER BY effective_event_date DESC""",
             (ticker,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [dict(row) fodef _universe_progress(message: str) -> None:
+    print(f"[finance-universe] {message}", flush=True)
+
+
+def _listing_call_with_heartbeat(label: str, callback: Any) -> Any:
+    started = time.monotonic()
+    stop = threading.Event()
+
+    def heartbeat() -> None:
+        while not stop.wait(10):
+            elapsed = time.monotonic() - started
+            _universe_progress(f"{label} still running ({elapsed:.0f}s)")
+
+    monitor = threading.Thread(target=heartbeat, name="finance-universe-heartbeat", daemon=True)
+    monitor.start()
+    try:
+        return callback()
+    finally:
+        stop.set()
+        monitor.join(timeout=1)
 
 
 def sync_universe() -> dict[str, Any]:
     """Populate the exchange universe from Vnstock on an external worker.
 
-    Vercel remains read-only unless explicitly opted in, preventing serverless
-    provider calls and filesystem/runtime failures.
+    Vnstock is intentionally retained for the symbol list only. Finance
+    document crawling uses the configured TCBS/CafeF providers separately.
     """
+    started = time.monotonic()
+    _universe_progress("start runtime=local provider=vnstock")
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
+        _universe_progress(f"rejected runtime: {exc}")
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     try:
+        _universe_progress("loading vnstock.Listing")
         from vnstock import Listing  # type: ignore
         listing = Listing()
+        _universe_progress("vnstock.Listing initialized")
         frame = None
+        selected_method = None
         for method_name in ("all_symbols", "symbols_by_exchange"):
             method = getattr(listing, method_name, None)
             if not callable(method):
+                _universe_progress(f"skip Listing.{method_name}: unavailable")
                 continue
+            _universe_progress(f"calling Listing.{method_name}()")
             try:
-                frame = method()
+                frame = _listing_call_with_heartbeat(
+                    f"Listing.{method_name}()",
+                    method,
+                )
+                selected_method = method_name
                 break
             except TypeError:
-                frame = method(exchange="ALL")
+                _universe_progress(
+                    f"Listing.{method_name}() requires exchange=ALL; retrying"
+                )
+                frame = _listing_call_with_heartbeat(
+                    f"Listing.{method_name}(exchange=ALL)",
+                    lambda: method(exchange="ALL"),
+                )
+                selected_method = method_name
                 break
+        if frame is None:
+            _universe_progress("provider returned no frame or supported listing method")
+            return {
+                "ok": False,
+                "code": "UNIVERSE_PROVIDER_EMPTY",
+                "message": "Vnstock không trả danh sách mã.",
+            }
         rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+        _universe_progress(
+            f"received {len(rows)} symbol rows via Listing.{selected_method}"
+        )
         count = 0
+        checkpoint = max(1, len(rows) // 10) if rows else 1
         for row in rows:
             lowered = {str(k).lower().strip(): v for k, v in dict(row).items()}
             symbol = next((lowered.get(k) for k in ("symbol", "ticker", "code") if lowered.get(k)), None)
@@ -737,6 +787,20 @@ def sync_universe() -> dict[str, Any]:
                 upsert_security(str(symbol), str(exchange), str(name) if name else None, str(industry) if industry else None)
                 ensure_required_documents(str(symbol))
                 count += 1
-        return {"ok": count > 0, "count": count, "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã."}
+                if count == 1 or count % checkpoint == 0:
+                    _universe_progress(
+                        f"persisted {count}/{len(rows)} symbols (latest={str(symbol).upper().strip()})"
+                    )
+        elapsed = time.monotonic() - started
+        _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
+        return {
+            "ok": count > 0,
+            "count": count,
+            "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã.",
+        }
     except Exception as exc:
+        elapsed = time.monotonic() - started
+        _universe_progress(
+            f"failed after {elapsed:.1f}s: {type(exc).__name__}: {exc}"
+        )
         return {"ok": False, "code": "UNIVERSE_SYNC_FAILED", "message": str(exc)[:500]}
