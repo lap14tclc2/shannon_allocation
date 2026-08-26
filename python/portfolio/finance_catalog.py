@@ -300,18 +300,25 @@ def _number(value: Any) -> float | None:
         return None
     try:
         text = str(value).strip().replace("\u00a0", "").replace(" ", "")
-        # Provider payloads are normally VND numbers. Accept both JSON decimal
-        # notation and Vietnamese thousands separators without guessing units.
         if "," in text and "." in text:
-            text = text.replace(".", "").replace(",", ".")
+            # Treat the right-most separator as the decimal marker.
+            if text.rfind(",") > text.rfind("."):
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                text = text.replace(",", "")
+        elif "," in text:
+            tail = text.rsplit(",", 1)[1]
+            text = text.replace(",", "") if len(tail) == 3 else text.replace(",", ".")
+        elif "." in text and text.count(".") == 1:
+            head, tail = text.split(".", 1)
+            # Vietnamese financial exports commonly use 1.234 for thousands.
+            if len(tail) == 3 and len(head) <= 3:
+                text = head + tail
         elif text.count(".") > 1:
             text = text.replace(".", "")
-        elif "," in text:
-            text = text.replace(",", ".")
         return float(text)
     except (TypeError, ValueError):
         return None
-
 
 def _token(value: Any) -> str:
     import unicodedata
