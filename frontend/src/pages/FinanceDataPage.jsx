@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { crawlAdminFinanceData, getAdminFinanceData, retryAdminFinanceData } from '../lib/api.js';
+import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceData, retryAdminFinanceData } from '../lib/api.js';
 
 const PAGE_SIZE = 50;
 
@@ -44,6 +44,21 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
 
+  async function syncUniverse() {
+    setBusySymbol('*');
+    setMessage('');
+    try {
+      const result = await crawlAdminFinanceUniverse();
+      setMessage(result.message || 'Đã cập nhật danh sách mã.');
+      setPage(0);
+      await refresh();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusySymbol('');
+    }
+  }
+
   async function crawl(symbol, retry = false) {
     setBusySymbol(symbol);
     setMessage('');
@@ -67,8 +82,8 @@ export default function FinanceDataPage({ locale = 'vi' }) {
           <h1>Finance Data</h1>
           <p className="muted">Catalog BCTC dùng chung. User chỉ đọc dữ liệu đã lưu trong database, không tự crawl provider.</p>
         </div>
-        <button className="btn-primary" type="button" disabled={!expanded || Boolean(busySymbol)} onClick={() => crawl(expanded)}>
-          {busySymbol ? `Đang crawl ${busySymbol}…` : expanded ? `Crawl ${expanded}` : 'Chọn mã để crawl'}
+        <button className="btn-primary" type="button" disabled={Boolean(busySymbol)} onClick={syncUniverse}>
+          {busySymbol === '*' ? 'Đang cập nhật danh sách…' : 'Cập nhật danh sách mã'}
         </button>
       </header>
 
