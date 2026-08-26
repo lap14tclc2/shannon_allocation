@@ -501,6 +501,12 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
         missing.append("market_price")
     if missing:
         return {"ok": False, "code": "FINANCE_DATA_INCOMPLETE", "message": "contact admin", "symbol": ticker, "missing": missing}
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        security = db.execute(
+            "SELECT company_name, industry, exchange FROM securities WHERE symbol=?",
+            (ticker,),
+        ).fetchone()
+    profile = [dict(security)] if security else []
     return {
         "ok": True, "symbol": ticker, "provider": "finance_catalog",
         "fetched_at": latest["IS.PROFIT.NET"]["observed_at"],
@@ -508,7 +514,7 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
         "balance_sheet": [{"total_debt": latest.get("BS.DEBT.TOTAL", {}).get("value"), "cash": latest.get("BS.ASSETS.CASH_AND_EQUIVALENTS", {}).get("value")}],
         "cash_flow": [{"depreciation": latest.get("CF.OPERATING.DEPRECIATION", {}).get("value"), "capex": latest.get("CF.CAPEX", {}).get("value"), "operating_cash_flow": latest.get("CF.OPERATING.NET", {}).get("value")}],
         "ratios": [{"outstanding_shares": latest["IS.SHARES.OUTSTANDING"]["value"]}],
-        "profile": [{"sector": "Chưa phân loại"}], "prices": [{"close": market_price}],
+        "profile": profile, "prices": [{"close": market_price}],
     }
 
 
