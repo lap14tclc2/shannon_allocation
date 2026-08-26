@@ -400,7 +400,10 @@ def admin_finance_data(
     # Crawling is an external-worker concern. Keep the capability explicit so
     # the admin UI can disable controls before a request reaches the backend.
     runtime_name = "vercel" if os.environ.get("VERCEL") else "local"
-    worker_enabled = bool(os.environ.get("QPORT_FINANCE_WORKER")) and runtime_name != "vercel"
+    worker_enabled = (
+        runtime_name != "vercel"
+        and str(os.environ.get("QPORT_FINANCE_RUNTIME") or "").strip().lower() in {"local", "worker"}
+    )
     catalog["runtime"] = {
         "name": runtime_name,
         "can_crawl": worker_enabled,
