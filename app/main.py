@@ -32,7 +32,7 @@ from portfolio.postgres import (  # noqa: E402
     reset_portfolio_schema,
 )
 from portfolio.financial_data import FinancialDataStore, StatementType
-from portfolio.finance_catalog import crawl_symbol, get_symbol_documents, latest_documents_for_user, list_securities, sync_universe
+from portfolio.finance_catalog import crawl_symbol, latest_documents_for_user, list_securities, sync_universe
 from portfolio.value_engine import ValuationEngine
 from portfolio.validation import InputValidationError  # noqa: E402
 
