@@ -103,6 +103,7 @@ function symbolComment(symbol, metric) {
 export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], locale = 'vi' }) {
   const [snapshots, setSnapshots] = useState(initialSnapshots || []);
   const [valuations, setValuations] = useState({});
+  const [valuationErrors, setValuationErrors] = useState({});
   const quality = risk.quality || {};
   const coverage = Number(quality.coverage_weight || 0);
   const observations = Number(risk.return_observations || 0);
@@ -138,7 +139,8 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     try {
       const res = await getValuationReports(symbols);
       if (res) {
-        setValuations(res);
+        setValuations(res.reports || {});
+        setValuationErrors(res.errors || {});
         setValuationLoaded(true);
       }
     } finally {
@@ -413,14 +415,12 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
             Đánh giá khách quan theo triết lý Warren Buffett & Benjamin Graham. Sử dụng dòng tiền thật của chủ sở hữu sau khi đã trừ chi phí tái đầu tư.
           </p>
         </div>
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => loadValuations(true)}
-          disabled={valuationLoading}
-        >
-          {valuationLoading ? 'Đang cập nhật BCTC…' : '↻ Tải lại định giá BCTC'}
-        </button>
+        <div className="risk-valuation-actions">
+          <a className="btn-secondary" href="/valuation">Mở trang Định giá</a>
+          <button className="btn-secondary" type="button" onClick={() => loadValuations(true)} disabled={valuationLoading}>
+            {valuationLoading ? 'Đang cập nhật BCTC…' : '↻ Tải lại định giá BCTC'}
+          </button>
+        </div>
       </div>
 
       {/* Banner giải thích ngắn gọn & dễ hiểu phương pháp định giá */}
@@ -454,9 +454,14 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
         </div>
       </div>
 
-      {valuationLoading && Object.keys(valuations).length === 0 ? (
+      {Object.keys(valuationErrors).length > 0 && <div className="valuation-error-list" role="alert">
+        <strong>Một số mã chưa tải được BCTC:</strong>
+        {Object.entries(valuationErrors).map(([symbol, error]) => <p key={symbol}><b>{symbol}</b>: {error.message} <code>{error.code}</code></p>)}
+      </div>}
+
+      {valuationLoading && Object.keys(valuations).length === 0 && Object.keys(valuationErrors).length === 0 ? (
         <div className="empty-state compact-empty">Đang trích xuất BCTC và tính toán định giá cho các mã trong danh mục…</div>
-      ) : Object.keys(valuations).length === 0 ? (
+      ) : Object.keys(valuations).length === 0 && Object.keys(valuationErrors).length === 0 ? (
         <div className="empty-state compact-empty">
           Chưa có dữ liệu định giá BCTC. Bấm nút <b>"Tải lại định giá BCTC"</b> để nạp dữ liệu.
         </div>
