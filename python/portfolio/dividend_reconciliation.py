@@ -201,7 +201,7 @@ def reconcile_symbol(symbol: str) -> dict[str, Any]:
         ).fetchall()]
         groups: list[list[dict[str, Any]]] = []
         for row in rows:
-            target = next((group for group in groups if _close(_effective(group[0]), _effective(row)) and _same_economics(group[0], row)), None)
+            target = next((group for group in groups if _close(_effective(group[0]), _effective(row))), None)
             if target is None:
                 groups.append([row])
             else:
@@ -213,7 +213,6 @@ def reconcile_symbol(symbol: str) -> dict[str, Any]:
             kind = group[0]["dividend_type"]
             effective = min(_effective(item) for item in group)
             sources = sorted({str(item["provider"]) for item in group})
-            distinct_values = {round(float(item["cash_per_share"]), 6) for item in group if item.get("cash_per_share") is not None} if kind == "CASH_DIVIDEND" else {round(float(item["stock_ratio"]), 8) for item in group if item.get("stock_ratio") is not None}
             # A date family with materially different economics is an explicit conflict.
             family = [item for item in rows if item["dividend_type"] == kind and _close(_effective(item), effective)]
             family_values = {round(float(item["cash_per_share"]), 6) for item in family if item.get("cash_per_share") is not None} if kind == "CASH_DIVIDEND" else {round(float(item["stock_ratio"]), 8) for item in family if item.get("stock_ratio") is not None}
