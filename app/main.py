@@ -403,7 +403,7 @@ def admin_finance_data(
 def admin_finance_data_universe(qport_session: str | None = Cookie(default=None)):
     require_admin(qport_session)
     result = sync_universe()
-    if result.get("code") == "CRAWL_DISABLED_ON_VERCEL":
+    if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
     return result
 
