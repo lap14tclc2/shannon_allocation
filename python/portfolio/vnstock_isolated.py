@@ -379,6 +379,8 @@ def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120
     the QPort web server may remain on another Python runtime while all Vnstock
     calls execute in the known-good data environment.
     """
+    if os.environ.get("VERCEL"):
+        raise VnstockIsolatedError("Live Vnstock crawling is disabled on Vercel; use the external sync worker.")
     last_error = "unknown Vnstock failure"
     for attempt in range(1, max(1, int(max_attempts)) + 1):
         try:
