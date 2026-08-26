@@ -556,6 +556,22 @@ def latest_documents_for_user(symbol: str) -> dict[str, Any]:
     return {"ok": True, "documents": ready, "symbol": result["symbol"]}
 
 
+def get_canonical_dividend_events(symbol: str) -> list[dict[str, Any]]:
+    _ensure()
+    ticker = str(symbol).upper().strip()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        rows = db.execute(
+            """SELECT canonical_id AS event_key, symbol, dividend_type,
+                      effective_event_date, cash_per_share, stock_ratio,
+                      quality_status, evidence_json, last_seen_at
+               FROM dividend_canonical
+               WHERE symbol=? AND quality_status IN ('VERIFIED','SINGLE_SOURCE')
+               ORDER BY effective_event_date DESC""",
+            (ticker,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def sync_universe() -> dict[str, Any]:
     """Populate the exchange universe from Vnstock on an external worker.
 
