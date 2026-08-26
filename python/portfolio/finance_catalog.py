@@ -552,6 +552,10 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
 
 def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
     """Queue all active securities for an external worker; never crawls in request time."""
+    try:
+        _validate_crawl_runtime()
+    except RuntimeError as exc:
+        return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc), "queued": 0}
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
         if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
@@ -588,11 +592,11 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
     symbol = str(symbol).upper().strip()
     if not symbol:
         return {"ok": False, "code": "INVALID_SYMBOL"}
-    ensure_required_documents(symbol)
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
+    ensure_required_documents(symbol)
     with _schema_connection(FINANCE_SCHEMA) as db:
         row = db.execute("INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) VALUES(?,?,?,1) RETURNING id", (requested_by, "RUNNING", _now())).fetchone()
         run_id = int(row["id"])
