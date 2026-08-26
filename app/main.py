@@ -634,18 +634,22 @@ def admin_logs(
     q: str | None = Query(default=None),
     qport_session: str | None = Cookie(default=None),
 ):
-    """Admin-only bounded log query; predicates and limits are applied per schema."""
+    """Admin-only log query with bounded per-portfolio cursor-style merging.
+
+    Each schema is queried in occurred_at/id order in small pages. The
+    application merges only the requested global prefix; it never loads a
+    5,000-row history from every portfolio before sorting.
+    """
     require_admin(qport_session)
     from portfolio.activity import list_activity_page
 
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 200))
-    # Fetch only enough rows from each portfolio to produce the requested
-    # globally sorted page. This avoids the former 5,000-row-per-portfolio load.
-    fetch_limit = min(2000, page * page_size)
-    logs: list[dict] = []
+    target_end = page * page_size
+    sources: list[dict[str, Any]] = []
     total = 0
     failed_reads = 0
+
     for user in auth().list_users():
         if user.get("role") == "ADMIN":
             continue
@@ -653,22 +657,77 @@ def admin_logs(
             try:
                 store = PostgresPortfolioStore(int(user["id"]), selected["schema_name"])
                 rows, count = list_activity_page(
-                    store, page=1, page_size=fetch_limit,
-                    category=category, actor_type=actor_type, status=status, q=q,
+                    store,
+                    page=1,
+                    page_size=page_size,
+                    category=category,
+                    actor_type=actor_type,
+                    status=status,
+                    q=q,
                 )
-                total += count
-                logs.extend({
+                decorated = [{
                     **row,
                     "user_id": int(user["id"]),
                     "username": user["username"],
                     "portfolio_id": int(selected["id"]),
                     "portfolio_name": selected["name"],
-                } for row in rows)
+                } for row in rows]
+                sources.append({
+                    "store": store,
+                    "rows": decorated,
+                    "count": int(count),
+                    "next_page": 2,
+                    "user": user,
+                    "portfolio": selected,
+                })
+                total += int(count)
             except Exception:
                 failed_reads += 1
-    logs.sort(key=lambda row: (str(row.get("occurred_at") or ""), int(row.get("id") or 0)), reverse=True)
+
+    # K-way merge of already ordered per-schema pages. Memory is bounded by
+    # one page per portfolio plus the requested page prefix.
+    selected_rows: list[dict] = []
+    target_end = min(target_end, total)
+    while len(selected_rows) < target_end:
+        best_index = None
+        best_key = None
+        for index, source in enumerate(sources):
+            if not source["rows"]:
+                continue
+            row = source["rows"][0]
+            key = (
+                str(row.get("occurred_at") or ""),
+                int(row.get("id") or 0),
+                int(row.get("portfolio_id") or 0),
+            )
+            if best_key is None or key > best_key:
+                best_key = key
+                best_index = index
+        if best_index is None:
+            break
+        source = sources[best_index]
+        selected_rows.append(source["rows"].pop(0))
+        if not source["rows"] and (source["next_page"] - 1) * page_size < source["count"]:
+            rows, _ = list_activity_page(
+                source["store"],
+                page=source["next_page"],
+                page_size=page_size,
+                category=category,
+                actor_type=actor_type,
+                status=status,
+                q=q,
+            )
+            source["next_page"] += 1
+            source["rows"] = [{
+                **row,
+                "user_id": int(source["user"]["id"]),
+                "username": source["user"]["username"],
+                "portfolio_id": int(source["portfolio"]["id"]),
+                "portfolio_name": source["portfolio"]["name"],
+            } for row in rows]
+
     start = (page - 1) * page_size
-    visible = logs[start:start + page_size]
+    visible = selected_rows[start:start + page_size]
     pages = max(1, (total + page_size - 1) // page_size)
     return {
         "logs": visible,
