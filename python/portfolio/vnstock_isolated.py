@@ -390,6 +390,34 @@ def run_vnstock_task(task: str, payload: dict[str, Any], *, timeout: float = 120
     raise VnstockIsolatedError(last_error)
 
 
+def run_valuation_snapshot(symbol: str, *, timeout: float = 120.0, max_attempts: int = 2) -> dict:
+    """Fetch one symbol, falling back to fresh CafeF HTML when Vnstock is unusable or incomplete."""
+    vnstock_error = None
+    try:
+        snapshot = run_vnstock_task("valuation_snapshot", {"symbol": symbol}, timeout=timeout, max_attempts=max_attempts)
+        flattened_keys = {
+            re.sub(r"[^a-z0-9]+", "", str(key).lower())
+            for group in ("income_statement", "ratios", "profile")
+            for row in snapshot.get(group) or []
+            if isinstance(row, dict)
+            for key, value in row.items()
+            if value is not None and value != ""
+        }
+        has_profit = any(key.endswith(alias) for key in flattened_keys for alias in ("netprofit", "netprofitaftertax", "profitaftertax", "netincome"))
+        has_shares = any(key.endswith(alias) for key in flattened_keys for alias in ("outstandingshare", "outstandingshares", "sharesoutstanding"))
+        if has_profit and has_shares:
+            return snapshot
+        vnstock_error = "Vnstock snapshot is missing net income or outstanding shares"
+    except Exception as exc:
+        vnstock_error = str(exc)
+
+    from portfolio.cafef_financials import cafef_valuation_snapshot
+    fallback = cafef_valuation_snapshot(symbol)
+    fallback["fallback_from"] = "vnstock"
+    fallback["fallback_reason"] = vnstock_error
+    return fallback
+
+
 def vnstock_runtime_health(capability: str = "reference", *, cache_seconds: float = 60.0) -> dict:
     """Probe actual capability in the configured worker interpreter.
 
@@ -437,5 +465,4 @@ def vnstock_available() -> bool:
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         raise SystemExit(_worker_main())
-
 
