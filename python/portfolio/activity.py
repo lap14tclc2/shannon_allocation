@@ -128,6 +128,51 @@ def list_activity(store, *, limit: int = 500, category: str | None = None) -> li
     return out
 
 
+def list_activity_page(
+    store,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    category: str | None = None,
+    actor_type: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> tuple[list[dict], int]:
+    """Fetch a bounded page using SQL predicates; never materialize the full log."""
+    ensure_activity_schema(store)
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size or 50), 200))
+    clauses = []
+    params: list[Any] = []
+    if category and category.upper() != "ALL":
+        clauses.append("category=?"); params.append(category.upper())
+    if actor_type and actor_type.upper() != "ALL":
+        clauses.append("actor_type=?"); params.append(actor_type.upper())
+    if status and status.upper() != "ALL":
+        clauses.append("status=?"); params.append(status.upper())
+    if q:
+        needle = f"%{str(q).strip().lower()}%"
+        clauses.append("(LOWER(action) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(entity_type) LIKE ? OR LOWER(entity_id) LIKE ? OR LOWER(actor_id) LIKE ?)")
+        params.extend([needle] * 5)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    with store.connect() as db:
+        total_row = db.execute(f"SELECT COUNT(*) AS count FROM activity_log{where}", tuple(params)).fetchone()
+        rows = db.execute(
+            f"SELECT * FROM activity_log{where} ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?",
+            tuple(params + [page_size, (page - 1) * page_size]),
+        ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["details"] = json.loads(item.pop("details_json") or "{}")
+        except Exception:
+            item["details"] = {}
+            item.pop("details_json", None)
+        out.append(item)
+    return out, int(total_row["count"] if total_row else 0)
+
+
 def verify_activity_chain(store) -> dict:
     ensure_activity_schema(store)
     with store.connect() as db:
