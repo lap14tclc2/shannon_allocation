@@ -600,7 +600,15 @@ def portfolio_operations(qport_session: str | None = Cookie(default=None)):
 
 
 @app.get("/api/admin/logs")
-def admin_logs(qport_session: str | None = Cookie(default=None)):
+def admin_logs(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    category: str | None = Query(default=None),
+    actor_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    qport_session: str | None = Cookie(default=None),
+):
     """Return a cross-portfolio audit view; admin authorization is mandatory."""
     require_admin(qport_session)
     from portfolio.activity import list_activity, verify_activity_chain
@@ -644,8 +652,26 @@ def admin_logs(qport_session: str | None = Cookie(default=None)):
                     "portfolio_name": selected["name"],
                 })
     logs.sort(key=lambda row: str(row.get("occurred_at") or ""), reverse=True)
+    filtered = []
+    needle = str(q or "").strip().lower()
+    for row in logs:
+        if category and category.upper() != "ALL" and str(row.get("category") or "").upper() != category.upper():
+            continue
+        if actor_type and actor_type.upper() != "ALL" and str(row.get("actor_type") or "").upper() != actor_type.upper():
+            continue
+        if status and status.upper() != "ALL" and str(row.get("status") or "").upper() != status.upper():
+            continue
+        if needle:
+            haystack = " ".join(str(row.get(key) or "") for key in ("action", "summary", "entity_type", "entity_id", "actor_id", "request_id", "username")).lower()
+            if needle not in haystack:
+                continue
+        filtered.append(row)
+    start = (page - 1) * page_size
+    end = start + page_size
     return {
-        "logs": logs[:5000],
+        "logs": filtered[start:end],
+        "pagination": {"page": page, "page_size": page_size, "total": len(filtered), "pages": max(1, (len(filtered) + page_size - 1) // page_size)},
+        "filters": {"category": category or "ALL", "actor_type": actor_type or "ALL", "status": status or "ALL", "q": q or ""},
         "integrity": {"status": "VERIFIED" if integrity_ok else "BROKEN", "records": len(logs)},
     }
 
