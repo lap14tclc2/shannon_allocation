@@ -980,7 +980,7 @@ def portfolio_symbol_valuation(
             },
         },
         "data_freshness": {
-            "cache": "BYPASS",
+            "cache": "DATABASE",
             "fetched_at": fetched_at,
             "provider": snapshot.get("provider"),
             "api_variant": snapshot.get("api_variant"),
