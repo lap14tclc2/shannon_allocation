@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 
 from portfolio.finance_catalog import _periods, _value  # noqa: E402
+from portfolio.dividend_reconciliation import _same_economics  # noqa: E402
 
 
 def test_provider_label_value_rows_are_normalized():
@@ -54,3 +55,15 @@ def test_log_pagination_uses_sql_limit_offset_before_materialization():
     assert "COUNT(*)" in page_source
     assert "ORDER BY occurred_at DESC, id DESC" in page_source
     assert "LIMIT ? OFFSET ?" in page_source
+
+def test_dividend_reconciliation_detects_provider_mismatch():
+    base = {"dividend_type": "CASH_DIVIDEND", "cash_per_share": 1000}
+    assert _same_economics(base, {**base, "cash_per_share": 1000})
+    assert not _same_economics(base, {**base, "cash_per_share": 1200})
+
+
+def test_dividend_history_is_one_endpoint_per_provider_run():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+    fetch = source[source.index("def crawl_symbol("):source.index("def enqueue_crawl_all(")]
+    assert fetch.count('document_type == "DIVIDEND"') >= 1
+    assert "latest_fy" in fetch
