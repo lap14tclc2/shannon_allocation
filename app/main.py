@@ -649,6 +649,7 @@ def admin_logs(
     sources: list[dict[str, Any]] = []
     total = 0
     failed_reads = 0
+    failed_portfolios: list[dict[str, Any]] = []
 
     for user in auth().list_users():
         if user.get("role") == "ADMIN":
@@ -683,6 +684,12 @@ def admin_logs(
                 total += int(count)
             except Exception:
                 failed_reads += 1
+                failed_portfolios.append({
+                    "user_id": int(user["id"]),
+                    "username": user.get("username"),
+                    "portfolio_id": int(selected["id"]),
+                    "portfolio_name": selected.get("name"),
+                })
 
     # K-way merge of already ordered per-schema pages. Memory is bounded by
     # one page per portfolio plus the requested page prefix.
@@ -720,6 +727,12 @@ def admin_logs(
                 )
             except Exception:
                 failed_reads += 1
+                failed_portfolios.append({
+                    "user_id": int(source["user"]["id"]),
+                    "username": source["user"].get("username"),
+                    "portfolio_id": int(source["portfolio"]["id"]),
+                    "portfolio_name": source["portfolio"].get("name"),
+                })
                 source["count"] = 0
                 rows = []
             source["next_page"] += 1
@@ -733,13 +746,21 @@ def admin_logs(
 
     start = (page - 1) * page_size
     visible = selected_rows[start:start + page_size]
-    pages = max(1, (total + page_size - 1) // page_size)
+    complete = failed_reads == 0
+    pages = max(1, (total + page_size - 1) // page_size) if complete else None
     return {
         "logs": visible,
-        "pagination": {"page": page, "page_size": page_size, "total": total, "pages": pages},
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total if complete else None,
+            "pages": pages,
+            "partial": not complete,
+            "failed_portfolios": failed_portfolios,
+        },
         "filters": {"category": category or "ALL", "actor_type": actor_type or "ALL", "status": status or "ALL", "q": q or ""},
         "categories": ["SYSTEM", "AUTH", "PORTFOLIO", "TRANSACTION", "CORPORATE_ACTION", "SYNC"],
-        "integrity": {"status": "DEFERRED" if failed_reads == 0 else "BROKEN", "records": total, "read_failures": failed_reads},
+        "integrity": {"status": "DEFERRED" if complete else "BROKEN", "records": total if complete else None, "read_failures": failed_reads},
     }
 
 
