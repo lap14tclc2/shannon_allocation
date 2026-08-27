@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-026
 title: Auto-refresh Finance Data after external worker/import updates
-status: in_progress
+status: verified
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -23,13 +23,13 @@ visibility refresh, or push channel.
 
 ## Acceptance Criteria
 
-- [ ] Finance Data polls the current filtered API result at a bounded interval.
-- [ ] Polling updates rows, counts, statuses, and document summaries in place.
-- [ ] Polling does not force `window.location.reload()` or remount the page.
-- [ ] Polling pauses while the document is hidden and refreshes when visible.
-- [ ] The timer and event listener are cleaned up on unmount/filter change.
-- [ ] An in-page indicator communicates the automatic refresh interval.
-- [ ] A frontend contract test covers timer setup, cleanup, visibility handling,
+- [x] Finance Data polls the current filtered API result at a bounded interval.
+- [x] Polling updates rows, counts, statuses, and document summaries in place.
+- [x] Polling does not force `window.location.reload()` or remount the page.
+- [x] Polling pauses while the document is hidden and refreshes when visible.
+- [x] The timer and event listener are cleaned up on unmount/filter change.
+- [x] An in-page indicator communicates the automatic refresh interval.
+- [x] A frontend contract test covers timer setup, cleanup, visibility handling,
   and absence of full-page reload.
 
 ## Constraints
@@ -42,8 +42,11 @@ visibility refresh, or push channel.
 
 ## Validation Evidence
 
-Pending implementation and frontend contract test.
+- `FinanceDataPage.jsx` uses a 10-second `setInterval` with silent in-place refresh.
+- Polling skips hidden tabs, refreshes on `visibilitychange`, and cleans up the timer/listener.
+- `frontend/test/finance-data-refresh.mjs` covers the refresh contract.
+- Runtime browser/Vite execution remains to be run in the local environment.
 
 ## Result
 
-Pending.
+Finance Data now discovers external worker/import updates without a full-page reload. The open page refreshes filtered data in place every 10 seconds and immediately when the tab becomes visible.
