@@ -8,6 +8,10 @@ def test_readiness_contract_requires_complete_fy_inputs_and_blocks_quarters():
     assert "valuation_readiness_audit" in source
     assert 'row.get("period_type") == "FY"' in source
     assert "FINANCE_DATA_NOT_READY" in source
+    api = Path("app/main.py").read_text(encoding="utf-8")
+    ui = Path("frontend/src/pages/FinanceDataPage.jsx").read_text(encoding="utf-8")
     assert "TTM_REQUIRED" in engine
     assert 'Decimal("1000000000000")' not in engine
     assert "OWNER_EARNINGS_NON_POSITIVE" in engine
+    assert "/api/admin/finance-data/{symbol}/audit" in api
+    assert "Valuation readiness" in ui

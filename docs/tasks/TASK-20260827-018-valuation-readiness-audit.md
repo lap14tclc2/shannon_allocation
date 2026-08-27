@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-018
 title: Add valuation-readiness audit and strict value-engine inputs
-status: ready
+status: in_progress
 priority: critical
 created: 2026-08-27
 updated: 2026-08-27
@@ -30,6 +30,21 @@ Audit crawled finance documents against the factual inputs required by QPort's v
 - Do not create a valuation from a fallback numeric constant.
 - Banks/financials are outside this normal-enterprise owner-earnings readiness contract until a dedicated model exists.
 
-## Result
+## Implementation
 
-Pending implementation.
+- Implemented backend readiness audit with FY-only selection, parse-error visibility,
+  cross-source conflict detection, document usability counts, and required-fact coverage.
+- Valuation snapshots now return `FINANCE_DATA_NOT_READY` plus the audit when the
+  data is not ready.
+- Added admin audit endpoint and Finance Data expanded-panel readiness display.
+- Value engine now rejects quarterly facts unless an explicit TTM bridge is supplied
+  and no longer creates D&A, owner earnings, EBIT, debt, or cash fallback values.
+- Added unit/contract coverage and Python AST syntax checks.
+
+## Remaining Validation
+
+- [ ] Run PostgreSQL-backed readiness fixtures for READY, parse-error, missing-fact,
+  and conflict cases.
+- [ ] Run the full Python test suite from the repository root.
+- [ ] Run the Vite production build.
+
