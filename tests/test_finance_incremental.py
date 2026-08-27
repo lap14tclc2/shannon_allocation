@@ -1,4 +1,12 @@
-from python.portfolio.finance_catalog import _should_fetch_document
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+
+from portfolio.finance_catalog import _should_fetch_document  # noqa: E402
 
 
 def test_incremental_crawl_skips_successful_documents():
