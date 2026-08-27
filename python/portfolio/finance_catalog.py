@@ -1223,11 +1223,13 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
 
 def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None, db: Any | None = None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
-    # Commit the raw document first. Canonicalization uses a separate connection
-    # only after this transaction is closed, avoiding nested transaction locks
-    # and guaranteeing the source_document_id is visible to the normalizer.
-    with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
-        db.execute(
+    connection = (
+        nullcontext(db)
+        if db is not None
+        else _schema_connection(FINANCE_SCHEMA)
+    )
+    with connection as conn:
+        conn.execute(
             """INSERT INTO documents(symbol,provider,document_type,period_type,fiscal_year,fiscal_quarter,period_end,status,source_url,payload,content_hash,fetched_at,error_code,error_message,crawl_run_id)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT (symbol, provider, document_type, period_type, fiscal_year, (COALESCE(fiscal_quarter, 0)))
@@ -1236,21 +1238,21 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
                error_message=excluded.error_message, crawl_run_id=excluded.crawl_run_id""",
             (symbol, provider, document_type, period_type, year, quarter, period_end, status, source_url, payload, body_hash, _now(), error_code, error_message, run_id),
         )
-    if status != "SUCCESS":
-        return
-    with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
-        row = db.execute(
+        if status != "SUCCESS":
+            return
+        row = conn.execute(
             "SELECT id FROM documents WHERE symbol=? AND provider=? AND document_type=? AND period_type=? AND fiscal_year=? AND fiscal_quarter IS NOT DISTINCT FROM ?",
             (symbol, provider, document_type, period_type, year, quarter),
         ).fetchone()
-    document_id = int(row["id"]) if row else None
-    if document_type != "DIVIDEND":
-        _canonicalize_document(
-            symbol, provider, document_type, period_type, year, quarter,
-            period_end, payload, document_id, db=conn,
-        )
-    else:
-        _reconcile_dividend_document(symbol, provider, payload, document_id)
+        document_id = int(row["id"]) if row else None
+        if document_type != "DIVIDEND":
+            _canonicalize_document(
+                symbol, provider, document_type, period_type, year, quarter,
+                period_end, payload, document_id, db=conn,
+            )
+        else:
+            _reconcile_dividend_document(symbol, provider, payload, document_id)
+
 
 def _crawl_progress(symbol: str, message: str) -> None:
     print(f"[finance-crawl] symbol={symbol} {message}", flush=True)
@@ -1758,7 +1760,7 @@ def import_tcbs_crawled_directory(
                             + f" code={code} status={status_label}",
                         )
     
-            processed += 1
+        processed += 1
         if symbol_failed:
             failed_symbols.append(symbol)
         else:
