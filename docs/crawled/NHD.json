@@ -1,0 +1,141 @@
+{
+  "symbol": "NHD",
+  "source": "tcbs",
+  "crawled_at": "2026-08-27T14:39:38Z",
+  "data": {
+    "incomestatement_quarter": [],
+    "balancesheet_quarter": [],
+    "cashflow_quarter": [],
+    "incomestatement_year": [
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2025,
+        "revenue": 1098,
+        "yearRevenueGrowth": null,
+        "quarterRevenueGrowth": null,
+        "costOfGoodSold": -664,
+        "grossProfit": 434,
+        "operationExpense": -353,
+        "operationProfit": 81,
+        "yearOperationProfitGrowth": null,
+        "quarterOperationProfitGrowth": null,
+        "interestExpense": -21,
+        "preTaxProfit": 65,
+        "postTaxProfit": 51,
+        "shareHolderIncome": 51,
+        "yearShareHolderIncomeGrowth": null,
+        "quarterShareHolderIncomeGrowth": null,
+        "investProfit": null,
+        "serviceProfit": null,
+        "otherProfit": null,
+        "provisionExpense": null,
+        "operationIncome": null,
+        "ebitda": 113
+      }
+    ],
+    "balancesheet_year": [
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2025,
+        "shortAsset": 707,
+        "cash": 157,
+        "shortInvest": 47,
+        "shortReceivable": 275,
+        "inventory": 223,
+        "longAsset": 289,
+        "fixedAsset": 258,
+        "asset": 996,
+        "debt": 551,
+        "shortDebt": 255,
+        "longDebt": 35,
+        "equity": 445,
+        "capital": 52,
+        "centralBankDeposit": null,
+        "otherBankDeposit": null,
+        "otherBankLoan": null,
+        "stockInvest": null,
+        "customerLoan": null,
+        "badLoan": null,
+        "provision": null,
+        "netCustomerLoan": null,
+        "otherAsset": null,
+        "otherBankCredit": null,
+        "oweOtherBank": null,
+        "oweCentralBank": null,
+        "valuablePaper": null,
+        "payableInterest": null,
+        "receivableInterest": null,
+        "deposit": null,
+        "otherDebt": 7,
+        "fund": null,
+        "unDistributedIncome": 0,
+        "minorShareHolderProfit": 0,
+        "payable": 551
+      }
+    ],
+    "cashflow_year": [
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2025,
+        "investCost": -9,
+        "fromInvest": 42,
+        "fromFinancial": -20,
+        "fromSale": 51,
+        "freeCashFlow": 107
+      },
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2024,
+        "investCost": -9,
+        "fromInvest": -58,
+        "fromFinancial": -2,
+        "fromSale": 64,
+        "freeCashFlow": 44
+      },
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2023,
+        "investCost": -41,
+        "fromInvest": -44,
+        "fromFinancial": -66,
+        "fromSale": 67,
+        "freeCashFlow": null
+      },
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2022,
+        "investCost": -27,
+        "fromInvest": -29,
+        "fromFinancial": 50,
+        "fromSale": 92,
+        "freeCashFlow": null
+      },
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2021,
+        "investCost": -47,
+        "fromInvest": -46,
+        "fromFinancial": 6,
+        "fromSale": 16,
+        "freeCashFlow": null
+      },
+      {
+        "ticker": "NHD",
+        "quarter": 5,
+        "year": 2020,
+        "investCost": -95,
+        "fromInvest": -95,
+        "fromFinancial": 109,
+        "fromSale": 13,
+        "freeCashFlow": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "symbol": "HHB",
+  "source": "tcbs",
+  "crawled_at": "2026-08-27T14:28:20Z",
+  "data": {
+    "incomestatement_quarter": [],
+    "balancesheet_quarter": [],
+    "cashflow_quarter": [],
+    "incomestatement_year": [
+      {
+        "ticker": "HHB",
+        "quarter": 5,
+        "year": 2025,
+        "revenue": 201,
+        "yearRevenueGrowth": null,
+        "quarterRevenueGrowth": null,
+        "costOfGoodSold": -115,
+        "grossProfit": 87,
+        "operationExpense": -69,
+        "operationProfit": 17,
+        "yearOperationProfitGrowth": null,
+        "quarterOperationProfitGrowth": null,
+        "interestExpense": 0,
+        "preTaxProfit": 21,
+        "postTaxProfit": 16,
+        "shareHolderIncome": 16,
+        "yearShareHolderIncomeGrowth": null,
+        "quarterShareHolderIncomeGrowth": null,
+        "investProfit": null,
+        "serviceProfit": null,
+        "otherProfit": null,
+        "provisionExpense": null,
+        "operationIncome": null,
+        "ebitda": 25
+      }
+    ],
+    "balancesheet_year": [
+      {
+        "ticker": "HHB",
+        "quarter": 5,
+        "year": 2025,
+        "shortAsset": 77,
+        "cash": 11,
+        "shortInvest": 45,
+        "shortReceivable": 5,
+        "inventory": 13,
+        "longAsset": 98,
+        "fixedAsset": 77,
+        "asset": 174,
+        "debt": 50,
+        "shortDebt": 0,
+        "longDebt": 0,
+        "equity": 124,
+        "capital": 100,
+        "centralBankDeposit": null,
+        "otherBankDeposit": null,
+        "otherBankLoan": null,
+        "stockInvest": null,
+        "customerLoan": null,
+        "badLoan": null,
+        "provision": null,
+        "netCustomerLoan": null,
+        "otherAsset": null,
+        "otherBankCredit": null,
+        "oweOtherBank": null,
+        "oweCentralBank": null,
+        "valuablePaper": null,
+        "payableInterest": null,
+        "receivableInterest": null,
+        "deposit": null,
+        "otherDebt": 4,
+        "fund": null,
+        "unDistributedIncome": 0,
+        "minorShareHolderProfit": 0,
+        "payable": 50
+      }
+    ],
+    "cashflow_year": [
+      {
+        "ticker": "HHB",
+        "quarter": 5,
+        "year": 2025,
+        "investCost": -16,
+        "fromInvest": -1,
+        "fromFinancial": -8,
+        "fromSale": 20,
+        "freeCashFlow": 13
+      }
+    ]
+  }
+}

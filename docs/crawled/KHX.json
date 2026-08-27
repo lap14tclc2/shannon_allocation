@@ -1,0 +1,91 @@
+{
+  "symbol": "KHX",
+  "source": "tcbs",
+  "crawled_at": "2026-08-27T14:33:17Z",
+  "data": {
+    "incomestatement_quarter": [],
+    "balancesheet_quarter": [],
+    "cashflow_quarter": [],
+    "incomestatement_year": [
+      {
+        "ticker": "KHX",
+        "quarter": 5,
+        "year": 2025,
+        "revenue": 162,
+        "yearRevenueGrowth": null,
+        "quarterRevenueGrowth": null,
+        "costOfGoodSold": -114,
+        "grossProfit": 48,
+        "operationExpense": -41,
+        "operationProfit": 7,
+        "yearOperationProfitGrowth": null,
+        "quarterOperationProfitGrowth": null,
+        "interestExpense": -2,
+        "preTaxProfit": 5,
+        "postTaxProfit": 4,
+        "shareHolderIncome": 4,
+        "yearShareHolderIncomeGrowth": null,
+        "quarterShareHolderIncomeGrowth": null,
+        "investProfit": null,
+        "serviceProfit": null,
+        "otherProfit": null,
+        "provisionExpense": null,
+        "operationIncome": null,
+        "ebitda": 9
+      }
+    ],
+    "balancesheet_year": [
+      {
+        "ticker": "KHX",
+        "quarter": 5,
+        "year": 2025,
+        "shortAsset": 44,
+        "cash": 11,
+        "shortInvest": 1,
+        "shortReceivable": 1,
+        "inventory": 31,
+        "longAsset": 88,
+        "fixedAsset": 31,
+        "asset": 132,
+        "debt": 77,
+        "shortDebt": 38,
+        "longDebt": 2,
+        "equity": 55,
+        "capital": 50,
+        "centralBankDeposit": null,
+        "otherBankDeposit": null,
+        "otherBankLoan": null,
+        "stockInvest": null,
+        "customerLoan": null,
+        "badLoan": null,
+        "provision": null,
+        "netCustomerLoan": null,
+        "otherAsset": null,
+        "otherBankCredit": null,
+        "oweOtherBank": null,
+        "oweCentralBank": null,
+        "valuablePaper": null,
+        "payableInterest": null,
+        "receivableInterest": null,
+        "deposit": null,
+        "otherDebt": 1,
+        "fund": null,
+        "unDistributedIncome": 0,
+        "minorShareHolderProfit": 0,
+        "payable": 77
+      }
+    ],
+    "cashflow_year": [
+      {
+        "ticker": "KHX",
+        "quarter": 5,
+        "year": 2025,
+        "investCost": -10,
+        "fromInvest": -10,
+        "fromFinancial": -1,
+        "fromSale": 4,
+        "freeCashFlow": -2
+      }
+    ]
+  }
+}
