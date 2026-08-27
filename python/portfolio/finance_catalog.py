@@ -638,6 +638,16 @@ def _validate_crawl_runtime() -> None:
         raise RuntimeError("CRAWL_RUNTIME_INVALID: provider crawling is disabled on Vercel")
 
 
+def _should_fetch_document(status: str | None, *, retry_failed_only: bool) -> bool:
+    """Return whether a document needs a provider request in this crawl."""
+    normalized = str(status or "").upper()
+    if normalized == "SUCCESS":
+        return False
+    if retry_failed_only:
+        return normalized == "FAILED"
+    return True
+
+
 def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
     _ensure()
     symbol = str(symbol).upper().strip()
@@ -652,6 +662,7 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         row = db.execute("INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) VALUES(?,?,?,1) RETURNING id", (requested_by, "RUNNING", _now())).fetchone()
         run_id = int(row["id"])
     results = []
+    skipped_count = 0
     periods = _periods()
     latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
     for period_type, year, quarter, period_end in periods:
@@ -659,16 +670,41 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
             if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
                 continue
             for provider in PROVIDERS:
-                if retry_failed_only:
-                    with _schema_connection(FINANCE_SCHEMA) as db:
-                        existing = db.execute("SELECT status FROM documents WHERE symbol=? AND provider=? AND document_type=? AND period_type=? AND fiscal_year=? AND fiscal_quarter IS NOT DISTINCT FROM ?", (symbol, provider, document_type, period_type, year, quarter)).fetchone()
-                    if existing and existing["status"] == "SUCCESS":
-                        continue
-                results.append(_fetch_provider(symbol, provider, document_type, period_type, year, quarter, period_end, run_id))
+                with _schema_connection(FINANCE_SCHEMA) as db:
+                    existing = db.execute(
+                        "SELECT status FROM documents WHERE symbol=? AND provider=? AND document_type=? "
+                        "AND period_type=? AND fiscal_year=? "
+                        "AND fiscal_quarter IS NOT DISTINCT FROM ?",
+                        (symbol, provider, document_type, period_type, year, quarter),
+                    ).fetchone()
+                status = existing["status"] if existing else None
+                if not _should_fetch_document(
+                    status,
+                    retry_failed_only=retry_failed_only,
+                ):
+                    skipped_count += 1
+                    continue
+                results.append(
+                    _fetch_provider(
+                        symbol, provider, document_type, period_type,
+                        year, quarter, period_end, run_id,
+                    )
+                )
     success = sum(1 for item in results if item)
+    failure = len(results) - success
     with _schema_connection(FINANCE_SCHEMA) as db:
-        db.execute("UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? WHERE id=?", ("COMPLETED" if success else "FAILED", _now(), success, len(results)-success, run_id))
-    return {"ok": bool(success), "run_id": run_id, "symbol": symbol, "success_count": success, "failure_count": len(results)-success}
+        db.execute(
+            "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? WHERE id=?",
+            ("COMPLETED", _now(), success, failure, run_id),
+        )
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "symbol": symbol,
+        "success_count": success,
+        "failure_count": failure,
+        "skipped_count": skipped_count,
+    }
 
 
 def latest_documents_for_user(symbol: str) -> dict[str, Any]:
