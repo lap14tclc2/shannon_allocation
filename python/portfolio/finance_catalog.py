@@ -930,7 +930,6 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             )
 
 
-def _reconcile_dividend_document
 def _reconcile_dividend_document(symbol: str, provider: str, payload: str | None, source_document_id: int | None) -> None:
     rows = (
         _cafef_dividend_rows(payload)
