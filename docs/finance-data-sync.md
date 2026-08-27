@@ -124,6 +124,8 @@ to retry only periods currently marked FAILED:
 
     python scripts/finance_import.py --directory docs/crawled --retry-failed-only
 
-It prints per-symbol progress and a final count of imported, failed, and
-skipped documents. Stop the network worker before importing if both processes
-would use the same database.
+It prints per-symbol progress and a final count of imported, failed,
+unavailable, and skipped documents. The prepared-file importer batches document
+and canonical-fact writes in one transaction per symbol, so a file with many
+periods does not open a new database connection for every period. Stop the
+network worker before importing if both processes would use the same database.
