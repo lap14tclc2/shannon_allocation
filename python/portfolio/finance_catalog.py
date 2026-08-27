@@ -557,7 +557,6 @@ def ensure_required_documents(symbol: str) -> None:
 
 
 class _CafeFTableParser(HTMLParser):
-class _CafeFTableParser(HTMLParser):
     """Extract simple label/value rows from CafeF financial HTML tables."""
 
     def __init__(self) -> None:
@@ -1484,7 +1483,6 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
 
 
 def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
-def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
     """Claim one queued job that still has missing or incomplete documents."""
     _ensure()
     cutoff = datetime.now(timezone.utc).timestamp() - max(60, int(stale_after_seconds))
@@ -1965,7 +1963,7 @@ def crawl_symbol(
     }
 
 
-def finance_database_status(def finance_database_status() -> dict[str, Any]:
+def finance_database_status() -> dict[str, Any]:
     """Return operational counts without exposing document payloads."""
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
