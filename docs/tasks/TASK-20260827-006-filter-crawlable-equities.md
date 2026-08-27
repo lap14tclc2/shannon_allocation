@@ -24,6 +24,7 @@ The direct Vnstock exchange feed includes multiple instrument types. The Finance
 - [x] Filter before upserting securities, creating PENDING documents or enqueueing work.
 - [x] Re-enable valid securities on a later successful sync.
 - [x] Mark previously active symbols that are absent from the filtered universe inactive.
+- [x] Cancel queued crawl jobs for newly inactive symbols, and reject direct crawl attempts for inactive symbols.
 - [x] Log accepted/rejected/deactivated counts without printing source payloads.
 - [x] Add regression coverage for warrants, nan names and unknown exchanges.
 

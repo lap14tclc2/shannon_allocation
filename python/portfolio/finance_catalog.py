@@ -668,6 +668,12 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         _validate_crawl_runtime()
     except RuntimeError as exc:
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
+    if not _is_crawlable_security(symbol):
+        return {
+            "ok": False,
+            "code": "SECURITY_NOT_CRAWLABLE",
+            "message": "Symbol is not an active listed equity in the Finance universe.",
+        }
     _crawl_progress(symbol, f"start retry_failed_only={retry_failed_only}")
     ensure_required_documents(symbol)
     _crawl_progress(symbol, "required document placeholders ensured")
@@ -923,19 +929,37 @@ def _filter_crawlable_equity_rows(
     return accepted, rejected
 
 
-def _deactivate_securities_not_in(symbols: list[str]) -> int:
-    """Hide stale instruments after a successful equity-universe refresh."""
+def _deactivate_securities_not_in(symbols: list[str]) -> tuple[int, int]:
+    """Hide stale instruments and cancel their queued crawl jobs after a refresh."""
     if not symbols:
-        return 0
+        return 0, 0
     _ensure()
     placeholders = ",".join("?" for _ in symbols)
+    now = _now()
     with _schema_connection(FINANCE_SCHEMA) as db:
-        result = db.execute(
+        deactivated = db.execute(
             f"UPDATE securities SET is_active=0 WHERE is_active=1 "
             f"AND symbol NOT IN ({placeholders})",
             tuple(symbols),
         )
-    return int(result.rowcount or 0)
+        cancelled = db.execute(
+            f"UPDATE crawl_queue SET status='FAILED', finished_at=?, "
+            f"error='UNIVERSE_FILTERED' WHERE status='QUEUED' "
+            f"AND symbol NOT IN ({placeholders})",
+            (now, *symbols),
+        )
+    return int(deactivated.rowcount or 0), int(cancelled.rowcount or 0)
+
+
+def _is_crawlable_security(symbol: str) -> bool:
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        row = db.execute(
+            "SELECT 1 FROM securities WHERE symbol=? AND is_active=1 "
+            "AND exchange IN ('HOSE','HNX','UPCOM')",
+            (symbol,),
+        ).fetchone()
+    return row is not None
 
 
 def sync_universe() -> dict[str, Any]:
@@ -1031,7 +1055,7 @@ def sync_universe() -> dict[str, Any]:
                     f"persisted {count}/{len(rows)} symbols (latest={symbol})"
                 )
 
-        deactivated_count = _deactivate_securities_not_in(
+        deactivated_count, cancelled_queue_count = _deactivate_securities_not_in(
             [row["symbol"] for row in normalized_rows if row.get("symbol")]
         )
         elapsed = time.monotonic() - started
@@ -1047,7 +1071,8 @@ def sync_universe() -> dict[str, Any]:
             for row in normalized_rows[:3]
         ]
         _universe_progress(
-            f"completed count={count} deactivated={deactivated_count} elapsed={elapsed:.1f}s"
+            f"completed count={count} deactivated={deactivated_count} "
+            f"cancelled_queued={cancelled_queue_count} elapsed={elapsed:.1f}s"
         )
         _universe_progress(
             f"mapping_samples={json.dumps(diagnostics, ensure_ascii=False)}"
@@ -1077,6 +1102,7 @@ def sync_universe() -> dict[str, Any]:
             "quality": quality,
             "rejected": rejected,
             "deactivated_count": deactivated_count,
+            "cancelled_queue_count": cancelled_queue_count,
             "warnings": warnings,
             "message": (
                 f"Đã đồng bộ {count} mã từ Vnstock."
