@@ -1672,7 +1672,7 @@ def import_tcbs_crawled_directory(
                             code,
                             detail,
                             run_id,
-                        db=batch_db,
+                            db=batch_db,
                         )
                         failed_documents += 1
                         symbol_failed += 1
@@ -1721,7 +1721,7 @@ def import_tcbs_crawled_directory(
                             None,
                             None,
                             run_id,
-                        db=batch_db,
+                            db=batch_db,
                         )
                         imported_documents += 1
                         symbol_imported += 1
@@ -1742,7 +1742,7 @@ def import_tcbs_crawled_directory(
                             code,
                             detail,
                             run_id,
-                        db=batch_db,
+                            db=batch_db,
                         )
                         if document_status == "NOT_AVAILABLE":
                             unavailable_documents += 1
