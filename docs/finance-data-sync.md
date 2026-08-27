@@ -98,3 +98,13 @@ For TCBS document crawling, set the raw JWT locally (starting with eyJ), not in 
     python scripts/finance_worker.py --once --stale-after-seconds 60
 
 The worker logs the HTTP status for failed provider requests, for example status=401, status=403 or status=404. Do not paste the token or response body into chat or commit it to the repository.
+
+
+## Current CafeF route
+
+CafeF financial pages are HTML, not JSON. The worker uses the current
+`/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter}/...` route and
+extracts label/value rows from the HTML table. A successful request is stored
+as raw HTML and then normalized into canonical facts. TCBS requests remain
+optional and must be verified independently because its legacy finance route
+may return HTTP 404.

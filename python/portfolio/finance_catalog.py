@@ -10,6 +10,8 @@ import json
 import os
 import urllib.error
 import urllib.request
+from html import unescape
+from html.parser import HTMLParser
 import time
 import threading
 from datetime import date, datetime, timezone
@@ -269,9 +271,9 @@ def ensure_required_documents(symbol: str) -> None:
                             else f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/{endpoint}"
                         )
                     elif document_type == "DIVIDEND":
-                        url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
+                        url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
                     else:
-                        segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BalSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
+                        segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
                         url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/bctc.chn"
                     db.execute(
                         """INSERT INTO documents(
@@ -285,13 +287,60 @@ def ensure_required_documents(symbol: str) -> None:
                     )
 
 
+class _CafeFTableParser(HTMLParser):
+    """Extract simple label/value rows from CafeF financial HTML tables."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._cell is not None and self._row is not None:
+            value = unescape(" ".join("".join(self._cell).split()))
+            self._row.append(value)
+            self._cell = None
+        elif tag == "tr" and self._row:
+            self.rows.append(self._row)
+            self._row = None
+
+
+def _cafef_html_rows(payload: str) -> list[dict[str, Any]]:
+    parser = _CafeFTableParser()
+    parser.feed(payload)
+    result: list[dict[str, Any]] = []
+    for cells in parser.rows:
+        if len(cells) < 2:
+            continue
+        numeric_values = [cell for cell in cells[1:] if _number(cell) is not None]
+        if not numeric_values:
+            continue
+        # CafeF returns several periods in one row. The final numeric cell is
+        # the period selected by the URL and is the safest value to canonicalize.
+        row: dict[str, Any] = {"label": cells[0], "value": numeric_values[-1]}
+        row["period_values"] = cells[1:]
+        result.append(row)
+    return result
+
+
 def _payload_rows(payload: str | None) -> list[dict[str, Any]]:
     if not payload:
         return []
     try:
         value = json.loads(payload)
     except (TypeError, ValueError):
-        return []
+        return _cafef_html_rows(payload)
     if isinstance(value, list):
         return [dict(row) for row in value if isinstance(row, dict)]
     if isinstance(value, dict):
@@ -612,11 +661,11 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         headers = _tcbs_document_headers()
     else:
         if document_type == "DIVIDEND":
-            url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
+            url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
         else:
-            segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BalSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
+            segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
             q = quarter or 4
-            url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{q}/0/0/bctc.chn"
+            url = f"https://cafef.vn/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{q}/0/0/1/bao-cao-tai-chinh-{symbol.lower()}.chn"
         headers = {}
     period_label = f"{period_type}:{year}" + (f":Q{quarter}" if quarter else "")
     _crawl_progress(symbol, f"fetch provider={provider} document={document_type} period={period_label}")
