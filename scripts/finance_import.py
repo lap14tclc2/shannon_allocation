@@ -52,6 +52,7 @@ def main() -> int:
                 "processed": result["processed"],
                 "imported_documents": result["imported_documents"],
                 "failed_documents": result["failed_documents"],
+                "unavailable_documents": result["unavailable_documents"],
                 "skipped_documents": result["skipped_documents"],
                 "success_symbols": len(result["success_symbols"]),
                 "failed_symbols": len(result["failed_symbols"]),
