@@ -29,8 +29,20 @@ REQUIRED_DOCUMENTS = (
 )
 # Supported providers remain explicit for reconciliation/backfill.
 PROVIDERS = ("tcbs", "cafef")
-# Temporary worker scope: only CafeF is requested by normal worker runs.
-WORKER_PROVIDERS = ("cafef",)
+# Active worker scope. CafeF remains readable only for explicit cleanup of legacy
+# rows; it is not fetched or used by the worker.
+WORKER_PROVIDERS = ("tcbs",)
+WORKER_DOCUMENT_TYPES = (
+    "FINANCIAL_STATEMENTS",
+    "CASH_FLOW",
+    "INCOME_STATEMENT",
+)
+TCBS_FINANCE_BASE_URL = "https://apiextaws.tcbs.com.vn/tcanalysis/v1/finance"
+TCBS_FINANCE_ENDPOINTS = {
+    "FINANCIAL_STATEMENTS": "balancesheet",
+    "CASH_FLOW": "cashflow",
+    "INCOME_STATEMENT": "incomestatement",
+}
 
 def _worker_provider_sql() -> str:
     """Return the static SQL literal for the active worker provider scope."""
@@ -517,36 +529,34 @@ def _cafef_dividend_url(symbol: str) -> str:
 
 
 def ensure_required_documents(symbol: str) -> None:
-    """Create auditable PENDING placeholders for every required period/provider."""
+    """Create auditable PENDING placeholders for active TCBS statement periods."""
     symbol = str(symbol).upper().strip()
     if not symbol:
         return
     _ensure()
     periods = _periods()
-    latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
     with _schema_connection(FINANCE_SCHEMA) as db:
         for period_type, year, quarter, period_end in periods:
-            for document_type in REQUIRED_DOCUMENTS:
-                if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
-                    continue
-                for provider in WORKER_PROVIDERS:
-                    if document_type == "DIVIDEND":
-                        url = _cafef_dividend_url(symbol)
-                    else:
-                        segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
-                        url = f"https://cafef.vn/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/1/bao-cao-tai-chinh-{symbol.lower()}.chn"
-                    db.execute(
-                        """INSERT INTO documents(
-                           symbol, provider, document_type, period_type, fiscal_year,
-                           fiscal_quarter, period_end, status, source_url, fetched_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?)
-                        ON CONFLICT (symbol, provider, document_type, period_type, fiscal_year, (COALESCE(fiscal_quarter, 0)))
-                        DO NOTHING""",
-                        (symbol, provider, document_type, period_type, year, quarter,
-                         period_end, "PENDING", url, _now()),
-                    )
+            for document_type in WORKER_DOCUMENT_TYPES:
+                endpoint = TCBS_FINANCE_ENDPOINTS[document_type]
+                url = (
+                    f"{TCBS_FINANCE_BASE_URL}/{symbol}/{endpoint}"
+                    "?yearly=0&isAll=true"
+                )
+                db.execute(
+                    """INSERT INTO documents(
+                       symbol, provider, document_type, period_type, fiscal_year,
+                       fiscal_quarter, period_end, status, source_url, fetched_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT (symbol, provider, document_type, period_type,
+                                 fiscal_year, (COALESCE(fiscal_quarter, 0)))
+                    DO NOTHING""",
+                    (symbol, "tcbs", document_type, period_type, year, quarter,
+                     period_end, "PENDING", url, _now()),
+                )
 
 
+class _CafeFTableParser(HTMLParser):
 class _CafeFTableParser(HTMLParser):
     """Extract simple label/value rows from CafeF financial HTML tables."""
 
@@ -798,27 +808,71 @@ def _value(row: dict[str, Any], *aliases: str) -> float | None:
 
 def _canonicalize_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, payload: str | None, source_document_id: int | None) -> None:
     rows = _payload_rows(payload)
+    # Field names below are the actual TCBS finance API contract. Keep aliases
+    # for legacy normalized rows, but do not derive missing Value Engine facts.
     mappings = {
         "FINANCIAL_STATEMENTS": (
-            ("BS.DEBT.TOTAL", ("total_debt", "debt", "borrowings", "total liabilities", "tong no", "no phai tra")),
-            ("BS.ASSETS.CASH_AND_EQUIVALENTS", ("cash_and_cash_equivalents", "cash", "cash_equivalents", "cash and cash equivalents", "tien va tuong duong tien")),
-            ("BS.LIABILITIES.SHORT_TERM_BORROWINGS", ("short_term_borrowings", "short_term_debt")),
-            ("BS.LIABILITIES.LONG_TERM_BORROWINGS", ("long_term_borrowings", "long_term_debt")),
+            ("BS.DEBT.TOTAL", (
+                "debt", "total_debt", "borrowings", "total liabilities",
+                "tong no", "no phai tra",
+            )),
+            ("BS.ASSETS.CASH_AND_EQUIVALENTS", (
+                "cash", "cash_and_cash_equivalents", "cash_equivalents",
+                "cash and cash equivalents", "tien va tuong duong tien",
+            )),
+            ("BS.LIABILITIES.SHORT_TERM_BORROWINGS", (
+                "shortDebt", "short_term_borrowings", "short_term_debt",
+            )),
+            ("BS.LIABILITIES.LONG_TERM_BORROWINGS", (
+                "longDebt", "long_term_borrowings", "long_term_debt",
+            )),
         ),
         "INCOME_STATEMENT": (
-            ("IS.PROFIT.NET", ("net_profit", "net_profit_after_tax", "profit_after_tax", "net_income", "net profit after tax", "loi nhuan sau thue", "loi nhuan sau thue cua co dong cong ty me")),
-            ("IS.PROFIT.OPERATING", ("operating_profit", "profit_from_operation", "operating income", "loi nhuan thuan tu hoat dong kinh doanh")),
-            ("IS.SHARES.OUTSTANDING", ("outstanding_shares", "outstanding_share", "shares_outstanding", "shares", "shares outstanding", "so luong co phieu dang luu hanh")),
+            ("IS.PROFIT.NET", (
+                "postTaxProfit", "net_profit", "net_profit_after_tax",
+                "profit_after_tax", "net_income", "net profit after tax",
+                "loi nhuan sau thue",
+                "loi nhuan sau thue cua co dong cong ty me",
+            )),
+            ("IS.PROFIT.OPERATING", (
+                "operationProfit", "operating_profit",
+                "profit_from_operation", "operating income",
+                "loi nhuan thuan tu hoat dong kinh doanh",
+            )),
+            # The TCBS sample has no shares-outstanding field. Do not map
+            # capital or shareHolderIncome to this fact.
+            ("IS.SHARES.OUTSTANDING", (
+                "outstanding_shares", "outstanding_share",
+                "shares_outstanding", "shares outstanding",
+                "so luong co phieu dang luu hanh",
+            )),
         ),
         "CASH_FLOW": (
-            ("CF.OPERATING.DEPRECIATION", ("depreciation", "depreciation_amortization")),
-            ("CF.CAPEX", ("capex", "purchase_of_fixed_assets", "fixed_asset_purchases")),
-            ("CF.OPERATING.NET", ("operating_cash_flow", "net_cash_from_operating_activities")),
+            # The sample exposes investCost, not operating depreciation or
+            # operating cash flow. Only the semantically equivalent CAPEX field
+            # is mapped; absent facts remain unavailable to Value Engine.
+            ("CF.CAPEX", (
+                "investCost", "capex", "purchase_of_fixed_assets",
+                "fixed_asset_purchases",
+            )),
+            ("CF.OPERATING.DEPRECIATION", (
+                "depreciation", "depreciation_amortization",
+            )),
+            ("CF.OPERATING.NET", (
+                "operating_cash_flow", "net_cash_from_operating_activities",
+            )),
         ),
     }
     written = 0
     for code, aliases in mappings.get(document_type, ()):
-        value = next((_value(row, *aliases) for row in rows if _value(row, *aliases) is not None), None)
+        value = next(
+            (
+                _value(row, *aliases)
+                for row in rows
+                if _value(row, *aliases) is not None
+            ),
+            None,
+        )
         if value is None:
             continue
         with _schema_connection(FINANCE_SCHEMA) as db:
@@ -828,12 +882,28 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                    fiscal_year, fiscal_quarter, period_end, provider,
                    source_document_id, quality_status, observed_at
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
-                DO UPDATE SET value=excluded.value, source_document_id=excluded.source_document_id,
-                    quality_status='SINGLE_SOURCE', observed_at=excluded.observed_at""",
-                (symbol, "BALANCE_SHEET" if document_type == "FINANCIAL_STATEMENTS" else document_type,
-                 code, value, period_type, year, quarter, period_end, provider,
-                 source_document_id, "SINGLE_SOURCE", _now()),
+                ON CONFLICT(symbol, statement_type, line_item_code, period_type,
+                           fiscal_year, fiscal_quarter, provider)
+                DO UPDATE SET value=excluded.value,
+                    source_document_id=excluded.source_document_id,
+                    quality_status='SINGLE_SOURCE',
+                    observed_at=excluded.observed_at""",
+                (
+                    symbol,
+                    "BALANCE_SHEET"
+                    if document_type == "FINANCIAL_STATEMENTS"
+                    else document_type,
+                    code,
+                    value,
+                    period_type,
+                    year,
+                    quarter,
+                    period_end,
+                    provider,
+                    source_document_id,
+                    "SINGLE_SOURCE",
+                    _now(),
+                ),
             )
         written += 1
     if written == 0:
@@ -848,14 +918,20 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                     error_message=excluded.error_message,
                     observed_at=excluded.observed_at""",
                 (
-                    source_document_id, symbol, provider, document_type,
+                    source_document_id,
+                    symbol,
+                    provider,
+                    document_type,
                     "PAYLOAD_UNPARSEABLE" if rows else "PAYLOAD_EMPTY",
                     "Provider payload did not contain a supported canonical row shape."
-                    if rows else "Provider payload contained no tabular rows.",
+                    if rows
+                    else "Provider payload contained no tabular rows.",
                     _now(),
                 ),
             )
 
+
+def _reconcile_dividend_document
 def _reconcile_dividend_document(symbol: str, provider: str, payload: str | None, source_document_id: int | None) -> None:
     rows = (
         _cafef_dividend_rows(payload)
@@ -1133,80 +1209,281 @@ def _crawl_progress(symbol: str, message: str) -> None:
 
 
 
-def _tcbs_document_headers() -> dict[str, str]:
+def _tcbs_document_headers(*, require_token: bool = False) -> dict[str, str]:
     """Build local-only TCBS request headers without logging credentials."""
     headers = {
         "Referer": "https://tcinvest.tcbs.com.vn/",
         "Origin": "https://tcinvest.tcbs.com.vn",
     }
     token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
+    if require_token and not token:
+        raise RuntimeError(
+            "TCBS_BEARER_TOKEN is required for authenticated TCBS crawling"
+        )
     if token:
         headers["Authorization"] = (
             token if token.lower().startswith("bearer ") else f"Bearer {token}"
         )
     return headers
 
-def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
-    if provider == "tcbs":
-        if document_type == "DIVIDEND":
-            url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/dividend-payment-histories?page=0&size=200"
-        else:
-            endpoint = {
-                "FINANCIAL_STATEMENTS": "balancesheet",
-                "INCOME_STATEMENT": "incomestatement",
-                "CASH_FLOW": "cashflow",
-            }.get(document_type, "incomestatement")
-            yearly = "1" if period_type == "FY" else "0"
-            url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}?yearly={yearly}&isAll=true"
-        headers = _tcbs_document_headers()
-    else:
-        if document_type == "DIVIDEND":
-            url = _cafef_dividend_url(symbol)
-        else:
-            segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
-            q = quarter or 4
-            url = f"https://cafef.vn/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{q}/0/0/1/bao-cao-tai-chinh-{symbol.lower()}.chn"
-        headers = {}
-    period_label = f"{period_type}:{year}" + (f":Q{quarter}" if quarter else "")
-    _crawl_progress(symbol, f"fetch provider={provider} document={document_type} period={period_label}")
+def _tcbs_records(payload: str | None) -> list[dict[str, Any]]:
+    """Unwrap TCBS history responses into statement records."""
+    if not payload:
+        return []
     try:
-        status, payload = _url_json(url, headers=headers)
-        if status < 200 or status >= 300:
-            raise RuntimeError(f"HTTP {status}")
-        if provider == "cafef":
-            _validate_cafef_payload(
-                payload,
-                symbol=symbol,
-                document_type=document_type,
-            )
-        _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "SUCCESS", payload, None, None, run_id)
-        _crawl_progress(symbol, f"success provider={provider} document={document_type} period={period_label}")
-        return True
-    except Exception as exc:
-        if isinstance(exc, ProviderPayloadError):
-            code = "PROVIDER_PAYLOAD_INVALID"
-            detail = str(exc)[:500]
-            status_label = "invalid-payload"
-        elif isinstance(exc, urllib.error.HTTPError):
-            code = "PROVIDER_HTTP_ERROR"
-            detail = f"HTTP {exc.code} {exc.reason or ''}".strip()
-            status_label = str(exc.code)
-        else:
-            code = "PROVIDER_UNAVAILABLE"
-            detail = str(exc)[:500]
-            status_label = "unavailable"
-        _save_document(
-            symbol, provider, document_type, period_type, year, quarter,
-            period_end, url, "FAILED", None, code, detail, run_id,
+        value: Any = json.loads(payload)
+    except (TypeError, ValueError):
+        return []
+
+    def collect(node: Any) -> list[dict[str, Any]]:
+        if isinstance(node, list):
+            return [dict(item) for item in node if isinstance(item, dict)]
+        if not isinstance(node, dict):
+            return []
+        if "year" in node or "ticker" in node:
+            return [dict(node)]
+        for key in ("data", "content", "rows", "items", "result"):
+            child = node.get(key)
+            if isinstance(child, (list, dict)):
+                rows = collect(child)
+                if rows:
+                    return rows
+        return []
+
+    return collect(value)
+
+
+def _tcbs_int(value: Any) -> int | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _tcbs_select_record(
+    payload: str,
+    *,
+    symbol: str,
+    period_type: str,
+    year: int,
+    quarter: int | None,
+) -> dict[str, Any]:
+    """Select one exact TCBS history row for a logical document period."""
+    rows = _tcbs_records(payload)
+    wanted_symbol = str(symbol).upper().strip()
+    symbol_rows = [
+        row for row in rows
+        if not row.get("ticker")
+        or str(row.get("ticker")).upper().strip() == wanted_symbol
+    ]
+    candidates = [
+        row for row in symbol_rows
+        if _tcbs_int(row.get("year")) == int(year)
+    ]
+    if period_type == "FY":
+        annual = [
+            row for row in candidates
+            if str(row.get("quarter") or "").upper() in {
+                "5", "FY", "YEAR", "ANNUAL"
+            }
+            or _tcbs_int(row.get("quarter")) == 5
+        ]
+        if annual:
+            candidates = annual
+    else:
+        candidates = [
+            row for row in candidates
+            if _tcbs_int(row.get("quarter")) == int(quarter or 0)
+        ]
+    if not candidates:
+        label = f"{period_type}:{year}" + (
+            f":Q{quarter}" if quarter else ""
+        )
+        raise ProviderPayloadError(
+            f"TCBS response has no record for {wanted_symbol} {label}"
+        )
+    return candidates[0]
+
+
+def _tcbs_selected_payload(
+    record: dict[str, Any],
+    *,
+    symbol: str,
+    period_type: str,
+    year: int,
+    quarter: int | None,
+) -> str:
+    """Wrap one selected history row for the existing canonical parser."""
+    return json.dumps(
+        {
+            "data": [record],
+            "tcbs_period": {
+                "symbol": symbol,
+                "period_type": period_type,
+                "year": year,
+                "quarter": quarter,
+            },
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _tcbs_document_url(symbol: str, document_type: str) -> str:
+    endpoint = TCBS_FINANCE_ENDPOINTS.get(document_type)
+    if not endpoint:
+        raise ValueError(f"unsupported TCBS document type: {document_type}")
+    return (
+        f"{TCBS_FINANCE_BASE_URL}/{str(symbol).upper().strip()}/{endpoint}"
+        "?yearly=0&isAll=true"
+    )
+
+
+def _provider_failure(exc: Exception) -> tuple[str, str, str]:
+    if isinstance(exc, ProviderPayloadError):
+        return "PROVIDER_PAYLOAD_INVALID", str(exc)[:500], "invalid-payload"
+    if isinstance(exc, urllib.error.HTTPError):
+        return (
+            "PROVIDER_HTTP_ERROR",
+            f"HTTP {exc.code} {exc.reason or ''}".strip(),
+            str(exc.code),
+        )
+    return "PROVIDER_UNAVAILABLE", str(exc)[:500], "unavailable"
+
+
+def _fetch_tcbs_history(symbol: str, document_type: str) -> tuple[str, str]:
+    """Fetch one complete history response for one statement type."""
+    url = _tcbs_document_url(symbol, document_type)
+    _crawl_progress(
+        symbol,
+        f"fetch provider=tcbs document={document_type} history",
+    )
+    status, payload = _url_json(
+        url,
+        headers=_tcbs_document_headers(require_token=True),
+    )
+    if status < 200 or status >= 300:
+        raise RuntimeError(f"HTTP {status}")
+    records = _tcbs_records(payload)
+    if not records:
+        raise ProviderPayloadError(
+            f"TCBS returned no statement records for {symbol} {document_type}"
+        )
+    _crawl_progress(
+        symbol,
+        f"received provider=tcbs document={document_type} records={len(records)}",
+    )
+    return url, payload
+
+
+def _persist_tcbs_period(
+    symbol: str,
+    document_type: str,
+    period_type: str,
+    year: int,
+    quarter: int | None,
+    period_end: str,
+    source_url: str,
+    history_payload: str,
+    run_id: int | None,
+) -> None:
+    record = _tcbs_select_record(
+        history_payload,
+        symbol=symbol,
+        period_type=period_type,
+        year=year,
+        quarter=quarter,
+    )
+    selected_payload = _tcbs_selected_payload(
+        record,
+        symbol=symbol,
+        period_type=period_type,
+        year=year,
+        quarter=quarter,
+    )
+    _save_document(
+        symbol,
+        "tcbs",
+        document_type,
+        period_type,
+        year,
+        quarter,
+        period_end,
+        source_url,
+        "SUCCESS",
+        selected_payload,
+        None,
+        None,
+        run_id,
+    )
+
+
+def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
+    """Fetch and persist one logical TCBS period.
+
+    This helper remains for single-document retry. Normal symbol crawls use the
+    batched history path above so each TCBS endpoint is requested once.
+    """
+    if provider != "tcbs" or document_type not in WORKER_DOCUMENT_TYPES:
+        _crawl_progress(
+            symbol,
+            f"skip provider={provider} document={document_type} reason=worker-scope",
+        )
+        return False
+    source_url = _tcbs_document_url(symbol, document_type)
+    period_label = f"{period_type}:{year}" + (
+        f":Q{quarter}" if quarter else ""
+    )
+    _crawl_progress(
+        symbol,
+        f"fetch provider=tcbs document={document_type} period={period_label}",
+    )
+    try:
+        _url, history_payload = _fetch_tcbs_history(symbol, document_type)
+        _persist_tcbs_period(
+            symbol,
+            document_type,
+            period_type,
+            year,
+            quarter,
+            period_end,
+            source_url,
+            history_payload,
+            run_id,
         )
         _crawl_progress(
             symbol,
-            f"failed provider={provider} document={document_type} "
+            f"success provider=tcbs document={document_type} period={period_label}",
+        )
+        return True
+    except Exception as exc:
+        code, detail, status_label = _provider_failure(exc)
+        _save_document(
+            symbol,
+            "tcbs",
+            document_type,
+            period_type,
+            year,
+            quarter,
+            period_end,
+            source_url,
+            "FAILED",
+            None,
+            code,
+            detail,
+            run_id,
+        )
+        _crawl_progress(
+            symbol,
+            f"failed provider=tcbs document={document_type} "
             f"period={period_label} code={code} status={status_label}",
         )
         return False
 
 
+def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
 def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
     """Claim one queued job that still has missing or incomplete documents."""
     _ensure()
@@ -1418,9 +1695,7 @@ def _current_required_document_keys() -> set[tuple[str, str, str, int, int | Non
     latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
     keys: set[tuple[str, str, str, int, int | None]] = set()
     for period_type, year, quarter, _period_end in periods:
-        for document_type in REQUIRED_DOCUMENTS:
-            if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
-                continue
+        for document_type in WORKER_DOCUMENT_TYPES:
             for provider in WORKER_PROVIDERS:
                 keys.add((provider, document_type, period_type, year, quarter))
     return keys
@@ -1480,6 +1755,7 @@ def crawl_symbol(
             "code": "SECURITY_NOT_CRAWLABLE",
             "message": "Symbol is not an active listed equity in the Finance universe.",
         }
+
     target = None
     if document_filter:
         try:
@@ -1496,71 +1772,172 @@ def crawl_symbol(
             )
         except (TypeError, ValueError):
             return {"ok": False, "code": "INVALID_DOCUMENT_TARGET"}
-        if target[0] not in WORKER_PROVIDERS or target not in _current_required_document_keys():
+        if (
+            target[0] not in WORKER_PROVIDERS
+            or target[1] not in WORKER_DOCUMENT_TYPES
+            or target not in _current_required_document_keys()
+        ):
             return {
                 "ok": False,
                 "code": "DOCUMENT_NOT_IN_WORKER_SCOPE",
-                "message": "Document không thuộc scope CafeF hiện tại hoặc không phải kỳ hợp lệ.",
+                "message": "Document không thuộc scope TCBS hiện tại hoặc không phải kỳ hợp lệ.",
             }
+
     _crawl_progress(
         symbol,
         f"start providers={','.join(WORKER_PROVIDERS)} "
+        f"documents={','.join(WORKER_DOCUMENT_TYPES)} "
         f"retry_failed_only={retry_failed_only}",
     )
     ensure_required_documents(symbol)
     _crawl_progress(symbol, "required document placeholders ensured")
+
     with _schema_connection(FINANCE_SCHEMA) as db:
-        row = db.execute("INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) VALUES(?,?,?,1) RETURNING id", (requested_by, "RUNNING", _now())).fetchone()
+        row = db.execute(
+            "INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) "
+            "VALUES(?,?,?,1) RETURNING id",
+            (requested_by, "RUNNING", _now()),
+        ).fetchone()
         run_id = int(row["id"])
-    results = []
+        existing_rows = db.execute(
+            "SELECT provider, document_type, period_type, fiscal_year, "
+            "fiscal_quarter, status FROM documents WHERE symbol=?",
+            (symbol,),
+        ).fetchall()
+    statuses = {
+        (
+            str(row["provider"]),
+            str(row["document_type"]),
+            str(row["period_type"]),
+            int(row["fiscal_year"]),
+            row["fiscal_quarter"],
+        ): str(row["status"]).upper()
+        for row in existing_rows
+    }
+
+    pending_by_type: dict[str, list[tuple[str, int, int | None, str]]] = {
+        document_type: [] for document_type in WORKER_DOCUMENT_TYPES
+    }
     skipped_count = 0
     periods = _periods()
-    latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
     for period_type, year, quarter, period_end in periods:
-        for document_type in REQUIRED_DOCUMENTS:
-            if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
+        for document_type in WORKER_DOCUMENT_TYPES:
+            current_key = ("tcbs", document_type, period_type, year, quarter)
+            if target is not None and current_key != target:
                 continue
-            for provider in WORKER_PROVIDERS:
-                current_key = (provider, document_type, period_type, year, quarter)
-                if target is not None and current_key != target:
-                    continue
-                with _schema_connection(FINANCE_SCHEMA) as db:
-                    existing = db.execute(
-                        "SELECT status FROM documents WHERE symbol=? AND provider=? AND document_type=? "
-                        "AND period_type=? AND fiscal_year=? "
-                        "AND fiscal_quarter IS NOT DISTINCT FROM ?",
-                        (symbol, provider, document_type, period_type, year, quarter),
-                    ).fetchone()
-                status = existing["status"] if existing else None
-                if not _should_fetch_document(
-                    status,
-                    retry_failed_only=retry_failed_only,
-                ):
-                    skipped_count += 1
-                    _crawl_progress(
-                        symbol,
-                        f"skip provider={provider} document={document_type} "
-                        f"period={period_type}:{year}" + (f":Q{quarter}" if quarter else "")
-                        + f" status={status or 'MISSING'}",
-                    )
-                    continue
-                results.append(
-                    _fetch_provider(
-                        symbol, provider, document_type, period_type,
-                        year, quarter, period_end, run_id,
-                    )
+            status = statuses.get(current_key)
+            if not _should_fetch_document(
+                status,
+                retry_failed_only=retry_failed_only,
+            ):
+                skipped_count += 1
+                _crawl_progress(
+                    symbol,
+                    f"skip provider=tcbs document={document_type} "
+                    f"period={period_type}:{year}"
+                    + (f":Q{quarter}" if quarter else "")
+                    + f" status={status or 'MISSING'}",
                 )
+                continue
+            pending_by_type[document_type].append(
+                (period_type, year, quarter, period_end)
+            )
+
+    results: list[bool] = []
+    for document_type, pending in pending_by_type.items():
+        if not pending:
+            continue
+        source_url = _tcbs_document_url(symbol, document_type)
+        try:
+            _url, history_payload = _fetch_tcbs_history(symbol, document_type)
+        except Exception as exc:
+            code, detail, status_label = _provider_failure(exc)
+            for period_type, year, quarter, period_end in pending:
+                period_label = f"{period_type}:{year}" + (
+                    f":Q{quarter}" if quarter else ""
+                )
+                _save_document(
+                    symbol,
+                    "tcbs",
+                    document_type,
+                    period_type,
+                    year,
+                    quarter,
+                    period_end,
+                    source_url,
+                    "FAILED",
+                    None,
+                    code,
+                    detail,
+                    run_id,
+                )
+                results.append(False)
+                _crawl_progress(
+                    symbol,
+                    f"failed provider=tcbs document={document_type} "
+                    f"period={period_label} code={code} status={status_label}",
+                )
+            continue
+
+        for period_type, year, quarter, period_end in pending:
+            period_label = f"{period_type}:{year}" + (
+                f":Q{quarter}" if quarter else ""
+            )
+            try:
+                _persist_tcbs_period(
+                    symbol,
+                    document_type,
+                    period_type,
+                    year,
+                    quarter,
+                    period_end,
+                    source_url,
+                    history_payload,
+                    run_id,
+                )
+                results.append(True)
+                _crawl_progress(
+                    symbol,
+                    f"success provider=tcbs document={document_type} "
+                    f"period={period_label}",
+                )
+            except Exception as exc:
+                code, detail, status_label = _provider_failure(exc)
+                _save_document(
+                    symbol,
+                    "tcbs",
+                    document_type,
+                    period_type,
+                    year,
+                    quarter,
+                    period_end,
+                    source_url,
+                    "FAILED",
+                    None,
+                    code,
+                    detail,
+                    run_id,
+                )
+                results.append(False)
+                _crawl_progress(
+                    symbol,
+                    f"failed provider=tcbs document={document_type} "
+                    f"period={period_label} code={code} status={status_label}",
+                )
+
     success = sum(1 for item in results if item)
     failure = len(results) - success
     with _schema_connection(FINANCE_SCHEMA) as db:
         db.execute(
-            "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? WHERE id=?",
+            "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? "
+            "WHERE id=?",
             ("COMPLETED", _now(), success, failure, run_id),
         )
     _crawl_progress(
         symbol,
         f"completed run_id={run_id} fetched={len(results)} success={success} "
-        f"failed={failure} skipped={skipped_count}",
+        f"failed={failure} skipped={skipped_count} endpoint_requests="
+        f"{sum(1 for pending in pending_by_type.values() if pending)}",
     )
     catalog = list_securities(0, 1, q=symbol)
     updated_item = next(
@@ -1570,7 +1947,8 @@ def crawl_symbol(
     target_label = (
         f" document={target[1]} period={target[2]}:{target[3]}"
         + (f":Q{target[4]}" if target[4] else "")
-        if target else ""
+        if target
+        else ""
     )
     return {
         "ok": True,
@@ -1587,7 +1965,7 @@ def crawl_symbol(
     }
 
 
-def finance_database_status() -> dict[str, Any]:
+def finance_database_status(def finance_database_status() -> dict[str, Any]:
     """Return operational counts without exposing document payloads."""
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -1619,6 +1997,81 @@ def clear_finance_queue() -> dict[str, Any]:
         deleted = db.execute("DELETE FROM crawl_queue")
     return {"deleted_queue_rows": int(deleted.rowcount or 0)}
 
+
+
+def clear_provider_finance_data(provider: str) -> dict[str, Any]:
+    """Delete one provider's crawl data and rebuild remaining dividend views."""
+    provider = str(provider or "").strip().lower()
+    if provider not in PROVIDERS:
+        raise ValueError(f"unsupported finance provider: {provider}")
+    _ensure()
+    from .dividend_reconciliation import (
+        ensure_reconciliation_schema,
+        reconcile_symbol,
+    )
+    ensure_reconciliation_schema()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        running = db.execute(
+            "SELECT COUNT(*) AS count FROM crawl_queue WHERE status='RUNNING'"
+        ).fetchone()["count"]
+        if int(running or 0):
+            raise RuntimeError(
+                "stop finance workers before clearing provider data"
+            )
+        document_ids = db.execute(
+            "SELECT id FROM documents WHERE provider=?",
+            (provider,),
+        ).fetchall()
+        document_id_values = [int(row["id"]) for row in document_ids]
+        symbols = {
+            str(row["symbol"]).upper()
+            for row in db.execute(
+                "SELECT DISTINCT symbol FROM documents WHERE provider=?",
+                (provider,),
+            ).fetchall()
+        }
+        deleted: dict[str, int] = {}
+        if document_id_values:
+            placeholders = ",".join("?" for _ in document_id_values)
+            result = db.execute(
+                f"DELETE FROM parse_errors WHERE source_document_id IN ({placeholders})",
+                tuple(document_id_values),
+            )
+            deleted["parse_errors"] = int(result.rowcount or 0)
+        else:
+            deleted["parse_errors"] = 0
+        for table in ("canonical_facts", "dividend_observations"):
+            result = db.execute(
+                f"DELETE FROM {table} WHERE provider=?",
+                (provider,),
+            )
+            deleted[table] = int(result.rowcount or 0)
+        if symbols:
+            placeholders = ",".join("?" for _ in symbols)
+            symbol_params = tuple(sorted(symbols))
+            for table in ("dividend_conflicts", "dividend_canonical"):
+                result = db.execute(
+                    f"DELETE FROM {table} WHERE symbol IN ({placeholders})",
+                    symbol_params,
+                )
+                deleted[table] = int(result.rowcount or 0)
+        else:
+            deleted["dividend_conflicts"] = 0
+            deleted["dividend_canonical"] = 0
+        result = db.execute(
+            "DELETE FROM documents WHERE provider=?",
+            (provider,),
+        )
+        deleted["documents"] = int(result.rowcount or 0)
+
+    for symbol in sorted(symbols):
+        reconcile_symbol(symbol)
+    return {
+        "provider": provider,
+        "deleted_rows": deleted,
+        "reconciled_symbols": len(symbols),
+        "total_deleted": sum(deleted.values()),
+    }
 
 def clear_all_finance_data() -> dict[str, Any]:
     """Delete the finance catalog data while preserving its schema."""
