@@ -670,8 +670,9 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
     eligible = len(symbols)
     already_queued = len(existing_symbols)
     _crawl_progress(
-        "universe queue "
-        f"eligible={eligible} already_queued={already_queued} queued={queued}"
+        "queue",
+        f"universe queue eligible={eligible} "
+        f"already_queued={already_queued} queued={queued}",
     )
     return {
         "ok": True,
