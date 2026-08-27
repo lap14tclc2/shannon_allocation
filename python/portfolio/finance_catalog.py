@@ -854,6 +854,35 @@ def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str
     }
 
 
+
+def _tcbs_universe_config() -> tuple[str, dict[str, str]]:
+    """Read local-only TCBS universe credentials without logging their value."""
+    url = str(os.environ.get("TCBS_UNIVERSE_URL") or "").strip()
+    token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
+    if not url:
+        raise RuntimeError("TCBS_UNIVERSE_URL is required for the TCBS universe provider")
+    if not token:
+        raise RuntimeError("TCBS_BEARER_TOKEN is required for the TCBS universe provider")
+    if not url.startswith(("https://", "http://")):
+        raise RuntimeError("TCBS_UNIVERSE_URL must be an HTTP(S) URL")
+    return url, {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+
+
+def _load_tcbs_universe_rows() -> list[dict[str, Any]]:
+    url, headers = _tcbs_universe_config()
+    _universe_progress("calling TCBS authenticated universe endpoint")
+    status, payload = _url_json(url, headers=headers)
+    if status < 200 or status >= 300:
+        raise RuntimeError(f"TCBS universe endpoint returned HTTP {status}")
+    rows = _payload_rows(payload)
+    if not rows:
+        raise RuntimeError("TCBS universe endpoint returned no listing rows")
+    return rows
+
+
 def sync_universe() -> dict[str, Any]:
     """Populate the exchange universe from Vnstock on an external worker.
 
@@ -861,53 +890,86 @@ def sync_universe() -> dict[str, Any]:
     document crawling uses the configured TCBS/CafeF providers separately.
     """
     started = time.monotonic()
-    _universe_progress("start runtime=local provider=vnstock")
+    configured_provider = str(
+        os.environ.get("QPORT_UNIVERSE_PROVIDER") or "vnstock"
+    ).strip().lower()
+    if configured_provider not in {"vnstock", "tcbs", "auto"}:
+        return {
+            "ok": False,
+            "code": "UNIVERSE_PROVIDER_INVALID",
+            "message": "QPORT_UNIVERSE_PROVIDER must be vnstock, tcbs, or auto",
+        }
+    _universe_progress(f"start runtime=local provider={configured_provider}")
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
         _universe_progress(f"rejected runtime: {exc}")
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     try:
-        _universe_progress("loading vnstock.Listing")
-        from vnstock import Listing  # type: ignore
-        listing = Listing()
-        _universe_progress("vnstock.Listing initialized")
-        frame = None
-        selected_method = None
-        for method_name in ("all_symbols", "symbols_by_exchange"):
-            method = getattr(listing, method_name, None)
-            if not callable(method):
-                _universe_progress(f"skip Listing.{method_name}: unavailable")
-                continue
-            _universe_progress(f"calling Listing.{method_name}()")
+        rows = None
+        source_label = None
+        if configured_provider in {"tcbs", "auto"}:
             try:
-                frame = _listing_call_with_heartbeat(
-                    f"Listing.{method_name}()",
-                    method,
-                )
-                selected_method = method_name
-                break
-            except TypeError:
+                rows = _load_tcbs_universe_rows()
+                source_label = "TCBS authenticated universe endpoint"
+                _universe_progress(f"received {len(rows)} symbol rows via TCBS")
+            except Exception as exc:
                 _universe_progress(
-                    f"Listing.{method_name}() requires exchange=ALL; retrying"
+                    f"TCBS universe unavailable type={type(exc).__name__}; "
+                    "falling back to Vnstock" if configured_provider == "auto"
+                    else f"TCBS universe unavailable type={type(exc).__name__}"
                 )
-                frame = _listing_call_with_heartbeat(
-                    f"Listing.{method_name}(exchange=ALL)",
-                    lambda: method(exchange="ALL"),
-                )
-                selected_method = method_name
-                break
-        if frame is None:
-            _universe_progress("provider returned no frame or supported listing method")
-            return {
-                "ok": False,
-                "code": "UNIVERSE_PROVIDER_EMPTY",
-                "message": "Vnstock không trả danh sách mã.",
-            }
-        rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+                if configured_provider == "tcbs":
+                    return {
+                        "ok": False,
+                        "code": "TCBS_UNIVERSE_UNAVAILABLE",
+                        "message": (
+                            "TCBS universe request failed. Verify the local "
+                            "TCBS_UNIVERSE_URL and TCBS_BEARER_TOKEN."
+                        ),
+                    }
+        if rows is None:
+            _universe_progress("loading vnstock.Listing")
+            from vnstock import Listing  # type: ignore
+            listing = Listing()
+            _universe_progress("vnstock.Listing initialized")
+            frame = None
+            selected_method = None
+            for method_name in ("all_symbols", "symbols_by_exchange"):
+                method = getattr(listing, method_name, None)
+                if not callable(method):
+                    _universe_progress(f"skip Listing.{method_name}: unavailable")
+                    continue
+                _universe_progress(f"calling Listing.{method_name}()")
+                try:
+                    frame = _listing_call_with_heartbeat(
+                        f"Listing.{method_name}()",
+                        method,
+                    )
+                    selected_method = method_name
+                    break
+                except TypeError:
+                    _universe_progress(
+                        f"Listing.{method_name}() requires exchange=ALL; retrying"
+                    )
+                    frame = _listing_call_with_heartbeat(
+                        f"Listing.{method_name}(exchange=ALL)",
+                        lambda: method(exchange="ALL"),
+                    )
+                    selected_method = method_name
+                    break
+            if frame is None:
+                _universe_progress("provider returned no frame or supported listing method")
+                return {
+                    "ok": False,
+                    "code": "UNIVERSE_PROVIDER_EMPTY",
+                    "message": "Vnstock không trả danh sách mã.",
+                }
+            rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+            source_label = f"Vnstock Listing.{selected_method}"
         columns = sorted({str(key) for row in rows[:100] for key in dict(row)})
         _universe_progress(
-            f"received {len(rows)} symbol rows via Listing.{selected_method}; "
+            f"received {len(rows)} symbol rows via {source_label}; "
             f"columns={json.dumps(columns, ensure_ascii=False)}"
         )
         count = 0
@@ -967,10 +1029,11 @@ def sync_universe() -> dict[str, Any]:
         return {
             "ok": count > 0,
             "count": count,
+            "provider": "tcbs" if source_label.startswith("TCBS") else "vnstock",
             "quality": quality,
             "warnings": warnings,
             "message": (
-                f"Đã đồng bộ {count} mã."
+                f"Đã đồng bộ {count} mã từ {'TCBS' if source_label.startswith('TCBS') else 'Vnstock'}."
                 + (f" Cảnh báo: {'; '.join(warnings)}." if warnings else "")
                 if count else "Provider không trả danh sách mã."
             ),
