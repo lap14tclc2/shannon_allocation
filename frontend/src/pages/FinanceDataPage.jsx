@@ -3,6 +3,7 @@ import AppNav from '../components/AppNav.jsx';
 import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceAudit, getAdminFinanceData, queueAdminFinanceCrawl, retryAdminFinanceData } from '../lib/api.js';
 
 const PAGE_SIZE = 50;
+const FINANCE_DATA_REFRESH_INTERVAL_MS = 10_000;
 
 const DOCUMENT_GROUPS = [
   { key: 'FINANCIAL_STATEMENTS', label: 'Báo cáo tài chính' },
@@ -71,23 +72,50 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [universeQuality, setUniverseQuality] = useState(null);
   const [auditBySymbol, setAuditBySymbol] = useState({});
   const [auditLoading, setAuditLoading] = useState('');
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
 
-  async function refresh() {
-    setLoading(true);
-    setMessage('');
+  async function refresh({ silent = false, isCancelled = () => false } = {}) {
+    if (!silent) setLoading(true);
+    if (!silent) setMessage('');
     try {
       const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange, status: crawlStatus, q: search });
+      if (isCancelled()) return;
       setItems(result.items || []);
       setTotal(Number(result.total || 0));
       setRuntime(result.runtime || { name: 'unknown', can_crawl: false, read_only: true, message: 'Crawl chạy bằng Local/Worker; production chỉ đọc database.' });
+      setLastRefreshAt(new Date());
     } catch (error) {
-      setMessage(error.message);
+      if (!silent && !isCancelled()) setMessage(error.message);
     } finally {
-      setLoading(false);
+      if (!silent && !isCancelled()) setLoading(false);
     }
   }
 
-  useEffect(() => { refresh(); }, [page, exchange, crawlStatus, search]);
+  useEffect(() => {
+    let disposed = false;
+    let pollInFlight = false;
+    const poll = async () => {
+      if (disposed || document.visibilityState === 'hidden' || pollInFlight) return;
+      pollInFlight = true;
+      try {
+        await refresh({ silent: true, isCancelled: () => disposed });
+      } finally {
+        pollInFlight = false;
+      }
+    };
+
+    void refresh({ isCancelled: () => disposed });
+    const timer = window.setInterval(poll, FINANCE_DATA_REFRESH_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void poll();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [page, exchange, crawlStatus, search]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
@@ -232,6 +260,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
         <label><span>Sàn</span><select value={exchange} onChange={event => { setPage(0); setExchange(event.target.value); }}><option value="">Tất cả sàn</option><option value="HOSE">HOSE</option><option value="HNX">HNX</option><option value="UPCOM">UPCOM</option></select></label>
         <label><span>Trạng thái crawl</span><select value={crawlStatus} onChange={event => { setPage(0); setCrawlStatus(event.target.value); }}>{CRAWL_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <span className="muted">{total.toLocaleString('vi-VN')} mã</span>
+        <span className="muted">Tự động cập nhật mỗi 10 giây{lastRefreshAt ? ` · ${lastRefreshAt.toLocaleTimeString('vi-VN')}` : ''}</span>
         {exchange === 'UPCOM' && <span className="muted">Worker bulk hiện chỉ chạy HOSE/HNX.</span>}
       </form>
 
