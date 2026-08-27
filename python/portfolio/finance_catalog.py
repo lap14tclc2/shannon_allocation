@@ -197,16 +197,16 @@ def list_securities(offset: int = 0, limit: int = 50, exchange: str | None = Non
     with _schema_connection(FINANCE_SCHEMA) as db:
         if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
             rows = db.execute(
-                "f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=? ORDER BY symbol LIMIT ? OFFSET ?"",
+                f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=? ORDER BY symbol LIMIT ? OFFSET ?",
                 (exchange.upper(), limit, offset),
             ).fetchall()
-            total = db.execute("f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?"", (exchange.upper(),)).fetchone()["count"]
+            total = db.execute(f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?", (exchange.upper(),)).fetchone()["count"]
         else:
             rows = db.execute(
-                "f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} ORDER BY symbol LIMIT ? OFFSET ?"",
+                f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} ORDER BY symbol LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
-            total = db.execute("f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL}"").fetchone()["count"]
+            total = db.execute(f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL}").fetchone()["count"]
         symbols = [row["symbol"] for row in rows]
         documents = {}
         if symbols:
