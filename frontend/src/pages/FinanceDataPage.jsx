@@ -19,6 +19,7 @@ const CRAWL_STATUS_OPTIONS = [
   { value: 'FAILED', label: 'Crawl thất bại' },
   { value: 'PENDING', label: 'Đang chờ xử lý' },
   { value: 'NOT_CRAWLED', label: 'Chưa crawl' },
+  { value: 'NOT_AVAILABLE', label: 'Nguồn không có kỳ này' },
 ];
 
 const STATUS_META = {
@@ -27,21 +28,25 @@ const STATUS_META = {
   FAILED: { label: 'Thất bại', className: 'status-attention' },
   PENDING: { label: 'Đang chờ', className: '' },
   NOT_CRAWLED: { label: 'Chưa crawl', className: '' },
+  NOT_AVAILABLE: { label: 'Nguồn không có kỳ này', className: 'status-attention' },
 };
 
 function summarizeDocuments(documents) {
   const counts = (documents || []).reduce((result, document) => {
-    const key = ['SUCCESS', 'FAILED', 'PENDING'].includes(document.status) ? document.status.toLowerCase() : 'pending';
+    const key = ['SUCCESS', 'FAILED', 'PENDING', 'NOT_AVAILABLE'].includes(document.status)
+      ? document.status.toLowerCase()
+      : 'pending';
     result[key] += 1;
     return result;
-  }, { success: 0, failed: 0, pending: 0 });
+  }, { success: 0, failed: 0, pending: 0, not_available: 0 });
 
-  const total = counts.success + counts.failed + counts.pending;
+  const total = counts.success + counts.failed + counts.pending + counts.not_available;
   let key = 'PENDING';
   if (!total) key = 'NOT_CRAWLED';
-  else if (counts.success > 0 && counts.failed === 0 && counts.pending === 0) key = 'SUCCESS';
-  else if (counts.success > 0 && (counts.failed > 0 || counts.pending > 0)) key = 'PARTIAL';
+  else if (counts.success > 0 && counts.failed === 0 && counts.pending === 0 && counts.not_available === 0) key = 'SUCCESS';
+  else if (counts.success > 0 && (counts.failed > 0 || counts.pending > 0 || counts.not_available > 0)) key = 'PARTIAL';
   else if (counts.failed > 0) key = 'FAILED';
+  else if (counts.not_available > 0) key = 'NOT_AVAILABLE';
   return { ...counts, total, key };
 }
 
@@ -273,6 +278,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                 const documentSummary = summarizeDocuments(item.documents || []);
                 const success = Number(item.document_success ?? documentSummary.success);
                 const failed = Number(item.document_failed ?? documentSummary.failed);
+                const unavailable = Number(item.document_unavailable ?? documentSummary.not_available);
                 const totalDocuments = Number(item.document_total ?? documentSummary.total);
                 const crawlStatusKey = item.crawl_status || documentSummary.key;
                 const crawlMeta = STATUS_META[crawlStatusKey] || STATUS_META.NOT_CRAWLED;
@@ -280,7 +286,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                 return <React.Fragment key={item.symbol}>
                   <tr className={isOpen ? 'is-expanded' : ''}>
                     <td><b>{item.symbol}</b></td><td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td><td>{item.company_name || 'Chưa có dữ liệu'}</td><td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
-                    <td><span className={`status-pill ${crawlMeta.className}`}>{crawlMeta.label} · {success}/{totalDocuments} file{failed ? ` · ${failed} lỗi` : ''}</span></td>
+                    <td><span className={`status-pill ${crawlMeta.className}`}>{crawlMeta.label} · {success}/{totalDocuments} file{failed ? ` · ${failed} lỗi` : ''}{unavailable ? ` · ${unavailable} kỳ không có dữ liệu` : ''}</span></td>
                     <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => toggleExpanded(item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
