@@ -2,135 +2,105 @@
 
 ## Runtime policy
 
-Provider requests are allowed only when the crawler process sets:
+Provider requests are allowed only from an external process with
+QPORT_FINANCE_RUNTIME=local or worker. Vercel remains database-read-only.
 
-    QPORT_FINANCE_RUNTIME=local
+## TCBS-only worker
 
-or:
+The active worker uses the authenticated TCBS finance history endpoints:
 
-    QPORT_FINANCE_RUNTIME=worker
+- https://apiextaws.tcbs.com.vn/tcanalysis/v1/finance/{SYMBOL}/cashflow?yearly=0&isAll=true
+- https://apiextaws.tcbs.com.vn/tcanalysis/v1/finance/{SYMBOL}/balancesheet?yearly=0&isAll=true
+- https://apiextaws.tcbs.com.vn/tcanalysis/v1/finance/{SYMBOL}/incomestatement?yearly=0&isAll=true
 
-The Vercel runtime is always database-read-only. It returns CRAWL_RUNTIME_INVALID for provider crawl attempts.
+Set the bearer token only in the local worker environment:
+
+    $env:DATABASE_URL = 'postgresql://...'
+    $env:QPORT_FINANCE_RUNTIME = 'worker'
+    $env:TCBS_BEARER_TOKEN = '...'
+
+The token is never written to the database, logs, frontend, or Git. The
+worker uses standard authenticated HTTP with bounded retries. It does not use
+TLS fingerprint evasion, CAPTCHA bypass, or browser challenge bypass.
+
+## History parsing and Value Engine mapping
+
+Each endpoint returns a history array, not one row for one requested period.
+For one symbol the worker performs at most three endpoint requests, selects the
+exact year and quarter locally, then stores one logical document per period.
+Existing SUCCESS documents are skipped, so a later run fetches only new or
+incomplete periods.
+
+The sample fixture at docs/crawled/tcbs_FPT_financial_data.json maps as follows:
+
+| TCBS field | Canonical fact | Policy |
+|---|---|---|
+| postTaxProfit | IS.PROFIT.NET | use exactly |
+| operationProfit | IS.PROFIT.OPERATING | use exactly |
+| debt | BS.DEBT.TOTAL | use exactly |
+| cash | BS.ASSETS.CASH_AND_EQUIVALENTS | use exactly |
+| investCost | CF.CAPEX | use exactly, preserving sign |
+| absent | CF.OPERATING.NET | remain missing |
+| absent | CF.OPERATING.DEPRECIATION | remain missing |
+| absent | IS.SHARES.OUTSTANDING | remain missing |
+
+Missing facts intentionally keep Value Engine in a safe unavailable/blocked
+state. Do not map capital, shareHolderIncome, freeCashFlow, or EBITDA to a
+different required fact.
 
 ## Recommended flow
 
-1. Set the local database URL and run the admin/universe sync from the external worker.
-2. Queue symbols from /admin/finance-data.
-3. The worker consumes qport_finance.crawl_queue, calls CafeF with bounded timeout/retries (TCBS is temporarily disabled), and writes symbol-scoped documents.
-4. Validate and sync the local catalog to the Vercel database:
+1. Sync the local Vnstock universe and queue eligible HOSE/HNX equities.
+2. Run the local worker:
 
-    export QPORT_LOCAL_DATABASE_URL='postgresql://...'
-    export QPORT_VERCEL_DATABASE_URL='postgresql://...'
-    python scripts/finance_sync.py --dry-run
-    python scripts/finance_sync.py
+    python scripts/finance_worker.py --limit 1
 
-On PowerShell:
+For the remaining queue:
+
+    python scripts/finance_worker.py --poll-seconds 2
+
+The terminal reports endpoint-level progress and per-symbol outcomes, for example:
+
+    [finance-worker] claimed queue_id=... symbol=FPT
+    [finance-crawl] symbol=FPT fetch provider=tcbs document=CASH_FLOW history
+    [finance-crawl] symbol=FPT received provider=tcbs document=CASH_FLOW records=72
+    [finance-crawl] symbol=FPT success provider=tcbs document=CASH_FLOW period=FY:2025
+    [finance-worker] SUCCESS symbol=FPT queue_id=... success=...
+    [finance-worker] summary processed=... success=... failed=...
+
+3. Sync the complete local catalog to Vercel/Neon:
 
     $env:QPORT_LOCAL_DATABASE_URL = 'postgresql://...'
     $env:QPORT_VERCEL_DATABASE_URL = 'postgresql://...'
     python scripts/finance_sync.py --dry-run
     python scripts/finance_sync.py
 
-The sync copies securities, crawl metadata, raw documents, canonical facts, parse errors, dividend observations, canonical dividend events, and conflict records. It validates the source schema, symbols, providers/statuses, cross-table references, successful payloads, and checksums before opening the target transaction. Repeated runs are idempotent and never replace a newer target row with an older source document.
+The sync includes raw documents, canonical facts, parse errors, and
+reconciliation tables. Never expose database URLs to browser code.
 
-Never expose either database URL to browser code or commit them to Git.
+## Probe one symbol
 
+Use a local token to check endpoint shape without printing the token or body:
 
-## What is synchronized
+    python scripts/tcbs_probe.py --symbol MWG
 
-The script synchronizes the complete finance catalog required by Vercel reads:
+A successful probe prints only endpoint names, record counts, year range, and
+field names. It exits nonzero if any endpoint fails.
 
-- `securities` and crawl metadata;
-- raw `documents`;
-- `canonical_facts` and `parse_errors`;
-- `dividend_observations`, `dividend_canonical`, and `dividend_conflicts`.
+## Remove legacy CafeF data
 
-The source database is read and validated first. The target database is changed only inside one transaction. A failed validation stops before any target mutation.
+Stop all workers first, then run:
 
-After sync, Vercel does not need a provider request or a second crawl. Its valuation route reads `canonical_facts`, and its dividend route reads only non-conflicted canonical dividend events.
-
-
-## Local universe-sync progress logs
-
-The universe endpoint continues to use Vnstock for the symbol list. Run it from
-the local worker with `QPORT_FINANCE_RUNTIME=local`. The terminal now prints
-`[finance-universe]` messages for runtime validation, Vnstock loading, the
-listing method call, received row count, persistence checkpoints, completion,
-and errors. While Vnstock is waiting on its listing request, a heartbeat is
-printed every 10 seconds, for example:
-
-    [finance-universe] calling Listing.all_symbols()
-    [finance-universe] Listing.all_symbols() still running (10s)
-    [finance-universe] received 3900 symbol rows via Listing.all_symbols
-    [finance-universe] persisted 390/3900 symbols (latest=AAA)
-    [finance-universe] completed count=3900 elapsed=...
-
-These logs are flushed immediately and do not include database URLs, tokens, or
-provider credentials. Finance document crawling remains separate and currently uses CafeF only.
-TCBS records remain in the database and can be re-enabled later.
-
-
-## Running the local queue worker
-
-After clicking Xếp hàng crawl tất cả, start a separate PowerShell process from the repository root:
-
-    $env:QPORT_FINANCE_RUNTIME = 'worker'
-    python scripts/finance_worker.py --limit 1
-
-Process the remaining queue continuously:
-
-    python scripts/finance_worker.py --poll-seconds 2
-
-Useful logs:
-
-    [finance-worker] claimed queue_id=... symbol=AAA
-    [finance-crawl] symbol=AAA start ...
-    [finance-worker] finished queue_id=... symbol=AAA status=COMPLETED ...
-
-The worker runs outside Vercel, uses bounded provider requests, skips existing SUCCESS documents, and continues after an individual symbol failure.
-
-
-## Provider scope
-
-TCBS is temporarily disabled in the worker because its current finance routes
-may return HTTP 403/404. The worker does not read `TCBS_BEARER_TOKEN` and
-does not issue TCBS requests. Existing TCBS documents/canonical facts are
-preserved; re-enabling TCBS is a separate provider-scope change.
-
-## Current CafeF route
-
-CafeF financial pages are HTML, not JSON. The worker uses the current
-`/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter}/...` route and
-extracts label/value rows from the HTML table. A successful request is stored
-as raw HTML and then normalized into canonical facts. TCBS requests remain
-optional and must be verified independently because its legacy finance route
-may return HTTP 404.
-
-
-## Single-document retry
-
-The Finance Data admin panel retries the selected CafeF document only. It sends
-the provider, document type, fiscal period, and quarter identity to the API. The
-API returns the updated symbol row, so the UI updates that row in local state
-without reloading the whole catalog page or changing search, filter, or
-pagination state.
-
-
-## Clean rebuild after bad provider data
-
-Stop every local finance worker before deleting the catalog. The destructive
-command keeps the schema but removes securities, queue/run history, raw
-documents, canonical facts, parse errors, and dividend reconciliation rows:
-
-    $env:DATABASE_URL = 'postgresql://...'
-    $env:QPORT_FINANCE_RUNTIME = 'worker'
     python scripts/finance_db.py status
-    python scripts/finance_db.py clear-all --confirm
+    python scripts/finance_db.py clear-cafef --confirm
 
-The command refuses to run while a queue item is RUNNING. Run the universe sync
-again after the clear, then queue and crawl the required HOSE/HNX symbols.
+This removes CafeF documents, CafeF canonical facts, CafeF parse errors, and
+CafeF dividend observations, then rebuilds remaining dividend views for affected
+symbols. It does not delete TCBS documents or securities.
 
-CafeF dividend history uses the DuLieu.aspx?cat_id=1009 history page with the
-security's market. A HTTP response is not accepted as SUCCESS unless it has
-the expected CafeF page markers and financial HTML rows. Invalid provider pages
-are stored as FAILED with PROVIDER_PAYLOAD_INVALID for later retry.
+## Universe logs
+
+The universe endpoint may still use Vnstock only for symbol discovery. Its
+[finance-universe] logs show loading, request heartbeat, row count,
+persistence checkpoints, completion, and errors. The finance document worker
+does not use Vnstock for financial statements.

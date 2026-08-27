@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from python.portfolio.finance_catalog import (  # noqa: E402
     clear_all_finance_data,
     clear_finance_queue,
+    clear_provider_finance_data,
     clear_incomplete_finance_data,
     finance_database_status,
 )
@@ -23,7 +24,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Inspect/reset qport_finance.")
     parser.add_argument(
         "command",
-        choices=("status", "clear-queue", "clear-incomplete", "clear-all"),
+        choices=("status", "clear-queue", "clear-incomplete", "clear-cafef", "clear-all"),
     )
     parser.add_argument(
         "--confirm",
@@ -42,6 +43,8 @@ def main() -> int:
         print(clear_finance_queue())
     elif args.command == "clear-incomplete":
         print(clear_incomplete_finance_data())
+    elif args.command == "clear-cafef":
+        print(clear_provider_finance_data("cafef"))
     else:
         print(clear_all_finance_data())
     return 0

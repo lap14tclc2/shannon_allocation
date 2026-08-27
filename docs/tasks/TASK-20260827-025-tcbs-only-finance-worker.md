@@ -17,17 +17,17 @@ the canonical facts required by Value Engine.
 
 ## Acceptance Criteria
 
-- [ ] Worker has TCBS as its only active provider and uses the configured
+- [x] Worker has TCBS as its only active provider and uses the configured
   `apiextaws.tcbs.com.vn/tcanalysis/v1/finance` endpoint family.
-- [ ] A `clear-cafef --confirm` command removes CafeF raw documents, derived
+- [x] A `clear-cafef --confirm` command removes CafeF raw documents, derived
   facts, parse errors, and dividend observations without deleting TCBS data.
-- [ ] A token-safe probe checks cashflow, balancesheet, and incomestatement for
+- [x] A token-safe probe checks cashflow, balancesheet, and incomestatement for
   one symbol and reports status/record shape without printing the token.
-- [ ] The TCBS history response is narrowed to the requested year/quarter before
+- [x] The TCBS history response is narrowed to the requested year/quarter before
   persistence; a document is never canonicalized from a different period.
-- [ ] Reliable TCBS fields map to canonical Value Engine facts, while absent
+- [x] Reliable TCBS fields map to canonical Value Engine facts, while absent
   fields remain missing and block valuation safely.
-- [ ] Contract tests cover endpoint selection, period selection, mapping, and
+- [x] Contract tests cover endpoint selection, period selection, mapping, and
   provider cleanup.
 
 ## Constraints
@@ -42,7 +42,9 @@ the canonical facts required by Value Engine.
 - [ ] Run the local probe with an active TCBS token.
 - [ ] Clear CafeF data locally and re-crawl one symbol.
 - [ ] Run Value Engine readiness audit for that symbol.
+- [x] Static source review completed against the FPT TCBS fixture.
 
 ## Result
 
-Implementation pending.
+The parser and worker implementation are complete. Runtime probe, database
+cleanup, and end-to-end Value Engine verification remain environment-dependent.
