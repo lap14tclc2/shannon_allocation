@@ -621,27 +621,72 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
 
 
 def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
-    """Queue all active securities for an external worker; never crawls in request time."""
+    """Queue all active equities and report existing queue state."""
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
-        return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc), "queued": 0}
+        return {
+            "ok": False,
+            "code": "CRAWL_RUNTIME_INVALID",
+            "message": str(exc),
+            "queued": 0,
+            "eligible": 0,
+            "already_queued": 0,
+        }
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
         if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
-            rows = db.execute(f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?", (exchange.upper(),)).fetchall()
+            rows = db.execute(
+                f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?",
+                (exchange.upper(),),
+            ).fetchall()
         else:
-            rows = db.execute(f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL}").fetchall()
+            rows = db.execute(
+                f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL}"
+            ).fetchall()
+        symbols = [row["symbol"] for row in rows]
+        existing_symbols: set[str] = set()
+        if symbols:
+            placeholders = ",".join("?" for _ in symbols)
+            existing = db.execute(
+                f"SELECT symbol FROM crawl_queue WHERE status IN ('QUEUED','RUNNING') "
+                f"AND symbol IN ({placeholders})",
+                tuple(symbols),
+            ).fetchall()
+            existing_symbols = {row["symbol"] for row in existing}
+
         queued = 0
-        for row in rows:
+        for symbol in symbols:
+            if symbol in existing_symbols:
+                continue
             result = db.execute(
                 """INSERT INTO crawl_queue(symbol, requested_by, status, requested_at)
                    VALUES(?,?,?,?)
                    ON CONFLICT DO NOTHING""",
-                (row["symbol"], requested_by, "QUEUED", _now()),
+                (symbol, requested_by, "QUEUED", _now()),
             )
             queued += int(result.rowcount or 0)
-    return {"ok": True, "queued": queued, "message": f"Đã xếp hàng {queued} mã cho external worker."}
+
+    eligible = len(symbols)
+    already_queued = len(existing_symbols)
+    _crawl_progress(
+        "universe queue "
+        f"eligible={eligible} already_queued={already_queued} queued={queued}"
+    )
+    return {
+        "ok": True,
+        "queued": queued,
+        "eligible": eligible,
+        "already_queued": already_queued,
+        "message": (
+            f"Đã xếp hàng {queued}/{eligible} mã cho external worker."
+            + (
+                f" {already_queued} mã đã có trạng thái QUEUED/RUNNING."
+                if already_queued
+                else ""
+            )
+        ),
+    }
 
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import inspect
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
@@ -60,3 +61,10 @@ def test_active_equity_sql_excludes_legacy_unknown_and_nan_rows():
     assert "exchange IN ('HOSE','HNX','UPCOM')" in finance_catalog.ACTIVE_EQUITY_SQL
     assert "lower(trim(company_name))" in finance_catalog.ACTIVE_EQUITY_SQL
     assert "nan" in finance_catalog.ACTIVE_EQUITY_SQL
+
+
+def test_enqueue_response_reports_queue_state_fields():
+    source = inspect.getsource(finance_catalog.enqueue_crawl_all)
+    assert '"eligible"' in source
+    assert '"already_queued"' in source
+    assert 'already_queued=' in source
