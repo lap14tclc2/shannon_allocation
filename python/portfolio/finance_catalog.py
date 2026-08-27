@@ -699,7 +699,10 @@ def get_canonical_dividend_events(symbol: str) -> list[dict[str, Any]]:
                ORDER BY effective_event_date DESC""",
             (ticker,),
         ).fetchall()
-    return [dict(row) for row in rows]\n\n\ndef _universe_progress(message: str) -> None:
+    return [dict(row) for row in rows]
+
+
+def _universe_progress(message: str) -> None:
     print(f"[finance-universe] {message}", flush=True)
 
 
