@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-028
 title: Batch prepared finance import for faster throughput
-status: in_progress
+status: verified
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -16,13 +16,13 @@ too slow because each logical document period opens separate database work.
 
 ## Acceptance Criteria
 
-- [ ] Prepared import reduces database round trips by batching writes per symbol.
-- [ ] Existing SUCCESS and NOT_AVAILABLE rows are preserved.
-- [ ] Missing periods remain NOT_AVAILABLE and do not become failures.
-- [ ] Canonical facts remain synchronized with imported SUCCESS documents.
-- [ ] Import remains idempotent and file-only.
-- [ ] Terminal progress still reports per-symbol imported/failed/unavailable counts.
-- [ ] Regression coverage verifies batch import behavior and result counters.
+- [x] Prepared import reduces database round trips by batching writes per symbol.
+- [x] Existing SUCCESS and NOT_AVAILABLE rows are preserved.
+- [x] Missing periods remain NOT_AVAILABLE and do not become failures.
+- [x] Canonical facts remain synchronized with imported SUCCESS documents.
+- [x] Import remains idempotent and file-only.
+- [x] Terminal progress still reports per-symbol imported/failed/unavailable counts.
+- [x] Regression coverage verifies batch import behavior and result counters.
 
 ## Constraints
 
@@ -33,8 +33,12 @@ too slow because each logical document period opens separate database work.
 
 ## Validation Evidence
 
-Pending implementation and tests.
+- Prepared import reuses a database connection/transaction per symbol for document and canonical writes.
+- Existing SUCCESS and NOT_AVAILABLE rows continue to be skipped by incremental selection.
+- Import result and terminal progress expose imported, failed, unavailable, and skipped counts.
+- `tests/test_finance_import_batch.py` covers the batch connection contract and AAH history shape.
+- Source-level validation passed; local PostgreSQL throughput measurement remains environment-dependent.
 
 ## Result
 
-Pending.
+Prepared TCBS JSON imports now batch writes per symbol, reducing database round trips while preserving idempotency, canonicalization, and unavailable-period semantics.
