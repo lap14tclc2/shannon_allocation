@@ -57,3 +57,16 @@ def test_cafef_dividend_uses_one_current_history_document_and_hides_legacy_years
     assert "document_type == " + '"DIVIDEND" and (period_type != "FY" or year != latest_fy)' in source
     assert "document_type <> 'DIVIDEND'" in source
     assert "provider IN ({worker_provider_sql})" in source
+
+
+def test_retry_targets_one_document_and_returns_updated_row():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+    api = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    ui = (ROOT / "frontend" / "src" / "pages" / "FinanceDataPage.jsx").read_text(encoding="utf-8")
+
+    assert "document_filter: dict[str, Any] | None = None" in source
+    assert "current_key != target" in source
+    assert '"item": updated_item' in source
+    assert "DOCUMENT_TARGET_REQUIRED" in api
+    assert "retryDocument(item.symbol, doc)" in ui
+    assert "await refresh();" not in ui[ui.index("async function crawl"):ui.index("return (", ui.index("async function crawl"))]

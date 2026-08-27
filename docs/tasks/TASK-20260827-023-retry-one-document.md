@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-023
 title: Retry one finance document without full catalog reload
-status: ready
+status: in_progress
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -17,11 +17,11 @@ Finance Data catalog page.
 
 ## Acceptance Criteria
 
-- [ ] Retry sends the selected provider/document/period identity.
-- [ ] Backend fetches only that document and returns its updated status.
-- [ ] Existing documents and other symbols are not refetched.
-- [ ] Frontend updates the affected row/document in local state without full catalog refresh.
-- [ ] Add regression/contract tests.
+- [x] Retry sends the selected provider/document/period identity.
+- [x] Backend fetches only that document and returns its updated status.
+- [x] Existing documents and other symbols are not refetched.
+- [x] Frontend updates the affected row/document in local state without full catalog refresh.
+- [x] Add regression/contract tests.
 
 ## Constraints and Invariants
 
@@ -30,6 +30,21 @@ Finance Data catalog page.
 - Do not reload or reset pagination/search/filter state.
 - Keep raw document provenance and crawl logs.
 
+## Implementation
+
+- Retry API now requires a document identity and targets one active CafeF
+  document instead of retrying every failed document for the symbol.
+- Crawl/retry returns the updated catalog row.
+- Finance Data updates only the affected row in React state; search, filters,
+  pagination, and expanded state are preserved.
+- Added contract coverage and runbook guidance.
+
+## Remaining Validation
+
+- [ ] Restart local API/worker and verify one failed CafeF dividend document can
+  be retried without a full catalog request.
+- [ ] Run the full Python suite and Vite build.
+
 ## Result
 
-Pending implementation.
+Implementation complete; runtime validation pending.

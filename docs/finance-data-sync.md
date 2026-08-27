@@ -67,8 +67,6 @@ printed every 10 seconds, for example:
 
 These logs are flushed immediately and do not include database URLs, tokens, or
 provider credentials. Finance document crawling remains separate and currently uses CafeF only.
-Financial statements use their reporting periods; dividends use one CafeF history
-document for the latest completed FY and reconcile events by their actual dates.
 TCBS records remain in the database and can be re-enabled later.
 
 
@@ -107,3 +105,12 @@ extracts label/value rows from the HTML table. A successful request is stored
 as raw HTML and then normalized into canonical facts. TCBS requests remain
 optional and must be verified independently because its legacy finance route
 may return HTTP 404.
+
+
+## Single-document retry
+
+The Finance Data admin panel retries the selected CafeF document only. It sends
+the provider, document type, fiscal period, and quarter identity to the API. The
+API returns the updated symbol row, so the UI updates that row in local state
+without reloading the whole catalog page or changing search, filter, or
+pagination state.

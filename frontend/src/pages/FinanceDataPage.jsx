@@ -147,15 +147,43 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     }
   }
 
-  async function crawl(symbol, retry = false) {
+  function applyUpdatedItem(symbol, result) {
+    if (result?.item) {
+      setItems(current => current.map(item => item.symbol === symbol ? result.item : item));
+    }
+    setAuditBySymbol(current => { const next = { ...current }; delete next[symbol]; return next; });
+  }
+
+  async function crawl(symbol) {
     if (!runtime.can_crawl) { setMessage(runtime.message); return; }
     setBusySymbol(symbol);
     setMessage('');
     try {
-      const result = retry ? await retryAdminFinanceData(symbol) : await crawlAdminFinanceData(symbol);
+      const result = await crawlAdminFinanceData(symbol);
+      applyUpdatedItem(symbol, result);
       setMessage(result.message || `Đã crawl ${symbol}: ${result.success_count || 0} file thành công, ${result.failure_count || 0} file thất bại.`);
-      setAuditBySymbol(current => { const next = { ...current }; delete next[symbol]; return next; });
-      await refresh();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusySymbol('');
+    }
+  }
+
+  async function retryDocument(symbol, document) {
+    if (!runtime.can_crawl) { setMessage(runtime.message); return; }
+    const busyKey = `${symbol}:${document.document_type}:${document.fiscal_year}:${document.fiscal_quarter || 'FY'}`;
+    setBusySymbol(busyKey);
+    setMessage('');
+    try {
+      const result = await retryAdminFinanceData(symbol, {
+        provider: document.provider,
+        document_type: document.document_type,
+        period_type: document.period_type,
+        fiscal_year: Number(document.fiscal_year),
+        fiscal_quarter: document.fiscal_quarter || null,
+      });
+      applyUpdatedItem(symbol, result);
+      setMessage(result.message || `Đã retry ${symbol} · ${document.document_type}.`);
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -248,7 +276,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                       const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
                       return <section className="finance-document-group" key={group.key}>
                         <h4>{group.label} <span className={`status-pill ${STATUS_META[summarizeDocuments(docs).key].className}`}>{STATUS_META[summarizeDocuments(docs).key].label} · {summarizeDocuments(docs).success}/{summarizeDocuments(docs).total}</span></h4>
-                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => { const docMeta = STATUS_META[doc.status] || STATUS_META.PENDING; return <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={docMeta.className}>{docMeta.label}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Retry</button>}</span></li>; })}</ul>}
+                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => { const docMeta = STATUS_META[doc.status] || STATUS_META.PENDING; return <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={docMeta.className}>{docMeta.label}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => retryDocument(item.symbol, doc)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Retry</button>}</span></li>; })}</ul>}
                       </section>;
                     })}
                   </div></td></tr>}

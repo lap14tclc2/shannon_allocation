@@ -473,13 +473,23 @@ def admin_finance_data_audit(
 @app.post("/api/admin/finance-data/{symbol}/retry")
 def admin_finance_data_retry(
     symbol: str,
+    body: dict = Body(default_factory=dict),
     qport_session: str | None = Cookie(default=None),
 ):
     admin = require_admin(qport_session)
     from portfolio.finance_catalog import crawl_symbol
-    result = crawl_symbol(symbol, int(admin["id"]), retry_failed_only=True)
+    if not body:
+        raise ApiError(400, "Retry requires one document identity.", "DOCUMENT_TARGET_REQUIRED")
+    result = crawl_symbol(
+        symbol,
+        int(admin["id"]),
+        retry_failed_only=True,
+        document_filter=body,
+    )
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
+    if result.get("code") in {"INVALID_DOCUMENT_TARGET", "DOCUMENT_NOT_IN_WORKER_SCOPE"}:
+        raise ApiError(400, result.get("message", "Invalid document target."), result["code"])
     return result
 
 

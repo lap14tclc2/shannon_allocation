@@ -1303,7 +1303,13 @@ def _symbol_needs_crawl(db: Any, symbol: str) -> bool:
     )
 
 
-def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
+def crawl_symbol(
+    symbol: str,
+    requested_by: int | None = None,
+    *,
+    retry_failed_only: bool = False,
+    document_filter: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     _ensure()
     symbol = str(symbol).upper().strip()
     if not symbol:
@@ -1318,6 +1324,28 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
             "code": "SECURITY_NOT_CRAWLABLE",
             "message": "Symbol is not an active listed equity in the Finance universe.",
         }
+    target = None
+    if document_filter:
+        try:
+            target = (
+                str(document_filter.get("provider") or WORKER_PROVIDERS[0]).lower().strip(),
+                str(document_filter.get("document_type") or "").upper().strip(),
+                str(document_filter.get("period_type") or "").upper().strip(),
+                int(document_filter.get("fiscal_year")),
+                (
+                    int(document_filter["fiscal_quarter"])
+                    if document_filter.get("fiscal_quarter") not in (None, "", 0)
+                    else None
+                ),
+            )
+        except (TypeError, ValueError):
+            return {"ok": False, "code": "INVALID_DOCUMENT_TARGET"}
+        if target[0] not in WORKER_PROVIDERS or target not in _current_required_document_keys():
+            return {
+                "ok": False,
+                "code": "DOCUMENT_NOT_IN_WORKER_SCOPE",
+                "message": "Document không thuộc scope CafeF hiện tại hoặc không phải kỳ hợp lệ.",
+            }
     _crawl_progress(
         symbol,
         f"start providers={','.join(WORKER_PROVIDERS)} "
@@ -1337,6 +1365,9 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
             if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
                 continue
             for provider in WORKER_PROVIDERS:
+                current_key = (provider, document_type, period_type, year, quarter)
+                if target is not None and current_key != target:
+                    continue
                 with _schema_connection(FINANCE_SCHEMA) as db:
                     existing = db.execute(
                         "SELECT status FROM documents WHERE symbol=? AND provider=? AND document_type=? "
@@ -1375,6 +1406,16 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         f"completed run_id={run_id} fetched={len(results)} success={success} "
         f"failed={failure} skipped={skipped_count}",
     )
+    catalog = list_securities(0, 1, q=symbol)
+    updated_item = next(
+        (item for item in catalog.get("items", []) if item.get("symbol") == symbol),
+        None,
+    )
+    target_label = (
+        f" document={target[1]} period={target[2]}:{target[3]}"
+        + (f":Q{target[4]}" if target[4] else "")
+        if target else ""
+    )
     return {
         "ok": True,
         "run_id": run_id,
@@ -1382,6 +1423,11 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         "success_count": success,
         "failure_count": failure,
         "skipped_count": skipped_count,
+        "item": updated_item,
+        "message": (
+            f"Đã xử lý {symbol}{target_label}: "
+            f"{success} thành công, {failure} thất bại, {skipped_count} bỏ qua."
+        ),
     }
 
 

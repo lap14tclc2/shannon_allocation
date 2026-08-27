@@ -134,7 +134,7 @@ export const getAdminFinanceData = (params = {}) => {
 export const crawlAdminFinanceUniverse = () => sendJSON('/api/admin/finance-data/universe', 'POST', {});
 export const queueAdminFinanceCrawl = (exchange = '') => sendJSON('/api/admin/finance-data/crawl-all', 'POST', exchange ? { exchange } : {});
 export const crawlAdminFinanceData = (symbol) => sendJSON('/api/admin/finance-data/crawl', 'POST', { symbol });
-export const retryAdminFinanceData = (symbol) => sendJSON(`/api/admin/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}/retry`, 'POST', {});
+export const retryAdminFinanceData = (symbol, document = {}) => sendJSON(`/api/admin/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}/retry`, 'POST', document);
 export const getAdminFinanceAudit = (symbol) => getJSON(`/api/admin/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}/audit`);
 export const getPortfolioFinanceData = (symbol) => getJSON(`/api/portfolio/finance-data/${encodeURIComponent(String(symbol).toUpperCase())}`);
 
