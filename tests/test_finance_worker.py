@@ -159,3 +159,19 @@ def test_finance_db_exposes_cafef_cleanup_without_touching_worker_scope():
     script = (ROOT / "scripts" / "finance_db.py").read_text(encoding="utf-8")
     assert '"clear-cafef"' in script
     assert "clear_provider_finance_data" in script
+
+
+def test_prepared_tcbs_directory_loader_is_incremental_and_file_only():
+    source = inspect.getsource(finance_catalog.import_tcbs_crawled_directory)
+    assert 'directory: str = "docs/crawled"' in source
+    assert "_tcbs_select_record" in source
+    assert "_save_document" in source
+    assert "retry_failed_only" in source
+    assert "_fetch_tcbs_history" not in source
+
+
+def test_prepared_tcbs_import_script_uses_docs_crawled():
+    script = (ROOT / "scripts" / "finance_import.py").read_text(encoding="utf-8")
+    assert 'default="docs/crawled"' in script
+    assert "import_tcbs_crawled_directory" in script
+    assert "TCBS_BEARER_TOKEN" not in script

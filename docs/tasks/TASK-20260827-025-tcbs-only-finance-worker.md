@@ -39,11 +39,11 @@ the canonical facts required by Value Engine.
 
 ## Prepared crawler JSON ingestion
 
-- [ ] Load one JSON file per symbol from `docs/crawler/*.json` without any
+- [x] Load one JSON file per symbol from `docs/crawled/*.json` without any
   provider request.
-- [ ] Support the combined TCBS envelope containing the six
+- [x] Support the combined TCBS envelope containing the six
   `incomestatement/balancesheet/cashflow` quarter/year arrays.
-- [ ] Reuse exact period selection and canonical mappings for all files, with
+- [x] Reuse exact period selection and canonical mappings for all files, with
   incremental success-preserving behavior.
 
 ## Validation

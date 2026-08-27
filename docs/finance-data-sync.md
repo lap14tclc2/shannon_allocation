@@ -104,3 +104,26 @@ The universe endpoint may still use Vnstock only for symbol discovery. Its
 [finance-universe] logs show loading, request heartbeat, row count,
 persistence checkpoints, completion, and errors. The finance document worker
 does not use Vnstock for financial statements.
+
+
+## Import prepared files from docs/crawled
+
+When TCBS responses have already been saved as one file per symbol
+(docs/crawled/FPT.json, docs/crawled/CMF.json, and so on), import them
+without making network requests:
+
+    $env:DATABASE_URL = 'postgresql://...'
+    $env:QPORT_FINANCE_RUNTIME = 'worker'
+    python scripts/finance_import.py --directory docs/crawled
+
+The importer reads only JSON files, validates the filename symbol against
+the optional root symbol, selects the matching TCBS statement array and exact
+year/quarter, and writes the same raw-document and canonical-fact layers as
+the worker. Existing SUCCESS periods are preserved. Use --retry-failed-only
+to retry only periods currently marked FAILED:
+
+    python scripts/finance_import.py --directory docs/crawled --retry-failed-only
+
+It prints per-symbol progress and a final count of imported, failed, and
+skipped documents. Stop the network worker before importing if both processes
+would use the same database.
