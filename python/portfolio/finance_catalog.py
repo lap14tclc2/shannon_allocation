@@ -1254,7 +1254,7 @@ def _tcbs_records(
             return [dict(item) for item in node if isinstance(item, dict)]
         if not isinstance(node, dict):
             return []
-        if "year" in node or "ticker" in node:
+        if "year" in node:
             return [dict(node)]
 
         if prefix:

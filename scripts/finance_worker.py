@@ -49,6 +49,9 @@ def main() -> int:
     if os.environ.get("VERCEL"):
         log("refused: Vercel runtime is database-read-only")
         return 2
+    if not str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip():
+        log("refused: TCBS_BEARER_TOKEN is required for the TCBS worker")
+        return 2
 
     processed = 0
     success_symbols: list[str] = []

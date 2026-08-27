@@ -33,7 +33,7 @@ def main() -> int:
         "INCOME_STATEMENT",
     ):
         try:
-            url, payload = _fetch_tcbs_history(symbol, document_type)
+            _url, payload = _fetch_tcbs_history(symbol, document_type)
             records = _tcbs_records(payload)
             years = sorted({
                 int(row["year"])
