@@ -5,6 +5,7 @@ read canonical rows from this catalog; provider calls are never made from them.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -854,7 +855,7 @@ def _value(row: dict[str, Any], *aliases: str) -> float | None:
     return None
 
 
-def _canonicalize_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, payload: str | None, source_document_id: int | None) -> None:
+def _canonicalize_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, payload: str | None, source_document_id: int | None, db: Any | None = None) -> None:
     rows = _payload_rows(payload)
     # Field names below are the actual TCBS finance API contract. Keep aliases
     # for legacy normalized rows, but do not derive missing Value Engine facts.
@@ -923,8 +924,8 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
         )
         if value is None:
             continue
-        with _schema_connection(FINANCE_SCHEMA) as db:
-            db.execute(
+        with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
+            conn.execute(
                 """INSERT INTO canonical_facts(
                    symbol, statement_type, line_item_code, value, period_type,
                    fiscal_year, fiscal_quarter, period_end, provider,
@@ -955,8 +956,8 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             )
         written += 1
     if written == 0:
-        with _schema_connection(FINANCE_SCHEMA) as db:
-            db.execute(
+        with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
+            conn.execute(
                 """INSERT INTO parse_errors(
                     source_document_id, symbol, provider, document_type,
                     error_code, error_message, observed_at
@@ -1220,12 +1221,12 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
     }
 
 
-def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None) -> None:
+def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None, db: Any | None = None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
     # Commit the raw document first. Canonicalization uses a separate connection
     # only after this transaction is closed, avoiding nested transaction locks
     # and guaranteeing the source_document_id is visible to the normalizer.
-    with _schema_connection(FINANCE_SCHEMA) as db:
+    with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
         db.execute(
             """INSERT INTO documents(symbol,provider,document_type,period_type,fiscal_year,fiscal_quarter,period_end,status,source_url,payload,content_hash,fetched_at,error_code,error_message,crawl_run_id)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -1237,7 +1238,7 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
         )
     if status != "SUCCESS":
         return
-    with _schema_connection(FINANCE_SCHEMA) as db:
+    with (nullcontext(db) if db is not None else _schema_connection(FINANCE_SCHEMA)) as conn:
         row = db.execute(
             "SELECT id FROM documents WHERE symbol=? AND provider=? AND document_type=? AND period_type=? AND fiscal_year=? AND fiscal_quarter IS NOT DISTINCT FROM ?",
             (symbol, provider, document_type, period_type, year, quarter),
@@ -1246,7 +1247,7 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
     if document_type != "DIVIDEND":
         _canonicalize_document(
             symbol, provider, document_type, period_type, year, quarter,
-            period_end, payload, document_id,
+            period_end, payload, document_id, db=conn,
         )
     else:
         _reconcile_dividend_document(symbol, provider, payload, document_id)
@@ -1554,25 +1555,27 @@ def import_tcbs_crawled_directory(
 
     def save_file_failures(symbol: str, detail: str) -> None:
         nonlocal failed_documents
-        for document_type in WORKER_DOCUMENT_TYPES:
-            source_url = f"file:{symbol}.json"
-            for period_type, year, quarter, period_end in periods:
-                _save_document(
-                    symbol,
-                    "tcbs",
-                    document_type,
-                    period_type,
-                    year,
-                    quarter,
-                    period_end,
-                    source_url,
-                    "FAILED",
-                    None,
-                    "LOCAL_FILE_INVALID",
-                    detail[:500],
-                    run_id,
-                )
-                failed_documents += 1
+        with _schema_connection(FINANCE_SCHEMA) as batch_db:
+            for document_type in WORKER_DOCUMENT_TYPES:
+                source_url = f"file:{symbol}.json"
+                for period_type, year, quarter, period_end in periods:
+                    _save_document(
+                        symbol,
+                        "tcbs",
+                        document_type,
+                        period_type,
+                        year,
+                        quarter,
+                        period_end,
+                        source_url,
+                        "FAILED",
+                        None,
+                        "LOCAL_FILE_INVALID",
+                        detail[:500],
+                        run_id,
+                        db=batch_db,
+                    )
+                    failed_documents += 1
 
     for filename in filenames:
         symbol = os.path.splitext(filename)[0].upper().strip()
@@ -1635,15 +1638,49 @@ def import_tcbs_crawled_directory(
         symbol_imported = 0
         symbol_failed = 0
         symbol_unavailable = 0
-        for document_type in WORKER_DOCUMENT_TYPES:
-            try:
-                records = _tcbs_records(payload, document_type)
-                if not records:
-                    raise ProviderPayloadError(
-                        f"no {document_type} records in {filename}"
+        with _schema_connection(FINANCE_SCHEMA) as batch_db:
+            for document_type in WORKER_DOCUMENT_TYPES:
+                try:
+                    records = _tcbs_records(payload, document_type)
+                    if not records:
+                        raise ProviderPayloadError(
+                            f"no {document_type} records in {filename}"
+                        )
+                except Exception as exc:
+                    code, detail, status_label = _provider_failure(exc)
+                    for period_type, year, quarter, period_end in periods:
+                        key = ("tcbs", document_type, period_type, year, quarter)
+                        if not _should_fetch_document(
+                            statuses.get(key),
+                            retry_failed_only=retry_failed_only,
+                        ):
+                            skipped_documents += 1
+                            continue
+                        _save_document(
+                            symbol,
+                            "tcbs",
+                            document_type,
+                            period_type,
+                            year,
+                            quarter,
+                            period_end,
+                            f"file:{filename}",
+                            "FAILED",
+                            None,
+                            code,
+                            detail,
+                            run_id,
+                        db=batch_db,
+                        )
+                        failed_documents += 1
+                        symbol_failed += 1
+                    _crawl_progress(
+                        symbol,
+                        f"file-failed document={document_type} "
+                        f"code={code} status={status_label}",
                     )
-            except Exception as exc:
-                code, detail, status_label = _provider_failure(exc)
+                    continue
+    
                 for period_type, year, quarter, period_end in periods:
                     key = ("tcbs", document_type, period_type, year, quarter)
                     if not _should_fetch_document(
@@ -1652,106 +1689,76 @@ def import_tcbs_crawled_directory(
                     ):
                         skipped_documents += 1
                         continue
-                    _save_document(
-                        symbol,
-                        "tcbs",
-                        document_type,
-                        period_type,
-                        year,
-                        quarter,
-                        period_end,
-                        f"file:{filename}",
-                        "FAILED",
-                        None,
-                        code,
-                        detail,
-                        run_id,
-                    )
-                    failed_documents += 1
-                    symbol_failed += 1
-                _crawl_progress(
-                    symbol,
-                    f"file-failed document={document_type} "
-                    f"code={code} status={status_label}",
-                )
-                continue
-
-            for period_type, year, quarter, period_end in periods:
-                key = ("tcbs", document_type, period_type, year, quarter)
-                if not _should_fetch_document(
-                    statuses.get(key),
-                    retry_failed_only=retry_failed_only,
-                ):
-                    skipped_documents += 1
-                    continue
-                try:
-                    selected = _tcbs_select_record(
-                        payload,
-                        symbol=symbol,
-                        document_type=document_type,
-                        period_type=period_type,
-                        year=year,
-                        quarter=quarter,
-                    )
-                    selected_payload = _tcbs_selected_payload(
-                        selected,
-                        symbol=symbol,
-                        period_type=period_type,
-                        year=year,
-                        quarter=quarter,
-                    )
-                    _save_document(
-                        symbol,
-                        "tcbs",
-                        document_type,
-                        period_type,
-                        year,
-                        quarter,
-                        period_end,
-                        f"file:{filename}",
-                        "SUCCESS",
-                        selected_payload,
-                        None,
-                        None,
-                        run_id,
-                    )
-                    imported_documents += 1
-                    symbol_imported += 1
-                except Exception as exc:
-                    code, detail, status_label = _provider_failure(exc)
-                    document_status = _document_status_for_failure(code)
-                    _save_document(
-                        symbol,
-                        "tcbs",
-                        document_type,
-                        period_type,
-                        year,
-                        quarter,
-                        period_end,
-                        f"file:{filename}",
-                        document_status,
-                        None,
-                        code,
-                        detail,
-                        run_id,
-                    )
-                    if document_status == "NOT_AVAILABLE":
-                        unavailable_documents += 1
-                        symbol_unavailable += 1
-                        outcome = "file-unavailable"
-                    else:
-                        failed_documents += 1
-                        symbol_failed += 1
-                        outcome = "file-failed"
-                    _crawl_progress(
-                        symbol,
-                        f"{outcome} document={document_type} "
-                        f"period={period_type}:{year}"
-                        + (f":Q{quarter}" if quarter else "")
-                        + f" code={code} status={status_label}",
-                    )
-
-        processed += 1
+                    try:
+                        selected = _tcbs_select_record(
+                            payload,
+                            symbol=symbol,
+                            document_type=document_type,
+                            period_type=period_type,
+                            year=year,
+                            quarter=quarter,
+                        )
+                        selected_payload = _tcbs_selected_payload(
+                            selected,
+                            symbol=symbol,
+                            period_type=period_type,
+                            year=year,
+                            quarter=quarter,
+                        )
+                        _save_document(
+                            symbol,
+                            "tcbs",
+                            document_type,
+                            period_type,
+                            year,
+                            quarter,
+                            period_end,
+                            f"file:{filename}",
+                            "SUCCESS",
+                            selected_payload,
+                            None,
+                            None,
+                            run_id,
+                        db=batch_db,
+                        )
+                        imported_documents += 1
+                        symbol_imported += 1
+                    except Exception as exc:
+                        code, detail, status_label = _provider_failure(exc)
+                        document_status = _document_status_for_failure(code)
+                        _save_document(
+                            symbol,
+                            "tcbs",
+                            document_type,
+                            period_type,
+                            year,
+                            quarter,
+                            period_end,
+                            f"file:{filename}",
+                            document_status,
+                            None,
+                            code,
+                            detail,
+                            run_id,
+                        db=batch_db,
+                        )
+                        if document_status == "NOT_AVAILABLE":
+                            unavailable_documents += 1
+                            symbol_unavailable += 1
+                            outcome = "file-unavailable"
+                        else:
+                            failed_documents += 1
+                            symbol_failed += 1
+                            outcome = "file-failed"
+                        _crawl_progress(
+                            symbol,
+                            f"{outcome} document={document_type} "
+                            f"period={period_type}:{year}"
+                            + (f":Q{quarter}" if quarter else "")
+                            + f" code={code} status={status_label}",
+                        )
+    
+            processed += 1
         if symbol_failed:
             failed_symbols.append(symbol)
         else:
