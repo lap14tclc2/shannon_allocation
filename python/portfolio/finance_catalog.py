@@ -643,7 +643,7 @@ def _cafef_dividend_rows(payload: str | None) -> list[dict[str, Any]]:
         cash_per_share = None
         stock_ratio = None
         if is_cash:
-            for cell of cells:
+            for cell in cells:
                 if "đ" not in cell.lower() and "đồng" not in cell.lower():
                     continue
                 numbers = re.findall(r"\d[\d.,]*", cell)
