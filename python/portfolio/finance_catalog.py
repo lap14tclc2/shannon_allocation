@@ -1224,14 +1224,28 @@ def _tcbs_document_headers(*, require_token: bool = False) -> dict[str, str]:
         )
     return headers
 
-def _tcbs_records(payload: str | None) -> list[dict[str, Any]]:
-    """Unwrap TCBS history responses into statement records."""
+def _tcbs_records(
+    payload: str | None,
+    document_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Unwrap the correct TCBS history array for one statement type.
+
+    The checked-in fixture contains all six arrays in one envelope. Live
+    endpoints may return only one array, so both shapes are supported.
+    """
     if not payload:
         return []
     try:
         value: Any = json.loads(payload)
     except (TypeError, ValueError):
         return []
+
+    prefixes = {
+        "FINANCIAL_STATEMENTS": "balancesheet",
+        "CASH_FLOW": "cashflow",
+        "INCOME_STATEMENT": "incomestatement",
+    }
+    prefix = prefixes.get(str(document_type or "").upper())
 
     def collect(node: Any) -> list[dict[str, Any]]:
         if isinstance(node, list):
@@ -1240,6 +1254,23 @@ def _tcbs_records(payload: str | None) -> list[dict[str, Any]]:
             return []
         if "year" in node or "ticker" in node:
             return [dict(node)]
+
+        if prefix:
+            selected: list[dict[str, Any]] = []
+            for key in (
+                f"{prefix}_quarter",
+                f"{prefix}_year",
+                f"{prefix}Quarter",
+                f"{prefix}Year",
+            ):
+                child = node.get(key)
+                if isinstance(child, list):
+                    selected.extend(
+                        dict(item) for item in child if isinstance(item, dict)
+                    )
+            if selected:
+                return selected
+
         for key in ("data", "content", "rows", "items", "result"):
             child = node.get(key)
             if isinstance(child, (list, dict)):
@@ -1267,9 +1298,10 @@ def _tcbs_select_record(
     period_type: str,
     year: int,
     quarter: int | None,
+    document_type: str | None = None,
 ) -> dict[str, Any]:
     """Select one exact TCBS history row for a logical document period."""
-    rows = _tcbs_records(payload)
+    rows = _tcbs_records(payload, document_type)
     wanted_symbol = str(symbol).upper().strip()
     symbol_rows = [
         row for row in rows
@@ -1364,7 +1396,7 @@ def _fetch_tcbs_history(symbol: str, document_type: str) -> tuple[str, str]:
     )
     if status < 200 or status >= 300:
         raise RuntimeError(f"HTTP {status}")
-    records = _tcbs_records(payload)
+    records = _tcbs_records(payload, document_type)
     if not records:
         raise ProviderPayloadError(
             f"TCBS returned no statement records for {symbol} {document_type}"
@@ -1393,6 +1425,7 @@ def _persist_tcbs_period(
         period_type=period_type,
         year=year,
         quarter=quarter,
+        document_type=document_type,
     )
     selected_payload = _tcbs_selected_payload(
         record,
