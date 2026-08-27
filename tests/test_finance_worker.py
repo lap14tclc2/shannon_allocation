@@ -54,3 +54,9 @@ def test_cafef_financial_urls_use_current_data_route():
     source = inspect.getsource(finance_catalog._fetch_provider)
     assert "cafef.vn/du-lieu/bao-cao-tai-chinh" in source
     assert "s.cafef.vn/bao-cao-tai-chinh" not in source
+
+
+def test_cafef_placeholder_urls_use_current_data_route():
+    source = inspect.getsource(finance_catalog.ensure_required_documents)
+    assert "cafef.vn/du-lieu/bao-cao-tai-chinh" in source
+    assert "s.cafef.vn/bao-cao-tai-chinh" not in source

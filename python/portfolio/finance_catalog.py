@@ -274,7 +274,7 @@ def ensure_required_documents(symbol: str) -> None:
                         url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
                     else:
                         segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
-                        url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/bctc.chn"
+                        url = f"https://cafef.vn/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/1/bao-cao-tai-chinh-{symbol.lower()}.chn"
                     db.execute(
                         """INSERT INTO documents(
                            symbol, provider, document_type, period_type, fiscal_year,
