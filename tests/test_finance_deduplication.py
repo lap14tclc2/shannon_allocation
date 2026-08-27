@@ -13,8 +13,11 @@ def test_finance_documents_deduplicate_nullable_fiscal_quarter():
     assert "uq_finance_documents_logical_period" in source
     assert "COALESCE(fiscal_quarter, 0)" in source
     assert "FIRST_VALUE(id) OVER" in source
-    assert "UPDATE canonical_facts AS canonical" in source\n    assert "SET source_document_id=dedup.keep_id" in source
+    assert "UPDATE canonical_facts AS canonical" in source
+    assert "SET source_document_id=dedup.keep_id" in source
     assert "UPDATE parse_errors AS parse_error" in source
+    assert "duplicate-document migration started" in source
+    assert "duplicate-document migration found" in source
     assert source.count("ON CONFLICT (symbol, provider, document_type, period_type, fiscal_year, (COALESCE(fiscal_quarter, 0)))") == 2
 
 
