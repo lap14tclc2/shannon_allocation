@@ -162,7 +162,7 @@ def initialize_finance_schema() -> None:
             fiscal_year INTEGER NOT NULL,
             fiscal_quarter INTEGER,
             period_end TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('SUCCESS','FAILED','PENDING')),
+            status TEXT NOT NULL CHECK(status IN ('SUCCESS','FAILED','PENDING','NOT_AVAILABLE')),
             source_url TEXT NOT NULL,
             payload TEXT,
             content_hash TEXT,
@@ -330,6 +330,34 @@ def initialize_finance_schema() -> None:
                 ("documents_deduplicate_v1", _now()),
             )
 
+        unavailable_status_migration = db.execute(
+            "SELECT 1 FROM finance_schema_migrations WHERE name=?",
+            ("documents_not_available_status_v1",),
+        ).fetchone()
+        if unavailable_status_migration is None:
+            print(
+                "[finance-schema] enabling NOT_AVAILABLE document status",
+                flush=True,
+            )
+            db.execute(
+                "ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_status_check"
+            )
+            db.execute(
+                """
+                ALTER TABLE documents
+                ADD CONSTRAINT documents_status_check
+                CHECK(status IN ('SUCCESS','FAILED','PENDING','NOT_AVAILABLE'))
+                """
+            )
+            db.execute(
+                """
+                INSERT INTO finance_schema_migrations(name, applied_at)
+                VALUES(?,?)
+                ON CONFLICT DO NOTHING
+                """,
+                ("documents_not_available_status_v1", _now()),
+            )
+
 
 def _ensure() -> None:
     initialize_finance_schema()
@@ -379,7 +407,8 @@ def list_securities(
                 COUNT(*) AS document_total,
                 SUM(CASE WHEN status='SUCCESS' THEN 1 ELSE 0 END) AS document_success,
                 SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS document_failed,
-                SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END) AS document_pending
+                SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END) AS document_pending,
+                SUM(CASE WHEN status='NOT_AVAILABLE' THEN 1 ELSE 0 END) AS document_unavailable
             FROM documents
             WHERE provider IN ({worker_provider_sql})
               AND (document_type <> 'DIVIDEND'
@@ -392,11 +421,14 @@ def list_securities(
             WHEN COALESCE(d.document_total, 0) = 0 THEN 'NOT_CRAWLED'
             WHEN COALESCE(d.document_success, 0) > 0
                  AND COALESCE(d.document_failed, 0) = 0
-                 AND COALESCE(d.document_pending, 0) = 0 THEN 'SUCCESS'
+                 AND COALESCE(d.document_pending, 0) = 0
+                 AND COALESCE(d.document_unavailable, 0) = 0 THEN 'SUCCESS'
             WHEN COALESCE(d.document_success, 0) > 0
                  AND (COALESCE(d.document_failed, 0) > 0
-                      OR COALESCE(d.document_pending, 0) > 0) THEN 'PARTIAL'
+                      OR COALESCE(d.document_pending, 0) > 0
+                      OR COALESCE(d.document_unavailable, 0) > 0) THEN 'PARTIAL'
             WHEN COALESCE(d.document_failed, 0) > 0 THEN 'FAILED'
+            WHEN COALESCE(d.document_unavailable, 0) > 0 THEN 'NOT_AVAILABLE'
             ELSE 'PENDING'
         END
     """
@@ -411,6 +443,7 @@ def list_securities(
             COALESCE(d.document_success, 0) AS document_success,
             COALESCE(d.document_failed, 0) AS document_failed,
             COALESCE(d.document_pending, 0) AS document_pending,
+            COALESCE(d.document_unavailable, 0) AS document_unavailable,
             {status_expression} AS crawl_status
         FROM securities AS s
         {document_summary}
@@ -431,12 +464,14 @@ def list_securities(
         "SUCCESS": (
             "COALESCE(d.document_success, 0) > 0 "
             "AND COALESCE(d.document_failed, 0) = 0 "
-            "AND COALESCE(d.document_pending, 0) = 0"
+            "AND COALESCE(d.document_pending, 0) = 0 "
+            "AND COALESCE(d.document_unavailable, 0) = 0"
         ),
         "PARTIAL": (
             "COALESCE(d.document_success, 0) > 0 "
             "AND (COALESCE(d.document_failed, 0) > 0 "
-            "OR COALESCE(d.document_pending, 0) > 0)"
+            "OR COALESCE(d.document_pending, 0) > 0 "
+            "OR COALESCE(d.document_unavailable, 0) > 0)"
         ),
         "FAILED": (
             "COALESCE(d.document_failed, 0) > 0 "
@@ -445,7 +480,15 @@ def list_securities(
         "PENDING": (
             "COALESCE(d.document_total, 0) > 0 "
             "AND COALESCE(d.document_success, 0) = 0 "
-            "AND COALESCE(d.document_failed, 0) = 0"
+            "AND COALESCE(d.document_failed, 0) = 0 "
+            "AND COALESCE(d.document_unavailable, 0) = 0"
+        ),
+        "NOT_AVAILABLE": (
+            "COALESCE(d.document_total, 0) > 0 "
+            "AND COALESCE(d.document_success, 0) = 0 "
+            "AND COALESCE(d.document_failed, 0) = 0 "
+            "AND COALESCE(d.document_pending, 0) = 0 "
+            "AND COALESCE(d.document_unavailable, 0) > 0"
         ),
         "NOT_CRAWLED": "COALESCE(d.document_total, 0) = 0",
     }
@@ -684,6 +727,10 @@ def _cafef_dividend_rows(payload: str | None) -> list[dict[str, Any]]:
 
 class ProviderPayloadError(RuntimeError):
     """Raised when a provider returned an HTTP response with wrong content."""
+
+
+class ProviderPeriodUnavailableError(ProviderPayloadError):
+    """Raised when a provider has no row for the requested logical period."""
 
 
 def _validate_cafef_payload(
@@ -1333,7 +1380,7 @@ def _tcbs_select_record(
         label = f"{period_type}:{year}" + (
             f":Q{quarter}" if quarter else ""
         )
-        raise ProviderPayloadError(
+        raise ProviderPeriodUnavailableError(
             f"TCBS response has no record for {wanted_symbol} {label}"
         )
     return candidates[0]
@@ -1374,6 +1421,8 @@ def _tcbs_document_url(symbol: str, document_type: str) -> str:
 
 
 def _provider_failure(exc: Exception) -> tuple[str, str, str]:
+    if isinstance(exc, ProviderPeriodUnavailableError):
+        return "SOURCE_PERIOD_UNAVAILABLE", str(exc)[:500], "not-available"
     if isinstance(exc, ProviderPayloadError):
         return "PROVIDER_PAYLOAD_INVALID", str(exc)[:500], "invalid-payload"
     if isinstance(exc, urllib.error.HTTPError):
@@ -1383,6 +1432,10 @@ def _provider_failure(exc: Exception) -> tuple[str, str, str]:
             str(exc.code),
         )
     return "PROVIDER_UNAVAILABLE", str(exc)[:500], "unavailable"
+
+
+def _document_status_for_failure(code: str) -> str:
+    return "NOT_AVAILABLE" if code == "SOURCE_PERIOD_UNAVAILABLE" else "FAILED"
 
 
 def _fetch_tcbs_history(symbol: str, document_type: str) -> tuple[str, str]:
@@ -1496,6 +1549,7 @@ def import_tcbs_crawled_directory(
     imported_documents = 0
     skipped_documents = 0
     failed_documents = 0
+    unavailable_documents = 0
     periods = _periods()
 
     def save_file_failures(symbol: str, detail: str) -> None:
@@ -1580,6 +1634,7 @@ def import_tcbs_crawled_directory(
 
         symbol_imported = 0
         symbol_failed = 0
+        symbol_unavailable = 0
         for document_type in WORKER_DOCUMENT_TYPES:
             try:
                 records = _tcbs_records(payload, document_type)
@@ -1664,6 +1719,7 @@ def import_tcbs_crawled_directory(
                     symbol_imported += 1
                 except Exception as exc:
                     code, detail, status_label = _provider_failure(exc)
+                    document_status = _document_status_for_failure(code)
                     _save_document(
                         symbol,
                         "tcbs",
@@ -1673,17 +1729,23 @@ def import_tcbs_crawled_directory(
                         quarter,
                         period_end,
                         f"file:{filename}",
-                        "FAILED",
+                        document_status,
                         None,
                         code,
                         detail,
                         run_id,
                     )
-                    failed_documents += 1
-                    symbol_failed += 1
+                    if document_status == "NOT_AVAILABLE":
+                        unavailable_documents += 1
+                        symbol_unavailable += 1
+                        outcome = "file-unavailable"
+                    else:
+                        failed_documents += 1
+                        symbol_failed += 1
+                        outcome = "file-failed"
                     _crawl_progress(
                         symbol,
-                        f"file-failed document={document_type} "
+                        f"{outcome} document={document_type} "
                         f"period={period_type}:{year}"
                         + (f":Q{quarter}" if quarter else "")
                         + f" code={code} status={status_label}",
@@ -1697,7 +1759,7 @@ def import_tcbs_crawled_directory(
         _crawl_progress(
             symbol,
             f"file-completed imported={symbol_imported} "
-            f"failed={symbol_failed}",
+            f"failed={symbol_failed} unavailable={symbol_unavailable}",
         )
 
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -1719,6 +1781,7 @@ def import_tcbs_crawled_directory(
         f"failed_symbols={len(failed_symbols)} "
         f"imported_documents={imported_documents} "
         f"failed_documents={failed_documents} "
+        f"unavailable_documents={unavailable_documents} "
         f"skipped_documents={skipped_documents}",
     )
     return {
@@ -1731,6 +1794,7 @@ def import_tcbs_crawled_directory(
         "failed_symbols": failed_symbols,
         "imported_documents": imported_documents,
         "failed_documents": failed_documents,
+        "unavailable_documents": unavailable_documents,
         "skipped_documents": skipped_documents,
     }
 
@@ -1774,6 +1838,7 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         return True
     except Exception as exc:
         code, detail, status_label = _provider_failure(exc)
+        document_status = _document_status_for_failure(code)
         _save_document(
             symbol,
             "tcbs",
@@ -1783,15 +1848,16 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
             quarter,
             period_end,
             source_url,
-            "FAILED",
+            document_status,
             None,
             code,
             detail,
             run_id,
         )
+        outcome = "unavailable" if document_status == "NOT_AVAILABLE" else "failed"
         _crawl_progress(
             symbol,
-            f"failed provider=tcbs document={document_type} "
+            f"{outcome} provider=tcbs document={document_type} "
             f"period={period_label} code={code} status={status_label}",
         )
         return False
@@ -1996,7 +2062,7 @@ def _validate_crawl_runtime() -> None:
 def _should_fetch_document(status: str | None, *, retry_failed_only: bool) -> bool:
     """Return whether a document needs a provider request in this crawl."""
     normalized = str(status or "").upper()
-    if normalized == "SUCCESS":
+    if normalized in {"SUCCESS", "NOT_AVAILABLE"}:
         return False
     if retry_failed_only:
         return normalized == "FAILED"
@@ -2156,7 +2222,7 @@ def crawl_symbol(
                 (period_type, year, quarter, period_end)
             )
 
-    results: list[bool] = []
+    results: list[str] = []
     for document_type, pending in pending_by_type.items():
         if not pending:
             continue
@@ -2184,7 +2250,7 @@ def crawl_symbol(
                     detail,
                     run_id,
                 )
-                results.append(False)
+                results.append("FAILED")
                 _crawl_progress(
                     symbol,
                     f"failed provider=tcbs document={document_type} "
@@ -2208,7 +2274,7 @@ def crawl_symbol(
                     history_payload,
                     run_id,
                 )
-                results.append(True)
+                results.append("SUCCESS")
                 _crawl_progress(
                     symbol,
                     f"success provider=tcbs document={document_type} "
@@ -2216,6 +2282,7 @@ def crawl_symbol(
                 )
             except Exception as exc:
                 code, detail, status_label = _provider_failure(exc)
+                document_status = _document_status_for_failure(code)
                 _save_document(
                     symbol,
                     "tcbs",
@@ -2225,21 +2292,23 @@ def crawl_symbol(
                     quarter,
                     period_end,
                     source_url,
-                    "FAILED",
+                    document_status,
                     None,
                     code,
                     detail,
                     run_id,
                 )
-                results.append(False)
+                results.append(document_status)
+                outcome = "unavailable" if document_status == "NOT_AVAILABLE" else "failed"
                 _crawl_progress(
                     symbol,
-                    f"failed provider=tcbs document={document_type} "
+                    f"{outcome} provider=tcbs document={document_type} "
                     f"period={period_label} code={code} status={status_label}",
                 )
 
-    success = sum(1 for item in results if item)
-    failure = len(results) - success
+    success = sum(1 for item in results if item == "SUCCESS")
+    failure = sum(1 for item in results if item == "FAILED")
+    unavailable = sum(1 for item in results if item == "NOT_AVAILABLE")
     with _schema_connection(FINANCE_SCHEMA) as db:
         db.execute(
             "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? "
@@ -2249,7 +2318,7 @@ def crawl_symbol(
     _crawl_progress(
         symbol,
         f"completed run_id={run_id} fetched={len(results)} success={success} "
-        f"failed={failure} skipped={skipped_count} endpoint_requests="
+        f"failed={failure} unavailable={unavailable} skipped={skipped_count} endpoint_requests="
         f"{sum(1 for pending in pending_by_type.values() if pending)}",
     )
     catalog = list_securities(0, 1, q=symbol)
@@ -2269,11 +2338,13 @@ def crawl_symbol(
         "symbol": symbol,
         "success_count": success,
         "failure_count": failure,
+        "unavailable_count": unavailable,
         "skipped_count": skipped_count,
         "item": updated_item,
         "message": (
             f"Đã xử lý {symbol}{target_label}: "
-            f"{success} thành công, {failure} thất bại, {skipped_count} bỏ qua."
+            f"{success} thành công, {failure} thất bại, "
+            f"{unavailable} kỳ không có dữ liệu, {skipped_count} bỏ qua."
         ),
     }
 
