@@ -166,6 +166,103 @@ def initialize_finance_schema() -> None:
             UNIQUE(source_document_id)
         );
         """)
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS finance_schema_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        migration = db.execute(
+            "SELECT 1 FROM finance_schema_migrations WHERE name=?",
+            ("documents_deduplicate_v1",),
+        ).fetchone()
+        if migration is None:
+            duplicates = db.execute(
+                """
+                SELECT id, keep_id
+                FROM (
+                    SELECT
+                        id,
+                        FIRST_VALUE(id) OVER (
+                            PARTITION BY symbol, provider, document_type,
+                                         period_type, fiscal_year,
+                                         COALESCE(fiscal_quarter, 0)
+                            ORDER BY
+                                CASE status
+                                    WHEN 'SUCCESS' THEN 0
+                                    WHEN 'FAILED' THEN 1
+                                    ELSE 2
+                                END,
+                                fetched_at DESC,
+                                id DESC
+                        ) AS keep_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY symbol, provider, document_type,
+                                         period_type, fiscal_year,
+                                         COALESCE(fiscal_quarter, 0)
+                            ORDER BY
+                                CASE status
+                                    WHEN 'SUCCESS' THEN 0
+                                    WHEN 'FAILED' THEN 1
+                                    ELSE 2
+                                END,
+                                fetched_at DESC,
+                                id DESC
+                        ) AS duplicate_rank
+                    FROM documents
+                ) AS ranked
+                WHERE duplicate_rank > 1
+                """
+            ).fetchall()
+            for duplicate in duplicates:
+                duplicate_id = int(duplicate["id"])
+                keep_id = int(duplicate["keep_id"])
+                db.execute(
+                    "UPDATE canonical_facts SET source_document_id=? "
+                    "WHERE source_document_id=?",
+                    (keep_id, duplicate_id),
+                )
+                db.execute(
+                    """
+                    DELETE FROM parse_errors AS duplicate_error
+                    WHERE duplicate_error.source_document_id=?
+                      AND EXISTS (
+                          SELECT 1
+                          FROM parse_errors AS keeper_error
+                          WHERE keeper_error.source_document_id=?
+                      )
+                    """,
+                    (duplicate_id, keep_id),
+                )
+                db.execute(
+                    "UPDATE parse_errors SET source_document_id=? "
+                    "WHERE source_document_id=?",
+                    (keep_id, duplicate_id),
+                )
+                db.execute(
+                    "DELETE FROM documents WHERE id=?",
+                    (duplicate_id,),
+                )
+            db.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    uq_finance_documents_logical_period
+                ON documents(
+                    symbol, provider, document_type, period_type,
+                    fiscal_year, (COALESCE(fiscal_quarter, 0))
+                )
+                """
+            )
+            db.execute(
+                """
+                INSERT INTO finance_schema_migrations(name, applied_at)
+                VALUES(?,?)
+                ON CONFLICT DO NOTHING
+                """,
+                ("documents_deduplicate_v1", _now()),
+            )
 
 
 def _ensure() -> None:
@@ -362,7 +459,7 @@ def ensure_required_documents(symbol: str) -> None:
                            symbol, provider, document_type, period_type, fiscal_year,
                            fiscal_quarter, period_end, status, source_url, fetched_at
                         ) VALUES(?,?,?,?,?,?,?,?,?,?)
-                        ON CONFLICT(symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter)
+                        ON CONFLICT (symbol, provider, document_type, period_type, fiscal_year, (COALESCE(fiscal_quarter, 0)))
                         DO NOTHING""",
                         (symbol, provider, document_type, period_type, year, quarter,
                          period_end, "PENDING", url, _now()),
@@ -692,7 +789,7 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
         db.execute(
             """INSERT INTO documents(symbol,provider,document_type,period_type,fiscal_year,fiscal_quarter,period_end,status,source_url,payload,content_hash,fetched_at,error_code,error_message,crawl_run_id)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(symbol,provider,document_type,period_type,fiscal_year,fiscal_quarter)
+               ON CONFLICT (symbol, provider, document_type, period_type, fiscal_year, (COALESCE(fiscal_quarter, 0)))
                DO UPDATE SET status=excluded.status, source_url=excluded.source_url, payload=excluded.payload,
                content_hash=excluded.content_hash, fetched_at=excluded.fetched_at, error_code=excluded.error_code,
                error_message=excluded.error_message, crawl_run_id=excluded.crawl_run_id""",
@@ -798,7 +895,8 @@ def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | Non
         )
         row = db.execute(
             "SELECT id, symbol, requested_by FROM crawl_queue "
-            "WHERE status='QUEUED' ORDER BY id LIMIT 1"
+            "WHERE status='QUEUED' ORDER BY id LIMIT 1 "
+            "FOR UPDATE SKIP LOCKED"
         ).fetchone()
         if row is None:
             return None
