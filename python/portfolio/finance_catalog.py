@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from html import unescape
@@ -494,6 +495,27 @@ def _periods() -> list[tuple[str, int, int | None, str]]:
 
 
 
+def _cafef_dividend_url(symbol: str) -> str:
+    """Return CafeF's dividend-history page for the security's market."""
+    exchange_slug = ""
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        row = db.execute(
+            "SELECT exchange FROM securities WHERE symbol=?",
+            (str(symbol).upper().strip(),),
+        ).fetchone()
+    if row:
+        exchange_slug = {
+            "HOSE": "hose",
+            "HNX": "hnx",
+            "UPCOM": "upcom",
+        }.get(str(row["exchange"] or "").upper(), "")
+    suffix = f"&san={exchange_slug}" if exchange_slug else ""
+    return (
+        "https://cafef.vn/du-lieu/DuLieu.aspx"
+        f"?cat_id=1009{suffix}&symbol={str(symbol).upper().strip()}"
+    )
+
+
 def ensure_required_documents(symbol: str) -> None:
     """Create auditable PENDING placeholders for every required period/provider."""
     symbol = str(symbol).upper().strip()
@@ -509,7 +531,7 @@ def ensure_required_documents(symbol: str) -> None:
                     continue
                 for provider in WORKER_PROVIDERS:
                     if document_type == "DIVIDEND":
-                        url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
+                        url = _cafef_dividend_url(symbol)
                     else:
                         segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
                         url = f"https://cafef.vn/du-lieu/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{quarter or 4}/0/0/1/bao-cao-tai-chinh-{symbol.lower()}.chn"
@@ -570,6 +592,122 @@ def _cafef_html_rows(payload: str) -> list[dict[str, Any]]:
         row["period_values"] = cells[1:]
         result.append(row)
     return result
+
+
+def _cafef_iso_date(value: str) -> str | None:
+    """Convert a CafeF event date to ISO format without guessing a year."""
+    parts = re.split(r"[/.\-]", value.strip())
+    if len(parts) != 3:
+        return None
+    try:
+        if len(parts[0]) == 4:
+            year, month, day = (int(part) for part in parts)
+        else:
+            day, month, year = (int(part) for part in parts)
+        parsed = date(year, month, day)
+    except (TypeError, ValueError):
+        return None
+    return parsed.isoformat()
+
+
+def _cafef_dividend_rows(payload: str | None) -> list[dict[str, Any]]:
+    """Parse dividend event rows from CafeF's HTML history table."""
+    if not payload:
+        return []
+    parser = _CafeFTableParser()
+    parser.feed(payload)
+    result: list[dict[str, Any]] = []
+    date_pattern = re.compile(r"(?<!\d)(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2})(?!\d)")
+    for cells in parser.rows:
+        if not cells:
+            continue
+        row_text = " ".join(cell for cell in cells if cell).strip()
+        upper = row_text.upper()
+        dates = [_cafef_iso_date(item) for item in date_pattern.findall(row_text)]
+        dates = [item for item in dates if item]
+        if not dates:
+            continue
+        is_stock = (
+            "CỔ TỨC BẰNG CỔ PHIẾU" in upper
+            or "THƯỞNG BẰNG CỔ PHIẾU" in upper
+            or "CO TUC BANG CO PHIEU" in upper
+            or "THUONG BANG CO PHIEU" in upper
+        )
+        is_cash = (
+            "CỔ TỨC BẰNG TIỀN" in upper
+            or "CO TUC BANG TIEN" in upper
+            or "CASH DIVIDEND" in upper
+        )
+        if not (is_stock or is_cash):
+            continue
+        cash_per_share = None
+        stock_ratio = None
+        if is_cash:
+            for cell of cells:
+                if "đ" not in cell.lower() and "đồng" not in cell.lower():
+                    continue
+                numbers = re.findall(r"\d[\d.,]*", cell)
+                if numbers:
+                    cash_per_share = _number(numbers[-1])
+                    break
+        if is_stock:
+            percentages = re.findall(r"\d+(?:[.,]\d+)?\s*%", row_text)
+            if percentages:
+                stock_ratio = _number(percentages[-1])
+        common = {
+            "ex_date": dates[0],
+            "raw_payload": {"cells": cells},
+        }
+        if is_cash:
+            result.append({
+                **common,
+                "dividend_type": "CASH_DIVIDEND",
+                "cash_per_share": cash_per_share,
+            })
+        if is_stock:
+            result.append({
+                **common,
+                "dividend_type": "STOCK_DIVIDEND",
+                "stock_ratio": stock_ratio,
+            })
+    return result
+
+
+class ProviderPayloadError(RuntimeError):
+    """Raised when a provider returned an HTTP response with wrong content."""
+
+
+def _validate_cafef_payload(
+    payload: str | None,
+    *,
+    symbol: str,
+    document_type: str,
+) -> None:
+    """Reject CafeF error pages or HTML without the requested data shape."""
+    body = str(payload or "").strip()
+    if not body:
+        raise ProviderPayloadError("CafeF returned an empty payload")
+    lowered = body.lower()
+    if any(marker in lowered for marker in (
+        "404 not found",
+        "page not found",
+        "service not found",
+        "error occurred",
+    )):
+        raise ProviderPayloadError(
+            f"CafeF returned an error page for {symbol} {document_type}"
+        )
+    if document_type == "DIVIDEND":
+        markers = ("cổ tức", "co tuc", "gdkhq", "chia thưởng", "chia thuong")
+        if not any(marker in lowered for marker in markers):
+            raise ProviderPayloadError(
+                f"CafeF dividend page has no dividend-history markers for {symbol}"
+            )
+        return
+    if not _cafef_html_rows(body):
+        raise ProviderPayloadError(
+            f"CafeF {document_type} page has no numeric financial rows for {symbol}"
+        )
 
 
 def _payload_rows(payload: str | None) -> list[dict[str, Any]]:
@@ -719,7 +857,11 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             )
 
 def _reconcile_dividend_document(symbol: str, provider: str, payload: str | None, source_document_id: int | None) -> None:
-    rows = _payload_rows(payload)
+    rows = (
+        _cafef_dividend_rows(payload)
+        if provider == "cafef"
+        else _payload_rows(payload)
+    )
     if not rows:
         return
     try:
@@ -978,8 +1120,12 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
             (symbol, provider, document_type, period_type, year, quarter),
         ).fetchone()
     document_id = int(row["id"]) if row else None
-    _canonicalize_document(symbol, provider, document_type, period_type, year, quarter, period_end, payload, document_id)
-    if document_type == "DIVIDEND":
+    if document_type != "DIVIDEND":
+        _canonicalize_document(
+            symbol, provider, document_type, period_type, year, quarter,
+            period_end, payload, document_id,
+        )
+    else:
         _reconcile_dividend_document(symbol, provider, payload, document_id)
 
 def _crawl_progress(symbol: str, message: str) -> None:
@@ -1015,7 +1161,7 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         headers = _tcbs_document_headers()
     else:
         if document_type == "DIVIDEND":
-            url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
+            url = _cafef_dividend_url(symbol)
         else:
             segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
             q = quarter or 4
@@ -1027,11 +1173,21 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         status, payload = _url_json(url, headers=headers)
         if status < 200 or status >= 300:
             raise RuntimeError(f"HTTP {status}")
+        if provider == "cafef":
+            _validate_cafef_payload(
+                payload,
+                symbol=symbol,
+                document_type=document_type,
+            )
         _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "SUCCESS", payload, None, None, run_id)
         _crawl_progress(symbol, f"success provider={provider} document={document_type} period={period_label}")
         return True
     except Exception as exc:
-        if isinstance(exc, urllib.error.HTTPError):
+        if isinstance(exc, ProviderPayloadError):
+            code = "PROVIDER_PAYLOAD_INVALID"
+            detail = str(exc)[:500]
+            status_label = "invalid-payload"
+        elif isinstance(exc, urllib.error.HTTPError):
             code = "PROVIDER_HTTP_ERROR"
             detail = f"HTTP {exc.code} {exc.reason or ''}".strip()
             status_label = str(exc.code)
@@ -1462,6 +1618,35 @@ def clear_finance_queue() -> dict[str, Any]:
             raise RuntimeError("stop finance workers before clearing the queue")
         deleted = db.execute("DELETE FROM crawl_queue")
     return {"deleted_queue_rows": int(deleted.rowcount or 0)}
+
+
+def clear_all_finance_data() -> dict[str, Any]:
+    """Delete the finance catalog data while preserving its schema."""
+    _ensure()
+    from .dividend_reconciliation import ensure_reconciliation_schema
+    ensure_reconciliation_schema()
+    tables = (
+        "dividend_conflicts",
+        "dividend_canonical",
+        "dividend_observations",
+        "parse_errors",
+        "canonical_facts",
+        "documents",
+        "crawl_queue",
+        "crawl_runs",
+        "securities",
+    )
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        running = db.execute(
+            "SELECT COUNT(*) AS count FROM crawl_queue WHERE status='RUNNING'"
+        ).fetchone()["count"]
+        if int(running or 0):
+            raise RuntimeError("stop finance workers before clearing all finance data")
+        deleted: dict[str, int] = {}
+        for table in tables:
+            result = db.execute(f"DELETE FROM {table}")
+            deleted[table] = int(result.rowcount or 0)
+    return {"deleted_rows": deleted, "total_deleted": sum(deleted.values())}
 
 
 def clear_incomplete_finance_data() -> dict[str, Any]:

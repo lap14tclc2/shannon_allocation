@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from python.portfolio.finance_catalog import (  # noqa: E402
+    clear_all_finance_data,
     clear_finance_queue,
     clear_incomplete_finance_data,
     finance_database_status,
@@ -22,7 +23,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Inspect/reset qport_finance.")
     parser.add_argument(
         "command",
-        choices=("status", "clear-queue", "clear-incomplete"),
+        choices=("status", "clear-queue", "clear-incomplete", "clear-all"),
     )
     parser.add_argument(
         "--confirm",
@@ -39,8 +40,10 @@ def main() -> int:
         parser.error("--confirm is required for clear commands")
     if args.command == "clear-queue":
         print(clear_finance_queue())
-    else:
+    elif args.command == "clear-incomplete":
         print(clear_incomplete_finance_data())
+    else:
+        print(clear_all_finance_data())
     return 0
 
 

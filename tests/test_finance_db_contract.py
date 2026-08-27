@@ -27,7 +27,7 @@ def test_period_generation_excludes_current_incomplete_fy_and_quarterly_dividend
     assert ("FY", current_year, None, f"{current_year}-12-31") not in periods
     assert any(period_type == "QUARTER" and year == current_year for period_type, year, _, _ in periods)
     source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
-    assert 'if document_type == "DIVIDEND" and period_type != "FY":' in source
+    assert 'if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):' in source
 
 
 def test_user_valuation_route_is_database_only():

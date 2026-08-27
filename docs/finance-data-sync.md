@@ -114,3 +114,23 @@ the provider, document type, fiscal period, and quarter identity to the API. The
 API returns the updated symbol row, so the UI updates that row in local state
 without reloading the whole catalog page or changing search, filter, or
 pagination state.
+
+
+## Clean rebuild after bad provider data
+
+Stop every local finance worker before deleting the catalog. The destructive
+command keeps the schema but removes securities, queue/run history, raw
+documents, canonical facts, parse errors, and dividend reconciliation rows:
+
+    $env:DATABASE_URL = 'postgresql://...'
+    $env:QPORT_FINANCE_RUNTIME = 'worker'
+    python scripts/finance_db.py status
+    python scripts/finance_db.py clear-all --confirm
+
+The command refuses to run while a queue item is RUNNING. Run the universe sync
+again after the clear, then queue and crawl the required HOSE/HNX symbols.
+
+CafeF dividend history uses the DuLieu.aspx?cat_id=1009 history page with the
+security's market. A HTTP response is not accepted as SUCCESS unless it has
+the expected CafeF page markers and financial HTML rows. Invalid provider pages
+are stored as FAILED with PROVIDER_PAYLOAD_INVALID for later retry.
