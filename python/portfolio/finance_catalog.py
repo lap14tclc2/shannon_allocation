@@ -721,6 +721,49 @@ def _listing_call_with_heartbeat(label: str, callback: Any) -> Any:
         monitor.join(timeout=1)
 
 
+
+def _normalize_universe_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Vnstock listing rows across provider schema variants."""
+    raw = {str(key).strip().lower().replace("-", "_").replace(" ", "_"): value
+           for key, value in dict(row).items()}
+
+    def first(*keys: str) -> str | None:
+        for key in keys:
+            value = raw.get(key)
+            if value is not None and str(value).strip() not in {"", "-", "UNKNOWN", "NAN", "NONE"}:
+                return str(value).strip()
+        return None
+
+    symbol = first("symbol", "ticker", "code", "stock_code", "stockcode")
+    exchange = first("exchange", "com_group_code", "comgroupcode", "com_group",
+                     "floor_code", "floorcode", "floor", "market")
+    company_name = first("organ_name", "organname", "company_name", "companyname",
+                         "name", "company")
+    industry = first("industry", "industry_name", "industryname", "icb_name",
+                      "icbname", "icb_name3", "icbname3", "sector")
+    return {
+        "symbol": symbol.upper() if symbol else None,
+        "exchange": exchange.upper() if exchange else "UNKNOWN",
+        "company_name": company_name,
+        "industry": industry or "UNKNOWN",
+        "missing_exchange": exchange is None,
+        "missing_industry": industry is None,
+    }
+
+
+def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str, Any]]) -> dict[str, int]:
+    symbols = [row["symbol"] for row in normalized_rows if row.get("symbol")]
+    unique_symbols = set(symbols)
+    return {
+        "received": len(rows),
+        "valid_symbols": len(unique_symbols),
+        "duplicate_symbols": len(symbols) - len(unique_symbols),
+        "missing_symbol": sum(1 for row in normalized_rows if not row.get("symbol")),
+        "unknown_exchange": sum(1 for row in normalized_rows if row.get("missing_exchange")),
+        "missing_industry": sum(1 for row in normalized_rows if row.get("missing_industry")),
+    }
+
+
 def sync_universe() -> dict[str, Any]:
     """Populate the exchange universe from Vnstock on an external worker.
 
@@ -776,27 +819,52 @@ def sync_universe() -> dict[str, Any]:
             f"received {len(rows)} symbol rows via Listing.{selected_method}"
         )
         count = 0
+        normalized_rows = []
         checkpoint = max(1, len(rows) // 10) if rows else 1
         for row in rows:
-            lowered = {str(k).lower().strip(): v for k, v in dict(row).items()}
-            symbol = next((lowered.get(k) for k in ("symbol", "ticker", "code") if lowered.get(k)), None)
-            exchange = next((lowered.get(k) for k in ("exchange", "floor", "com_group_code", "market") if lowered.get(k)), "UNKNOWN")
-            name = next((lowered.get(k) for k in ("organ_name", "company_name", "name") if lowered.get(k)), None)
-            industry = next((lowered.get(k) for k in ("industry", "industry_name", "icb_name3") if lowered.get(k)), None)
+            normalized = _normalize_universe_row(dict(row))
+            normalized_rows.append(normalized)
+            symbol = normalized["symbol"]
             if symbol:
-                upsert_security(str(symbol), str(exchange), str(name) if name else None, str(industry) if industry else None)
-                ensure_required_documents(str(symbol))
+                upsert_security(
+                    symbol,
+                    normalized["exchange"],
+                    normalized["company_name"],
+                    normalized["industry"],
+                )
+                ensure_required_documents(symbol)
                 count += 1
                 if count == 1 or count % checkpoint == 0:
                     _universe_progress(
-                        f"persisted {count}/{len(rows)} symbols (latest={str(symbol).upper().strip()})"
+                        f"persisted {count}/{len(rows)} symbols (latest={symbol})"
                     )
         elapsed = time.monotonic() - started
         _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
+        quality = _universe_quality(rows, normalized_rows)
+        warnings = []
+        if quality["unknown_exchange"]:
+            warnings.append(f'{quality["unknown_exchange"]} mã chưa xác định sàn')
+        if quality["missing_industry"]:
+            warnings.append(f'{quality["missing_industry"]} mã chưa có nhóm ngành')
+        if quality["duplicate_symbols"]:
+            warnings.append(f'{quality["duplicate_symbols"]} mã bị trùng')
+        _universe_progress(
+            "quality "
+            f"valid={quality['valid_symbols']} "
+            f"unknown_exchange={quality['unknown_exchange']} "
+            f"missing_industry={quality['missing_industry']} "
+            f"duplicates={quality['duplicate_symbols']}"
+        )
         return {
             "ok": count > 0,
             "count": count,
-            "message": f"Đã đồng bộ {count} mã." if count else "Provider không trả danh sách mã.",
+            "quality": quality,
+            "warnings": warnings,
+            "message": (
+                f"Đã đồng bộ {count} mã."
+                + (f" Cảnh báo: {'; '.join(warnings)}." if warnings else "")
+                if count else "Provider không trả danh sách mã."
+            ),
         }
     except Exception as exc:
         elapsed = time.monotonic() - started

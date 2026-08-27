@@ -32,6 +32,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [busySymbol, setBusySymbol] = useState('');
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState({ name: 'unknown', can_crawl: false, read_only: true, message: 'Đang kiểm tra capability…' });
+  const [universeQuality, setUniverseQuality] = useState(null);
 
   async function refresh() {
     setLoading(true);
@@ -59,6 +60,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     setMessage('');
     try {
       const result = await crawlAdminFinanceUniverse();
+      setUniverseQuality(result.quality || null);
       setMessage(result.message || 'Đã cập nhật danh sách mã.');
       setPage(0);
       await refresh();
@@ -123,6 +125,15 @@ export default function FinanceDataPage({ locale = 'vi' }) {
         <span>{runtime.message}</span>
       </div>
 
+      {universeQuality && (
+        <div className="run-message banner-message" role="status">
+          Chất lượng universe: {universeQuality.valid_symbols?.toLocaleString('vi-VN') || 0} mã hợp lệ ·
+          {universeQuality.unknown_exchange || 0} chưa xác định sàn ·
+          {universeQuality.missing_industry || 0} thiếu nhóm ngành ·
+          {universeQuality.duplicate_symbols || 0} mã trùng.
+        </div>
+      )}
+
       <section className="card finance-data-toolbar">
         <label><span>Sàn</span><select value={exchange} onChange={event => { setPage(0); setExchange(event.target.value); }}><option value="">Tất cả sàn</option><option value="HOSE">HOSE</option><option value="HNX">HNX</option><option value="UPCOM">UPCOM</option></select></label>
         <span className="muted">{total.toLocaleString('vi-VN')} mã</span>
@@ -139,7 +150,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                 const isOpen = expanded === item.symbol;
                 return <React.Fragment key={item.symbol}>
                   <tr className={isOpen ? 'is-expanded' : ''}>
-                    <td><b>{item.symbol}</b></td><td>{item.exchange || 'UNKNOWN'}</td><td>{item.company_name || '-'}</td><td>{item.industry || '-'}</td>
+                    <td><b>{item.symbol}</b></td><td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td><td>{item.company_name || 'Chưa có dữ liệu'}</td><td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
                     <td><span className={`status-pill ${failed ? 'status-attention' : success ? 'status-valid' : ''}`}>{success ? `${success} thành công` : 'Chưa crawl'}{failed ? ` · ${failed} lỗi` : ''}</span></td>
                     <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => setExpanded(isOpen ? '' : item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
                   </tr>
