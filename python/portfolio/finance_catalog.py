@@ -179,9 +179,15 @@ def initialize_finance_schema() -> None:
             ("documents_deduplicate_v1",),
         ).fetchone()
         if migration is None:
-            duplicates = db.execute(
+            print(
+                "[finance-schema] duplicate-document migration started",
+                flush=True,
+            )
+            db.execute(
                 """
-                SELECT id, keep_id
+                CREATE TEMP TABLE finance_document_dedup_map
+                ON COMMIT DROP AS
+                SELECT id AS duplicate_id, keep_id
                 FROM (
                     SELECT
                         id,
@@ -215,36 +221,56 @@ def initialize_finance_schema() -> None:
                 ) AS ranked
                 WHERE duplicate_rank > 1
                 """
-            ).fetchall()
-            for duplicate in duplicates:
-                duplicate_id = int(duplicate["id"])
-                keep_id = int(duplicate["keep_id"])
+            )
+            duplicate_count = db.execute(
+                "SELECT COUNT(*) AS count FROM finance_document_dedup_map"
+            ).fetchone()["count"]
+            print(
+                f"[finance-schema] duplicate-document migration found "
+                f"{duplicate_count} duplicate rows",
+                flush=True,
+            )
+            if int(duplicate_count or 0):
                 db.execute(
-                    "UPDATE canonical_facts SET source_document_id=? "
-                    "WHERE source_document_id=?",
-                    (keep_id, duplicate_id),
+                    """
+                    UPDATE canonical_facts AS canonical
+                    SET source_document_id=dedup.keep_id
+                    FROM finance_document_dedup_map AS dedup
+                    WHERE canonical.source_document_id=dedup.duplicate_id
+                    """
                 )
                 db.execute(
                     """
                     DELETE FROM parse_errors AS duplicate_error
-                    WHERE duplicate_error.source_document_id=?
+                    USING finance_document_dedup_map AS dedup
+                    WHERE duplicate_error.source_document_id=dedup.duplicate_id
                       AND EXISTS (
                           SELECT 1
                           FROM parse_errors AS keeper_error
-                          WHERE keeper_error.source_document_id=?
+                          WHERE keeper_error.source_document_id=dedup.keep_id
                       )
-                    """,
-                    (duplicate_id, keep_id),
+                    """
                 )
                 db.execute(
-                    "UPDATE parse_errors SET source_document_id=? "
-                    "WHERE source_document_id=?",
-                    (keep_id, duplicate_id),
+                    """
+                    UPDATE parse_errors AS parse_error
+                    SET source_document_id=dedup.keep_id
+                    FROM finance_document_dedup_map AS dedup
+                    WHERE parse_error.source_document_id=dedup.duplicate_id
+                    """
                 )
                 db.execute(
-                    "DELETE FROM documents WHERE id=?",
-                    (duplicate_id,),
+                    """
+                    DELETE FROM documents AS duplicate_document
+                    USING finance_document_dedup_map AS dedup
+                    WHERE duplicate_document.id=dedup.duplicate_id
+                    """
                 )
+            print(
+                "[finance-schema] duplicate-document rows removed; "
+                "creating logical-period unique index",
+                flush=True,
+            )
             db.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS
