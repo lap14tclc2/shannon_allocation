@@ -393,10 +393,11 @@ def admin_finance_data(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     exchange: str | None = Query(default=None),
+    status: str | None = Query(default=None),
     qport_session: str | None = Cookie(default=None),
 ):
     require_admin(qport_session)
-    catalog = list_securities(offset, limit, exchange)
+    catalog = list_securities(offset, limit, exchange, status)
     # Crawling is an external-worker concern. Keep the capability explicit so
     # the admin UI can disable controls before a request reaches the backend.
     runtime_name = "vercel" if os.environ.get("VERCEL") else "local"

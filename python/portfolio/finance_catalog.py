@@ -192,23 +192,100 @@ def upsert_security(symbol: str, exchange: str = "UNKNOWN", company_name: str | 
         )
 
 
-def list_securities(offset: int = 0, limit: int = 50, exchange: str | None = None) -> dict[str, Any]:
+def list_securities(
+    offset: int = 0,
+    limit: int = 50,
+    exchange: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """List active equities with SQL-derived crawl status before pagination."""
     _ensure()
     offset = max(0, int(offset))
     limit = min(200, max(1, int(limit)))
+    exchange_value = str(exchange or "").upper().strip()
+    status_value = str(status or "").upper().strip()
+
+    document_summary = """
+        LEFT JOIN (
+            SELECT
+                symbol,
+                COUNT(*) AS document_total,
+                SUM(CASE WHEN status='SUCCESS' THEN 1 ELSE 0 END) AS document_success,
+                SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS document_failed,
+                SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END) AS document_pending
+            FROM documents
+            GROUP BY symbol
+        ) AS d ON d.symbol = s.symbol
+    """
+    status_expression = """
+        CASE
+            WHEN COALESCE(d.document_total, 0) = 0 THEN 'NOT_CRAWLED'
+            WHEN COALESCE(d.document_success, 0) > 0
+                 AND COALESCE(d.document_failed, 0) = 0
+                 AND COALESCE(d.document_pending, 0) = 0 THEN 'SUCCESS'
+            WHEN COALESCE(d.document_success, 0) > 0
+                 AND (COALESCE(d.document_failed, 0) > 0
+                      OR COALESCE(d.document_pending, 0) > 0) THEN 'PARTIAL'
+            WHEN COALESCE(d.document_failed, 0) > 0 THEN 'FAILED'
+            ELSE 'PENDING'
+        END
+    """
+    base_query = f"""
+        SELECT
+            s.symbol,
+            s.exchange,
+            s.company_name,
+            s.industry,
+            s.updated_at,
+            COALESCE(d.document_total, 0) AS document_total,
+            COALESCE(d.document_success, 0) AS document_success,
+            COALESCE(d.document_failed, 0) AS document_failed,
+            COALESCE(d.document_pending, 0) AS document_pending,
+            {status_expression} AS crawl_status
+        FROM securities AS s
+        {document_summary}
+        WHERE {ACTIVE_EQUITY_SQL}
+    """
+    params: list[Any] = []
+    if exchange_value in {"HOSE", "HNX", "UPCOM"}:
+        base_query += " AND s.exchange=?"
+        params.append(exchange_value)
+
+    status_conditions = {
+        "SUCCESS": (
+            "COALESCE(d.document_success, 0) > 0 "
+            "AND COALESCE(d.document_failed, 0) = 0 "
+            "AND COALESCE(d.document_pending, 0) = 0"
+        ),
+        "PARTIAL": (
+            "COALESCE(d.document_success, 0) > 0 "
+            "AND (COALESCE(d.document_failed, 0) > 0 "
+            "OR COALESCE(d.document_pending, 0) > 0)"
+        ),
+        "FAILED": (
+            "COALESCE(d.document_failed, 0) > 0 "
+            "AND COALESCE(d.document_success, 0) = 0"
+        ),
+        "PENDING": (
+            "COALESCE(d.document_total, 0) > 0 "
+            "AND COALESCE(d.document_success, 0) = 0 "
+            "AND COALESCE(d.document_failed, 0) = 0"
+        ),
+        "NOT_CRAWLED": "COALESCE(d.document_total, 0) = 0",
+    }
+    if status_value in status_conditions:
+        base_query += f" AND {status_conditions[status_value]}"
+
     with _schema_connection(FINANCE_SCHEMA) as db:
-        if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
-            rows = db.execute(
-                f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=? ORDER BY symbol LIMIT ? OFFSET ?",
-                (exchange.upper(), limit, offset),
-            ).fetchall()
-            total = db.execute(f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?", (exchange.upper(),)).fetchone()["count"]
-        else:
-            rows = db.execute(
-                f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} ORDER BY symbol LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
-            total = db.execute(f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL}").fetchone()["count"]
+        total = db.execute(
+            f"SELECT COUNT(*) AS count FROM ({base_query}) AS filtered_securities",
+            tuple(params),
+        ).fetchone()["count"]
+        rows = db.execute(
+            f"{base_query} ORDER BY s.symbol LIMIT ? OFFSET ?",
+            tuple(params) + (limit, offset),
+        ).fetchall()
+
         symbols = [row["symbol"] for row in rows]
         documents = {}
         if symbols:
@@ -219,8 +296,13 @@ def list_securities(offset: int = 0, limit: int = 50, exchange: str | None = Non
             ).fetchall()
             for doc in docs:
                 documents.setdefault(doc["symbol"], []).append(dict(doc))
-    return {"items": [{**dict(row), "documents": documents.get(row["symbol"], [])} for row in rows], "total": int(total), "offset": offset, "limit": limit}
 
+    return {
+        "items": [{**dict(row), "documents": documents.get(row["symbol"], [])} for row in rows],
+        "total": int(total),
+        "offset": offset,
+        "limit": limit,
+    }
 
 def get_symbol_documents(symbol: str) -> dict[str, Any]:
     _ensure()

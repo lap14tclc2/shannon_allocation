@@ -11,6 +11,39 @@ const DOCUMENT_GROUPS = [
   { key: 'DIVIDEND', label: 'Cổ tức' },
 ];
 
+const CRAWL_STATUS_OPTIONS = [
+  { value: '', label: 'Tất cả trạng thái' },
+  { value: 'SUCCESS', label: 'Đã crawl thành công' },
+  { value: 'PARTIAL', label: 'Crawl một phần' },
+  { value: 'FAILED', label: 'Crawl thất bại' },
+  { value: 'PENDING', label: 'Đang chờ xử lý' },
+  { value: 'NOT_CRAWLED', label: 'Chưa crawl' },
+];
+
+const STATUS_META = {
+  SUCCESS: { label: 'Thành công', className: 'status-valid' },
+  PARTIAL: { label: 'Một phần', className: 'status-attention' },
+  FAILED: { label: 'Thất bại', className: 'status-attention' },
+  PENDING: { label: 'Đang chờ', className: '' },
+  NOT_CRAWLED: { label: 'Chưa crawl', className: '' },
+};
+
+function summarizeDocuments(documents) {
+  const counts = (documents || []).reduce((result, document) => {
+    const key = ['SUCCESS', 'FAILED', 'PENDING'].includes(document.status) ? document.status.toLowerCase() : 'pending';
+    result[key] += 1;
+    return result;
+  }, { success: 0, failed: 0, pending: 0 });
+
+  const total = counts.success + counts.failed + counts.pending;
+  let key = 'PENDING';
+  if (!total) key = 'NOT_CRAWLED';
+  else if (counts.success > 0 && counts.failed === 0 && counts.pending === 0) key = 'SUCCESS';
+  else if (counts.success > 0 && (counts.failed > 0 || counts.pending > 0)) key = 'PARTIAL';
+  else if (counts.failed > 0) key = 'FAILED';
+  return { ...counts, total, key };
+}
+
 function documentLabel(type, periodType, year, quarter) {
   const label = {
     FINANCIAL_STATEMENTS: 'Báo cáo tài chính',
@@ -27,6 +60,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [exchange, setExchange] = useState('');
+  const [crawlStatus, setCrawlStatus] = useState('');
   const [expanded, setExpanded] = useState('');
   const [loading, setLoading] = useState(true);
   const [busySymbol, setBusySymbol] = useState('');
@@ -38,7 +72,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     setLoading(true);
     setMessage('');
     try {
-      const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange });
+      const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange, status: crawlStatus });
       setItems(result.items || []);
       setTotal(Number(result.total || 0));
       setRuntime(result.runtime || { name: 'unknown', can_crawl: false, read_only: true, message: 'Crawl chạy bằng Local/Worker; production chỉ đọc database.' });
@@ -49,7 +83,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     }
   }
 
-  useEffect(() => { refresh(); }, [page, exchange]);
+  useEffect(() => { refresh(); }, [page, exchange, crawlStatus]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
@@ -136,6 +170,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
 
       <section className="card finance-data-toolbar">
         <label><span>Sàn</span><select value={exchange} onChange={event => { setPage(0); setExchange(event.target.value); }}><option value="">Tất cả sàn</option><option value="HOSE">HOSE</option><option value="HNX">HNX</option><option value="UPCOM">UPCOM</option></select></label>
+        <label><span>Trạng thái crawl</span><select value={crawlStatus} onChange={event => { setPage(0); setCrawlStatus(event.target.value); }}>{CRAWL_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <span className="muted">{total.toLocaleString('vi-VN')} mã</span>
       </section>
 
@@ -145,13 +180,17 @@ export default function FinanceDataPage({ locale = 'vi' }) {
             <thead><tr><th>Mã</th><th>Sàn</th><th>Tên công ty</th><th>Nhóm ngành</th><th>Trạng thái</th><th className="num">Chi tiết</th></tr></thead>
             <tbody>
               {loading ? <tr><td colSpan="6">Đang tải danh sách mã…</td></tr> : items.length === 0 ? <tr><td colSpan="6">Chưa có danh sách mã. Hãy chạy external finance worker để đồng bộ universe.</td></tr> : items.map(item => {
-                const success = (item.documents || []).filter(doc => doc.status === 'SUCCESS').length;
-                const failed = (item.documents || []).filter(doc => doc.status === 'FAILED').length;
+                const documentSummary = summarizeDocuments(item.documents || []);
+                const success = Number(item.document_success ?? documentSummary.success);
+                const failed = Number(item.document_failed ?? documentSummary.failed);
+                const totalDocuments = Number(item.document_total ?? documentSummary.total);
+                const crawlStatusKey = item.crawl_status || documentSummary.key;
+                const crawlMeta = STATUS_META[crawlStatusKey] || STATUS_META.NOT_CRAWLED;
                 const isOpen = expanded === item.symbol;
                 return <React.Fragment key={item.symbol}>
                   <tr className={isOpen ? 'is-expanded' : ''}>
                     <td><b>{item.symbol}</b></td><td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td><td>{item.company_name || 'Chưa có dữ liệu'}</td><td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
-                    <td><span className={`status-pill ${failed ? 'status-attention' : success ? 'status-valid' : ''}`}>{success ? `${success} thành công` : 'Chưa crawl'}{failed ? ` · ${failed} lỗi` : ''}</span></td>
+                    <td><span className={`status-pill ${crawlMeta.className}`}>{crawlMeta.label} · {success}/{totalDocuments} file{failed ? ` · ${failed} lỗi` : ''}</span></td>
                     <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => setExpanded(isOpen ? '' : item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
@@ -159,8 +198,8 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                     {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
                       const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
                       return <section className="finance-document-group" key={group.key}>
-                        <h4>{group.label}</h4>
-                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={doc.status === 'SUCCESS' ? 'status-valid' : 'status-attention'}>{doc.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Retry</button>}</span></li>)}</ul>}
+                        <h4>{group.label} <span className={`status-pill ${STATUS_META[summarizeDocuments(docs).key].className}`}>{STATUS_META[summarizeDocuments(docs).key].label} · {summarizeDocuments(docs).success}/{summarizeDocuments(docs).total}</span></h4>
+                        {docs.length === 0 ? <p className="muted">Chưa có tài liệu.</p> : <ul>{docs.map((doc, index) => { const docMeta = STATUS_META[doc.status] || STATUS_META.PENDING; return <li key={doc.provider + '-' + doc.document_type + '-' + doc.period_type + '-' + doc.fiscal_year + '-' + (doc.fiscal_quarter || 'fy') + '-' + index}><span><b>{documentLabel(doc.document_type, doc.period_type, doc.fiscal_year, doc.fiscal_quarter)}</b><small>{doc.provider.toUpperCase()} · {doc.fetched_at || '-'}</small></span><span className={docMeta.className}>{docMeta.label}{doc.status === 'FAILED' && <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol, true)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Retry</button>}</span></li>; })}</ul>}
                       </section>;
                     })}
                   </div></td></tr>}
