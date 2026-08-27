@@ -83,6 +83,32 @@ def test_tcbs_history_parser_selects_exact_periods_from_fixture():
     cashflow_year = json.dumps(
         {"data": fixture["data"]["cashflow_year"]}
     )
+    combined = json.dumps(fixture)
+
+    assert finance_catalog._tcbs_select_record(
+        combined,
+        symbol="FPT",
+        document_type="INCOME_STATEMENT",
+        period_type="FY",
+        year=2025,
+        quarter=None,
+    )["postTaxProfit"] == 11232
+    assert finance_catalog._tcbs_select_record(
+        combined,
+        symbol="FPT",
+        document_type="FINANCIAL_STATEMENTS",
+        period_type="FY",
+        year=2025,
+        quarter=None,
+    )["cash"] == 10522
+    assert finance_catalog._tcbs_select_record(
+        combined,
+        symbol="FPT",
+        document_type="CASH_FLOW",
+        period_type="FY",
+        year=2025,
+        quarter=None,
+    )["investCost"] == -5098
 
     assert finance_catalog._tcbs_select_record(
         income_year, symbol="FPT", period_type="FY", year=2025, quarter=None
