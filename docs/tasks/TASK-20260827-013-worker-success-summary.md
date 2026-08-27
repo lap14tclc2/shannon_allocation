@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-013
 title: Report finance worker success symbols
-status: ready
+status: implemented
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -19,14 +19,14 @@ The UI can enqueue a large batch, but the current worker output only reports eac
 
 ## Acceptance Criteria
 
-- [ ] Print `SUCCESS` with the symbol when a job has zero provider failures.
-- [ ] Print `FAILED` with the symbol when a job has provider failures or an exception.
-- [ ] Continue processing later queue jobs after one job fails.
-- [ ] Print final processed/success/failed counts when the worker stops.
-- [ ] Print successful and failed symbol lists in the final summary.
-- [ ] Keep `--once`, `--limit`, stale-job recovery, and Vercel refusal behavior unchanged.
-- [ ] Do not log tokens, database URLs, or provider payloads.
-- [ ] Add contract tests for success/failure summary behavior.
+- [x] Print `SUCCESS` with the symbol when a job has zero provider failures.
+- [x] Print `FAILED` with the symbol when a job has provider failures or an exception.
+- [x] Continue processing later queue jobs after one job fails.
+- [x] Print final processed/success/failed counts when the worker stops.
+- [x] Print successful and failed symbol lists in the final summary.
+- [x] Keep `--once`, `--limit`, stale-job recovery, and Vercel refusal behavior unchanged.
+- [x] Do not log tokens, database URLs, or provider payloads.
+- [x] Add contract tests for success/failure summary behavior.
 
 ## Constraints and Invariants
 
@@ -37,15 +37,15 @@ The UI can enqueue a large batch, but the current worker output only reports eac
 
 ## Implementation Tasks
 
-- [ ] Track successful and failed symbols during one worker invocation.
-- [ ] Add explicit per-symbol terminal result lines.
-- [ ] Add a deterministic final summary.
-- [ ] Add source-level contract tests for the new output paths.
+- [x] Track successful and failed symbols during one worker invocation.
+- [x] Add explicit per-symbol terminal result lines.
+- [x] Add a deterministic final summary.
+- [x] Add source-level contract tests for the new output paths.
 - [ ] Run available tests and record validation evidence.
 
 ## Validation Evidence
 
-Pending implementation and test execution.
+Static review completed. Runtime tests require the user's local repository environment and PostgreSQL/provider configuration.
 
 ## Decisions
 
@@ -53,4 +53,4 @@ Use a per-run in-memory summary. Do not add a new database table or change the f
 
 ## Result
 
-Pending.
+The worker now reports each symbol as `SUCCESS` or `FAILED`, prints both symbol lists, and continues until the queue is empty unless `--once` or `--limit` is supplied.

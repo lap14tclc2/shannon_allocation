@@ -25,6 +25,15 @@ def test_worker_script_is_local_and_processes_claimed_jobs():
     assert "Vercel runtime is database-read-only" in script
 
 
+def test_worker_reports_symbol_outcomes_and_final_summary():
+    script = (ROOT / "scripts" / "finance_worker.py").read_text(encoding="utf-8")
+    assert "SUCCESS symbol=" in script
+    assert "FAILED symbol=" in script
+    assert "success_symbols=" in script
+    assert "failed_symbols=" in script
+    assert "summary processed=" in script
+
+
 def test_tcbs_document_headers_use_optional_local_bearer_token(monkeypatch):
     monkeypatch.setenv("TCBS_BEARER_TOKEN", "eyJ-test")
     headers = finance_catalog._tcbs_document_headers()

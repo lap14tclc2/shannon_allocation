@@ -23,6 +23,19 @@ def log(message: str) -> None:
     print(f"[finance-worker] {message}", flush=True)
 
 
+def log_summary(
+    processed: int,
+    success_symbols: list[str],
+    failed_symbols: list[str],
+) -> None:
+    log(
+        f"summary processed={processed} "
+        f"success={len(success_symbols)} failed={len(failed_symbols)}"
+    )
+    log(f"success_symbols={','.join(success_symbols) or '-'}")
+    log(f"failed_symbols={','.join(failed_symbols) or '-'}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Consume the QPort finance crawl queue.")
     parser.add_argument("--once", action="store_true", help="Process one job and exit.")
@@ -38,6 +51,8 @@ def main() -> int:
         return 2
 
     processed = 0
+    success_symbols: list[str] = []
+    failed_symbols: list[str] = []
     log(
         f"start limit={args.limit or 'until-empty'} "
         f"stale_after_seconds={args.stale_after_seconds}"
@@ -48,7 +63,7 @@ def main() -> int:
         job = claim_next_crawl_job(args.stale_after_seconds)
         if job is None:
             log(f"queue empty processed={processed}")
-            return 0
+            break
 
         queue_id = int(job["id"])
         symbol = str(job["symbol"])
@@ -65,24 +80,34 @@ def main() -> int:
                 f"crawl failed: {failures} provider requests failed"
             )
             finish_crawl_job(queue_id, status=status, error=error)
-            log(
-                f"finished queue_id={queue_id} symbol={symbol} status={status} "
+            counts = (
                 f"success={result.get('success_count', 0)} "
                 f"failed={failures} skipped={result.get('skipped_count', 0)}"
             )
+            if status == "COMPLETED":
+                success_symbols.append(symbol)
+                log(f"SUCCESS symbol={symbol} queue_id={queue_id} {counts}")
+            else:
+                failed_symbols.append(symbol)
+                log(f"FAILED symbol={symbol} queue_id={queue_id} {counts}")
         except Exception as exc:
+            failed_symbols.append(symbol)
             finish_crawl_job(
                 queue_id,
                 status="FAILED",
                 error=f"{type(exc).__name__}: {exc}",
             )
-            log(f"failed queue_id={queue_id} symbol={symbol} error={type(exc).__name__}")
+            log(
+                f"FAILED symbol={symbol} queue_id={queue_id} "
+                f"error={type(exc).__name__}: {exc}"
+            )
         processed += 1
         if args.once:
             break
         if args.poll_seconds > 0:
             time.sleep(args.poll_seconds)
 
+    log_summary(processed, success_symbols, failed_symbols)
     log(f"stopped processed={processed}")
     return 0
 
