@@ -394,10 +394,11 @@ def admin_finance_data(
     limit: int = Query(default=50, ge=1, le=200),
     exchange: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=100),
     qport_session: str | None = Cookie(default=None),
 ):
     require_admin(qport_session)
-    catalog = list_securities(offset, limit, exchange, status)
+    catalog = list_securities(offset, limit, exchange, status, q)
     # Crawling is an external-worker concern. Keep the capability explicit so
     # the admin UI can disable controls before a request reaches the backend.
     runtime_name = "vercel" if os.environ.get("VERCEL") else "local"
@@ -438,6 +439,8 @@ def admin_finance_data_crawl_all(
     result = enqueue_crawl_all(int(admin["id"]), exchange)
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
+    if result.get("code") == "CRAWL_EXCHANGE_UNSUPPORTED":
+        raise ApiError(400, result["message"], result["code"], "exchange")
     return result
 
 

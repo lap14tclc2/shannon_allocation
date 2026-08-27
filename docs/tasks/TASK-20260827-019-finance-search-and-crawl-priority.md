@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-019
 title: Search finance catalog and prioritize listed exchange crawl jobs
-status: ready
+status: in_progress
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -28,6 +28,15 @@ Allow an admin to search symbols and company names in Finance Data. Let the exte
 - Search must not expose data beyond the admin finance catalog.
 - Queue ordering is deterministic within the same exchange.
 
-## Result
+## Implementation
 
-Pending implementation.
+- Added parameterized symbol/company search to the catalog query, API client, and Finance Data filter bar.
+- Default bulk queue scope is HOSE/HNX. The external worker claims only those exchanges and orders HOSE before HNX.
+- Existing RUNNING and queued UPCOM rows are left unchanged; UPCOM bulk requests receive an explicit unsupported-scope response.
+- Added contract tests and Python syntax validation.
+
+## Remaining Validation
+
+- [ ] Run PostgreSQL integration tests to verify actual search pagination and concurrent worker claim ordering.
+- [ ] Run the full Python suite and Vite production build.
+

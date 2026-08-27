@@ -29,6 +29,9 @@ REQUIRED_DOCUMENTS = (
 PROVIDERS = ("tcbs", "cafef")
 # Completed annual reports to retain/crawl for each listed equity.
 FISCAL_YEAR_HISTORY = 10
+# The external worker intentionally starts with the two main listed markets.
+# UPCOM jobs stay queued until a later, explicit worker scope is enabled.
+WORKER_CRAWL_EXCHANGES = ("HOSE", "HNX")
 
 # Facts required by the deterministic FY valuation bridge.  These inputs are
 # deliberately explicit: the value engine must never manufacture a number when
@@ -336,6 +339,7 @@ def list_securities(
     limit: int = 50,
     exchange: str | None = None,
     status: str | None = None,
+    q: str | None = None,
 ) -> dict[str, Any]:
     """List active equities with SQL-derived crawl status before pagination."""
     _ensure()
@@ -343,6 +347,7 @@ def list_securities(
     limit = min(200, max(1, int(limit)))
     exchange_value = str(exchange or "").upper().strip()
     status_value = str(status or "").upper().strip()
+    search_value = str(q or "").strip()
 
     document_summary = """
         LEFT JOIN (
@@ -389,6 +394,12 @@ def list_securities(
     if exchange_value in {"HOSE", "HNX", "UPCOM"}:
         base_query += " AND s.exchange=?"
         params.append(exchange_value)
+    if search_value:
+        # Parameterized substring search for the public symbol or company name.
+        # It composes with the existing exchange/status filters before paging.
+        base_query += " AND (UPPER(s.symbol) LIKE ? OR UPPER(COALESCE(s.company_name, '')) LIKE ?)"
+        needle = f"%{search_value.upper()}%"
+        params.extend((needle, needle))
 
     status_conditions = {
         "SUCCESS": (
@@ -1057,9 +1068,14 @@ def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | Non
         )
         while True:
             row = db.execute(
-                "SELECT id, symbol, requested_by FROM crawl_queue "
-                "WHERE status='QUEUED' ORDER BY id LIMIT 1 "
-                "FOR UPDATE SKIP LOCKED"
+                """SELECT q.id, q.symbol, q.requested_by
+                   FROM crawl_queue AS q
+                   JOIN securities AS s ON s.symbol=q.symbol
+                   WHERE q.status='QUEUED' AND s.exchange IN ('HOSE','HNX')
+                   ORDER BY CASE s.exchange WHEN 'HOSE' THEN 0 WHEN 'HNX' THEN 1 ELSE 2 END,
+                            q.id
+                   LIMIT 1
+                   FOR UPDATE OF q SKIP LOCKED"""
             ).fetchone()
             if row is None:
                 return None
@@ -1117,16 +1133,27 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
             "eligible": 0,
             "already_queued": 0,
         }
+    exchange_value = str(exchange or "").upper().strip()
+    if exchange_value and exchange_value not in WORKER_CRAWL_EXCHANGES:
+        return {
+            "ok": False,
+            "code": "CRAWL_EXCHANGE_UNSUPPORTED",
+            "message": "External worker hiện chỉ crawl HOSE và HNX; UPCOM chưa thuộc scope.",
+            "queued": 0,
+            "eligible": 0,
+            "already_queued": 0,
+        }
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
-        if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
+        if exchange_value:
             rows = db.execute(
                 f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?",
-                (exchange.upper(),),
+                (exchange_value,),
             ).fetchall()
         else:
             rows = db.execute(
-                f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL}"
+                f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL} "
+                "AND exchange IN ('HOSE','HNX')"
             ).fetchall()
         symbols = [row["symbol"] for row in rows]
         required_keys = _current_required_document_keys()

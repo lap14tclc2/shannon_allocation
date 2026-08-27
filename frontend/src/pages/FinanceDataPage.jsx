@@ -61,6 +61,8 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [page, setPage] = useState(0);
   const [exchange, setExchange] = useState('');
   const [crawlStatus, setCrawlStatus] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState('');
   const [loading, setLoading] = useState(true);
   const [busySymbol, setBusySymbol] = useState('');
@@ -74,7 +76,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     setLoading(true);
     setMessage('');
     try {
-      const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange, status: crawlStatus });
+      const result = await getAdminFinanceData({ offset: page * PAGE_SIZE, limit: PAGE_SIZE, exchange, status: crawlStatus, q: search });
       setItems(result.items || []);
       setTotal(Number(result.total || 0));
       setRuntime(result.runtime || { name: 'unknown', can_crawl: false, read_only: true, message: 'Crawl chạy bằng Local/Worker; production chỉ đọc database.' });
@@ -85,7 +87,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     }
   }
 
-  useEffect(() => { refresh(); }, [page, exchange, crawlStatus]);
+  useEffect(() => { refresh(); }, [page, exchange, crawlStatus, search]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
@@ -123,6 +125,12 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     } finally {
       setBusySymbol('');
     }
+  }
+
+  function submitSearch(event) {
+    event.preventDefault();
+    setPage(0);
+    setSearch(searchInput.trim());
   }
 
   async function queueCrawl() {
@@ -168,8 +176,8 @@ export default function FinanceDataPage({ locale = 'vi' }) {
           <button className="btn-secondary" type="button" disabled={Boolean(busySymbol) || !runtime.can_crawl} onClick={syncUniverse}>
             {busySymbol === '*' ? 'Đang cập nhật danh sách…' : 'Cập nhật danh sách mã'}
           </button>
-          <button className="btn-primary" type="button" disabled={Boolean(busySymbol) || !total || !runtime.can_crawl} onClick={queueCrawl}>
-            Xếp hàng crawl {exchange || 'tất cả'}
+          <button className="btn-primary" type="button" disabled={Boolean(busySymbol) || !total || !runtime.can_crawl || exchange === 'UPCOM'} onClick={queueCrawl}>
+            Xếp hàng crawl {exchange || 'HOSE + HNX'}
           </button>
         </div>
       </header>
@@ -189,11 +197,15 @@ export default function FinanceDataPage({ locale = 'vi' }) {
         </div>
       )}
 
-      <section className="card finance-data-toolbar">
+      <form className="card finance-data-toolbar" onSubmit={submitSearch}>
+        <label><span>Tìm mã / tên công ty</span><input value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="VD: FPT hoặc Công nghệ" /></label>
+        <button className="btn-secondary" type="submit" disabled={loading}>Tìm kiếm</button>
+        {search && <button className="btn-secondary" type="button" onClick={() => { setSearchInput(''); setSearch(''); setPage(0); }}>Xóa</button>}
         <label><span>Sàn</span><select value={exchange} onChange={event => { setPage(0); setExchange(event.target.value); }}><option value="">Tất cả sàn</option><option value="HOSE">HOSE</option><option value="HNX">HNX</option><option value="UPCOM">UPCOM</option></select></label>
         <label><span>Trạng thái crawl</span><select value={crawlStatus} onChange={event => { setPage(0); setCrawlStatus(event.target.value); }}>{CRAWL_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <span className="muted">{total.toLocaleString('vi-VN')} mã</span>
-      </section>
+        {exchange === 'UPCOM' && <span className="muted">Worker bulk hiện chỉ chạy HOSE/HNX.</span>}
+      </form>
 
       <section className="card finance-data-card">
         <div className="table-scroll">

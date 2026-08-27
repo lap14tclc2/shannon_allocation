@@ -128,6 +128,7 @@ export const getAdminFinanceData = (params = {}) => {
   if (params.limit != null) query.set('limit', String(params.limit));
   if (params.exchange) query.set('exchange', String(params.exchange));
   if (params.status) query.set('status', String(params.status));
+  if (params.q) query.set('q', String(params.q));
   return getJSON(`/api/admin/finance-data${query.toString() ? `?${query}` : ''}`);
 };
 export const crawlAdminFinanceUniverse = () => sendJSON('/api/admin/finance-data/universe', 'POST', {});
