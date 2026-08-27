@@ -27,6 +27,8 @@ REQUIRED_DOCUMENTS = (
     "DIVIDEND",
 )
 PROVIDERS = ("tcbs", "cafef")
+# Completed annual reports to retain/crawl for each listed equity.
+FISCAL_YEAR_HISTORY = 10
 
 # Defensive read-time predicate for legacy rows imported before filtering.
 ACTIVE_EQUITY_SQL = (
@@ -439,8 +441,12 @@ def get_symbol_documents(symbol: str) -> dict[str, Any]:
 
 
 def _periods() -> list[tuple[str, int, int | None, str]]:
+    """Return ten completed FYs plus completed quarters in the current year."""
     today = date.today()
-    periods = [("FY", year, None, f"{year}-12-31") for year in range(today.year - 4, today.year)]
+    periods = [
+        ("FY", year, None, f"{year}-12-31")
+        for year in range(today.year - FISCAL_YEAR_HISTORY, today.year)
+    ]
     quarter = ((today.month - 1) // 3)
     for q in range(1, quarter + 1):
         end_month = q * 3
