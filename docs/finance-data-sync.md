@@ -68,3 +68,23 @@ printed every 10 seconds, for example:
 These logs are flushed immediately and do not include database URLs, tokens, or
 provider credentials. Finance document crawling remains separate and uses
 TCBS/CafeF.
+
+
+## Running the local queue worker
+
+After clicking Xếp hàng crawl tất cả, start a separate PowerShell process from the repository root:
+
+    $env:QPORT_FINANCE_RUNTIME = 'worker'
+    python scripts/finance_worker.py --limit 1
+
+Process the remaining queue continuously:
+
+    python scripts/finance_worker.py --poll-seconds 2
+
+Useful logs:
+
+    [finance-worker] claimed queue_id=... symbol=AAA
+    [finance-crawl] symbol=AAA start ...
+    [finance-worker] finished queue_id=... symbol=AAA status=COMPLETED ...
+
+The worker runs outside Vercel, uses bounded provider requests, skips existing SUCCESS documents, and continues after an individual symbol failure.

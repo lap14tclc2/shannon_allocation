@@ -620,6 +620,57 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         return False
 
 
+def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
+    """Claim one eligible queued job for the local finance worker."""
+    _ensure()
+    cutoff = datetime.now(timezone.utc).timestamp() - max(60, int(stale_after_seconds))
+    cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        db.execute(
+            "UPDATE crawl_queue SET status='QUEUED', started_at=NULL, error=NULL "
+            "WHERE status='RUNNING' AND (started_at IS NULL OR started_at<?)",
+            (cutoff_iso,),
+        )
+        db.execute(
+            f"UPDATE crawl_queue SET status='FAILED', finished_at=?, "
+            f"error='SECURITY_NOT_CRAWLABLE' WHERE status='QUEUED' "
+            f"AND symbol NOT IN (SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL})",
+            (_now(),),
+        )
+        row = db.execute(
+            "SELECT id, symbol, requested_by FROM crawl_queue "
+            "WHERE status='QUEUED' ORDER BY id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        updated = db.execute(
+            "UPDATE crawl_queue SET status='RUNNING', started_at=?, error=NULL "
+            "WHERE id=? AND status='QUEUED'",
+            (_now(), row["id"]),
+        )
+        if not int(updated.rowcount or 0):
+            return None
+    return dict(row)
+
+
+def finish_crawl_job(
+    queue_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Persist the terminal state of a claimed local-worker job."""
+    if status not in {"COMPLETED", "FAILED"}:
+        raise ValueError("queue job status must be COMPLETED or FAILED")
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        db.execute(
+            "UPDATE crawl_queue SET status=?, finished_at=?, error=? "
+            "WHERE id=? AND status='RUNNING'",
+            (status, _now(), error[:500] if error else None, queue_id),
+        )
+
+
 def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
     """Queue all active equities and report existing queue state."""
     try:

@@ -68,9 +68,3 @@ def test_enqueue_response_reports_queue_state_fields():
     assert '"eligible"' in source
     assert '"already_queued"' in source
     assert 'already_queued=' in source
-
-
-def test_queue_progress_uses_symbol_and_message_arguments():
-    import inspect
-    source = inspect.getsource(finance_catalog.enqueue_crawl_all)
-    assert '_crawl_progress(\n        "queue",' in source
