@@ -176,6 +176,7 @@ def upsert_security(symbol: str, exchange: str = "UNKNOWN", company_name: str | 
                company_name=COALESCE(excluded.company_name,securities.company_name),
                industry=CASE WHEN excluded.industry IS NOT NULL AND excluded.industry <> 'UNKNOWN'
                              THEN excluded.industry ELSE securities.industry END,
+               is_active=1,
                updated_at=excluded.updated_at""",
             (symbol, str(exchange or "UNKNOWN").upper(), company_name, industry, _now()),
         )
@@ -804,8 +805,9 @@ def _normalize_universe_row(row: dict[str, Any]) -> dict[str, Any]:
     def first(*keys: str) -> tuple[str | None, str | None]:
         for key in keys:
             value = raw.get(key)
-            if value is not None and str(value).strip() not in {"", "-", "UNKNOWN", "NAN", "NONE"}:
-                return str(value).strip(), key
+            text = str(value).strip() if value is not None else ""
+            if text and text.upper() not in {"-", "UNKNOWN", "NAN", "NONE"}:
+                return text, key
         return None, None
 
     symbol, _ = first("symbol", "ticker", "code", "stock_code", "stockcode")
@@ -898,6 +900,44 @@ def _merge_vnstock_universe_rows(
     return merged
 
 
+def _filter_crawlable_equity_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Keep only ordinary listed equities eligible for financial-document crawling."""
+    accepted: list[dict[str, Any]] = []
+    rejected = {"non_stock": 0, "missing_symbol": 0, "invalid_exchange": 0, "missing_company_name": 0}
+    for row in rows:
+        raw = dict(row)
+        normalized = _normalize_universe_row(raw)
+        asset_type = str(raw.get("type") or raw.get("asset_type") or "").strip().upper()
+        if asset_type != "STOCK":
+            rejected["non_stock"] += 1
+        elif not normalized["symbol"]:
+            rejected["missing_symbol"] += 1
+        elif normalized["exchange"] not in {"HOSE", "HNX", "UPCOM"}:
+            rejected["invalid_exchange"] += 1
+        elif not normalized["company_name"]:
+            rejected["missing_company_name"] += 1
+        else:
+            accepted.append(raw)
+    return accepted, rejected
+
+
+def _deactivate_securities_not_in(symbols: list[str]) -> int:
+    """Hide stale instruments after a successful equity-universe refresh."""
+    if not symbols:
+        return 0
+    _ensure()
+    placeholders = ",".join("?" for _ in symbols)
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        result = db.execute(
+            f"UPDATE securities SET is_active=0 WHERE is_active=1 "
+            f"AND symbol NOT IN ({placeholders})",
+            tuple(symbols),
+        )
+    return int(result.rowcount or 0)
+
+
 def sync_universe() -> dict[str, Any]:
     """Populate the universe from Vnstock's bulk exchange and ICB endpoints."""
     started = time.monotonic()
@@ -956,7 +996,14 @@ def sync_universe() -> dict[str, Any]:
                     f"continuing without industry metadata type={type(exc).__name__}"
                 )
 
-        rows = _merge_vnstock_universe_rows(exchange_rows, industry_rows)
+        merged_rows = _merge_vnstock_universe_rows(exchange_rows, industry_rows)
+        rows, rejected = _filter_crawlable_equity_rows(merged_rows)
+        _universe_progress(
+            f"filtered crawlable equities={len(rows)}/{len(merged_rows)} "
+            f"rejected_non_stock={rejected['non_stock']} "
+            f"rejected_invalid_exchange={rejected['invalid_exchange']} "
+            f"rejected_missing_name={rejected['missing_company_name']}"
+        )
         columns = sorted({str(key) for row in rows[:100] for key in dict(row)})
         _universe_progress(
             f"received {len(rows)} symbol rows via Vnstock direct metadata APIs; "
@@ -984,6 +1031,9 @@ def sync_universe() -> dict[str, Any]:
                     f"persisted {count}/{len(rows)} symbols (latest={symbol})"
                 )
 
+        deactivated_count = _deactivate_securities_not_in(
+            [row["symbol"] for row in normalized_rows if row.get("symbol")]
+        )
         elapsed = time.monotonic() - started
         quality = _universe_quality(rows, normalized_rows)
         diagnostics = [
@@ -996,7 +1046,9 @@ def sync_universe() -> dict[str, Any]:
             }
             for row in normalized_rows[:3]
         ]
-        _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
+        _universe_progress(
+            f"completed count={count} deactivated={deactivated_count} elapsed={elapsed:.1f}s"
+        )
         _universe_progress(
             f"mapping_samples={json.dumps(diagnostics, ensure_ascii=False)}"
         )
@@ -1023,6 +1075,8 @@ def sync_universe() -> dict[str, Any]:
             "count": count,
             "provider": "vnstock",
             "quality": quality,
+            "rejected": rejected,
+            "deactivated_count": deactivated_count,
             "warnings": warnings,
             "message": (
                 f"Đã đồng bộ {count} mã từ Vnstock."

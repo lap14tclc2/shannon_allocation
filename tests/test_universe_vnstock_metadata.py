@@ -30,6 +30,27 @@ def test_merge_vnstock_universe_uses_exchange_and_top_level_icb_industry():
     assert normalized[1]["industry"] == "UNKNOWN"
 
 
+def test_filter_crawlable_equities_excludes_warrants_and_incomplete_rows():
+    rows, rejected = finance_catalog._filter_crawlable_equity_rows(
+        [
+            {"symbol": "VNM", "organ_name": "Vinamilk", "exchange": "HOSE", "type": "stock"},
+            {"symbol": "41B5G9000", "organ_name": "nan", "exchange": "HOSE", "type": "CW"},
+            {"symbol": "BAD", "organ_name": "nan", "exchange": "HNX", "type": "stock"},
+            {"symbol": "XYZ", "organ_name": "Unknown", "exchange": "UNKNOWN", "type": "stock"},
+        ]
+    )
+
+    assert rows == [
+        {"symbol": "VNM", "organ_name": "Vinamilk", "exchange": "HOSE", "type": "stock"}
+    ]
+    assert rejected == {
+        "non_stock": 1,
+        "missing_symbol": 0,
+        "invalid_exchange": 1,
+        "missing_company_name": 1,
+    }
+
+
 def test_universe_sync_contains_no_tcbs_overview_helpers():
     assert not hasattr(finance_catalog, "_load_tcbs_overview")
     assert not hasattr(finance_catalog, "_tcbs_overview_headers")
