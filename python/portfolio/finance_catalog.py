@@ -351,8 +351,9 @@ def list_securities(
     exchange_value = str(exchange or "").upper().strip()
     status_value = str(status or "").upper().strip()
     search_value = str(q or "").strip()
+    worker_provider_sql = ",".join(f"'{provider}'" for provider in WORKER_PROVIDERS)
 
-    document_summary = """
+    document_summary = f"""
         LEFT JOIN (
             SELECT
                 symbol,
@@ -361,6 +362,7 @@ def list_securities(
                 SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS document_failed,
                 SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END) AS document_pending
             FROM documents
+            WHERE provider IN ({worker_provider_sql})
             GROUP BY symbol
         ) AS d ON d.symbol = s.symbol
     """
@@ -444,7 +446,7 @@ def list_securities(
         if symbols:
             placeholders = ",".join("?" for _ in symbols)
             docs = db.execute(
-                f"SELECT symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter, period_end, status, source_url, fetched_at, error_code, error_message FROM documents WHERE symbol IN ({placeholders}) ORDER BY symbol, provider, document_type, fiscal_year DESC, fiscal_quarter DESC",
+                f"SELECT symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter, period_end, status, source_url, fetched_at, error_code, error_message FROM documents WHERE provider IN ({worker_provider_sql}) AND symbol IN ({placeholders}) ORDER BY symbol, provider, document_type, fiscal_year DESC, fiscal_quarter DESC",
                 tuple(symbols),
             ).fetchall()
             for doc in docs:
@@ -462,7 +464,7 @@ def get_symbol_documents(symbol: str) -> dict[str, Any]:
     symbol = str(symbol).upper().strip()
     with _schema_connection(FINANCE_SCHEMA) as db:
         rows = db.execute(
-            "SELECT symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter, period_end, status, source_url, payload, fetched_at, error_code, error_message FROM documents WHERE symbol=? ORDER BY fiscal_year DESC, fiscal_quarter DESC, provider, document_type",
+            f"SELECT symbol, provider, document_type, period_type, fiscal_year, fiscal_quarter, period_end, status, source_url, payload, fetched_at, error_code, error_message FROM documents WHERE provider IN ({worker_provider_sql}) AND symbol=? ORDER BY fiscal_year DESC, fiscal_quarter DESC, provider, document_type",
             (symbol,),
         ).fetchall()
     return {"symbol": symbol, "documents": [dict(row) for row in rows]}

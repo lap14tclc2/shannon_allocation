@@ -40,3 +40,11 @@ def test_worker_uses_cafef_only_and_preserves_tcbs_support_for_later_reenable():
     assert "for provider in WORKER_PROVIDERS" in source
     assert "providers=cafef" in worker
     assert "TCBS_BEARER_TOKEN" not in worker
+
+
+def test_active_catalog_ignores_legacy_tcbs_rows():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+
+    assert "worker_provider_sql" in source
+    assert "WHERE provider IN ({worker_provider_sql})" in source
+    assert "FROM documents WHERE provider IN ({worker_provider_sql})" in source
