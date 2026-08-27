@@ -856,181 +856,135 @@ def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str
     }
 
 
+def _merge_vnstock_universe_rows(
+    exchange_rows: list[dict[str, Any]],
+    industry_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Join Vnstock's bulk exchange and ICB metadata by symbol.
 
-TCBS_TICKER_OVERVIEW_URL = (
-    "https://apipubaws.tcbs.com.vn/tcanalysis/v1/ticker/{symbol}/overview"
-)
+    Vnstock all_symbols() intentionally discards exchange and industry columns.
+    Retain the highest-level ICB classification (lowest numeric level) for the
+    compact Finance Data universe table.
+    """
+    industries: dict[str, tuple[int, str]] = {}
+    for row in industry_rows:
+        normalized = _normalize_universe_row(row)
+        symbol = normalized["symbol"]
+        industry = normalized["industry"]
+        if not symbol or industry == "UNKNOWN":
+            continue
+        raw_level = dict(row).get("icb_level", dict(row).get("level"))
+        try:
+            level = int(raw_level)
+        except (TypeError, ValueError):
+            level = 99
+        existing = industries.get(symbol)
+        if existing is None or level < existing[0]:
+            industries[symbol] = (level, industry)
 
-
-def _tcbs_overview_headers() -> dict[str, str]:
-    """Read the local TCBS bearer token without persisting or logging it."""
-    token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
-    if not token:
-        raise RuntimeError("TCBS_BEARER_TOKEN is required for TCBS overview enrichment")
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-
-
-def _load_tcbs_overview(symbol: str) -> dict[str, Any]:
-    """Fetch one symbol's metadata from documented TCBS overview endpoints."""
-    headers = _tcbs_overview_headers()
-    _universe_progress(
-        f"TCBS overview fetch symbol={symbol} endpoint=ticker-overview"
-    )
-    status, payload = _url_json(
-        TCBS_TICKER_OVERVIEW_URL.format(symbol=symbol),
-        headers=headers,
-    )
-    if status < 200 or status >= 300:
-        raise RuntimeError(f"HTTP {status}")
-    rows = _payload_rows(payload)
-    if not rows:
-        raise RuntimeError("TCBS ticker overview returned an empty response")
-    return rows[0]
-
+    merged: list[dict[str, Any]] = []
+    seen_symbols: set[str] = set()
+    for row in exchange_rows:
+        item = dict(row)
+        normalized = _normalize_universe_row(item)
+        symbol = normalized["symbol"]
+        if not symbol or symbol in seen_symbols:
+            continue
+        seen_symbols.add(symbol)
+        if symbol in industries:
+            item["industry"] = industries[symbol][1]
+            item["industry_source"] = "vnstock_icb"
+        merged.append(item)
+    return merged
 
 
 def sync_universe() -> dict[str, Any]:
-    """Populate the exchange universe from Vnstock on an external worker.
-
-    Vnstock is intentionally retained for the symbol list only. Finance
-    document crawling uses the configured TCBS/CafeF providers separately.
-    """
+    """Populate the universe from Vnstock's bulk exchange and ICB endpoints."""
     started = time.monotonic()
-    configured_provider = str(
-        os.environ.get("QPORT_UNIVERSE_PROVIDER") or "vnstock"
-    ).strip().lower()
-    if configured_provider not in {"vnstock", "tcbs", "auto"}:
-        return {
-            "ok": False,
-            "code": "UNIVERSE_PROVIDER_INVALID",
-            "message": "QPORT_UNIVERSE_PROVIDER must be vnstock, tcbs, or auto",
-        }
-    _universe_progress(f"start runtime=local provider={configured_provider}")
+    _universe_progress("start runtime=local provider=vnstock-direct")
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
         _universe_progress(f"rejected runtime: {exc}")
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     try:
-        has_tcbs_token = bool(
-            str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
-        )
-        tcbs_enabled = (
-            configured_provider == "tcbs" and has_tcbs_token
-        ) or (
-            configured_provider == "auto" and has_tcbs_token
-        )
-        if configured_provider == "tcbs" and not has_tcbs_token:
-            return {
-                "ok": False,
-                "code": "TCBS_TOKEN_REQUIRED",
-                "message": "Set TCBS_BEARER_TOKEN on the local worker.",
-            }
-        _universe_progress("loading vnstock.Listing for symbol universe")
+        _universe_progress("loading vnstock.Listing for exchange and industry metadata")
         from vnstock import Listing  # type: ignore
+
         listing = Listing()
         _universe_progress("vnstock.Listing initialized")
-        frame = None
-        selected_method = None
-        for method_name in ("all_symbols", "symbols_by_exchange"):
-            method = getattr(listing, method_name, None)
-            if not callable(method):
-                _universe_progress(f"skip Listing.{method_name}: unavailable")
-                continue
-            _universe_progress(f"calling Listing.{method_name}()")
-            try:
-                frame = _listing_call_with_heartbeat(
-                    f"Listing.{method_name}()",
-                    method,
-                )
-                selected_method = method_name
-                break
-            except TypeError:
-                _universe_progress(
-                    f"Listing.{method_name}() requires exchange=ALL; retrying"
-                )
-                frame = _listing_call_with_heartbeat(
-                    f"Listing.{method_name}(exchange=ALL)",
-                    lambda: method(exchange="ALL"),
-                )
-                selected_method = method_name
-                break
-        if frame is None:
-            _universe_progress("provider returned no frame or supported listing method")
-            return {
-                "ok": False,
-                "code": "UNIVERSE_PROVIDER_EMPTY",
-                "message": "Vnstock không trả danh sách mã.",
-            }
-        rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
-        source_label = (
-            f"Vnstock Listing.{selected_method} + TCBS overview"
-            if tcbs_enabled
-            else f"Vnstock Listing.{selected_method}"
+        exchange_method = getattr(listing, "symbols_by_exchange", None)
+        if not callable(exchange_method):
+            raise RuntimeError("Installed Vnstock does not support symbols_by_exchange().")
+        _universe_progress("calling Listing.symbols_by_exchange()")
+        exchange_frame = _listing_call_with_heartbeat(
+            "Listing.symbols_by_exchange()",
+            exchange_method,
         )
+        exchange_rows = (
+            exchange_frame.to_dict("records")
+            if hasattr(exchange_frame, "to_dict")
+            else (exchange_frame or [])
+        )
+        if not exchange_rows:
+            raise RuntimeError("Vnstock returned no exchange rows.")
+
+        industry_rows: list[dict[str, Any]] = []
+        industry_method = getattr(listing, "symbols_by_industries", None)
+        if not callable(industry_method):
+            _universe_progress(
+                "Listing.symbols_by_industries() unavailable; keeping exchange/name metadata"
+            )
+        else:
+            _universe_progress("calling Listing.symbols_by_industries()")
+            try:
+                industry_frame = _listing_call_with_heartbeat(
+                    "Listing.symbols_by_industries()",
+                    industry_method,
+                )
+                industry_rows = (
+                    industry_frame.to_dict("records")
+                    if hasattr(industry_frame, "to_dict")
+                    else (industry_frame or [])
+                )
+                _universe_progress(
+                    f"received {len(industry_rows)} ICB rows via Listing.symbols_by_industries()"
+                )
+            except Exception as exc:
+                _universe_progress(
+                    "Listing.symbols_by_industries() failed; "
+                    f"continuing without industry metadata type={type(exc).__name__}"
+                )
+
+        rows = _merge_vnstock_universe_rows(exchange_rows, industry_rows)
         columns = sorted({str(key) for row in rows[:100] for key in dict(row)})
         _universe_progress(
-            f"received {len(rows)} symbol rows via {source_label}; "
+            f"received {len(rows)} symbol rows via Vnstock direct metadata APIs; "
             f"columns={json.dumps(columns, ensure_ascii=False)}"
         )
         count = 0
         normalized_rows = []
-        tcbs_enriched_count = 0
-        tcbs_failed_count = 0
-        tcbs_disabled = False
-        try:
-            tcbs_delay = max(0.0, float(os.environ.get("TCBS_OVERVIEW_DELAY_SECONDS", "0.1")))
-        except ValueError:
-            tcbs_delay = 0.1
         checkpoint = max(1, len(rows) // 10) if rows else 1
         for row in rows:
-            raw_row = dict(row)
-            normalized = _normalize_universe_row(raw_row)
+            normalized = _normalize_universe_row(dict(row))
             symbol = normalized["symbol"]
-            needs_tcbs_metadata = (
-                normalized["exchange"] == "UNKNOWN"
-                or normalized["industry"] == "UNKNOWN"
-            )
-            if tcbs_enabled and symbol and needs_tcbs_metadata and not tcbs_disabled:
-                try:
-                    overview = _load_tcbs_overview(symbol)
-                    normalized = _normalize_universe_row({**raw_row, **overview})
-                    tcbs_enriched_count += 1
-                    if tcbs_delay:
-                        time.sleep(tcbs_delay)
-                except Exception as exc:
-                    tcbs_failed_count += 1
-                    _universe_progress(
-                        f"TCBS overview failed symbol={symbol} type={type(exc).__name__}"
-                    )
-                    if tcbs_failed_count >= 3:
-                        tcbs_disabled = True
-                        _universe_progress(
-                            "TCBS overview disabled after 3 failures; "
-                            "remaining symbols keep Vnstock metadata"
-                        )
             normalized_rows.append(normalized)
-            if symbol:
-                upsert_security(
-                    symbol,
-                    normalized["exchange"],
-                    normalized["company_name"],
-                    normalized["industry"],
+            if not symbol:
+                continue
+            upsert_security(
+                symbol,
+                normalized["exchange"],
+                normalized["company_name"],
+                normalized["industry"],
+            )
+            ensure_required_documents(symbol)
+            count += 1
+            if count == 1 or count % checkpoint == 0:
+                _universe_progress(
+                    f"persisted {count}/{len(rows)} symbols (latest={symbol})"
                 )
-                ensure_required_documents(symbol)
-                count += 1
-                if count == 1 or count % checkpoint == 0:
-                    _universe_progress(
-                        f"persisted {count}/{len(rows)} symbols (latest={symbol})"
-                    )
+
         elapsed = time.monotonic() - started
-        _universe_progress(
-            f"completed count={count} tcbs_enriched={tcbs_enriched_count} "
-            f"tcbs_failed={tcbs_failed_count} elapsed={elapsed:.1f}s"
-        )
         quality = _universe_quality(rows, normalized_rows)
         diagnostics = [
             {
@@ -1042,6 +996,7 @@ def sync_universe() -> dict[str, Any]:
             }
             for row in normalized_rows[:3]
         ]
+        _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
         _universe_progress(
             f"mapping_samples={json.dumps(diagnostics, ensure_ascii=False)}"
         )
@@ -1066,13 +1021,11 @@ def sync_universe() -> dict[str, Any]:
         return {
             "ok": count > 0,
             "count": count,
-            "provider": "tcbs+vnstock" if tcbs_enabled else "vnstock",
-            "tcbs_enriched_count": tcbs_enriched_count,
-            "tcbs_failed_count": tcbs_failed_count,
+            "provider": "vnstock",
             "quality": quality,
             "warnings": warnings,
             "message": (
-                f"Đã đồng bộ {count} mã từ {'Vnstock + TCBS overview' if tcbs_enabled else 'Vnstock'}."
+                f"Đã đồng bộ {count} mã từ Vnstock."
                 + (f" Cảnh báo: {'; '.join(warnings)}." if warnings else "")
                 if count else "Provider không trả danh sách mã."
             ),
@@ -1083,3 +1036,4 @@ def sync_universe() -> dict[str, Any]:
             f"failed after {elapsed:.1f}s: {type(exc).__name__}: {exc}"
         )
         return {"ok": False, "code": "UNIVERSE_SYNC_FAILED", "message": str(exc)[:500]}
+
