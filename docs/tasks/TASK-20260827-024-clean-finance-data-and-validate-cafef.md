@@ -17,16 +17,16 @@ being accepted as valid finance data.
 
 ## Acceptance Criteria
 
-- [ ] A destructive `clear-all` command clears finance rows while preserving
+- [x] A destructive `clear-all` command clears finance rows while preserving
   the database schema and refuses to run while a worker is RUNNING.
 - [ ] Clearing removes raw documents, canonical facts, parse errors, dividend
   reconciliation rows, queue history, run history, and securities.
-- [ ] CafeF document fetches validate that the response belongs to the requested
+- [x] CafeF document fetches validate that the response belongs to the requested
   symbol/document before marking the document SUCCESS.
-- [ ] Invalid or unexpected CafeF payloads are stored as FAILED with a
+- [x] Invalid or unexpected CafeF payloads are stored as FAILED with a
   deterministic provider/data-quality error.
-- [ ] Add regression tests for cleanup scope and CafeF payload validation.
-- [ ] Update the local runbook with stop, clear, and re-crawl commands.
+- [x] Add regression tests for cleanup scope and CafeF payload validation.
+- [x] Update the local runbook with stop, clear, and re-crawl commands.
 
 ## Constraints
 
@@ -37,4 +37,4 @@ being accepted as valid finance data.
 
 ## Result
 
-Implementation pending.
+Implementation complete; local PostgreSQL re-crawl validation is pending.
