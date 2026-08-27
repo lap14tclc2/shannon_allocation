@@ -457,6 +457,16 @@ def admin_finance_data_crawl(
     return result
 
 
+@app.get("/api/admin/finance-data/{symbol}/audit")
+def admin_finance_data_audit(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    require_admin(qport_session)
+    from portfolio.finance_catalog import valuation_readiness_audit
+    return {"ok": True, **valuation_readiness_audit(symbol)}
+
+
 @app.post("/api/admin/finance-data/{symbol}/retry")
 def admin_finance_data_retry(
     symbol: str,

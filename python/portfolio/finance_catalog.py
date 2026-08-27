@@ -30,6 +30,20 @@ PROVIDERS = ("tcbs", "cafef")
 # Completed annual reports to retain/crawl for each listed equity.
 FISCAL_YEAR_HISTORY = 10
 
+# Facts required by the deterministic FY valuation bridge.  These inputs are
+# deliberately explicit: the value engine must never manufacture a number when
+# a provider has not supplied it.
+VALUE_ENGINE_REQUIRED_FACTS: tuple[tuple[str, str], ...] = (
+    ("IS.PROFIT.NET", "net_income"),
+    ("IS.PROFIT.OPERATING", "operating_profit"),
+    ("CF.OPERATING.NET", "operating_cash_flow"),
+    ("CF.OPERATING.DEPRECIATION", "depreciation_amortization"),
+    ("CF.CAPEX", "capex"),
+    ("BS.ASSETS.CASH_AND_EQUIVALENTS", "cash"),
+    ("BS.DEBT.TOTAL", "total_debt"),
+    ("IS.SHARES.OUTSTANDING", "shares_outstanding"),
+)
+
 # Defensive read-time predicate for legacy rows imported before filtering.
 ACTIVE_EQUITY_SQL = (
     "is_active=1 "
@@ -741,57 +755,159 @@ def get_canonical_facts(symbol: str) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _materially_conflicting(rows: list[dict[str, Any]]) -> bool:
+    values = [float(row["value"]) for row in rows if row.get("value") is not None]
+    if len(values) < 2:
+        return False
+    baseline = values[0]
+    return any(abs(value - baseline) > max(1.0, abs(baseline) * 0.001) for value in values[1:])
+
+
+def valuation_readiness_audit(symbol: str, market_price: float | None = None) -> dict[str, Any]:
+    """Audit whether one complete FY fact set can safely enter ValueEngine.
+
+    Raw fetch status is intentionally not evidence of usability: a SUCCESS
+    document with a parser error, a missing canonical fact, a period mismatch,
+    or a material cross-source conflict blocks valuation.
+    """
+    _ensure()
+    ticker = str(symbol).upper().strip()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        fact_rows = [
+            dict(row) for row in db.execute(
+                """SELECT symbol, statement_type, line_item_code, value,
+                          period_type, fiscal_year, fiscal_quarter, period_end,
+                          provider, source_document_id, quality_status, observed_at
+                   FROM canonical_facts WHERE symbol=?
+                   ORDER BY fiscal_year DESC, fiscal_quarter DESC NULLS LAST, provider ASC""",
+                (ticker,),
+            ).fetchall()
+        ]
+        document_rows = [
+            dict(row) for row in db.execute(
+                """SELECT id, provider, document_type, period_type, fiscal_year,
+                          fiscal_quarter, period_end, status, fetched_at,
+                          error_code, error_message
+                   FROM documents WHERE symbol=?""",
+                (ticker,),
+            ).fetchall()
+        ]
+        parse_rows = [
+            dict(row) for row in db.execute(
+                """SELECT p.source_document_id, p.error_code, p.error_message,
+                          d.provider, d.document_type, d.period_type,
+                          d.fiscal_year, d.fiscal_quarter, d.period_end
+                   FROM parse_errors p
+                   JOIN documents d ON d.id=p.source_document_id
+                   WHERE d.symbol=?""",
+                (ticker,),
+            ).fetchall()
+        ]
+
+    required_codes = [code for code, _ in VALUE_ENGINE_REQUIRED_FACTS]
+    fact_periods = sorted(
+        {
+            int(row["fiscal_year"])
+            for row in fact_rows
+            if row.get("period_type") == "FY" and row.get("fiscal_quarter") is None
+        },
+        reverse=True,
+    )
+    selected_year = fact_periods[0] if fact_periods else None
+    selected_facts: dict[str, dict[str, Any]] = {}
+    conflicts: list[dict[str, Any]] = []
+    relevant_parse_errors: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    if selected_year is not None:
+        period_facts = [
+            row for row in fact_rows
+            if row.get("period_type") == "FY"
+            and row.get("fiscal_quarter") is None
+            and int(row["fiscal_year"]) == selected_year
+        ]
+        for code in required_codes:
+            candidates = [row for row in period_facts if row.get("line_item_code") == code and row.get("value") is not None]
+            bad_quality = [row for row in candidates if row.get("quality_status") in {"CONFLICT", "QUARANTINED", "MISSING"}]
+            if bad_quality or _materially_conflicting(candidates):
+                conflicts.append({
+                    "line_item_code": code,
+                    "fiscal_year": selected_year,
+                    "providers": sorted({str(row.get("provider") or "") for row in candidates}),
+                })
+                continue
+            if candidates:
+                selected_facts[code] = sorted(candidates, key=lambda row: str(row.get("provider") or ""))[0]
+        relevant_parse_errors = [
+            row for row in parse_rows
+            if row.get("period_type") == "FY"
+            and row.get("fiscal_quarter") is None
+            and int(row["fiscal_year"]) == selected_year
+        ]
+
+    missing_codes = [code for code in required_codes if code not in selected_facts]
+    reasons: list[str] = []
+    if selected_year is None:
+        reasons.append("FY_REQUIRED")
+    if missing_codes:
+        reasons.append("REQUIRED_FACTS_MISSING")
+    if conflicts:
+        reasons.append("CANONICAL_FACT_CONFLICT")
+    if relevant_parse_errors:
+        reasons.append("PARSE_ERROR_PRESENT")
+    if market_price is not None and float(market_price) <= 0:
+        reasons.append("MARKET_PRICE_MISSING")
+    if selected_year is not None and not conflicts:
+        single_source_codes = [
+            code for code, fact in selected_facts.items()
+            if fact.get("quality_status") == "SINGLE_SOURCE"
+        ]
+        if single_source_codes:
+            warnings.append("SINGLE_SOURCE_FACTS:" + ",".join(single_source_codes))
+    usable_document_ids = {
+        int(row["id"]) for row in document_rows
+        if row.get("status") == "SUCCESS"
+        and int(row["id"]) not in {int(error["source_document_id"]) for error in parse_rows}
+    }
+    status = "READY" if not reasons else "BLOCKED"
+    return {
+        "symbol": ticker,
+        "status": status,
+        "selected_period": (
+            {"period_type": "FY", "fiscal_year": selected_year, "fiscal_quarter": None}
+            if selected_year is not None else None
+        ),
+        "required_facts": [
+            {"line_item_code": code, "label": label, "available": code in selected_facts}
+            for code, label in VALUE_ENGINE_REQUIRED_FACTS
+        ],
+        "missing": missing_codes,
+        "conflicts": conflicts,
+        "parse_errors": relevant_parse_errors,
+        "warnings": warnings,
+        "reasons": reasons,
+        "document_summary": {
+            "total": len(document_rows),
+            "fetch_success": sum(1 for row in document_rows if row.get("status") == "SUCCESS"),
+            "usable_success": len(usable_document_ids),
+            "parse_error_count": len(parse_rows),
+        },
+        "selected_facts": selected_facts,
+    }
+
+
 def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = None) -> dict[str, Any]:
     ticker = str(symbol).upper().strip()
-    facts = get_canonical_facts(ticker)
-    if not facts:
-        return {"ok": False, "code": "FINANCE_DATA_MISSING", "message": "contact admin", "symbol": ticker}
-    # Reconcile same-period facts across providers before valuation. A
-    # material disagreement is unavailable rather than silently selecting a
-    # provider, while identical observations remain safely interchangeable.
-    grouped: dict[tuple[str, int, int | None], list[dict[str, Any]]] = {}
-    for fact in facts:
-        key = (str(fact["line_item_code"]), int(fact["fiscal_year"]), fact.get("fiscal_quarter"))
-        grouped.setdefault(key, []).append(fact)
-    conflicts = []
-    for key, rows in grouped.items():
-        values = [float(row["value"]) for row in rows if row.get("value") is not None]
-        if len(values) > 1:
-            baseline = values[0]
-            if any(abs(value - baseline) > max(1.0, abs(baseline) * 0.001) for value in values[1:]):
-                conflicts.append({"line_item_code": key[0], "fiscal_year": key[1], "fiscal_quarter": key[2]})
-    if conflicts:
+    audit = valuation_readiness_audit(ticker, market_price)
+    if audit["status"] != "READY":
         return {
             "ok": False,
-            "code": "FINANCE_DATA_CONFLICT",
+            "code": "FINANCE_DATA_NOT_READY",
             "message": "contact admin",
             "symbol": ticker,
-            "conflicts": conflicts,
+            "audit": audit,
         }
-    # All facts in one valuation must describe one compatible reporting
-    # period. Selecting each line-item independently can silently combine,
-    # for example, FY income with a newer quarterly share count.
-    net_candidates = [fact for fact in facts if fact.get("line_item_code") == "IS.PROFIT.NET"]
-    if not net_candidates:
-        return {"ok": False, "code": "FINANCE_DATA_INCOMPLETE", "message": "contact admin", "symbol": ticker, "missing": ["net_income"]}
-    selected_period = (
-        int(net_candidates[0]["fiscal_year"]),
-        net_candidates[0].get("fiscal_quarter"),
-    )
-    latest = {
-        str(fact["line_item_code"]): fact
-        for fact in facts
-        if (int(fact["fiscal_year"]), fact.get("fiscal_quarter")) == selected_period
-    }
-    missing = []
-    if latest.get("IS.PROFIT.NET") is None:
-        missing.append("net_income")
-    if latest.get("IS.SHARES.OUTSTANDING") is None:
-        missing.append("shares_outstanding")
-    if market_price is None or float(market_price) <= 0:
-        missing.append("market_price")
-    if missing:
-        return {"ok": False, "code": "FINANCE_DATA_INCOMPLETE", "message": "contact admin", "symbol": ticker, "missing": missing}
+    latest = audit["selected_facts"]
     with _schema_connection(FINANCE_SCHEMA) as db:
         security = db.execute(
             "SELECT company_name, industry, exchange FROM securities WHERE symbol=?",
@@ -799,16 +915,30 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
         ).fetchone()
     profile = [dict(security)] if security else []
     return {
-        "ok": True, "symbol": ticker, "provider": "finance_catalog",
+        "ok": True,
+        "symbol": ticker,
+        "provider": "finance_catalog",
         "fetched_at": latest["IS.PROFIT.NET"]["observed_at"],
         "fiscal_year": latest["IS.PROFIT.NET"]["fiscal_year"],
-        "fiscal_quarter": latest["IS.PROFIT.NET"].get("fiscal_quarter"),
+        "fiscal_quarter": None,
         "period_end": latest["IS.PROFIT.NET"].get("period_end"),
-        "income_statement": [{"net_profit": latest["IS.PROFIT.NET"]["value"], "operating_profit": latest.get("IS.PROFIT.OPERATING", {}).get("value")}],
-        "balance_sheet": [{"total_debt": latest.get("BS.DEBT.TOTAL", {}).get("value"), "cash": latest.get("BS.ASSETS.CASH_AND_EQUIVALENTS", {}).get("value")}],
-        "cash_flow": [{"depreciation": latest.get("CF.OPERATING.DEPRECIATION", {}).get("value"), "capex": latest.get("CF.CAPEX", {}).get("value"), "operating_cash_flow": latest.get("CF.OPERATING.NET", {}).get("value")}],
+        "income_statement": [{
+            "net_profit": latest["IS.PROFIT.NET"]["value"],
+            "operating_profit": latest["IS.PROFIT.OPERATING"]["value"],
+        }],
+        "balance_sheet": [{
+            "total_debt": latest["BS.DEBT.TOTAL"]["value"],
+            "cash": latest["BS.ASSETS.CASH_AND_EQUIVALENTS"]["value"],
+        }],
+        "cash_flow": [{
+            "depreciation": latest["CF.OPERATING.DEPRECIATION"]["value"],
+            "capex": latest["CF.CAPEX"]["value"],
+            "operating_cash_flow": latest["CF.OPERATING.NET"]["value"],
+        }],
         "ratios": [{"outstanding_shares": latest["IS.SHARES.OUTSTANDING"]["value"]}],
-        "profile": profile, "prices": [{"close": market_price}],
+        "profile": profile,
+        "prices": [{"close": market_price}],
+        "audit": audit,
     }
 
 

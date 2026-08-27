@@ -68,6 +68,25 @@ def test_owner_earnings_calculator_bridge():
             observed_at="2026-08-25T00:00:00Z",
         ),
         CanonicalFact(
+            canonical_fact_id="cf-da",
+            identity=FactIdentityKey(
+                security_id="sec-fpt",
+                statement_type=StatementType.CASH_FLOW,
+                period_end="2026-06-30",
+                period_type=PeriodType.QUARTER,
+                fiscal_year=2026,
+                fiscal_quarter=2,
+                consolidation_scope=ConsolidationScope.CONSOLIDATED,
+                line_item_code="CF.OPERATING.DEPRECIATION",
+            ),
+            value=Decimal("600000000000"),
+            quality_status=QualityStatus.CROSS_SOURCE_VERIFIED,
+            decision_id="dec-da",
+            winning_candidate_id="vnstock-da",
+            candidate_ids=["vnstock-da"],
+            observed_at="2026-08-25T00:00:00Z",
+        ),
+        CanonicalFact(
             canonical_fact_id="cf-3",
             identity=FactIdentityKey(
                 security_id="sec-fpt",
@@ -91,7 +110,7 @@ def test_owner_earnings_calculator_bridge():
     bridge = OwnerEarningsCalculator.calculate(facts, fiscal_year=2026, fiscal_quarter=2)
     assert bridge.net_income == Decimal("2200000000000")
     assert bridge.owner_earnings > Decimal("0")
-    assert len(bridge.source_fact_ids) == 3
+    assert len(bridge.source_fact_ids) == 4
 
 
 def test_dcf_valuation_scenarios_and_margin_of_safety():
@@ -257,8 +276,10 @@ def test_valuation_engine_end_to_end_report_with_real_fixture():
 
     facts = store.get_canonical_facts("sec-fpt")
     
-    # Run Valuation Engine
-    report = ValuationEngine.evaluate(
+    # The engine refuses a quarterly period unless a deliberate audited TTM
+    # bridge has been provided; it must not annualise by multiplying by four.
+    with pytest.raises(ValueError, match="TTM_REQUIRED"):
+        ValuationEngine.evaluate(
         symbol="FPT",
         facts=facts,
         current_market_price=Decimal("132000"),
@@ -268,12 +289,3 @@ def test_valuation_engine_end_to_end_report_with_real_fixture():
         fiscal_quarter=2,
     )
 
-    assert report.symbol == "FPT"
-    assert report.confidence_level in (ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM)
-    assert ScenarioType.BASE in report.scenarios
-    assert ScenarioType.BEAR in report.scenarios
-    assert ScenarioType.BULL in report.scenarios
-    assert report.epv_result is not None
-    assert report.reverse_dcf_result is not None
-    assert report.sensitivity_matrix is not None
-    assert report.report_id.startswith("rep-")

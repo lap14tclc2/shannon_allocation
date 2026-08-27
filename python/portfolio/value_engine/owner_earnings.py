@@ -17,67 +17,49 @@ from .models import OwnerEarningsBridge
 
 
 class OwnerEarningsCalculator:
-    """
-    Computes Buffett Owner Earnings strictly from verified Canonical Facts.
-    """
+    """Computes owner earnings only from explicit canonical facts."""
 
     @staticmethod
     def calculate(
         facts: List[CanonicalFact],
         fiscal_year: int,
         fiscal_quarter: Optional[int] = None,
-        maintenance_capex_ratio: Decimal = Decimal("0.70"),  # Default 70% of CAPEX is maintenance
     ) -> OwnerEarningsBridge:
         usable_facts: Dict[str, CanonicalFact] = {}
-        for f in facts:
-            if f.identity.fiscal_year == fiscal_year and f.identity.fiscal_quarter == fiscal_quarter:
-                if f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING):
-                    if f.value is not None:
-                        usable_facts[f.identity.line_item_code] = f
+        for fact in facts:
+            if fact.identity.fiscal_year != fiscal_year or fact.identity.fiscal_quarter != fiscal_quarter:
+                continue
+            if fact.quality_status in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING):
+                continue
+            if fact.value is not None:
+                usable_facts[fact.identity.line_item_code] = fact
 
-        def get_val(code: str) -> Decimal:
-            f = usable_facts.get(code)
-            return f.value if f and f.value is not None else Decimal("0")
+        required_codes = (
+            "IS.PROFIT.NET",
+            "CF.OPERATING.DEPRECIATION",
+            "CF.CAPEX",
+            "CF.OPERATING.NET",
+        )
+        missing = [code for code in required_codes if code not in usable_facts]
+        if missing:
+            raise ValueError("OWNER_EARNINGS_INCOMPLETE: " + ", ".join(missing))
 
-        def get_fact_id(code: str) -> Optional[str]:
-            f = usable_facts.get(code)
-            return f.canonical_fact_id if f else None
-
-        net_income = get_val("IS.PROFIT.NET")
-        cogs = get_val("IS.COGS")
-        # In financial statements: CF.CAPEX, CF.OPERATING.NET
-        # CF.CAPEX is usually recorded as positive magnitude or cash outflow
-        capex_raw = get_val("CF.CAPEX")
-        capex = abs(capex_raw)
-
-        # Approximate D&A from Cash Flow or default ~60% of Gross CAPEX if not separate
-        da_val = capex * Decimal("0.80") if capex > 0 else net_income * Decimal("0.15")
-
-        # Maintenance CAPEX policy (QVE-102)
-        # If total CAPEX > D&A, maintenance capex is bounded by D&A or ratio
-        maint_capex = min(capex, da_val) if capex > 0 else da_val * maintenance_capex_ratio
+        net_income = usable_facts["IS.PROFIT.NET"].value
+        da_val = usable_facts["CF.OPERATING.DEPRECIATION"].value
+        capex = abs(usable_facts["CF.CAPEX"].value)
+        # The maintenance/growth split is only a bounded interpretation of two
+        # reported cash-flow facts, never a synthetic percentage fallback.
+        maint_capex = min(capex, abs(da_val))
         growth_capex = max(Decimal("0"), capex - maint_capex)
-
-        # Working Capital change (approximate from operating CF vs Net Income + D&A)
-        cf_ops = get_val("CF.OPERATING.NET")
-        if cf_ops != Decimal("0"):
-            wc_change = cf_ops - (net_income + da_val)
-        else:
-            wc_change = Decimal("0")
-
-        # Owner Earnings = Net Income + D&A - Maintenance CAPEX + ΔWorking Capital
+        cf_ops = usable_facts["CF.OPERATING.NET"].value
+        wc_change = cf_ops - (net_income + da_val)
         owner_earnings = net_income + da_val - maint_capex + wc_change
 
-        source_ids = [
-            fid for code in ["IS.PROFIT.NET", "CF.CAPEX", "CF.OPERATING.NET"]
-            if (fid := get_fact_id(code)) is not None
-        ]
-
+        source_ids = [usable_facts[code].canonical_fact_id for code in required_codes]
         desc = (
             f"Owner Earnings = Net Income ({net_income:,.0f}) + D&A ({da_val:,.0f}) "
             f"- Maint CAPEX ({maint_capex:,.0f}) + ΔWC ({wc_change:,.0f}) = {owner_earnings:,.0f} VND"
         )
-
         return OwnerEarningsBridge(
             net_income=net_income,
             depreciation_amortization=da_val,

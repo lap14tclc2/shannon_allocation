@@ -43,7 +43,7 @@ class ValuationEngine:
         shares_outstanding: Decimal,
         diluted_shares_estimate: Optional[Decimal] = None,
         fiscal_year: int = 2026,
-        fiscal_quarter: Optional[int] = 2,
+        fiscal_quarter: Optional[int] = None,
         hurdle_rate: Decimal = Decimal("0.11"),  # 11% Base Discount Rate
         terminal_growth: Decimal = Decimal("0.035"),  # 3.5% GDP-linked growth
         entity_type: EntityType = EntityType.NORMAL_ENTERPRISE,
@@ -51,6 +51,10 @@ class ValuationEngine:
     ) -> ValuationReport:
         if diluted_shares_estimate is None or diluted_shares_estimate <= Decimal("0"):
             diluted_shares_estimate = shares_outstanding
+        if fiscal_quarter is not None:
+            raise ValueError(
+                "TTM_REQUIRED: quarterly facts require an explicit audited TTM bridge before valuation."
+            )
 
         # 1. Lineage & Confidence Evaluation (QVE-061, QVE-062)
         confidence_reasons: List[str] = []
@@ -69,26 +73,34 @@ class ValuationEngine:
             confidence_reasons.append("Chưa có đủ số liệu BCTC chuẩn hóa cho mã này.")
             confidence = ConfidenceLevel.BLOCKED
 
-        # 2. Extract Key Line Items
-        usable_facts = {f.identity.line_item_code: f for f in facts if f.value is not None}
-        
-        net_income_fact = usable_facts.get("IS.PROFIT.NET") or usable_facts.get("IS.NET_PROFIT") or usable_facts.get("IS.PROFIT_PARENT")
-        depr_fact = usable_facts.get("CF.OPERATING.DEPRECIATION")
-        capex_fact = usable_facts.get("CF.CAPEX") or usable_facts.get("CF.INVESTING.CAPEX")
-        wc_change_fact = usable_facts.get("CF.OPERATING.WORKING_CAPITAL_CHANGE")
+        # 2. Extract a single FY fact set.  Do not mix periods or use
+        # substitutions for debt/cash/earnings: readiness must be explicit.
+        usable_facts = {
+            fact.identity.line_item_code: fact
+            for fact in facts
+            if fact.value is not None
+            and fact.identity.fiscal_year == fiscal_year
+            and fact.identity.fiscal_quarter is None
+            and fact.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING)
+        }
+        required_codes = (
+            "IS.PROFIT.NET",
+            "IS.PROFIT.OPERATING",
+            "CF.OPERATING.NET",
+            "CF.OPERATING.DEPRECIATION",
+            "CF.CAPEX",
+            "BS.DEBT.TOTAL",
+            "BS.ASSETS.CASH_AND_EQUIVALENTS",
+            "IS.SHARES.OUTSTANDING",
+        )
+        missing = [code for code in required_codes if code not in usable_facts]
+        if missing:
+            raise ValueError("VALUATION_FACTS_INCOMPLETE: " + ", ".join(missing))
+        if shares_outstanding <= Decimal("0"):
+            raise ValueError("SHARES_OUTSTANDING_REQUIRED")
 
-        # Balance Sheet debt items
-        total_debt_fact = usable_facts.get("BS.DEBT.TOTAL")
-        st_debt = usable_facts.get("BS.LIABILITIES.SHORT_TERM_BORROWINGS")
-        lt_debt = usable_facts.get("BS.LIABILITIES.LONG_TERM_BORROWINGS")
-        cash = usable_facts.get("BS.ASSETS.CASH_AND_EQUIVALENTS")
-        st_invest = usable_facts.get("BS.ASSETS.SHORT_TERM_INVESTMENTS")
-
-        if total_debt_fact:
-            total_debt = total_debt_fact.value
-        else:
-            total_debt = (st_debt.value if st_debt else Decimal("0")) + (lt_debt.value if lt_debt else Decimal("0"))
-        total_cash = (cash.value if cash else Decimal("0")) + (st_invest.value if st_invest else Decimal("0"))
+        total_debt = usable_facts["BS.DEBT.TOTAL"].value
+        total_cash = usable_facts["BS.ASSETS.CASH_AND_EQUIVALENTS"].value
         net_debt = total_debt - total_cash
 
         # 3. Calculate Owner Earnings Bridge (QVE-070)
@@ -98,9 +110,9 @@ class ValuationEngine:
             fiscal_quarter=fiscal_quarter,
         )
 
-        base_annual_oe = oe_bridge.owner_earnings * Decimal("4") if fiscal_quarter else oe_bridge.owner_earnings
+        base_annual_oe = oe_bridge.owner_earnings
         if base_annual_oe <= Decimal("0"):
-            base_annual_oe = (net_income_fact.value * Decimal("4") * Decimal("0.85")) if net_income_fact and net_income_fact.value else Decimal("1000000000000")
+            raise ValueError("OWNER_EARNINGS_NON_POSITIVE: valuation blocked; no synthetic fallback is allowed.")
 
         # 4. Run 3-Scenario DCF Valuation (QVE-090, QVE-100, QVE-102)
         scenarios = {
@@ -139,9 +151,8 @@ class ValuationEngine:
             ),
         }
 
-        # 5. Run EPV (Earnings Power Value) (QVE-112)
-        operating_profit = usable_facts.get("IS.PROFIT.OPERATING")
-        ebit = (operating_profit.value * Decimal("4")) if operating_profit and operating_profit.value else (base_annual_oe * Decimal("1.2"))
+        # 5. Run EPV (Earnings Power Value) (QVE-112) from reported FY EBIT.
+        ebit = usable_facts["IS.PROFIT.OPERATING"].value
         epv_res = EPVValuationModel.calculate(
             normalized_operating_earnings=ebit,
             tax_rate=Decimal("0.20"),

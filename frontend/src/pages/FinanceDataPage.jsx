@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceData, queueAdminFinanceCrawl, retryAdminFinanceData } from '../lib/api.js';
+import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceAudit, getAdminFinanceData, queueAdminFinanceCrawl, retryAdminFinanceData } from '../lib/api.js';
 
 const PAGE_SIZE = 50;
 
@@ -67,6 +67,8 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState({ name: 'unknown', can_crawl: false, read_only: true, message: 'Đang kiểm tra capability…' });
   const [universeQuality, setUniverseQuality] = useState(null);
+  const [auditBySymbol, setAuditBySymbol] = useState({});
+  const [auditLoading, setAuditLoading] = useState('');
 
   async function refresh() {
     setLoading(true);
@@ -87,6 +89,24 @@ export default function FinanceDataPage({ locale = 'vi' }) {
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const expandedItem = useMemo(() => items.find(item => item.symbol === expanded), [expanded, items]);
+
+  async function toggleExpanded(symbol) {
+    if (expanded === symbol) {
+      setExpanded('');
+      return;
+    }
+    setExpanded(symbol);
+    if (auditBySymbol[symbol]) return;
+    setAuditLoading(symbol);
+    try {
+      const result = await getAdminFinanceAudit(symbol);
+      setAuditBySymbol(current => ({ ...current, [symbol]: result }));
+    } catch (error) {
+      setMessage(error.message || `Không thể audit dữ liệu ${symbol}.`);
+    } finally {
+      setAuditLoading('');
+    }
+  }
 
   async function syncUniverse() {
     if (!runtime.can_crawl) { setMessage(runtime.message); return; }
@@ -126,6 +146,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
     try {
       const result = retry ? await retryAdminFinanceData(symbol) : await crawlAdminFinanceData(symbol);
       setMessage(result.message || `Đã crawl ${symbol}: ${result.success_count || 0} file thành công, ${result.failure_count || 0} file thất bại.`);
+      setAuditBySymbol(current => { const next = { ...current }; delete next[symbol]; return next; });
       await refresh();
     } catch (error) {
       setMessage(error.message);
@@ -191,11 +212,27 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                   <tr className={isOpen ? 'is-expanded' : ''}>
                     <td><b>{item.symbol}</b></td><td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td><td>{item.company_name || 'Chưa có dữ liệu'}</td><td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
                     <td><span className={`status-pill ${crawlMeta.className}`}>{crawlMeta.label} · {success}/{totalDocuments} file{failed ? ` · ${failed} lỗi` : ''}</span></td>
-                    <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => setExpanded(isOpen ? '' : item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
+                    <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => toggleExpanded(item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
                     <div className="section-head"><strong>File đã crawl: {item.symbol}</strong><button className="btn-primary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Crawl lại</button></div>
-                    {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
+                    <section className="finance-document-group valuation-readiness">
+                      <h4>Valuation readiness</h4>
+                      {auditLoading === item.symbol ? <p className="muted">Đang audit canonical facts…</p> : (() => {
+                        const audit = auditBySymbol[item.symbol];
+                        if (!audit) return <p className="muted">Chưa có kết quả audit.</p>;
+                        const ready = audit.status === 'READY';
+                        return <>
+                          <p><span className={ready ? 'status-valid' : 'status-attention'}><b>{ready ? 'Sẵn sàng định giá' : 'Chặn định giá'}</b></span>{audit.selected_period?.fiscal_year ? ` · FY ${audit.selected_period.fiscal_year}` : ''}</p>
+                          {!ready && <p className="muted">Lý do: {(audit.reasons || []).join(', ') || 'thiếu dữ liệu nguồn'}.</p>}
+                          {(audit.missing || []).length > 0 && <p className="muted">Thiếu facts: {audit.missing.join(', ')}.</p>}
+                          {(audit.conflicts || []).length > 0 && <p className="muted">Xung đột: {audit.conflicts.map(conflict => conflict.line_item_code).join(', ')}.</p>}
+                          {(audit.parse_errors || []).length > 0 && <p className="muted">Lỗi parser: {audit.parse_errors.length} tài liệu.</p>}
+                          <small>Raw fetch: {audit.document_summary?.fetch_success || 0} · usable: {audit.document_summary?.usable_success || 0}</small>
+                        </>;
+                      })()}
+                    </section>
+                                        {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
                       const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
                       return <section className="finance-document-group" key={group.key}>
                         <h4>{group.label} <span className={`status-pill ${STATUS_META[summarizeDocuments(docs).key].className}`}>{STATUS_META[summarizeDocuments(docs).key].label} · {summarizeDocuments(docs).success}/{summarizeDocuments(docs).total}</span></h4>
