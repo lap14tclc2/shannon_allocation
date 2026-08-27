@@ -11,20 +11,20 @@ related: [TASK-20260827-018]
 
 ## Requirement
 
-Allow an admin to search symbols and company names in Finance Data. Process new crawl queue jobs in listed-market priority order: HOSE, then HNX, then UPCOM.
+Allow an admin to search symbols and company names in Finance Data. Let the external worker claim only HOSE and HNX jobs, with HOSE before HNX. UPCOM jobs remain untouched for a later explicit scope.
 
 ## Acceptance Criteria
 
 - [ ] Finance Data has a search field for symbol or company name.
 - [ ] Search is server-side, combines with exchange and crawl-status filters, resets pagination, and is safely parameterized.
-- [ ] Queue claim order is HOSE → HNX → UPCOM; legacy/unknown rows remain last.
+- [ ] Worker claim order is HOSE → HNX and does not claim UPCOM/unknown jobs.
 - [ ] Existing RUNNING jobs are not reordered or modified.
 - [ ] Add regression/contract tests.
 
 ## Constraints and Invariants
 
 - Preserve active-equity filtering and existing queue deduplication.
-- Do not change historical documents or active worker leases.
+- Do not change historical documents, active worker leases, or queued UPCOM rows.
 - Search must not expose data beyond the admin finance catalog.
 - Queue ordering is deterministic within the same exchange.
 
