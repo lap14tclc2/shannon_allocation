@@ -568,6 +568,10 @@ def _save_document(symbol: str, provider: str, document_type: str, period_type: 
     if document_type == "DIVIDEND":
         _reconcile_dividend_document(symbol, provider, payload, document_id)
 
+def _crawl_progress(symbol: str, message: str) -> None:
+    print(f"[finance-crawl] symbol={symbol} {message}", flush=True)
+
+
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
     if provider == "tcbs":
         if document_type == "DIVIDEND":
@@ -589,15 +593,19 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
             q = quarter or 4
             url = f"https://s.cafef.vn/bao-cao-tai-chinh/{symbol}/{segment}/{year}/{q}/0/0/bctc.chn"
         headers = {}
+    period_label = f"{period_type}:{year}" + (f":Q{quarter}" if quarter else "")
+    _crawl_progress(symbol, f"fetch provider={provider} document={document_type} period={period_label}")
     try:
         status, payload = _url_json(url, headers=headers)
         if status < 200 or status >= 300:
             raise RuntimeError(f"HTTP {status}")
         _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "SUCCESS", payload, None, None, run_id)
+        _crawl_progress(symbol, f"success provider={provider} document={document_type} period={period_label}")
         return True
     except Exception as exc:
         code = "PROVIDER_HTTP_ERROR" if isinstance(exc, urllib.error.HTTPError) else "PROVIDER_UNAVAILABLE"
         _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "FAILED", None, code, str(exc)[:500], run_id)
+        _crawl_progress(symbol, f"failed provider={provider} document={document_type} period={period_label} code={code}")
         return False
 
 
@@ -657,7 +665,9 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         _validate_crawl_runtime()
     except RuntimeError as exc:
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
+    _crawl_progress(symbol, f"start retry_failed_only={retry_failed_only}")
     ensure_required_documents(symbol)
+    _crawl_progress(symbol, "required document placeholders ensured")
     with _schema_connection(FINANCE_SCHEMA) as db:
         row = db.execute("INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) VALUES(?,?,?,1) RETURNING id", (requested_by, "RUNNING", _now())).fetchone()
         run_id = int(row["id"])
@@ -683,6 +693,12 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
                     retry_failed_only=retry_failed_only,
                 ):
                     skipped_count += 1
+                    _crawl_progress(
+                        symbol,
+                        f"skip provider={provider} document={document_type} "
+                        f"period={period_type}:{year}" + (f":Q{quarter}" if quarter else "")
+                        + f" status={status or 'MISSING'}",
+                    )
                     continue
                 results.append(
                     _fetch_provider(
@@ -697,6 +713,11 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
             "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,failure_count=? WHERE id=?",
             ("COMPLETED", _now(), success, failure, run_id),
         )
+    _crawl_progress(
+        symbol,
+        f"completed run_id={run_id} fetched={len(results)} success={success} "
+        f"failed={failure} skipped={skipped_count}",
+    )
     return {
         "ok": True,
         "run_id": run_id,
@@ -761,33 +782,61 @@ def _listing_call_with_heartbeat(label: str, callback: Any) -> Any:
 
 
 
+def _normalize_exchange(value: str | None) -> str:
+    """Map Vnstock exchange/group variants to the supported exchange filter."""
+    token = _token(value)
+    if token in {"hose", "hsx", "hoseindex"}:
+        return "HOSE"
+    if token in {"hnx", "hnxindex"}:
+        return "HNX"
+    if token in {"upcom", "upcomindex"}:
+        return "UPCOM"
+    return "UNKNOWN"
+
+
 def _normalize_universe_row(row: dict[str, Any]) -> dict[str, Any]:
     """Normalize Vnstock listing rows across provider schema variants."""
     raw = {str(key).strip().lower().replace("-", "_").replace(" ", "_"): value
            for key, value in dict(row).items()}
 
-    def first(*keys: str) -> str | None:
+    def first(*keys: str) -> tuple[str | None, str | None]:
         for key in keys:
             value = raw.get(key)
             if value is not None and str(value).strip() not in {"", "-", "UNKNOWN", "NAN", "NONE"}:
-                return str(value).strip()
-        return None
+                return str(value).strip(), key
+        return None, None
 
-    symbol = first("symbol", "ticker", "code", "stock_code", "stockcode")
-    exchange = first("exchange", "com_group_code", "comgroupcode", "com_group",
-                     "floor_code", "floorcode", "floor", "market")
-    company_name = first("organ_name", "organname", "company_name", "companyname",
-                         "name", "company")
-    industry = first("industry", "industry_name", "industryname", "icb_name",
-                      "icbname", "icb_name3", "icbname3", "sector")
+    symbol, _ = first("symbol", "ticker", "code", "stock_code", "stockcode")
+    exchange_raw, exchange_source = first(
+        "exchange", "exchange_code", "exchangecode", "exchange_name",
+        "exchangename", "listing_market", "listingmarket", "com_group_code",
+        "comgroupcode", "group_code", "groupcode", "com_group", "floor_code",
+        "floorcode", "floor", "market",
+    )
+    company_name, _ = first(
+        "organ_name", "organname", "company_name", "companyname",
+        "company_full_name", "companyfullname", "name", "company",
+    )
+    industry, industry_source = first(
+        "industry", "industry_name", "industryname", "industry_level_1",
+        "industrylevel1", "sector", "sector_name", "sectorname", "icb_name",
+        "icbname", "icb_name1", "icbname1", "icb_name2", "icbname2",
+        "icb_name3", "icbname3", "icb_name4", "icbname4",
+    )
+    exchange = _normalize_exchange(exchange_raw)
     return {
         "symbol": symbol.upper() if symbol else None,
-        "exchange": exchange.upper() if exchange else "UNKNOWN",
+        "exchange": exchange,
         "company_name": company_name,
         "industry": industry or "UNKNOWN",
-        "missing_exchange": exchange is None,
+        "exchange_raw": exchange_raw,
+        "exchange_source": exchange_source,
+        "industry_source": industry_source,
+        "missing_exchange": exchange_raw is None,
+        "unrecognized_exchange": exchange_raw is not None and exchange == "UNKNOWN",
         "missing_industry": industry is None,
     }
+
 
 
 def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -798,7 +847,9 @@ def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str
         "valid_symbols": len(unique_symbols),
         "duplicate_symbols": len(symbols) - len(unique_symbols),
         "missing_symbol": sum(1 for row in normalized_rows if not row.get("symbol")),
-        "unknown_exchange": sum(1 for row in normalized_rows if row.get("missing_exchange")),
+        "unknown_exchange": sum(1 for row in normalized_rows if row.get("exchange") == "UNKNOWN"),
+        "missing_exchange": sum(1 for row in normalized_rows if row.get("missing_exchange")),
+        "unrecognized_exchange": sum(1 for row in normalized_rows if row.get("unrecognized_exchange")),
         "missing_industry": sum(1 for row in normalized_rows if row.get("missing_industry")),
     }
 
@@ -854,8 +905,10 @@ def sync_universe() -> dict[str, Any]:
                 "message": "Vnstock không trả danh sách mã.",
             }
         rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+        columns = sorted({str(key) for row in rows[:100] for key in dict(row)})
         _universe_progress(
-            f"received {len(rows)} symbol rows via Listing.{selected_method}"
+            f"received {len(rows)} symbol rows via Listing.{selected_method}; "
+            f"columns={json.dumps(columns, ensure_ascii=False)}"
         )
         count = 0
         normalized_rows = []
@@ -880,9 +933,26 @@ def sync_universe() -> dict[str, Any]:
         elapsed = time.monotonic() - started
         _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
         quality = _universe_quality(rows, normalized_rows)
+        diagnostics = [
+            {
+                "symbol": row["symbol"],
+                "exchange": row["exchange"],
+                "exchange_raw": row["exchange_raw"],
+                "exchange_source": row["exchange_source"],
+                "industry_source": row["industry_source"],
+            }
+            for row in normalized_rows[:3]
+        ]
+        _universe_progress(
+            f"mapping_samples={json.dumps(diagnostics, ensure_ascii=False)}"
+        )
         warnings = []
         if quality["unknown_exchange"]:
             warnings.append(f'{quality["unknown_exchange"]} mã chưa xác định sàn')
+        if quality["unrecognized_exchange"]:
+            warnings.append(
+                f'{quality["unrecognized_exchange"]} mã có giá trị sàn không nhận diện được'
+            )
         if quality["missing_industry"]:
             warnings.append(f'{quality["missing_industry"]} mã chưa có nhóm ngành')
         if quality["duplicate_symbols"]:
