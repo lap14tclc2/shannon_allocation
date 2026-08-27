@@ -16,14 +16,13 @@ Use Vnstock only for the complete symbol list, then retrieve exchange and indust
 ## Endpoints
 
 \`\`\`text
-https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/overview
 https://apipubaws.tcbs.com.vn/tcanalysis/v1/ticker/{symbol}/overview
 \`\`\`
 
 ## Acceptance Criteria
 
-- [x] Use the TCBS company overview endpoint for each symbol missing exchange or industry.
-- [x] Fall back to the TCBS ticker overview endpoint.
+- [x] Use the active TCBS ticker overview endpoint for each symbol missing exchange or industry.
+- [x] Do not call the retired company overview route.
 - [x] Require only TCBS_BEARER_TOKEN; no arbitrary endpoint setting.
 - [x] Keep TCBS-enriched metadata when later Vnstock runs return UNKNOWN.
 - [x] Stop TCBS enrichment after repeated failures while preserving a successful Vnstock symbol sync.

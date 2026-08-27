@@ -26,14 +26,12 @@ def test_tcbs_overview_requires_local_token(monkeypatch):
         finance_catalog._tcbs_overview_headers()
 
 
-def test_tcbs_overview_uses_company_then_ticker_fallback(monkeypatch):
+def test_tcbs_overview_uses_ticker_endpoint(monkeypatch):
     monkeypatch.setenv("TCBS_BEARER_TOKEN", "test-token")
     calls = []
 
     def fake_url_json(url, **_kwargs):
         calls.append(url)
-        if "/company/" in url:
-            raise RuntimeError("company endpoint unavailable")
         return 200, '{"ticker":"VNM","exchange":"HOSE","industry":"Food & Beverage"}'
 
     monkeypatch.setattr(finance_catalog, "_url_json", fake_url_json)
@@ -42,6 +40,5 @@ def test_tcbs_overview_uses_company_then_ticker_fallback(monkeypatch):
 
     assert overview["exchange"] == "HOSE"
     assert calls == [
-        "https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/VNM/overview",
         "https://apipubaws.tcbs.com.vn/tcanalysis/v1/ticker/VNM/overview",
     ]

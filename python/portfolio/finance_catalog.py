@@ -857,9 +857,6 @@ def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str
 
 
 
-TCBS_COMPANY_OVERVIEW_URL = (
-    "https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/overview"
-)
 TCBS_TICKER_OVERVIEW_URL = (
     "https://apipubaws.tcbs.com.vn/tcanalysis/v1/ticker/{symbol}/overview"
 )
@@ -879,31 +876,19 @@ def _tcbs_overview_headers() -> dict[str, str]:
 def _load_tcbs_overview(symbol: str) -> dict[str, Any]:
     """Fetch one symbol's metadata from documented TCBS overview endpoints."""
     headers = _tcbs_overview_headers()
-    errors = []
-    for endpoint_name, template in (
-        ("company-overview", TCBS_COMPANY_OVERVIEW_URL),
-        ("ticker-overview", TCBS_TICKER_OVERVIEW_URL),
-    ):
-        try:
-            _universe_progress(
-                f"TCBS overview fetch symbol={symbol} endpoint={endpoint_name}"
-            )
-            status, payload = _url_json(
-                template.format(symbol=symbol),
-                headers=headers,
-            )
-            if status < 200 or status >= 300:
-                raise RuntimeError(f"HTTP {status}")
-            rows = _payload_rows(payload)
-            if rows:
-                return rows[0]
-            raise RuntimeError("empty response")
-        except Exception as exc:
-            errors.append(type(exc).__name__)
-    raise RuntimeError(
-        "TCBS overview unavailable after company/ticker fallback: "
-        + ",".join(errors)
+    _universe_progress(
+        f"TCBS overview fetch symbol={symbol} endpoint=ticker-overview"
     )
+    status, payload = _url_json(
+        TCBS_TICKER_OVERVIEW_URL.format(symbol=symbol),
+        headers=headers,
+    )
+    if status < 200 or status >= 300:
+        raise RuntimeError(f"HTTP {status}")
+    rows = _payload_rows(payload)
+    if not rows:
+        raise RuntimeError("TCBS ticker overview returned an empty response")
+    return rows[0]
 
 
 
