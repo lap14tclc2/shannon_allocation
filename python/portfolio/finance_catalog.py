@@ -171,9 +171,11 @@ def upsert_security(symbol: str, exchange: str = "UNKNOWN", company_name: str | 
         db.execute(
             """INSERT INTO securities(symbol, exchange, company_name, industry, updated_at)
                VALUES(?,?,?,?,?)
-               ON CONFLICT(symbol) DO UPDATE SET exchange=excluded.exchange,
+               ON CONFLICT(symbol) DO UPDATE SET
+               exchange=CASE WHEN excluded.exchange <> 'UNKNOWN' THEN excluded.exchange ELSE securities.exchange END,
                company_name=COALESCE(excluded.company_name,securities.company_name),
-               industry=COALESCE(excluded.industry,securities.industry),
+               industry=CASE WHEN excluded.industry IS NOT NULL AND excluded.industry <> 'UNKNOWN'
+                             THEN excluded.industry ELSE securities.industry END,
                updated_at=excluded.updated_at""",
             (symbol, str(exchange or "UNKNOWN").upper(), company_name, industry, _now()),
         )
@@ -855,32 +857,54 @@ def _universe_quality(rows: list[dict[str, Any]], normalized_rows: list[dict[str
 
 
 
-def _tcbs_universe_config() -> tuple[str, dict[str, str]]:
-    """Read local-only TCBS universe credentials without logging their value."""
-    url = str(os.environ.get("TCBS_UNIVERSE_URL") or "").strip()
+TCBS_COMPANY_OVERVIEW_URL = (
+    "https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/overview"
+)
+TCBS_TICKER_OVERVIEW_URL = (
+    "https://apipubaws.tcbs.com.vn/tcanalysis/v1/ticker/{symbol}/overview"
+)
+
+
+def _tcbs_overview_headers() -> dict[str, str]:
+    """Read the local TCBS bearer token without persisting or logging it."""
     token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
-    if not url:
-        raise RuntimeError("TCBS_UNIVERSE_URL is required for the TCBS universe provider")
     if not token:
-        raise RuntimeError("TCBS_BEARER_TOKEN is required for the TCBS universe provider")
-    if not url.startswith(("https://", "http://")):
-        raise RuntimeError("TCBS_UNIVERSE_URL must be an HTTP(S) URL")
-    return url, {
+        raise RuntimeError("TCBS_BEARER_TOKEN is required for TCBS overview enrichment")
+    return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
     }
 
 
-def _load_tcbs_universe_rows() -> list[dict[str, Any]]:
-    url, headers = _tcbs_universe_config()
-    _universe_progress("calling TCBS authenticated universe endpoint")
-    status, payload = _url_json(url, headers=headers)
-    if status < 200 or status >= 300:
-        raise RuntimeError(f"TCBS universe endpoint returned HTTP {status}")
-    rows = _payload_rows(payload)
-    if not rows:
-        raise RuntimeError("TCBS universe endpoint returned no listing rows")
-    return rows
+def _load_tcbs_overview(symbol: str) -> dict[str, Any]:
+    """Fetch one symbol's metadata from documented TCBS overview endpoints."""
+    headers = _tcbs_overview_headers()
+    errors = []
+    for endpoint_name, template in (
+        ("company-overview", TCBS_COMPANY_OVERVIEW_URL),
+        ("ticker-overview", TCBS_TICKER_OVERVIEW_URL),
+    ):
+        try:
+            _universe_progress(
+                f"TCBS overview fetch symbol={symbol} endpoint={endpoint_name}"
+            )
+            status, payload = _url_json(
+                template.format(symbol=symbol),
+                headers=headers,
+            )
+            if status < 200 or status >= 300:
+                raise RuntimeError(f"HTTP {status}")
+            rows = _payload_rows(payload)
+            if rows:
+                return rows[0]
+            raise RuntimeError("empty response")
+        except Exception as exc:
+            errors.append(type(exc).__name__)
+    raise RuntimeError(
+        "TCBS overview unavailable after company/ticker fallback: "
+        + ",".join(errors)
+    )
+
 
 
 def sync_universe() -> dict[str, Any]:
@@ -906,67 +930,62 @@ def sync_universe() -> dict[str, Any]:
         _universe_progress(f"rejected runtime: {exc}")
         return {"ok": False, "code": "CRAWL_RUNTIME_INVALID", "message": str(exc)}
     try:
-        rows = None
-        source_label = None
-        if configured_provider in {"tcbs", "auto"}:
+        has_tcbs_token = bool(
+            str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
+        )
+        tcbs_enabled = (
+            configured_provider == "tcbs" and has_tcbs_token
+        ) or (
+            configured_provider == "auto" and has_tcbs_token
+        )
+        if configured_provider == "tcbs" and not has_tcbs_token:
+            return {
+                "ok": False,
+                "code": "TCBS_TOKEN_REQUIRED",
+                "message": "Set TCBS_BEARER_TOKEN on the local worker.",
+            }
+        _universe_progress("loading vnstock.Listing for symbol universe")
+        from vnstock import Listing  # type: ignore
+        listing = Listing()
+        _universe_progress("vnstock.Listing initialized")
+        frame = None
+        selected_method = None
+        for method_name in ("all_symbols", "symbols_by_exchange"):
+            method = getattr(listing, method_name, None)
+            if not callable(method):
+                _universe_progress(f"skip Listing.{method_name}: unavailable")
+                continue
+            _universe_progress(f"calling Listing.{method_name}()")
             try:
-                rows = _load_tcbs_universe_rows()
-                source_label = "TCBS authenticated universe endpoint"
-                _universe_progress(f"received {len(rows)} symbol rows via TCBS")
-            except Exception as exc:
-                _universe_progress(
-                    f"TCBS universe unavailable type={type(exc).__name__}; "
-                    "falling back to Vnstock" if configured_provider == "auto"
-                    else f"TCBS universe unavailable type={type(exc).__name__}"
+                frame = _listing_call_with_heartbeat(
+                    f"Listing.{method_name}()",
+                    method,
                 )
-                if configured_provider == "tcbs":
-                    return {
-                        "ok": False,
-                        "code": "TCBS_UNIVERSE_UNAVAILABLE",
-                        "message": (
-                            "TCBS universe request failed. Verify the local "
-                            "TCBS_UNIVERSE_URL and TCBS_BEARER_TOKEN."
-                        ),
-                    }
-        if rows is None:
-            _universe_progress("loading vnstock.Listing")
-            from vnstock import Listing  # type: ignore
-            listing = Listing()
-            _universe_progress("vnstock.Listing initialized")
-            frame = None
-            selected_method = None
-            for method_name in ("all_symbols", "symbols_by_exchange"):
-                method = getattr(listing, method_name, None)
-                if not callable(method):
-                    _universe_progress(f"skip Listing.{method_name}: unavailable")
-                    continue
-                _universe_progress(f"calling Listing.{method_name}()")
-                try:
-                    frame = _listing_call_with_heartbeat(
-                        f"Listing.{method_name}()",
-                        method,
-                    )
-                    selected_method = method_name
-                    break
-                except TypeError:
-                    _universe_progress(
-                        f"Listing.{method_name}() requires exchange=ALL; retrying"
-                    )
-                    frame = _listing_call_with_heartbeat(
-                        f"Listing.{method_name}(exchange=ALL)",
-                        lambda: method(exchange="ALL"),
-                    )
-                    selected_method = method_name
-                    break
-            if frame is None:
-                _universe_progress("provider returned no frame or supported listing method")
-                return {
-                    "ok": False,
-                    "code": "UNIVERSE_PROVIDER_EMPTY",
-                    "message": "Vnstock không trả danh sách mã.",
-                }
-            rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
-            source_label = f"Vnstock Listing.{selected_method}"
+                selected_method = method_name
+                break
+            except TypeError:
+                _universe_progress(
+                    f"Listing.{method_name}() requires exchange=ALL; retrying"
+                )
+                frame = _listing_call_with_heartbeat(
+                    f"Listing.{method_name}(exchange=ALL)",
+                    lambda: method(exchange="ALL"),
+                )
+                selected_method = method_name
+                break
+        if frame is None:
+            _universe_progress("provider returned no frame or supported listing method")
+            return {
+                "ok": False,
+                "code": "UNIVERSE_PROVIDER_EMPTY",
+                "message": "Vnstock không trả danh sách mã.",
+            }
+        rows = frame.to_dict("records") if hasattr(frame, "to_dict") else (frame or [])
+        source_label = (
+            f"Vnstock Listing.{selected_method} + TCBS overview"
+            if tcbs_enabled
+            else f"Vnstock Listing.{selected_method}"
+        )
         columns = sorted({str(key) for row in rows[:100] for key in dict(row)})
         _universe_progress(
             f"received {len(rows)} symbol rows via {source_label}; "
@@ -974,11 +993,41 @@ def sync_universe() -> dict[str, Any]:
         )
         count = 0
         normalized_rows = []
+        tcbs_enriched_count = 0
+        tcbs_failed_count = 0
+        tcbs_disabled = False
+        try:
+            tcbs_delay = max(0.0, float(os.environ.get("TCBS_OVERVIEW_DELAY_SECONDS", "0.1")))
+        except ValueError:
+            tcbs_delay = 0.1
         checkpoint = max(1, len(rows) // 10) if rows else 1
         for row in rows:
-            normalized = _normalize_universe_row(dict(row))
-            normalized_rows.append(normalized)
+            raw_row = dict(row)
+            normalized = _normalize_universe_row(raw_row)
             symbol = normalized["symbol"]
+            needs_tcbs_metadata = (
+                normalized["exchange"] == "UNKNOWN"
+                or normalized["industry"] == "UNKNOWN"
+            )
+            if tcbs_enabled and symbol and needs_tcbs_metadata and not tcbs_disabled:
+                try:
+                    overview = _load_tcbs_overview(symbol)
+                    normalized = _normalize_universe_row({**raw_row, **overview})
+                    tcbs_enriched_count += 1
+                    if tcbs_delay:
+                        time.sleep(tcbs_delay)
+                except Exception as exc:
+                    tcbs_failed_count += 1
+                    _universe_progress(
+                        f"TCBS overview failed symbol={symbol} type={type(exc).__name__}"
+                    )
+                    if tcbs_failed_count >= 3:
+                        tcbs_disabled = True
+                        _universe_progress(
+                            "TCBS overview disabled after 3 failures; "
+                            "remaining symbols keep Vnstock metadata"
+                        )
+            normalized_rows.append(normalized)
             if symbol:
                 upsert_security(
                     symbol,
@@ -993,7 +1042,10 @@ def sync_universe() -> dict[str, Any]:
                         f"persisted {count}/{len(rows)} symbols (latest={symbol})"
                     )
         elapsed = time.monotonic() - started
-        _universe_progress(f"completed count={count} elapsed={elapsed:.1f}s")
+        _universe_progress(
+            f"completed count={count} tcbs_enriched={tcbs_enriched_count} "
+            f"tcbs_failed={tcbs_failed_count} elapsed={elapsed:.1f}s"
+        )
         quality = _universe_quality(rows, normalized_rows)
         diagnostics = [
             {
@@ -1029,11 +1081,13 @@ def sync_universe() -> dict[str, Any]:
         return {
             "ok": count > 0,
             "count": count,
-            "provider": "tcbs" if source_label.startswith("TCBS") else "vnstock",
+            "provider": "tcbs+vnstock" if tcbs_enabled else "vnstock",
+            "tcbs_enriched_count": tcbs_enriched_count,
+            "tcbs_failed_count": tcbs_failed_count,
             "quality": quality,
             "warnings": warnings,
             "message": (
-                f"Đã đồng bộ {count} mã từ {'TCBS' if source_label.startswith('TCBS') else 'Vnstock'}."
+                f"Đã đồng bộ {count} mã từ {'Vnstock + TCBS overview' if tcbs_enabled else 'Vnstock'}."
                 + (f" Cảnh báo: {'; '.join(warnings)}." if warnings else "")
                 if count else "Provider không trả danh sách mã."
             ),
