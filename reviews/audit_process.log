@@ -1,0 +1,4 @@
+[2026-08-25 22:29:37] [chatgpt-audit] Created user guide at F:\workspace\shannon_allocation\AUDIT_TOOL_GUIDE.md
+[2026-08-25 22:29:37] [START] [chatgpt-audit] Starting audit run for commit HEAD in project F:\workspace\shannon_allocation
+[2026-08-25 22:29:37] [chatgpt-audit] Error loading config: Config file not found at F:\workspace\shannon_allocation\.audit\config.json
+[2026-08-25 22:29:37] [chatgpt-audit] Saved error trace to F:\workspace\shannon_allocation\reviews\error_trace.log

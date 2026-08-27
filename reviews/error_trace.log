@@ -1,0 +1,15 @@
+# ERROR TRACEBACK — 2026-08-25 22:29:37
+
+**Exception Type**: FileNotFoundError
+**Error Message**: Config file not found at F:\workspace\shannon_allocation\.audit\config.json
+
+## Full Stack Trace:
+```
+Traceback (most recent call last):
+  File "C:\Users\ThisPC\.chatgpt-audit\chatgpt_audit\cli.py", line 153, in run_cmd
+    cfg = load_config(project_path)
+  File "C:\Users\ThisPC\.chatgpt-audit\chatgpt_audit\core\config.py", line 24, in load_config
+    raise FileNotFoundError(f"Config file not found at {config_file}")
+FileNotFoundError: Config file not found at F:\workspace\shannon_allocation\.audit\config.json
+
+```
