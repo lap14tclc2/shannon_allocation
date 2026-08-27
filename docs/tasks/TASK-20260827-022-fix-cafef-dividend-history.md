@@ -1,0 +1,35 @@
+---
+id: TASK-20260827-022
+title: Fix CafeF dividend history placeholders and retry semantics
+status: ready
+priority: high
+created: 2026-08-27
+updated: 2026-08-27
+tags: [finance-data, dividends, cafef]
+related: [TASK-20260827-020, TASK-20260827-021]
+---
+
+## Requirement
+
+Represent CafeF dividend data as one history document per symbol/provider/run.
+Do not create misleading annual PENDING placeholders for a provider endpoint that
+returns the complete dividend history.
+
+## Acceptance Criteria
+
+- [ ] Worker creates/fetches one CafeF dividend-history document per symbol.
+- [ ] Dividend history is not duplicated across FY 2016–2025 placeholders.
+- [ ] Existing legacy rows remain preserved and are excluded from the active view.
+- [ ] Retry/status logic reports the single history document accurately.
+- [ ] Add regression tests and update runbook.
+
+## Constraints and Invariants
+
+- Keep the existing dividend reconciliation and source provenance.
+- Do not delete historical database records in the application code.
+- Do not call CafeF once per historical year.
+- TCBS remains disabled in the worker.
+
+## Result
+
+Pending implementation.
