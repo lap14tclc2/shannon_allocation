@@ -54,3 +54,9 @@ def test_filter_crawlable_equities_excludes_warrants_and_incomplete_rows():
 def test_universe_sync_contains_no_tcbs_overview_helpers():
     assert not hasattr(finance_catalog, "_load_tcbs_overview")
     assert not hasattr(finance_catalog, "_tcbs_overview_headers")
+
+
+def test_active_equity_sql_excludes_legacy_unknown_and_nan_rows():
+    assert "exchange IN ('HOSE','HNX','UPCOM')" in finance_catalog.ACTIVE_EQUITY_SQL
+    assert "lower(trim(company_name))" in finance_catalog.ACTIVE_EQUITY_SQL
+    assert "nan" in finance_catalog.ACTIVE_EQUITY_SQL

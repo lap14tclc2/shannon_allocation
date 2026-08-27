@@ -26,6 +26,14 @@ REQUIRED_DOCUMENTS = (
 )
 PROVIDERS = ("tcbs", "cafef")
 
+# Defensive read-time predicate for legacy rows imported before filtering.
+ACTIVE_EQUITY_SQL = (
+    "is_active=1 "
+    "AND exchange IN ('HOSE','HNX','UPCOM') "
+    "AND company_name IS NOT NULL "
+    "AND lower(trim(company_name)) NOT IN ('', 'nan', 'unknown', 'none', '-')"
+)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -189,16 +197,16 @@ def list_securities(offset: int = 0, limit: int = 50, exchange: str | None = Non
     with _schema_connection(FINANCE_SCHEMA) as db:
         if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
             rows = db.execute(
-                "SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE is_active=1 AND exchange=? ORDER BY symbol LIMIT ? OFFSET ?",
+                "f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=? ORDER BY symbol LIMIT ? OFFSET ?"",
                 (exchange.upper(), limit, offset),
             ).fetchall()
-            total = db.execute("SELECT COUNT(*) AS count FROM securities WHERE is_active=1 AND exchange=?", (exchange.upper(),)).fetchone()["count"]
+            total = db.execute("f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?"", (exchange.upper(),)).fetchone()["count"]
         else:
             rows = db.execute(
-                "SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE is_active=1 ORDER BY symbol LIMIT ? OFFSET ?",
+                "f"SELECT symbol, exchange, company_name, industry, updated_at FROM securities WHERE {ACTIVE_EQUITY_SQL} ORDER BY symbol LIMIT ? OFFSET ?"",
                 (limit, offset),
             ).fetchall()
-            total = db.execute("SELECT COUNT(*) AS count FROM securities WHERE is_active=1").fetchone()["count"]
+            total = db.execute("f"SELECT COUNT(*) AS count FROM securities WHERE {ACTIVE_EQUITY_SQL}"").fetchone()["count"]
         symbols = [row["symbol"] for row in rows]
         documents = {}
         if symbols:
@@ -621,9 +629,9 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
         if exchange and exchange.upper() in {"HOSE", "HNX", "UPCOM"}:
-            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1 AND exchange=?", (exchange.upper(),)).fetchall()
+            rows = db.execute(f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL} AND exchange=?", (exchange.upper(),)).fetchall()
         else:
-            rows = db.execute("SELECT symbol FROM securities WHERE is_active=1").fetchall()
+            rows = db.execute(f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL}").fetchall()
         queued = 0
         for row in rows:
             result = db.execute(
@@ -955,8 +963,7 @@ def _is_crawlable_security(symbol: str) -> bool:
     _ensure()
     with _schema_connection(FINANCE_SCHEMA) as db:
         row = db.execute(
-            "SELECT 1 FROM securities WHERE symbol=? AND is_active=1 "
-            "AND exchange IN ('HOSE','HNX','UPCOM')",
+            f"SELECT 1 FROM securities WHERE symbol=? AND {ACTIVE_EQUITY_SQL}",
             (symbol,),
         ).fetchone()
     return row is not None
