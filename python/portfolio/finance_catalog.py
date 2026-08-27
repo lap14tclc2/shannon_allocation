@@ -1272,13 +1272,13 @@ def clear_incomplete_finance_data() -> dict[str, Any]:
         deleted_documents = db.execute(
             "DELETE FROM documents WHERE status <> 'SUCCESS'"
         )
-        db.execute(
+        reset_queue = db.execute(
             "UPDATE crawl_queue SET status='QUEUED', started_at=NULL, "
             "finished_at=NULL, error=NULL"
         )
     return {
         "deleted_incomplete_documents": int(deleted_documents.rowcount or 0),
-        "reset_queue_rows": int(incomplete or 0),
+        "reset_queue_rows": int(reset_queue.rowcount or 0),
     }
 
 
