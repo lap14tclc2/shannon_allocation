@@ -1453,6 +1453,287 @@ def _persist_tcbs_period(
     )
 
 
+
+def import_tcbs_crawled_directory(
+    directory: str = "docs/crawled",
+    requested_by: int | None = None,
+    *,
+    limit: int = 0,
+    retry_failed_only: bool = False,
+) -> dict[str, Any]:
+    """Import prepared TCBS JSON files without making provider requests.
+
+    Files are named SYMBOL.json and contain either the combined TCBS envelope
+    with six history arrays or one endpoint response. Existing SUCCESS logical
+    periods are preserved; only missing/failed periods are materialized.
+    """
+    _ensure()
+    directory_path = os.path.abspath(str(directory))
+    try:
+        filenames = sorted(
+            name for name in os.listdir(directory_path)
+            if name.lower().endswith(".json")
+            and os.path.isfile(os.path.join(directory_path, name))
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f"cannot read TCBS crawl directory {directory_path}: {exc}"
+        ) from exc
+    if limit > 0:
+        filenames = filenames[:limit]
+
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        row = db.execute(
+            "INSERT INTO crawl_runs(requested_by,status,requested_at,total_symbols) "
+            "VALUES(?,?,?,?) RETURNING id",
+            (requested_by, "RUNNING", _now(), len(filenames)),
+        ).fetchone()
+        run_id = int(row["id"])
+
+    processed = 0
+    successful_symbols: list[str] = []
+    failed_symbols: list[str] = []
+    imported_documents = 0
+    skipped_documents = 0
+    failed_documents = 0
+    periods = _periods()
+
+    def save_file_failures(symbol: str, detail: str) -> None:
+        nonlocal failed_documents
+        for document_type in WORKER_DOCUMENT_TYPES:
+            source_url = f"file:{symbol}.json"
+            for period_type, year, quarter, period_end in periods:
+                _save_document(
+                    symbol,
+                    "tcbs",
+                    document_type,
+                    period_type,
+                    year,
+                    quarter,
+                    period_end,
+                    source_url,
+                    "FAILED",
+                    None,
+                    "LOCAL_FILE_INVALID",
+                    detail[:500],
+                    run_id,
+                )
+                failed_documents += 1
+
+    for filename in filenames:
+        symbol = os.path.splitext(filename)[0].upper().strip()
+        _crawl_progress(
+            symbol,
+            f"file-start path=docs/crawled/{filename}",
+        )
+        if not symbol or not re.fullmatch(r"[A-Z0-9]+", symbol):
+            failed_symbols.append(symbol or filename)
+            _crawl_progress(
+                symbol or filename,
+                "file-failed code=INVALID_SYMBOL_FILENAME",
+            )
+            continue
+
+        path = os.path.join(directory_path, filename)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = handle.read()
+            parsed = json.loads(payload)
+            root_symbol = str(
+                parsed.get("symbol") if isinstance(parsed, dict) else ""
+            ).upper().strip()
+            if root_symbol and root_symbol != symbol:
+                raise ProviderPayloadError(
+                    f"file symbol {root_symbol} does not match filename {symbol}"
+                )
+            if not _is_crawlable_security(symbol):
+                raise ProviderPayloadError(
+                    f"{symbol} is not an active listed equity"
+                )
+        except Exception as exc:
+            failed_symbols.append(symbol)
+            code, detail, status_label = _provider_failure(exc)
+            save_file_failures(symbol, detail)
+            _crawl_progress(
+                symbol,
+                f"file-failed code={code} status={status_label}",
+            )
+            continue
+
+        ensure_required_documents(symbol)
+        with _schema_connection(FINANCE_SCHEMA) as db:
+            existing_rows = db.execute(
+                "SELECT provider, document_type, period_type, fiscal_year, "
+                "fiscal_quarter, status FROM documents WHERE symbol=?",
+                (symbol,),
+            ).fetchall()
+        statuses = {
+            (
+                str(row["provider"]),
+                str(row["document_type"]),
+                str(row["period_type"]),
+                int(row["fiscal_year"]),
+                row["fiscal_quarter"],
+            ): str(row["status"]).upper()
+            for row in existing_rows
+        }
+
+        symbol_imported = 0
+        symbol_failed = 0
+        for document_type in WORKER_DOCUMENT_TYPES:
+            try:
+                records = _tcbs_records(payload, document_type)
+                if not records:
+                    raise ProviderPayloadError(
+                        f"no {document_type} records in {filename}"
+                    )
+            except Exception as exc:
+                code, detail, status_label = _provider_failure(exc)
+                for period_type, year, quarter, period_end in periods:
+                    key = ("tcbs", document_type, period_type, year, quarter)
+                    if not _should_fetch_document(
+                        statuses.get(key),
+                        retry_failed_only=retry_failed_only,
+                    ):
+                        skipped_documents += 1
+                        continue
+                    _save_document(
+                        symbol,
+                        "tcbs",
+                        document_type,
+                        period_type,
+                        year,
+                        quarter,
+                        period_end,
+                        f"file:{filename}",
+                        "FAILED",
+                        None,
+                        code,
+                        detail,
+                        run_id,
+                    )
+                    failed_documents += 1
+                    symbol_failed += 1
+                _crawl_progress(
+                    symbol,
+                    f"file-failed document={document_type} "
+                    f"code={code} status={status_label}",
+                )
+                continue
+
+            for period_type, year, quarter, period_end in periods:
+                key = ("tcbs", document_type, period_type, year, quarter)
+                if not _should_fetch_document(
+                    statuses.get(key),
+                    retry_failed_only=retry_failed_only,
+                ):
+                    skipped_documents += 1
+                    continue
+                try:
+                    selected = _tcbs_select_record(
+                        payload,
+                        symbol=symbol,
+                        document_type=document_type,
+                        period_type=period_type,
+                        year=year,
+                        quarter=quarter,
+                    )
+                    selected_payload = _tcbs_selected_payload(
+                        selected,
+                        symbol=symbol,
+                        period_type=period_type,
+                        year=year,
+                        quarter=quarter,
+                    )
+                    _save_document(
+                        symbol,
+                        "tcbs",
+                        document_type,
+                        period_type,
+                        year,
+                        quarter,
+                        period_end,
+                        f"file:{filename}",
+                        "SUCCESS",
+                        selected_payload,
+                        None,
+                        None,
+                        run_id,
+                    )
+                    imported_documents += 1
+                    symbol_imported += 1
+                except Exception as exc:
+                    code, detail, status_label = _provider_failure(exc)
+                    _save_document(
+                        symbol,
+                        "tcbs",
+                        document_type,
+                        period_type,
+                        year,
+                        quarter,
+                        period_end,
+                        f"file:{filename}",
+                        "FAILED",
+                        None,
+                        code,
+                        detail,
+                        run_id,
+                    )
+                    failed_documents += 1
+                    symbol_failed += 1
+                    _crawl_progress(
+                        symbol,
+                        f"file-failed document={document_type} "
+                        f"period={period_type}:{year}"
+                        + (f":Q{quarter}" if quarter else "")
+                        + f" code={code} status={status_label}",
+                    )
+
+        processed += 1
+        if symbol_failed:
+            failed_symbols.append(symbol)
+        else:
+            successful_symbols.append(symbol)
+        _crawl_progress(
+            symbol,
+            f"file-completed imported={symbol_imported} "
+            f"failed={symbol_failed}",
+        )
+
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        db.execute(
+            "UPDATE crawl_runs SET status=?,finished_at=?,success_count=?,"
+            "failure_count=? WHERE id=?",
+            (
+                "COMPLETED",
+                _now(),
+                len(successful_symbols),
+                len(failed_symbols),
+                run_id,
+            ),
+        )
+    _crawl_progress(
+        "files",
+        f"completed directory={directory_path} files={len(filenames)} "
+        f"processed={processed} success_symbols={len(successful_symbols)} "
+        f"failed_symbols={len(failed_symbols)} "
+        f"imported_documents={imported_documents} "
+        f"failed_documents={failed_documents} "
+        f"skipped_documents={skipped_documents}",
+    )
+    return {
+        "ok": not failed_symbols,
+        "run_id": run_id,
+        "directory": directory_path,
+        "files": len(filenames),
+        "processed": processed,
+        "success_symbols": successful_symbols,
+        "failed_symbols": failed_symbols,
+        "imported_documents": imported_documents,
+        "failed_documents": failed_documents,
+        "skipped_documents": skipped_documents,
+    }
+
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
     """Fetch and persist one logical TCBS period.
 
