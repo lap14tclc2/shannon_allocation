@@ -16,7 +16,7 @@ The Vercel runtime is always database-read-only. It returns CRAWL_RUNTIME_INVALI
 
 1. Set the local database URL and run the admin/universe sync from the external worker.
 2. Queue symbols from /admin/finance-data.
-3. The worker consumes qport_finance.crawl_queue, calls TCBS/CafeF with bounded timeout/retries, and writes symbol-scoped documents.
+3. The worker consumes qport_finance.crawl_queue, calls CafeF with bounded timeout/retries (TCBS is temporarily disabled), and writes symbol-scoped documents.
 4. Validate and sync the local catalog to the Vercel database:
 
     export QPORT_LOCAL_DATABASE_URL='postgresql://...'
@@ -66,8 +66,8 @@ printed every 10 seconds, for example:
     [finance-universe] completed count=3900 elapsed=...
 
 These logs are flushed immediately and do not include database URLs, tokens, or
-provider credentials. Finance document crawling remains separate and uses
-TCBS/CafeF.
+provider credentials. Finance document crawling remains separate and currently uses CafeF only.
+TCBS records remain in the database and can be re-enabled later.
 
 
 ## Running the local queue worker
@@ -90,15 +90,12 @@ Useful logs:
 The worker runs outside Vercel, uses bounded provider requests, skips existing SUCCESS documents, and continues after an individual symbol failure.
 
 
-## Provider smoke test
+## Provider scope
 
-For TCBS document crawling, set the raw JWT locally (starting with eyJ), not in Git:
-
-    $env:TCBS_BEARER_TOKEN = 'eyJ...'
-    python scripts/finance_worker.py --once --stale-after-seconds 60
-
-The worker logs the HTTP status for failed provider requests, for example status=401, status=403 or status=404. Do not paste the token or response body into chat or commit it to the repository.
-
+TCBS is temporarily disabled in the worker because its current finance routes
+may return HTTP 403/404. The worker does not read `TCBS_BEARER_TOKEN` and
+does not issue TCBS requests. Existing TCBS documents/canonical facts are
+preserved; re-enabling TCBS is a separate provider-scope change.
 
 ## Current CafeF route
 

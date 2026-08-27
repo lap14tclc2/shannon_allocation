@@ -54,7 +54,8 @@ def main() -> int:
     success_symbols: list[str] = []
     failed_symbols: list[str] = []
     log(
-        f"start limit={args.limit or 'until-empty'} "
+        f"start providers=cafef markets=HOSE,HNX "
+        f"limit={args.limit or 'until-empty'} "
         f"stale_after_seconds={args.stale_after_seconds}"
     )
     while True:

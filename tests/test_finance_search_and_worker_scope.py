@@ -29,3 +29,14 @@ def test_worker_only_claims_hose_then_hnx_without_touching_upcom():
     assert "CASE s.exchange WHEN 'HOSE' THEN 0 WHEN 'HNX' THEN 1" in claim
     assert "CRAWL_EXCHANGE_UNSUPPORTED" in enqueue
     assert "exchange IN ('HOSE','HNX')" in enqueue
+
+
+def test_worker_uses_cafef_only_and_preserves_tcbs_support_for_later_reenable():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+    worker = (ROOT / "scripts" / "finance_worker.py").read_text(encoding="utf-8")
+
+    assert 'PROVIDERS = ("tcbs", "cafef")' in source
+    assert 'WORKER_PROVIDERS = ("cafef",)' in source
+    assert "for provider in WORKER_PROVIDERS" in source
+    assert "providers=cafef" in worker
+    assert "TCBS_BEARER_TOKEN" not in worker

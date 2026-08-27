@@ -26,7 +26,10 @@ REQUIRED_DOCUMENTS = (
     "INCOME_STATEMENT",
     "DIVIDEND",
 )
+# Supported providers remain explicit for reconciliation/backfill.
 PROVIDERS = ("tcbs", "cafef")
+# Temporary worker scope: only CafeF is requested by normal worker runs.
+WORKER_PROVIDERS = ("cafef",)
 # Completed annual reports to retain/crawl for each listed equity.
 FISCAL_YEAR_HISTORY = 10
 # The external worker intentionally starts with the two main listed markets.
@@ -1263,7 +1266,7 @@ def _current_required_document_keys() -> set[tuple[str, str, str, int, int | Non
         for document_type in REQUIRED_DOCUMENTS:
             if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
                 continue
-            for provider in PROVIDERS:
+            for provider in WORKER_PROVIDERS:
                 keys.add((provider, document_type, period_type, year, quarter))
     return keys
 
@@ -1316,7 +1319,11 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
             "code": "SECURITY_NOT_CRAWLABLE",
             "message": "Symbol is not an active listed equity in the Finance universe.",
         }
-    _crawl_progress(symbol, f"start retry_failed_only={retry_failed_only}")
+    _crawl_progress(
+        symbol,
+        f"start providers={','.join(WORKER_PROVIDERS)} "
+        f"retry_failed_only={retry_failed_only}",
+    )
     ensure_required_documents(symbol)
     _crawl_progress(symbol, "required document placeholders ensured")
     with _schema_connection(FINANCE_SCHEMA) as db:
@@ -1330,7 +1337,7 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         for document_type in REQUIRED_DOCUMENTS:
             if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
                 continue
-            for provider in PROVIDERS:
+            for provider in WORKER_PROVIDERS:
                 with _schema_connection(FINANCE_SCHEMA) as db:
                     existing = db.execute(
                         "SELECT status FROM documents WHERE symbol=? AND provider=? AND document_type=? "
