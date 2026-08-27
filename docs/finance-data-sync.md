@@ -67,6 +67,8 @@ printed every 10 seconds, for example:
 
 These logs are flushed immediately and do not include database URLs, tokens, or
 provider credentials. Finance document crawling remains separate and currently uses CafeF only.
+Financial statements use their reporting periods; dividends use one CafeF history
+document for the latest completed FY and reconcile events by their actual dates.
 TCBS records remain in the database and can be re-enabled later.
 
 

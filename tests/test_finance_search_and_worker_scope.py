@@ -48,3 +48,12 @@ def test_active_catalog_ignores_legacy_tcbs_rows():
     assert "worker_provider_sql" in source
     assert "WHERE provider IN ({worker_provider_sql})" in source
     assert "FROM documents WHERE provider IN ({worker_provider_sql})" in source
+
+
+def test_cafef_dividend_uses_one_current_history_document_and_hides_legacy_years():
+    source = (ROOT / "python" / "portfolio" / "finance_catalog.py").read_text(encoding="utf-8")
+
+    assert "latest_fy = max((item[1] for item in periods if item[0] == 'FY')" in source
+    assert "document_type == " + '"DIVIDEND" and (period_type != "FY" or year != latest_fy)' in source
+    assert "document_type <> 'DIVIDEND'" in source
+    assert "provider IN ({worker_provider_sql})" in source
