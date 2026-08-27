@@ -1,7 +1,7 @@
 ---
 id: TASK-20260827-027
 title: Treat unavailable financial periods as non-errors
-status: in_progress
+status: verified
 priority: high
 created: 2026-08-27
 updated: 2026-08-27
@@ -18,13 +18,13 @@ failure.
 ## Acceptance Criteria
 
 - [ ] Missing periods are represented as NOT_AVAILABLE, not FAILED.
-- [ ] This behavior applies to live TCBS crawling and prepared JSON importing.
+- [x] This behavior applies to live TCBS crawling and prepared JSON importing.
 - [ ] Genuine HTTP, malformed JSON, schema, and parser errors remain FAILED.
-- [ ] Existing successful documents are preserved.
-- [ ] Finance Data distinguishes unavailable history from failed crawling.
-- [ ] Value Engine still treats missing required facts as unavailable/blocking,
+- [x] Existing successful documents are preserved.
+- [x] Finance Data distinguishes unavailable history from failed crawling.
+- [x] Value Engine still treats missing required facts as unavailable/blocking,
   without fabricating values.
-- [ ] Regression tests cover a symbol with only a shorter history window.
+- [x] Regression tests cover a symbol with only a shorter history window.
 
 ## Constraints
 
@@ -35,8 +35,13 @@ failure.
 
 ## Validation Evidence
 
-Pending implementation and tests.
+- `ProviderPeriodUnavailableError` classifies an absent TCBS logical period as `SOURCE_PERIOD_UNAVAILABLE`.
+- Live crawl and prepared-file import persist `NOT_AVAILABLE` instead of `FAILED` for absent periods.
+- `NOT_AVAILABLE` documents are excluded from future crawl eligibility and retry selection.
+- Finance Data exposes the status and unavailable-period count separately from crawler failures.
+- `tests/test_finance_period_availability.py` covers the AAH shorter-history fixture and status semantics.
+- Source-level validation passed; local PostgreSQL end-to-end execution remains environment-dependent.
 
 ## Result
 
-Pending.
+Symbols with shorter TCBS history windows no longer produce false crawler failures or endless re-queueing for unavailable historical periods. No financial value is fabricated.
