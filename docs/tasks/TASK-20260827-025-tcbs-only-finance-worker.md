@@ -37,6 +37,15 @@ the canonical facts required by Value Engine.
 - Vercel remains read-only and never calls TCBS.
 - Preserve only standard authenticated HTTP behavior with bounded retries.
 
+## Prepared crawler JSON ingestion
+
+- [ ] Load one JSON file per symbol from `docs/crawler/*.json` without any
+  provider request.
+- [ ] Support the combined TCBS envelope containing the six
+  `incomestatement/balancesheet/cashflow` quarter/year arrays.
+- [ ] Reuse exact period selection and canonical mappings for all files, with
+  incremental success-preserving behavior.
+
 ## Validation
 
 - [ ] Run the local probe with an active TCBS token.
