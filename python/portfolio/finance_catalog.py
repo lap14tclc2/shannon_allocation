@@ -792,7 +792,9 @@ def _value(row: dict[str, Any], *aliases: str) -> float | None:
         for key in ("itemname", "itemcode", "label", "name", "title", "description", "namevn")
     )
     label_token = _token(label)
-    if any(alias in label_token or label_token in alias for alias in wanted):
+    if label_token and any(
+        alias in label_token or label_token in alias for alias in wanted
+    ):
         for key in ("value", "amount", "numericvalue", "rawvalue", "current", "latest", "data"):
             parsed = _number(normalized.get(key))
             if parsed is not None:
