@@ -903,7 +903,7 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
 
 
 def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | None:
-    """Claim one eligible queued job for the local finance worker."""
+    """Claim one queued job that still has missing or incomplete documents."""
     _ensure()
     cutoff = datetime.now(timezone.utc).timestamp() - max(60, int(stale_after_seconds))
     cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
@@ -919,21 +919,35 @@ def claim_next_crawl_job(stale_after_seconds: int = 900) -> dict[str, Any] | Non
             f"AND symbol NOT IN (SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL})",
             (_now(),),
         )
-        row = db.execute(
-            "SELECT id, symbol, requested_by FROM crawl_queue "
-            "WHERE status='QUEUED' ORDER BY id LIMIT 1 "
-            "FOR UPDATE SKIP LOCKED"
-        ).fetchone()
-        if row is None:
-            return None
-        updated = db.execute(
-            "UPDATE crawl_queue SET status='RUNNING', started_at=?, error=NULL "
-            "WHERE id=? AND status='QUEUED'",
-            (_now(), row["id"]),
-        )
-        if not int(updated.rowcount or 0):
-            return None
-    return dict(row)
+        while True:
+            row = db.execute(
+                "SELECT id, symbol, requested_by FROM crawl_queue "
+                "WHERE status='QUEUED' ORDER BY id LIMIT 1 "
+                "FOR UPDATE SKIP LOCKED"
+            ).fetchone()
+            if row is None:
+                return None
+            if not _symbol_needs_crawl(db, row["symbol"]):
+                db.execute(
+                    "UPDATE crawl_queue SET status='COMPLETED', finished_at=?, "
+                    "error='NO_MISSING_DOCUMENTS' "
+                    "WHERE id=? AND status='QUEUED'",
+                    (_now(), row["id"]),
+                )
+                _crawl_progress(
+                    "queue",
+                    f"skip queue_id={row['id']} symbol={row['symbol']} "
+                    "reason=NO_MISSING_DOCUMENTS",
+                )
+                continue
+            updated = db.execute(
+                "UPDATE crawl_queue SET status='RUNNING', started_at=?, error=NULL "
+                "WHERE id=? AND status='QUEUED'",
+                (_now(), row["id"]),
+            )
+            if int(updated.rowcount or 0):
+                return dict(row)
+
 
 
 def finish_crawl_job(
@@ -955,7 +969,7 @@ def finish_crawl_job(
 
 
 def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = None) -> dict[str, Any]:
-    """Queue all active equities and report existing queue state."""
+    """Queue only active equities with missing or incomplete finance documents."""
     try:
         _validate_crawl_runtime()
     except RuntimeError as exc:
@@ -979,18 +993,41 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
                 f"SELECT symbol FROM securities WHERE {ACTIVE_EQUITY_SQL}"
             ).fetchall()
         symbols = [row["symbol"] for row in rows]
-        existing_symbols: set[str] = set()
+        required_keys = _current_required_document_keys()
+        documents_by_symbol: dict[str, list[dict[str, Any]]] = {
+            symbol: [] for symbol in symbols
+        }
         if symbols:
             placeholders = ",".join("?" for _ in symbols)
-            existing = db.execute(
-                f"SELECT symbol FROM crawl_queue WHERE status IN ('QUEUED','RUNNING') "
-                f"AND symbol IN ({placeholders})",
+            documents = db.execute(
+                "SELECT symbol, provider, document_type, period_type, "
+                "fiscal_year, fiscal_quarter, status "
+                f"FROM documents WHERE symbol IN ({placeholders})",
                 tuple(symbols),
+            ).fetchall()
+            for document in documents:
+                documents_by_symbol[document["symbol"]].append(dict(document))
+
+        crawl_symbols = [
+            symbol for symbol in symbols
+            if _has_missing_or_incomplete_documents(
+                documents_by_symbol[symbol],
+                required_keys,
+            )
+        ]
+        existing_symbols: set[str] = set()
+        if crawl_symbols:
+            placeholders = ",".join("?" for _ in crawl_symbols)
+            existing = db.execute(
+                "SELECT symbol FROM crawl_queue "
+                "WHERE status IN ('QUEUED','RUNNING') "
+                f"AND symbol IN ({placeholders})",
+                tuple(crawl_symbols),
             ).fetchall()
             existing_symbols = {row["symbol"] for row in existing}
 
         queued = 0
-        for symbol in symbols:
+        for symbol in crawl_symbols:
             if symbol in existing_symbols:
                 continue
             result = db.execute(
@@ -1001,23 +1038,31 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
             )
             queued += int(result.rowcount or 0)
 
-    eligible = len(symbols)
+    eligible = len(crawl_symbols)
     already_queued = len(existing_symbols)
+    skipped_complete = len(symbols) - eligible
     _crawl_progress(
         "queue",
         f"universe queue eligible={eligible} "
-        f"already_queued={already_queued} queued={queued}",
+        f"already_queued={already_queued} queued={queued} "
+        f"skipped_complete={skipped_complete}",
     )
     return {
         "ok": True,
         "queued": queued,
         "eligible": eligible,
         "already_queued": already_queued,
+        "skipped_complete": skipped_complete,
         "message": (
-            f"Đã xếp hàng {queued}/{eligible} mã cho external worker."
+            f"Đã xếp hàng {queued}/{eligible} mã cần crawl."
             + (
                 f" {already_queued} mã đã có trạng thái QUEUED/RUNNING."
                 if already_queued
+                else ""
+            )
+            + (
+                f" Bỏ qua {skipped_complete} mã đã đủ tài liệu."
+                if skipped_complete
                 else ""
             )
         ),
@@ -1045,6 +1090,52 @@ def _should_fetch_document(status: str | None, *, retry_failed_only: bool) -> bo
     if retry_failed_only:
         return normalized == "FAILED"
     return True
+
+
+def _current_required_document_keys() -> set[tuple[str, str, str, int, int | None]]:
+    periods = _periods()
+    latest_fy = max((item[1] for item in periods if item[0] == "FY"), default=None)
+    keys: set[tuple[str, str, str, int, int | None]] = set()
+    for period_type, year, quarter, _period_end in periods:
+        for document_type in REQUIRED_DOCUMENTS:
+            if document_type == "DIVIDEND" and (period_type != "FY" or year != latest_fy):
+                continue
+            for provider in PROVIDERS:
+                keys.add((provider, document_type, period_type, year, quarter))
+    return keys
+
+
+def _has_missing_or_incomplete_documents(
+    document_rows: list[dict[str, Any]],
+    required_keys: set[tuple[str, str, str, int, int | None]] | None = None,
+) -> bool:
+    required = required_keys or _current_required_document_keys()
+    existing = {
+        (
+            str(row["provider"]),
+            str(row["document_type"]),
+            str(row["period_type"]),
+            int(row["fiscal_year"]),
+            row["fiscal_quarter"],
+        ): str(row["status"]).upper()
+        for row in document_rows
+    }
+    return any(
+        key not in existing
+        or _should_fetch_document(existing[key], retry_failed_only=False)
+        for key in required
+    )
+
+
+def _symbol_needs_crawl(db: Any, symbol: str) -> bool:
+    rows = db.execute(
+        "SELECT provider, document_type, period_type, fiscal_year, "
+        "fiscal_quarter, status FROM documents WHERE symbol=?",
+        (symbol,),
+    ).fetchall()
+    return _has_missing_or_incomplete_documents(
+        [dict(row) for row in rows]
+    )
 
 
 def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_only: bool = False) -> dict[str, Any]:
@@ -1122,6 +1213,72 @@ def crawl_symbol(symbol: str, requested_by: int | None = None, *, retry_failed_o
         "success_count": success,
         "failure_count": failure,
         "skipped_count": skipped_count,
+    }
+
+
+def finance_database_status() -> dict[str, Any]:
+    """Return operational counts without exposing document payloads."""
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        securities = db.execute(
+            "SELECT COUNT(*) AS count FROM securities"
+        ).fetchone()["count"]
+        documents = db.execute(
+            "SELECT status, COUNT(*) AS count FROM documents GROUP BY status"
+        ).fetchall()
+        queue = db.execute(
+            "SELECT status, COUNT(*) AS count FROM crawl_queue GROUP BY status"
+        ).fetchall()
+    return {
+        "securities": int(securities or 0),
+        "documents": {str(row["status"]): int(row["count"]) for row in documents},
+        "queue": {str(row["status"]): int(row["count"]) for row in queue},
+    }
+
+
+def clear_finance_queue() -> dict[str, Any]:
+    """Clear queue history after all workers have stopped."""
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        running = db.execute(
+            "SELECT COUNT(*) AS count FROM crawl_queue WHERE status='RUNNING'"
+        ).fetchone()["count"]
+        if int(running or 0):
+            raise RuntimeError("stop finance workers before clearing the queue")
+        deleted = db.execute("DELETE FROM crawl_queue")
+    return {"deleted_queue_rows": int(deleted.rowcount or 0)}
+
+
+def clear_incomplete_finance_data() -> dict[str, Any]:
+    """Remove only non-success documents and reset queue for an explicit rebuild."""
+    _ensure()
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        running = db.execute(
+            "SELECT COUNT(*) AS count FROM crawl_queue WHERE status='RUNNING'"
+        ).fetchone()["count"]
+        if int(running or 0):
+            raise RuntimeError("stop finance workers before clearing incomplete data")
+        incomplete = db.execute(
+            "SELECT COUNT(*) AS count FROM documents WHERE status <> 'SUCCESS'"
+        ).fetchone()["count"]
+        db.execute(
+            """
+            DELETE FROM parse_errors
+            WHERE source_document_id IN (
+                SELECT id FROM documents WHERE status <> 'SUCCESS'
+            )
+            """
+        )
+        deleted_documents = db.execute(
+            "DELETE FROM documents WHERE status <> 'SUCCESS'"
+        )
+        db.execute(
+            "UPDATE crawl_queue SET status='QUEUED', started_at=NULL, "
+            "finished_at=NULL, error=NULL"
+        )
+    return {
+        "deleted_incomplete_documents": int(deleted_documents.rowcount or 0),
+        "reset_queue_rows": int(incomplete or 0),
     }
 
 
