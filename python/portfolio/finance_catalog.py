@@ -496,20 +496,8 @@ def ensure_required_documents(symbol: str) -> None:
             for document_type in REQUIRED_DOCUMENTS:
                 if document_type == "DIVIDEND" and period_type != "FY":
                     continue
-                for provider in PROVIDERS:
-                    if provider == "tcbs":
-                        endpoint = {
-                            "FINANCIAL_STATEMENTS": "balancesheet",
-                            "INCOME_STATEMENT": "incomestatement",
-                            "CASH_FLOW": "cashflow",
-                            "DIVIDEND": "dividend-payment-histories",
-                        }[document_type]
-                        url = (
-                            f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}"
-                            if document_type != "DIVIDEND"
-                            else f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/company/{symbol}/{endpoint}"
-                        )
-                    elif document_type == "DIVIDEND":
+                for provider in WORKER_PROVIDERS:
+                    if document_type == "DIVIDEND":
                         url = f"https://cafef.vn/du-lieu.ashx?symbol={symbol}"
                     else:
                         segment = "IncSta" if document_type == "INCOME_STATEMENT" else ("BSheet" if document_type == "FINANCIAL_STATEMENTS" else "CashFlow")
