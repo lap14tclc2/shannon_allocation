@@ -23,3 +23,15 @@ def test_worker_script_is_local_and_processes_claimed_jobs():
     assert "crawl_symbol" in script
     assert "finish_crawl_job" in script
     assert "Vercel runtime is database-read-only" in script
+
+
+def test_tcbs_document_headers_use_optional_local_bearer_token(monkeypatch):
+    monkeypatch.setenv("TCBS_BEARER_TOKEN", "eyJ-test")
+    headers = finance_catalog._tcbs_document_headers()
+    assert headers["Authorization"] == "Bearer eyJ-test"
+
+
+def test_tcbs_document_headers_do_not_duplicate_bearer_prefix(monkeypatch):
+    monkeypatch.setenv("TCBS_BEARER_TOKEN", "Bearer eyJ-test")
+    headers = finance_catalog._tcbs_document_headers()
+    assert headers["Authorization"] == "Bearer eyJ-test"

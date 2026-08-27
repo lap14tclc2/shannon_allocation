@@ -583,6 +583,20 @@ def _crawl_progress(symbol: str, message: str) -> None:
     print(f"[finance-crawl] symbol={symbol} {message}", flush=True)
 
 
+
+def _tcbs_document_headers() -> dict[str, str]:
+    """Build local-only TCBS request headers without logging credentials."""
+    headers = {
+        "Referer": "https://tcinvest.tcbs.com.vn/",
+        "Origin": "https://tcinvest.tcbs.com.vn",
+    }
+    token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = (
+            token if token.lower().startswith("bearer ") else f"Bearer {token}"
+        )
+    return headers
+
 def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
     if provider == "tcbs":
         if document_type == "DIVIDEND":
@@ -595,7 +609,7 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
             }.get(document_type, "incomestatement")
             yearly = "1" if period_type == "FY" else "0"
             url = f"https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{symbol}/{endpoint}?yearly={yearly}&isAll=true"
-        headers = {"Referer": "https://tcinvest.tcbs.com.vn/", "Origin": "https://tcinvest.tcbs.com.vn"}
+        headers = _tcbs_document_headers()
     else:
         if document_type == "DIVIDEND":
             url = f"https://s.cafef.vn/du-lieu.ashx?symbol={symbol}"
@@ -614,9 +628,23 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         _crawl_progress(symbol, f"success provider={provider} document={document_type} period={period_label}")
         return True
     except Exception as exc:
-        code = "PROVIDER_HTTP_ERROR" if isinstance(exc, urllib.error.HTTPError) else "PROVIDER_UNAVAILABLE"
-        _save_document(symbol, provider, document_type, period_type, year, quarter, period_end, url, "FAILED", None, code, str(exc)[:500], run_id)
-        _crawl_progress(symbol, f"failed provider={provider} document={document_type} period={period_label} code={code}")
+        if isinstance(exc, urllib.error.HTTPError):
+            code = "PROVIDER_HTTP_ERROR"
+            detail = f"HTTP {exc.code} {exc.reason or ''}".strip()
+            status_label = str(exc.code)
+        else:
+            code = "PROVIDER_UNAVAILABLE"
+            detail = str(exc)[:500]
+            status_label = "unavailable"
+        _save_document(
+            symbol, provider, document_type, period_type, year, quarter,
+            period_end, url, "FAILED", None, code, detail, run_id,
+        )
+        _crawl_progress(
+            symbol,
+            f"failed provider={provider} document={document_type} "
+            f"period={period_label} code={code} status={status_label}",
+        )
         return False
 
 

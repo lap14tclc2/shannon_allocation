@@ -88,3 +88,13 @@ Useful logs:
     [finance-worker] finished queue_id=... symbol=AAA status=COMPLETED ...
 
 The worker runs outside Vercel, uses bounded provider requests, skips existing SUCCESS documents, and continues after an individual symbol failure.
+
+
+## Provider smoke test
+
+For TCBS document crawling, set the raw JWT locally (starting with eyJ), not in Git:
+
+    $env:TCBS_BEARER_TOKEN = 'eyJ...'
+    python scripts/finance_worker.py --once --stale-after-seconds 60
+
+The worker logs the HTTP status for failed provider requests, for example status=401, status=403 or status=404. Do not paste the token or response body into chat or commit it to the repository.
