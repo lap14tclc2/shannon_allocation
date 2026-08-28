@@ -693,3 +693,132 @@ button:active {
 .navigation-menu-popover {
   position: fixed;
 }
+
+/* Quick Percentage Buttons (Hick's & Fitts's Law in Transaction Form) */
+.input-with-quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.quick-pct-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-quick-pct {
+  padding: 6px 12px;
+  min-height: 38px;
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 2px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  color: var(--text, var(--retro-ink, #201d18));
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-quick-pct:hover {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 16%, var(--panel, #fffaf0));
+  border-color: var(--retro-gold, #7a551d);
+  color: var(--retro-gold, #7a551d);
+}
+
+/* Portfolio Health Card (Goal-Gradient & Zeigarnik Checklist) */
+.portfolio-health-card {
+  margin-bottom: 24px;
+}
+
+.health-score-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hanko-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--retro-hanko, #a63f30);
+  border-radius: 4px;
+  color: var(--retro-hanko, #a63f30);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1;
+  user-select: none;
+  background: color-mix(in srgb, var(--retro-hanko, #a63f30) 6%, transparent);
+}
+
+.health-score-ratio {
+  font-size: 0.9rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.health-score-ratio strong {
+  font-size: 1.15rem;
+  color: var(--accent, var(--retro-hanko, #a63f30));
+}
+
+.health-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.health-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 2px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+}
+
+.health-check-item.passed {
+  border-left: 3px solid var(--retro-green, #2f6b4d);
+}
+
+.health-check-item.pending {
+  border-left: 3px solid var(--retro-gold, #7a551d);
+}
+
+.health-check-item .check-icon {
+  font-weight: 800;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.health-check-item.passed .check-icon {
+  color: var(--retro-green, #2f6b4d);
+}
+
+.health-check-item.pending .check-icon {
+  color: var(--retro-gold, #7a551d);
+}
+
+.health-check-item b {
+  display: block;
+  font-size: 0.88rem;
+  margin-bottom: 3px;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.health-check-item p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .health-checklist-grid {
+    grid-template-columns: 1fr;
+  }
+}

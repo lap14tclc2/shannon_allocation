@@ -1,4 +1,4 @@
-/* Dividend UI shared by the portfolio year view and the dedicated history page. */
+/* Dividend UI Table System - Japanese Retro Ledger Theme */
 .section-actions {
   display: flex;
   align-items: center;
@@ -10,10 +10,10 @@
 .data-error-message {
   margin: 0 0 14px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-  color: var(--text);
+  border: 1px solid var(--danger, var(--retro-red, #9f382d));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--danger, var(--retro-red, #9f382d)) 8%, var(--panel, var(--retro-panel, #fffaf0)));
+  color: var(--text, var(--retro-ink, #201d18));
   font-size: 13px;
   line-height: 1.5;
 }
@@ -24,181 +24,200 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin: -2px 0 14px;
+  margin: -2px 0 16px;
 }
 
 .dividend-history-summary > span {
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text-secondary);
-  font-size: 12px;
+  padding: 6px 14px;
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 2px;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
-.dividend-tree-card { padding: 16px; }
+.dividend-tree-card { 
+  padding: 20px;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  box-shadow: 3px 3px 0 var(--retro-shadow, rgba(65, 55, 42, 0.18));
+}
 
-.dividend-tree {
+/* Table Groups Container */
+.dividend-table-groups {
   display: grid;
-  gap: 14px;
+  gap: 20px;
+  width: 100%;
 }
 
-.dividend-tree-node {
-  margin: 0;
+.dividend-symbol-section {
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  background: var(--panel, var(--retro-panel, #fffaf0));
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel);
+  box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.12));
 }
 
-.dividend-tree-node > summary {
-  list-style: none;
+.dividend-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: var(--panel-2, var(--retro-panel-subtle, #eee3cf));
+  border-bottom: 1px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.section-title-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.stock-ticker-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.event-count-tag {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.loading-badge {
+  font-size: 0.8rem;
+  color: var(--accent, var(--retro-hanko, #a63f30));
+  font-weight: 600;
+}
+
+/* Dividend Event Table */
+.dividend-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+}
+
+.dividend-event-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13.5px;
+}
+
+.dividend-event-table th {
+  padding: 10px 18px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  border-bottom: 1px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.col-header-date, .col-header-pay {
+  width: 160px;
+  white-space: nowrap;
+}
+
+.dividend-event-table td {
+  padding: 12px 18px;
+  border-bottom: 1px dashed var(--border, var(--retro-border, #9c927f));
+  vertical-align: middle;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.dividend-event-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dividend-table-row:hover td {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 6%, var(--panel, var(--retro-panel, #fffaf0)));
+}
+
+.col-date {
+  font-family: var(--font-mono-num, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  white-space: nowrap;
+}
+
+.col-ex-date strong {
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.col-desc {
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.desc-cell {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 52px;
-  padding: 12px 16px;
-  cursor: pointer;
-  user-select: none;
+  flex-wrap: wrap;
 }
 
-.dividend-tree-node > summary::-webkit-details-marker { display: none; }
-.dividend-tree-node > summary:hover { background: var(--surface-soft); }
-.dividend-tree-node > summary strong { color: var(--text); font-size: 14.5px; }
-.dividend-tree-node > summary > span:last-child {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.tree-caret {
-  width: 20px;
-  height: 20px;
-  display: inline-grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 20px;
-  line-height: 1;
-  transition: transform .15s ease;
-}
-
-.dividend-tree-node[open] > summary > .tree-caret { transform: rotate(90deg); }
-
-.dividend-tree-children,
-.dividend-tree-events {
-  display: grid;
-  gap: 12px;
-  padding: 4px 14px 14px 18px;
-  border-left: 2px solid color-mix(in srgb, var(--border) 78%, transparent);
-  margin-left: 18px;
-}
-
-.dividend-tree-symbol > summary,
-.dividend-tree-year > summary {
-  min-height: 48px;
-  padding: 10px 14px;
-}
-
-.dividend-tree-event {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-soft);
-}
-
-.dividend-tree-event-main,
-.dividend-tree-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.dividend-tree-event-main { padding: 14px 16px; }
-.dividend-tree-event-main > div,
-.dividend-tree-detail-grid > div { display: grid; gap: 5px; }
-
-.dividend-tree-event span,
-.dividend-tree-detail-grid span {
-  color: var(--muted);
+.dividend-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 2px;
   font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.dividend-tree-event strong,
-.dividend-tree-event b { font-variant-numeric: tabular-nums; font-size: 13.5px; }
-
-.dividend-tree-event-detail {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
+.badge-cash {
+  background: color-mix(in srgb, var(--retro-green, #2f6b4d) 14%, var(--panel, #fffaf0));
+  color: var(--retro-green, #2f6b4d);
+  border: 1px solid var(--retro-green, #2f6b4d);
 }
 
-.dividend-tree-event-detail > summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 10px 16px;
-  color: var(--text-secondary);
-  font-size: 12.5px;
+.badge-stock {
+  background: color-mix(in srgb, var(--info, #365f69) 14%, var(--panel, #fffaf0));
+  color: var(--info, #365f69);
+  border: 1px solid var(--info, #365f69);
 }
 
-.dividend-tree-event-detail > summary::-webkit-details-marker { display: none; }
-.dividend-tree-detail-grid { padding: 12px 16px 16px; background: var(--panel); }
+.desc-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text, var(--retro-ink, #201d18));
+}
 
 .dividend-tree-placeholder {
   min-height: 64px;
   display: grid;
   place-items: center;
   padding: 14px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  background: var(--surface-soft);
+  border: 1px dashed var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
 }
 
 @media (max-width: 719px) {
-  .section-actions {
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    justify-content: stretch;
+  .dividend-section-header {
+    padding: 10px 14px;
   }
-
-  .section-actions > * { width: 100%; }
-
-  .data-error-message {
-    padding: 12px;
-    border-radius: 12px;
-    font-size: 13px;
+  .dividend-event-table th, .dividend-event-table td {
+    padding: 10px 12px;
   }
-
-  .dividend-history-summary {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .col-header-date, .col-header-pay {
+    width: 110px;
   }
-
-  .dividend-history-summary > span {
-    border-radius: 12px;
-    text-align: center;
-  }
-
-  .dividend-tree-card { padding: 8px; }
-  .dividend-tree-node { border-radius: 11px; }
-  .dividend-tree-node > summary { min-height: 46px; padding: 10px; }
-  .dividend-tree-children,
-  .dividend-tree-events {
-    margin-left: 8px;
-    padding-left: 10px;
-    padding-right: 6px;
-  }
-
-  .dividend-tree-event-main,
-  .dividend-tree-detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 12px;
-  }
-
-  .dividend-tree-event-main,
-  .dividend-tree-detail-grid { padding: 12px; }
-  .dividend-tree-event { border-radius: 11px; }
 }
+
+

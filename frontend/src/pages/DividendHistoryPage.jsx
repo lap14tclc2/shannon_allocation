@@ -52,7 +52,7 @@ export default function DividendHistoryPage({ symbols: initialSymbols = [], loca
       <div>
         <div className="eyebrow">Cổ tức & quyền</div>
         <h1>Lịch sử cổ tức</h1>
-        <p className="muted">Mở từng mã và từng năm để xem lịch sử. Dữ liệu cache được ưu tiên trước; các mã được tải song song để giảm thời gian chờ.</p>
+        <p className="muted">Chi tiết lịch sử chi trả cổ tức tiền mặt và cổ tức cổ phiếu theo từng mã trong danh mục.</p>
       </div>
       <button className="btn-secondary" type="button" onClick={() => load(true)} disabled={loading || refreshing || !symbols.length}>
         {refreshing ? 'Đang cập nhật…' : '↻ Cập nhật dữ liệu'}

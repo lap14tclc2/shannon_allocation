@@ -200,6 +200,57 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
       <Metric label="Cổ tức thực nhận" value={money(dividendIncome, locale)} note="Tiền mặt sau thuế đã ghi nhận" tone="income-metric" />
     </div>
 
+    {/* Buy & Hold Discipline Health Score - Goal-Gradient & Zeigarnik Effect */}
+    <section className="card portfolio-health-card">
+      <div className="section-head">
+        <div>
+          <div className="eyebrow">Kỷ luật Buy & Hold</div>
+          <h2>Đánh giá sức khỏe danh mục</h2>
+        </div>
+        <div className="health-score-badge">
+          <span className="hanko-seal" title="Dấu triện kiểm tra">保全</span>
+          <span className="health-score-ratio">
+            <strong>{[
+              positions.length >= 3,
+              Number(portfolio.cash || 0) > 0,
+              (risk.max_equity_weight == null || Number(risk.max_equity_weight) < 0.45),
+              attentionItems.length === 0,
+            ].filter(Boolean).length}</strong>/4 Tiêu chuẩn
+          </span>
+        </div>
+      </div>
+      <div className="health-checklist-grid">
+        <div className={`health-check-item ${positions.length >= 3 ? 'passed' : 'pending'}`}>
+          <span className="check-icon">{positions.length >= 3 ? '✓' : '○'}</span>
+          <div>
+            <b>Đa dạng hóa danh mục</b>
+            <p>{positions.length >= 3 ? `Đã phân bổ trên ${positions.length} mã` : `Nên mở rộng từ 3-5 mã cốt lõi (hiện có ${positions.length})`}</p>
+          </div>
+        </div>
+        <div className={`health-check-item ${Number(portfolio.cash || 0) > 0 ? 'passed' : 'pending'}`}>
+          <span className="check-icon">{Number(portfolio.cash || 0) > 0 ? '✓' : '○'}</span>
+          <div>
+            <b>Dự phòng tiền mặt</b>
+            <p>{hasCashRatio ? `${pct(Number(portfolio.cash) / Number(portfolio.nav))} tiền mặt bảo vệ vốn` : 'Nên duy trì tối thiểu 5-10% tiền mặt'}</p>
+          </div>
+        </div>
+        <div className={`health-check-item ${(risk.max_equity_weight == null || Number(risk.max_equity_weight) < 0.45) ? 'passed' : 'pending'}`}>
+          <span className="check-icon">{(risk.max_equity_weight == null || Number(risk.max_equity_weight) < 0.45) ? '✓' : '○'}</span>
+          <div>
+            <b>Kiểm soát tập trung vốn</b>
+            <p>{risk.max_equity_weight == null ? 'Cân bằng tốt' : Number(risk.max_equity_weight) < 0.45 ? `Mã lớn nhất chiếm ${pct(risk.max_equity_weight)}` : `Mã lớn nhất chiếm ${pct(risk.max_equity_weight)} (Cần thận trọng)`}</p>
+          </div>
+        </div>
+        <div className={`health-check-item ${attentionItems.length === 0 ? 'passed' : 'pending'}`}>
+          <span className="check-icon">{attentionItems.length === 0 ? '✓' : '○'}</span>
+          <div>
+            <b>Đồng bộ & Bất biến sổ cái</b>
+            <p>{attentionItems.length === 0 ? 'Dữ liệu sổ cái hoàn toàn khớp' : 'Có điểm cảnh báo cần kiểm tra'}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     {attentionItems.length > 0 && <section className="card portfolio-assessment-card investor-attention-card">
       <div className="section-head">
         <div><div className="eyebrow">Cần chú ý</div><h2>Danh mục có điểm cần xem lại</h2></div>
@@ -238,7 +289,7 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
         <div>
           <div className="eyebrow">Cổ tức & quyền</div>
           <h2>Cổ tức gần nhất theo từng mã</h2>
-          <p className="muted">Mỗi mã tự chọn năm gần nhất có dữ liệu đến {currentYear}. Mở tree để xem năm, nguồn dữ liệu cổ tức và từng sự kiện.</p>
+          <p className="muted">Hiển thị các sự kiện cổ tức của năm mới nhất theo từng cổ phiếu đang nắm giữ.</p>
         </div>
         <div className="section-actions">
           <a className="text-link" href="/dividends">Xem toàn bộ lịch sử →</a>

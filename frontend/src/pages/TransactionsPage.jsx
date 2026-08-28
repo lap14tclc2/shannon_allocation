@@ -445,7 +445,26 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
         <div className="form-grid sell-input-grid">
           <label>Số lượng bán
-            <input type="number" step="0.0001" min="0.0001" max={sellBook?.shares || undefined} value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+            <div className="input-with-quick-actions">
+              <input type="number" step="0.0001" min="0.0001" max={sellBook?.shares || undefined} value={form.quantity} onChange={event => set('quantity', event.target.value)} aria-invalid={!!fieldErrors.quantity} />
+              {sellBook && Number(sellBook.shares) > 0 && (
+                <div className="quick-pct-buttons" role="group" aria-label="Chọn nhanh tỷ lệ bán">
+                  {[0.25, 0.5, 1.0].map(fraction => (
+                    <button
+                      key={fraction}
+                      type="button"
+                      className="btn-quick-pct"
+                      onClick={() => {
+                        const calculated = Math.floor(Number(sellBook.shares) * fraction);
+                        set('quantity', String(calculated || (Number(sellBook.shares) * fraction)));
+                      }}
+                    >
+                      {fraction === 1.0 ? 'Tất cả (100%)' : `${fraction * 100}%`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <FieldError error={fieldErrors.quantity} />
             {sellBook && <span className="field-hint">Tối đa {shares(sellBook.shares)} CP tại {brokerName(sellBook.broker_code)}</span>}
           </label>

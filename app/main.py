@@ -859,7 +859,7 @@ def portfolio_symbol_valuation(
     """Build a valuation from validated Finance DB facts only."""
     import re
     from dataclasses import asdict
-    from datetime import datetime, timezone
+    from datetime import date, datetime, timedelta, timezone
     from decimal import Decimal, InvalidOperation
 
     from portfolio.financial_data.models import (
@@ -871,14 +871,30 @@ def portfolio_symbol_valuation(
         QualityStatus,
         StatementType,
     )
-    require_portfolio_user(qport_session)
+    from portfolio.finance_catalog import _schema_connection, FINANCE_SCHEMA, valuation_snapshot_from_catalog
+    user = require_portfolio_user(qport_session)
     ticker = str(symbol or "").upper().strip()
     if not re.fullmatch(r"[A-Z0-9]{3,10}", ticker):
         raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
 
-    svc = portfolio(current_user(qport_session))
+    svc = portfolio(user)
     latest_row = svc.store.latest_price(ticker)
     market_price = latest_row.get("close") if latest_row else None
+    if market_price is None or market_price <= 0:
+        try:
+            today_str = svc.today_vn()
+            today_d = date.fromisoformat(today_str)
+            start_str = (today_d - timedelta(days=30)).isoformat()
+            from portfolio.market_data import AutoMarketData, frame_to_price_rows
+            market_data = AutoMarketData()
+            df = market_data.daily_history(ticker, start_str, today_str)
+            if not df.empty:
+                price_rows = frame_to_price_rows(ticker, df, source="vndirect")
+                if price_rows:
+                    svc.store.upsert_market_prices(price_rows)
+                    market_price = price_rows[-1].get("close")
+        except Exception:
+            pass
     snapshot = valuation_snapshot_from_catalog(ticker, market_price)
     if not snapshot.get("ok"):
         return JSONResponse(status_code=404, content={
@@ -971,6 +987,8 @@ def portfolio_symbol_valuation(
     def add_fact(code: str, statement_type: StatementType, value: Decimal | None, period_type: PeriodType) -> None:
         if value is None:
             return
+        # TCBS financial statements are expressed in billion VND (tỷ đồng) except for share counts
+        fact_val = value if code == "IS.SHARES.OUTSTANDING" or abs(value) >= Decimal("1000000000") else value * Decimal("1000000000")
         fact_id = f"db-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
         facts.append(CanonicalFact(
             canonical_fact_id=fact_id,
@@ -985,7 +1003,7 @@ def portfolio_symbol_valuation(
                 line_item_code=code,
                 currency="VND",
             ),
-            value=value,
+            value=fact_val,
             quality_status=QualityStatus.SINGLE_SOURCE,
             decision_id=f"db-{ticker.lower()}-{fetched_at[:19]}",
             winning_candidate_id=f"finance-db-{ticker.lower()}-{code.lower()}",
@@ -1005,11 +1023,21 @@ def portfolio_symbol_valuation(
     add_fact("CF.OPERATING.DEPRECIATION", StatementType.CASH_FLOW, depreciation, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
     add_fact("CF.CAPEX", StatementType.CASH_FLOW, capex, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
     add_fact("CF.OPERATING.NET", StatementType.CASH_FLOW, operating_cash, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
+    add_fact("IS.SHARES.OUTSTANDING", StatementType.INCOME_STATEMENT, shares, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
 
-    if bvps is None and equity is not None and shares > 0:
-        bvps = equity / shares
-    if eps is None and shares > 0:
-        eps = net_income / shares
+    scaled_net_income = net_income * Decimal("1000000000") if net_income is not None and abs(net_income) < Decimal("1000000000") else net_income
+    scaled_equity = equity * Decimal("1000000000") if equity is not None and abs(equity) < Decimal("1000000000") else equity
+
+    if bvps is None and scaled_equity is not None and shares > 0:
+        bvps = scaled_equity / shares
+    if eps is None and scaled_net_income is not None and shares > 0:
+        eps = scaled_net_income / shares
+    if pe is None and current_price is not None and eps is not None and eps > 0:
+        pe = current_price / eps
+    if pb is None and current_price is not None and bvps is not None and bvps > 0:
+        pb = current_price / bvps
+    if roe is None and scaled_net_income is not None and scaled_equity is not None and scaled_equity > 0:
+        roe = (scaled_net_income / scaled_equity) * Decimal("100")
 
     def percent(value: Decimal | None) -> Decimal | None:
         if value is None:

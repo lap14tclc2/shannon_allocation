@@ -201,7 +201,11 @@ def reconcile_symbol(symbol: str) -> dict[str, Any]:
         ).fetchall()]
         groups: list[list[dict[str, Any]]] = []
         for row in rows:
-            target = next((group for group in groups if _close(_effective(group[0]), _effective(row))), None)
+            target = next((
+                group for group in groups
+                if group[0]["dividend_type"] == row["dividend_type"]
+                and _close(_effective(group[0]), _effective(row))
+            ), None)
             if target is None:
                 groups.append([row])
             else:

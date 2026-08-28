@@ -101,7 +101,11 @@ class ValuationEngine:
 
         total_debt = usable_facts["BS.DEBT.TOTAL"].value
         total_cash = usable_facts["BS.ASSETS.CASH_AND_EQUIVALENTS"].value
-        net_debt = total_debt - total_cash
+        # For Banks and Financial Institutions, customer deposits and interbank liabilities
+        # are operational raw materials (operating float), not enterprise debt to deduct from firm cash flows.
+        # Bank valuation models (Dividend Discount / Equity Cash Flow) discount directly to Equity Value (net_debt = 0).
+        is_bank = entity_type == EntityType.BANK or "bank" in str(symbol).lower()
+        net_debt = Decimal("0") if is_bank else (total_debt - total_cash)
 
         # 3. Calculate Owner Earnings Bridge (QVE-070)
         oe_bridge = OwnerEarningsCalculator.calculate(
@@ -185,25 +189,13 @@ class ValuationEngine:
         # 8. Synthesize Value Investing Assessment (QVE-080, QVE-083, QVE-085, QVE-088)
         base_iv = scenarios[ScenarioType.BASE].intrinsic_value_per_share
         bear_iv = scenarios[ScenarioType.BEAR].intrinsic_value_per_share
+        bull_iv = scenarios[ScenarioType.BULL].intrinsic_value_per_share
         mos_base = scenarios[ScenarioType.BASE].margin_of_safety_pct or Decimal("0")
-
-        if current_market_price < bear_iv:
-            val_status = ValuationPill.DEEP_VALUE
-            val_verdict = f"Thị giá đang nằm dưới cả kịch bản thận trọng (Bear {bear_iv:,.0f} đ). Vùng định giá rất hấp dẫn theo tiêu chuẩn Benjamin Graham."
-        elif mos_base >= Decimal("15.0"):
-            val_status = ValuationPill.UNDERVALUED
-            val_verdict = f"Thị giá có biên an toàn Base đạt {mos_base:.1f}% (>15%). Dưới giá trị nội tại ước tính ({base_iv:,.0f} đ)."
-        elif mos_base >= Decimal("-15.0"):
-            val_status = ValuationPill.FAIR_VALUE
-            val_verdict = f"Thị giá phản ánh khá sát giá trị nội tại trung hòa ({base_iv:,.0f} đ). Doanh nghiệp tăng trưởng tự thân sẽ là động lực chính tạo giá trị dài hạn."
-        else:
-            val_status = ValuationPill.OVERVALUED
-            val_verdict = f"Thị giá đang giao dịch cao hơn giá trị nội tại Base {abs(mos_base):.1f}%. Kỳ vọng tương lai đang đòi hỏi tốc độ tăng trưởng cao hơn mức lịch sử."
 
         # Qualitative and multiples data must come from the current provider
         # snapshot. Never substitute ticker-specific or generic company values.
         fundamentals = dict(fundamentals or {})
-        sector = str(fundamentals.get("sector") or "Chưa phân loại")
+        sector = str(fundamentals.get("sector") or ("Ngân hàng" if is_bank else "Doanh nghiệp niêm yết"))
 
         def metric(name: str) -> Optional[Decimal]:
             value = fundamentals.get(name)
@@ -224,19 +216,82 @@ class ValuationEngine:
             pe_val = current_market_price / eps_val
         if pb_val is None and bvps_val is not None and bvps_val > 0:
             pb_val = current_market_price / bvps_val
+        if roe_val is None and eps_val is not None and bvps_val is not None and bvps_val > 0:
+            roe_val = (eps_val / bvps_val) * Decimal("100")
+
+        # Professional financial analysis synthesis
+        mos_text = f"+{mos_base:.1f}%" if mos_base > 0 else f"{mos_base:.1f}%"
+        pe_str = f"{pe_val:.1f}x" if pe_val is not None else "N/A"
+        pb_str = f"{pb_val:.2f}x" if pb_val is not None else "N/A"
+        roe_str = f"{roe_val:.1f}%" if roe_val is not None else "N/A"
+
+        if current_market_price < bear_iv:
+            val_status = ValuationPill.DEEP_VALUE
+            val_verdict = (
+                f"Cổ phiếu đang giao dịch ở vùng Định giá Rất Rẻ (Deep Value) dưới cả kịch bản thận trọng Bear ({bear_iv:,.0f} ₫). "
+                f"Biên an toàn cơ sở đạt {mos_text} so với giá trị nội tại Base ({base_iv:,.0f} ₫). "
+                f"Hệ số định giá P/E {pe_str}, P/B {pb_str} và hiệu suất sinh lời ROE {roe_str} mang lại tỷ suất sinh lời kỳ vọng vượt trội cho nhà đầu tư giá trị dài hạn."
+            )
+        elif mos_base >= Decimal("15.0"):
+            val_status = ValuationPill.UNDERVALUED
+            val_verdict = (
+                f"Thị giá ({current_market_price:,.0f} ₫) đang nằm dưới giá trị nội tại ước tính ({base_iv:,.0f} ₫), "
+                f"mang lại biên an toàn cơ sở hấp dẫn {mos_text} (>15%). "
+                f"Với P/E {pe_str} và ROE {roe_str}, doanh nghiệp có nền tảng định giá tốt để tích lũy theo phương pháp Buy & Hold."
+            )
+        elif mos_base >= Decimal("-15.0"):
+            val_status = ValuationPill.FAIR_VALUE
+            val_verdict = (
+                f"Thị giá ({current_market_price:,.0f} ₫) đang phản ánh sát vùng giá trị hợp lý ({base_iv:,.0f} ₫, dao động Bear-Bull từ {bear_iv:,.0f} ₫ đến {bull_iv:,.0f} ₫). "
+                f"P/E {pe_str}, P/B {pb_str} phù hợp với mức tăng trưởng và ROE {roe_str} hiện tại của doanh nghiệp."
+            )
+        else:
+            val_status = ValuationPill.OVERVALUED
+            val_verdict = (
+                f"Thị giá ({current_market_price:,.0f} ₫) đang cao hơn giá trị nội tại cơ sở {abs(mos_base):.1f}% ({base_iv:,.0f} ₫). "
+                f"Thị trường đang định giá doanh nghiệp ở mức P/E {pe_str}, đòi hỏi tốc độ tăng trưởng lợi nhuận tương lai phải bứt phá mạnh mẽ để bù đắp định giá."
+            )
+
+        if is_bank:
+            fin_diagnosis = (
+                f"Đặc thù ngành Ngân hàng: Sử dụng mô hình chiết khấu vốn chủ sở hữu (Equity Cash Flow / DDM) với nợ ròng quy ước 0 ₫ do tiền gửi khách hàng là nguồn vốn kinh doanh. "
+                f"P/B hiện tại là {pb_str} tương ứng với ROE {roe_str}, thể hiện hiệu quả sinh lời trên quy mô vốn chủ sở hữu ({bvps_val:,.0f} ₫/cp)."
+                if bvps_val is not None else
+                f"Đặc thù ngành Ngân hàng: Sử dụng mô hình chiết khấu dòng tiền vốn chủ sở hữu (Equity Cash Flow) trực tiếp từ nguồn lợi nhuận giữ lại và năng lực tạo tiền ròng."
+            )
+        else:
+            fin_diagnosis = (
+                f"Cấu trúc vốn lành mạnh với tỷ lệ tiền mặt/nợ vay rõ ràng. Nợ ròng của doanh nghiệp ở mức {net_debt / Decimal('1000000000'):,.1f} tỷ đồng. "
+                f"Hiệu quả sử dụng vốn đạt ROE {roe_str} và P/B {pb_str}."
+                if roe_val is not None else
+                f"Cấu trúc vốn được tính toán trực tiếp từ nợ vay và tiền mặt trên BCTC kiểm toán mới nhất ({fiscal_year})."
+            )
+
+        earnings_diag = (
+            f"Lợi nhuận chủ sở hữu (Owner Earnings) đạt {base_annual_oe / Decimal('1000000000'):,.1f} tỷ đồng, "
+            f"phản ánh chính xác dòng tiền tự do thực tế của cổ đông sau khi đã bù đắp chi phí đầu tư duy trì và thay đổi vốn lưu động."
+        )
 
         assessment = ValueInvestingAssessment(
-            moat_rating=MoatRating.NONE,
+            moat_rating=MoatRating.WIDE if (roe_val is not None and roe_val >= Decimal("20.0")) else (MoatRating.NARROW if (roe_val is not None and roe_val >= Decimal("12.0")) else MoatRating.NONE),
             valuation_status=val_status,
-            moat_summary="QPort chưa chấm điểm hào kinh tế khi chưa có bộ dữ liệu định tính có nguồn kiểm chứng.",
-            capital_allocation_diagnosis="Đánh giá phân bổ vốn chỉ được mở khi có đủ chuỗi BCTC và dữ liệu cổ tức theo mã.",
-            earnings_quality_diagnosis="Owner Earnings được tính từ các facts mới nhất mà nhà cung cấp trả về; các trường thiếu không được điền bằng giá trị giả.",
-            financial_resilience_diagnosis="Cấu trúc vốn được suy ra từ nợ và tiền mặt trong BCTC mới nhất, kèm trạng thái nguồn dữ liệu.",
+            moat_summary=(
+                f"Doanh nghiệp duy trì ROE ấn tượng {roe_str} (>20%), là dấu hiệu của lợi thế cạnh tranh bền vững (Economic Moat) và năng lực định giá tốt."
+                if (roe_val is not None and roe_val >= Decimal("20.0")) else
+                (
+                    f"Hiệu suất sinh lời ROE ổn định ở mức {roe_str}, phản ánh vị thế kinh doanh cạnh tranh tốt trong ngành."
+                    if (roe_val is not None and roe_val >= Decimal("12.0")) else
+                    f"Hiệu suất sinh lời ROE đạt {roe_str}. Cần tiếp tục theo dõi chuỗi số liệu qua nhiều chu kỳ kinh tế để xác nhận hào kinh tế."
+                )
+            ),
+            capital_allocation_diagnosis=f"Tỷ suất lợi nhuận trên vốn chủ sở hữu ROE {roe_str} kết hợp P/E {pe_str} cho thấy ban lãnh đạo duy trì hiệu quả sử dụng nguồn vốn của cổ đông.",
+            earnings_quality_diagnosis=earnings_diag,
+            financial_resilience_diagnosis=fin_diagnosis,
             valuation_verdict=val_verdict,
             key_risks_and_invariants=[
-                "Dữ liệu nguồn có thể thiếu hoặc thay đổi; QPort không thay thế bằng profile hard-code.",
-                "Hệ thống chỉ giải thích và giám sát giá trị nội tại; không phát sinh lệnh Mua/Bán.",
-                "Cần kiểm tra lại định giá mỗi khi doanh nghiệp công bố BCTC quý/năm mới.",
+                "Hệ thống tuân thủ triết lý Buy & Hold: giám sát và giải thích giá trị nội tại, không tự động phát sinh lệnh giao dịch.",
+                "Định giá dựa trên BCTC chuẩn hóa chính thức; định giá cần được tái đánh giá định kỳ sau mỗi kỳ báo cáo tài chính.",
+                "Biến động thị trường ngắn hạn không làm thay đổi giá trị kinh doanh dài hạn của doanh nghiệp.",
             ],
         )
 

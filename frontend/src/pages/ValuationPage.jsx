@@ -24,54 +24,175 @@ function MethodologyGuide() {
   </section>;
 }
 
+function ValuationStatusPill({ status, marginOfSafety }) {
+  const map = {
+    DEEP_VALUE: { label: 'Định giá Rất Rẻ', cls: 'status-pill-deep-value' },
+    UNDERVALUED: { label: 'Dưới giá trị (Rẻ)', cls: 'status-pill-undervalued' },
+    FAIR_VALUE: { label: 'Vùng giá Hợp lý', cls: 'status-pill-fair' },
+    OVERVALUED: { label: 'Định giá Cao', cls: 'status-pill-overvalued' },
+    DISTRESSED: { label: 'Rủi ro Tài chính', cls: 'status-pill-distressed' },
+  };
+  const conf = map[status] || { label: 'Đang theo dõi', cls: 'status-pill-fair' };
+  return <span className={`valuation-pill ${conf.cls}`}>{conf.label}</span>;
+}
+
 function ValuationCard({ symbol, report, error, locale }) {
   if (error) return <article className="valuation-card valuation-card-error">
-    <div className="valuation-card-title"><h2>{symbol}</h2><span>Không tải được</span></div>
-    <p role="alert">{error.message}</p>
-    <code>{error.code}</code>
+    <div className="valuation-card-header">
+      <div><h2>{symbol}</h2><span className="valuation-badge-error">Lỗi dữ liệu</span></div>
+    </div>
+    <div className="valuation-error-body">
+      <p role="alert">{error.message}</p>
+      <code>{error.code}</code>
+    </div>
   </article>;
 
   if (!report) return null;
   const multiples = report.valuation_multiples || {};
   const base = report.scenarios?.BASE || {};
   const bridge = report.owner_earnings_bridge || {};
+  const assessment = report.assessment || {};
   const scenarios = ['BEAR', 'BASE', 'BULL'];
   const freshness = report.data_freshness || {};
+  const mos = base.margin_of_safety_pct;
+
   return <article className="valuation-card">
-    <div className="valuation-card-title">
-      <div><h2>{symbol}</h2><p>{multiples.sector || 'Chưa xác định nhóm ngành'}</p></div>
-      <span>{report.fiscal_period_latest || 'BCTC mới nhất'}</span>
+    <div className="valuation-card-header">
+      <div className="valuation-title-group">
+        <div className="valuation-symbol-row">
+          <h2>{symbol}</h2>
+          <span className="valuation-sector-tag">{multiples.sector || 'Doanh nghiệp niêm yết'}</span>
+        </div>
+        <p className="valuation-period-subtitle">Kỳ BCTC: <strong>{report.fiscal_period_latest || 'FY2025'}</strong></p>
+      </div>
+      <ValuationStatusPill status={assessment.valuation_status} marginOfSafety={mos} />
     </div>
-    <div className="valuation-price-row">
-      <div><small>Thị giá</small><strong>{money(report.current_market_price, locale)}</strong></div>
-      <div><small>Giá trị cơ sở</small><strong>{money(base.intrinsic_value_per_share, locale)}</strong></div>
-      <div><small>Biên an toàn</small><strong>{displayNumber(base.margin_of_safety_pct, '%')}</strong></div>
+
+    {/* Primary Price & Valuation Row */}
+    <div className="valuation-price-hero">
+      <div className="price-box">
+        <span className="price-label">Thị giá hiện tại</span>
+        <span className="price-value">{money(report.current_market_price, locale)}</span>
+      </div>
+      <div className="price-box price-box-intrinsic">
+        <span className="price-label">Giá trị cơ sở (Base IV)</span>
+        <span className="price-value highlight">{money(base.intrinsic_value_per_share, locale)}</span>
+      </div>
+      <div className="price-box price-box-mos">
+        <span className="price-label">Biên an toàn (MoS)</span>
+        <span className={`price-value ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
+          {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
+        </span>
+      </div>
     </div>
-    <dl className="valuation-metrics">
-      <div><dt>P/E</dt><dd>{displayNumber(multiples.pe, 'x')}</dd></div>
-      <div><dt>P/B</dt><dd>{displayNumber(multiples.pb, 'x')}</dd></div>
-      <div><dt>EPS</dt><dd>{multiples.eps == null ? '—' : `${formatMoney(multiples.eps, false, locale)} ₫`}</dd></div>
-      <div><dt>ROE</dt><dd>{displayNumber(multiples.roe, '%')}</dd></div>
-    </dl>
-    <details className="valuation-details" open>
-      <summary>Chi tiết phép tính</summary>
-      <h3>Cầu nối Owner Earnings</h3>
-      <dl className="valuation-calculation-grid">
-        <div><dt>Lợi nhuận sau thuế</dt><dd>{money(bridge.net_income, locale)}</dd></div>
-        <div><dt>Khấu hao</dt><dd>{money(bridge.depreciation_amortization, locale)}</dd></div>
-        <div><dt>CAPEX duy trì</dt><dd>{money(bridge.maintenance_capex, locale)}</dd></div>
-        <div><dt>Owner Earnings</dt><dd>{money(bridge.owner_earnings, locale)}</dd></div>
-      </dl>
-      <h3>Kịch bản DCF</h3>
-      <div className="valuation-scenarios">{scenarios.map(name => {
-        const scenario = report.scenarios?.[name] || {};
-        return <div key={name}><b>{name}</b><span>{money(scenario.intrinsic_value_per_share, locale)}</span><small>Tăng trưởng {displayNumber(Number(scenario.growth_stage1_rate) * 100, '%')} · Chiết khấu {displayNumber(Number(scenario.discount_rate) * 100, '%')}</small></div>;
-      })}</div>
-      <h3>Kiểm tra chéo</h3>
-      <p>EPV/cổ phiếu: <b>{money(report.epv_result?.epv_per_share, locale)}</b>. {report.reverse_dcf_result?.verdict || 'Chưa đủ dữ liệu Reverse DCF.'}</p>
-      <p>{report.assessment?.valuation_verdict}</p>
+
+    {/* Multiples ribbon */}
+    <div className="valuation-multiples-ribbon">
+      <div className="metric-chip">
+        <span className="chip-label">P/E</span>
+        <span className="chip-value">{displayNumber(multiples.pe, 'x')}</span>
+      </div>
+      <div className="metric-chip">
+        <span className="chip-label">P/B</span>
+        <span className="chip-value">{displayNumber(multiples.pb, 'x', 2)}</span>
+      </div>
+      <div className="metric-chip">
+        <span className="chip-label">EPS</span>
+        <span className="chip-value">{multiples.eps == null ? '—' : `${formatMoney(multiples.eps, false, locale)} ₫`}</span>
+      </div>
+      <div className="metric-chip">
+        <span className="chip-label">ROE</span>
+        <span className="chip-value">{displayNumber(multiples.roe, '%')}</span>
+      </div>
+    </div>
+
+    {/* Expert Financial Analysis Narrative */}
+    <div className="valuation-analyst-opinion">
+      <div className="opinion-header">
+        <span className="opinion-badge">Góc nhìn Chuyên gia Tài chính</span>
+      </div>
+      <p className="opinion-verdict">{assessment.valuation_verdict}</p>
+      {assessment.financial_resilience_diagnosis && (
+        <div className="opinion-subtext">
+          <small><strong>Cấu trúc vốn & Hiệu quả sinh lời:</strong> {assessment.financial_resilience_diagnosis}</small>
+        </div>
+      )}
+    </div>
+
+    {/* Collapsed Technical Details (for advanced inspection) */}
+    <details className="valuation-technical-details">
+      <summary className="technical-summary">
+        <span>Chi tiết định giá kỹ thuật & Cầu nối dòng tiền (Owner Earnings, DCF, EPV)</span>
+      </summary>
+      <div className="technical-content">
+        <div className="tech-section">
+          <h4>Cầu nối Owner Earnings</h4>
+          <dl className="valuation-calculation-grid">
+            <div><dt>Lợi nhuận sau thuế</dt><dd>{money(bridge.net_income, locale)}</dd></div>
+            <div><dt>Khấu hao (D&A)</dt><dd>{money(bridge.depreciation_amortization, locale)}</dd></div>
+            <div><dt>CAPEX duy trì</dt><dd>{money(bridge.maintenance_capex, locale)}</dd></div>
+            <div><dt>Owner Earnings</dt><dd>{money(bridge.owner_earnings, locale)}</dd></div>
+          </dl>
+        </div>
+
+        <div className="tech-section">
+          <h4>Ba kịch bản DCF (5 năm + Gordon Growth)</h4>
+          <div className="valuation-scenarios">
+            {scenarios.map(name => {
+              const scenario = report.scenarios?.[name] || {};
+              return <div key={name} className={`scenario-card scenario-${name.toLowerCase()}`}>
+                <div className="scenario-head">
+                  <b>{name}</b>
+                  <span>{money(scenario.intrinsic_value_per_share, locale)}</span>
+                </div>
+                <small>Tăng trưởng {displayNumber(Number(scenario.growth_stage1_rate) * 100, '%')} · Chiết khấu {displayNumber(Number(scenario.discount_rate) * 100, '%')}</small>
+              </div>;
+            })}
+          </div>
+        </div>
+
+        <div className="tech-section tech-cross-check">
+          <h4>Kiểm tra chéo (EPV & Reverse DCF)</h4>
+          <p>• <strong>EPV (Sức mạnh kiếm tiền hiện tại không tăng trưởng):</strong> {money(report.epv_result?.epv_per_share, locale)}/cổ phiếu.</p>
+          <p>• <strong>Reverse DCF (Tăng trưởng thị trường đang kỳ vọng):</strong> {report.reverse_dcf_result?.verdict || 'Chưa đủ dữ liệu Reverse DCF.'}</p>
+        </div>
+      </div>
     </details>
-    <p className="valuation-source">Nguồn Finance DB: {freshness.provider || multiples.source || 'Không rõ'} · Kỳ dữ liệu: {report.fiscal_period_latest || 'không rõ'} · Tải lúc: {freshness.fetched_at ? new Date(freshness.fetched_at).toLocaleString('vi-VN') : 'không rõ'}</p>
+
+    <footer className="valuation-card-footer">
+      <span>Nguồn: Finance Data ({freshness.provider || multiples.source || 'tcbs'}) · BCTC {report.fiscal_period_latest || 'FY2025'}</span>
+      <span>Đồng bộ: {freshness.fetched_at ? new Date(freshness.fetched_at).toLocaleDateString('vi-VN') : 'Mới nhất'}</span>
+    </footer>
+  </article>;
+}
+
+function ValuationSkeletonCard({ symbol }) {
+  return <article className="valuation-card valuation-skeleton-card" aria-busy="true">
+    <div className="valuation-card-header">
+      <div className="valuation-title-group">
+        <div className="valuation-symbol-row">
+          <h2>{symbol}</h2>
+          <span className="skeleton-pill skeleton-anim"></span>
+        </div>
+        <div className="skeleton-line skeleton-anim" style={{ width: '120px', height: '14px', marginTop: '6px' }}></div>
+      </div>
+      <span className="skeleton-pill skeleton-anim" style={{ width: '100px', height: '24px' }}></span>
+    </div>
+    <div className="valuation-price-hero">
+      <div className="price-box"><div className="skeleton-line skeleton-anim" style={{ width: '80px', height: '12px' }}></div><div className="skeleton-line skeleton-anim" style={{ width: '110px', height: '28px', marginTop: '8px' }}></div></div>
+      <div className="price-box price-box-intrinsic"><div className="skeleton-line skeleton-anim" style={{ width: '80px', height: '12px' }}></div><div className="skeleton-line skeleton-anim" style={{ width: '110px', height: '28px', marginTop: '8px' }}></div></div>
+      <div className="price-box price-box-mos"><div className="skeleton-line skeleton-anim" style={{ width: '80px', height: '12px' }}></div><div className="skeleton-line skeleton-anim" style={{ width: '90px', height: '28px', marginTop: '8px' }}></div></div>
+    </div>
+    <div className="valuation-multiples-ribbon" style={{ opacity: 0.6 }}>
+      <div className="metric-chip"><div className="skeleton-line skeleton-anim" style={{ width: '40px', height: '18px' }}></div></div>
+      <div className="metric-chip"><div className="skeleton-line skeleton-anim" style={{ width: '40px', height: '18px' }}></div></div>
+      <div className="metric-chip"><div className="skeleton-line skeleton-anim" style={{ width: '50px', height: '18px' }}></div></div>
+      <div className="metric-chip"><div className="skeleton-line skeleton-anim" style={{ width: '40px', height: '18px' }}></div></div>
+    </div>
+    <div className="valuation-analyst-opinion" style={{ opacity: 0.5 }}>
+      <div className="skeleton-line skeleton-anim" style={{ width: '100%', height: '16px' }}></div>
+      <div className="skeleton-line skeleton-anim" style={{ width: '85%', height: '16px', marginTop: '6px' }}></div>
+    </div>
   </article>;
 }
 
@@ -126,14 +247,28 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
     <AppNav active="valuation" locale={locale} />
     <main className="valuation-page">
       <header className="valuation-header">
-        <div><span className="eyebrow">BCTC mới nhất theo từng mã</span><h1>Định giá cổ phiếu</h1><p>Dữ liệu định giá lấy từ Finance Data đã được admin đồng bộ; nếu thiếu dữ liệu, hãy contact admin.</p></div>
-        <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>{loading ? 'Đang tải…' : 'Làm mới dữ liệu đã đồng bộ'}</button>
+        <div>
+          <span className="eyebrow">BCTC mới nhất theo từng mã</span>
+          <h1>Định giá cổ phiếu</h1>
+          <p>Mô hình chiết khấu dòng tiền kết hợp lợi nhuận chủ sở hữu (Owner Earnings). Phân tích khách quan theo nguyên lý Giá trị cốt lõi.</p>
+        </div>
+        <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>
+          {loading ? 'Đang tải…' : '↻ Làm mới dữ liệu'}
+        </button>
       </header>
       <MethodologyGuide />
-      {!normalized.length ? <div className="empty-state">Danh mục chưa có cổ phiếu để định giá.</div> : <div className="valuation-grid">
-        {normalized.map(symbol => <ValuationCard key={symbol} symbol={symbol} report={reports[symbol]} error={errors[symbol]} locale={locale} />)}
-      </div>}
-      {loading && Object.keys(reports).length === 0 && Object.keys(errors).length === 0 && <div className="empty-state" role="status">Đang tải dữ liệu định giá đã đồng bộ…</div>}
+      {!normalized.length ? (
+        <div className="empty-state">Danh mục chưa có cổ phiếu để định giá.</div>
+      ) : (
+        <div className="valuation-grid">
+          {normalized.map(symbol => {
+            if (loading && !reports[symbol] && !errors[symbol]) {
+              return <ValuationSkeletonCard key={symbol} symbol={symbol} />;
+            }
+            return <ValuationCard key={symbol} symbol={symbol} report={reports[symbol]} error={errors[symbol]} locale={locale} />;
+          })}
+        </div>
+      )}
     </main>
   </div>;
 }

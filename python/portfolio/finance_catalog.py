@@ -48,6 +48,16 @@ def _worker_provider_sql() -> str:
     """Return the static SQL literal for the active worker provider scope."""
     return ",".join(f"'{provider}'" for provider in WORKER_PROVIDERS)
 
+
+def _tcbs_universe_config() -> tuple[str, dict[str, str]]:
+    """Return the configured TCBS universe URL and auth headers."""
+    import os
+    url = os.environ.get("TCBS_UNIVERSE_URL")
+    token = os.environ.get("TCBS_BEARER_TOKEN")
+    if not url or not token:
+        raise RuntimeError("TCBS_UNIVERSE_URL and TCBS_BEARER_TOKEN must both be set.")
+    return url, {"Authorization": f"Bearer {token}"}
+
 # Completed annual reports to retain/crawl for each listed equity.
 FISCAL_YEAR_HISTORY = 10
 # The external worker intentionally starts with the two main listed markets.
@@ -663,65 +673,118 @@ def _cafef_iso_date(value: str) -> str | None:
 
 
 def _cafef_dividend_rows(payload: str | None) -> list[dict[str, Any]]:
-    """Parse dividend event rows from CafeF's HTML history table."""
+    """Parse dividend event rows from CafeF's HTML (both tables and bulleted div lists)."""
     if not payload:
         return []
-    parser = _CafeFTableParser()
-    parser.feed(payload)
     result: list[dict[str, Any]] = []
-    date_pattern = re.compile(r"(?<!\d)(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2})(?!\d)")
-    for cells in parser.rows:
-        if not cells:
-            continue
-        row_text = " ".join(cell for cell in cells if cell).strip()
-        upper = row_text.upper()
-        dates = [_cafef_iso_date(item) for item in date_pattern.findall(row_text)]
-        dates = [item for item in dates if item]
-        if not dates:
-            continue
-        is_stock = (
-            "CỔ TỨC BẰNG CỔ PHIẾU" in upper
-            or "THƯỞNG BẰNG CỔ PHIẾU" in upper
-            or "CO TUC BANG CO PHIEU" in upper
-            or "THUONG BANG CO PHIEU" in upper
-        )
-        is_cash = (
-            "CỔ TỨC BẰNG TIỀN" in upper
-            or "CO TUC BANG TIEN" in upper
-            or "CASH DIVIDEND" in upper
-        )
-        if not (is_stock or is_cash):
-            continue
-        cash_per_share = None
-        stock_ratio = None
-        if is_cash:
-            for cell in cells:
-                if "đ" not in cell.lower() and "đồng" not in cell.lower():
+    
+    # 1. Parse bulleted text format in div.middle or raw HTML
+    date_bullet_pattern = re.compile(r"-\s*(?:<b>)?(\d{1,2}/\d{1,2}/\d{4})(?:</b>)?:\s*([^\n\r<]+(?:\s*<br\s*/?>\s*[^\n\r<]+)*)", re.IGNORECASE)
+    bullets = date_bullet_pattern.findall(payload)
+    if bullets:
+        for raw_date, content in bullets:
+            iso_d = _cafef_iso_date(raw_date)
+            if not iso_d:
+                continue
+            # Split sub-events separated by <br>, newlines, or special spaces
+            sub_lines = re.split(r"<br\s*/?>|[\n\r;]|\u2009\u2002|\s{4,}", content)
+            for sub in sub_lines:
+                sub_clean = re.sub(r"<[^>]+>", "", sub).strip()
+                if not sub_clean:
                     continue
-                numbers = re.findall(r"\d[\d.,]*", cell)
-                if numbers:
-                    cash_per_share = _number(numbers[-1])
-                    break
-        if is_stock:
-            percentages = re.findall(r"\d+(?:[.,]\d+)?\s*%", row_text)
-            if percentages:
-                stock_ratio = _number(percentages[-1])
-        common = {
-            "ex_date": dates[0],
-            "raw_payload": {"cells": cells},
-        }
-        if is_cash:
-            result.append({
-                **common,
-                "dividend_type": "CASH_DIVIDEND",
-                "cash_per_share": cash_per_share,
-            })
-        if is_stock:
-            result.append({
-                **common,
-                "dividend_type": "STOCK_DIVIDEND",
-                "stock_ratio": stock_ratio,
-            })
+                sub_u = sub_clean.upper()
+                if "TIỀN" in sub_u or "TIEN" in sub_u or "CASH" in sub_u:
+                    cash_val = None
+                    pct_m = re.search(r"TỶ LỆ\s*(\d+(?:[.,]\d+)?)\s*%", sub_u)
+                    if pct_m:
+                        pct_val = float(pct_m.group(1).replace(",", "."))
+                        cash_val = pct_val * 100.0  # 7% -> 700đ, 10% -> 1000đ
+                    else:
+                        cash_m = re.search(r"(\d[\d.,]*)\s*(?:Đ|ĐỒNG|DONG|VND)", sub_u)
+                        if cash_m:
+                            cash_val = _number(cash_m.group(1))
+                    if cash_val is not None:
+                        result.append({
+                            "ex_date": iso_d,
+                            "dividend_type": "CASH_DIVIDEND",
+                            "cash_per_share": cash_val,
+                            "raw_payload": {"line": sub_clean},
+                        })
+                if "CỔ PHIẾU" in sub_u or "CO PHIEU" in sub_u or "STOCK" in sub_u or "THƯỞNG" in sub_u:
+                    stock_ratio = None
+                    pct_m = re.search(r"TỶ LỆ\s*(\d+(?:[.,]\d+)?)\s*%", sub_u)
+                    if pct_m:
+                        pct_val = float(pct_m.group(1).replace(",", "."))
+                        stock_ratio = pct_val / 100.0  # 13% -> 0.13, 15% -> 0.15
+                    else:
+                        ratio_m = re.search(r"TỶ LỆ\s*(\d+):(\d+)", sub_u)
+                        if ratio_m:
+                            stock_ratio = float(ratio_m.group(2)) / float(ratio_m.group(1))
+                    if stock_ratio is not None:
+                        result.append({
+                            "ex_date": iso_d,
+                            "dividend_type": "STOCK_DIVIDEND",
+                            "stock_ratio": stock_ratio,
+                            "raw_payload": {"line": sub_clean},
+                        })
+
+    # 2. Also check table rows if bullet parser produced nothing
+    if not result:
+        parser = _CafeFTableParser()
+        parser.feed(payload)
+        date_pattern = re.compile(r"(?<!\d)(?:\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}|\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2})(?!\d)")
+        for cells in parser.rows:
+            if not cells:
+                continue
+            row_text = " ".join(cell for cell in cells if cell).strip()
+            upper = row_text.upper()
+            dates = [_cafef_iso_date(item) for item in date_pattern.findall(row_text)]
+            dates = [item for item in dates if item]
+            if not dates:
+                continue
+            is_stock = (
+                "CỔ TỨC BẰNG CỔ PHIẾU" in upper
+                or "THƯỞNG BẰNG CỔ PHIẾU" in upper
+                or "CO TUC BANG CO PHIEU" in upper
+                or "THUONG BANG CO PHIEU" in upper
+            )
+            is_cash = (
+                "CỔ TỨC BẰNG TIỀN" in upper
+                or "CO TUC BANG TIEN" in upper
+                or "CASH DIVIDEND" in upper
+            )
+            if not (is_stock or is_cash):
+                continue
+            cash_per_share = None
+            stock_ratio = None
+            if is_cash:
+                for cell in cells:
+                    if "đ" not in cell.lower() and "đồng" not in cell.lower():
+                        continue
+                    numbers = re.findall(r"\d[\d.,]*", cell)
+                    if numbers:
+                        cash_per_share = _number(numbers[-1])
+                        break
+            if is_stock:
+                percentages = re.findall(r"\d+(?:[.,]\d+)?\s*%", row_text)
+                if percentages:
+                    stock_ratio = _number(percentages[-1])
+            common = {
+                "ex_date": dates[0],
+                "raw_payload": {"cells": cells},
+            }
+            if is_cash:
+                result.append({
+                    **common,
+                    "dividend_type": "CASH_DIVIDEND",
+                    "cash_per_share": cash_per_share,
+                })
+            if is_stock:
+                result.append({
+                    **common,
+                    "dividend_type": "STOCK_DIVIDEND",
+                    "stock_ratio": stock_ratio,
+                })
     return result
 
 
@@ -856,8 +919,7 @@ def _value(row: dict[str, Any], *aliases: str) -> float | None:
 
 def _canonicalize_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, payload: str | None, source_document_id: int | None) -> None:
     rows = _payload_rows(payload)
-    # Field names below are the actual TCBS finance API contract. Keep aliases
-    # for legacy normalized rows, but do not derive missing Value Engine facts.
+    # Field names below are the actual TCBS finance API contract.
     mappings = {
         "FINANCIAL_STATEMENTS": (
             ("BS.DEBT.TOTAL", (
@@ -874,6 +936,15 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             ("BS.LIABILITIES.LONG_TERM_BORROWINGS", (
                 "longDebt", "long_term_borrowings", "long_term_debt",
             )),
+            ("BS.EQUITY.TOTAL", (
+                "equity", "owners_equity", "owner_equity", "total_equity",
+                "von chu so huu", "von chu",
+            )),
+            ("IS.SHARES.OUTSTANDING", (
+                "outstanding_shares", "outstanding_share", "outstandingShare",
+                "shares_outstanding", "shares outstanding",
+                "so luong co phieu dang luu hanh",
+            )),
         ),
         "INCOME_STATEMENT": (
             ("IS.PROFIT.NET", (
@@ -887,18 +958,16 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                 "profit_from_operation", "operating income",
                 "loi nhuan thuan tu hoat dong kinh doanh",
             )),
-            # The TCBS sample has no shares-outstanding field. Do not map
-            # capital or shareHolderIncome to this fact.
+            ("CF.OPERATING.DEPRECIATION", (
+                "depreciation", "depreciation_amortization",
+            )),
             ("IS.SHARES.OUTSTANDING", (
-                "outstanding_shares", "outstanding_share",
+                "outstanding_shares", "outstanding_share", "outstandingShare",
                 "shares_outstanding", "shares outstanding",
                 "so luong co phieu dang luu hanh",
             )),
         ),
         "CASH_FLOW": (
-            # The sample exposes investCost, not operating depreciation or
-            # operating cash flow. Only the semantically equivalent CAPEX field
-            # is mapped; absent facts remain unavailable to Value Engine.
             ("CF.CAPEX", (
                 "investCost", "capex", "purchase_of_fixed_assets",
                 "fixed_asset_purchases",
@@ -907,7 +976,7 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                 "depreciation", "depreciation_amortization",
             )),
             ("CF.OPERATING.NET", (
-                "operating_cash_flow", "net_cash_from_operating_activities",
+                "fromSale", "operating_cash_flow", "net_cash_from_operating_activities",
             )),
         ),
     }
@@ -921,6 +990,24 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             ),
             None,
         )
+        if value is None and document_type == "INCOME_STATEMENT" and code == "CF.OPERATING.DEPRECIATION":
+            # For TCBS non-financial stocks, compute D&A from max(0, ebitda - operationProfit) when ebitda is available
+            ebitda_val = next((_value(row, "ebitda") for row in rows if _value(row, "ebitda") is not None), None)
+            op_val = next((_value(row, "operationProfit", "operating_profit") for row in rows if _value(row, "operationProfit", "operating_profit") is not None), None)
+            if ebitda_val is not None and op_val is not None:
+                value = max(0.0, ebitda_val - op_val)
+            elif ebitda_val is None and op_val is not None:
+                # For commercial banks / financial institutions, fixed asset depreciation is minimal / included in operating expenses
+                value = 0.0
+
+        if value is None and document_type == "FINANCIAL_STATEMENTS" and code == "IS.SHARES.OUTSTANDING":
+            # In Vietnam accounting standard, charter capital is recorded at 10,000 VND par value per share.
+            # TCBS reports 'capital' in billion VND (e.g. 17,035 tỷ VND = 1,703.5 million shares = 1.7035e9 shares).
+            cap_val = next((_value(row, "capital") for row in rows if _value(row, "capital") is not None), None)
+            if cap_val is not None and cap_val > 0:
+                # 1 billion VND / 10,000 VND/share = 100,000 shares
+                value = cap_val * 100000
+
         if value is None:
             continue
         with _schema_connection(FINANCE_SCHEMA) as db:
@@ -1116,11 +1203,17 @@ def valuation_readiness_audit(symbol: str, market_price: float | None = None) ->
                 continue
             if candidates:
                 selected_facts[code] = sorted(candidates, key=lambda row: str(row.get("provider") or ""))[0]
+        for row in period_facts:
+            code = str(row.get("line_item_code") or "")
+            if code and code not in selected_facts and row.get("value") is not None and row.get("quality_status") not in {"CONFLICT", "QUARANTINED", "MISSING"}:
+                selected_facts[code] = row
         relevant_parse_errors = [
             row for row in parse_rows
             if row.get("period_type") == "FY"
             and row.get("fiscal_quarter") is None
             and int(row["fiscal_year"]) == selected_year
+            and row.get("provider") in WORKER_PROVIDERS
+            and row.get("document_type") in WORKER_DOCUMENT_TYPES
         ]
 
     missing_codes = [code for code in required_codes if code not in selected_facts]
@@ -1207,6 +1300,7 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
         "balance_sheet": [{
             "total_debt": latest["BS.DEBT.TOTAL"]["value"],
             "cash": latest["BS.ASSETS.CASH_AND_EQUIVALENTS"]["value"],
+            "equity": latest.get("BS.EQUITY.TOTAL", {}).get("value"),
         }],
         "cash_flow": [{
             "depreciation": latest["CF.OPERATING.DEPRECIATION"]["value"],
@@ -1574,19 +1668,19 @@ def import_tcbs_crawled_directory(
                 )
                 failed_documents += 1
 
-    for filename in filenames:
-        symbol = os.path.splitext(filename)[0].upper().strip()
-        _crawl_progress(
-            symbol,
-            f"file-start path=docs/crawled/{filename}",
-        )
-        if not symbol or not re.fullmatch(r"[A-Z0-9]+", symbol):
-            failed_symbols.append(symbol or filename)
-            _crawl_progress(
-                symbol or filename,
-                "file-failed code=INVALID_SYMBOL_FILENAME",
-            )
-            continue
+    def process_file(filename: str) -> dict[str, Any]:
+        sym = os.path.splitext(filename)[0].upper().strip()
+        _crawl_progress(sym, f"file-start path=docs/crawled/{filename}")
+        if not sym or not re.fullmatch(r"[A-Z0-9]+", sym):
+            _crawl_progress(sym or filename, "file-failed code=INVALID_SYMBOL_FILENAME")
+            return {
+                "symbol": sym or filename,
+                "imported": 0,
+                "failed": 0,
+                "unavailable": 0,
+                "skipped": 0,
+                "is_success": False,
+            }
 
         path = os.path.join(directory_path, filename)
         try:
@@ -1596,30 +1690,33 @@ def import_tcbs_crawled_directory(
             root_symbol = str(
                 parsed.get("symbol") if isinstance(parsed, dict) else ""
             ).upper().strip()
-            if root_symbol and root_symbol != symbol:
+            if root_symbol and root_symbol != sym:
                 raise ProviderPayloadError(
-                    f"file symbol {root_symbol} does not match filename {symbol}"
+                    f"file symbol {root_symbol} does not match filename {sym}"
                 )
-            if not _is_crawlable_security(symbol):
+            if not _is_crawlable_security(sym):
                 raise ProviderPayloadError(
-                    f"{symbol} is not an active listed equity"
+                    f"{sym} is not an active listed equity"
                 )
         except Exception as exc:
-            failed_symbols.append(symbol)
             code, detail, status_label = _provider_failure(exc)
-            save_file_failures(symbol, detail)
-            _crawl_progress(
-                symbol,
-                f"file-failed code={code} status={status_label}",
-            )
-            continue
+            save_file_failures(sym, detail)
+            _crawl_progress(sym, f"file-failed code={code} status={status_label}")
+            return {
+                "symbol": sym,
+                "imported": 0,
+                "failed": len(WORKER_DOCUMENT_TYPES) * len(periods),
+                "unavailable": 0,
+                "skipped": 0,
+                "is_success": False,
+            }
 
-        ensure_required_documents(symbol)
+        ensure_required_documents(sym)
         with _schema_connection(FINANCE_SCHEMA) as db:
             existing_rows = db.execute(
                 "SELECT provider, document_type, period_type, fiscal_year, "
                 "fiscal_quarter, status FROM documents WHERE symbol=?",
-                (symbol,),
+                (sym,),
             ).fetchall()
         statuses = {
             (
@@ -1632,9 +1729,11 @@ def import_tcbs_crawled_directory(
             for row in existing_rows
         }
 
-        symbol_imported = 0
-        symbol_failed = 0
-        symbol_unavailable = 0
+        sym_imported = 0
+        sym_failed = 0
+        sym_unavailable = 0
+        sym_skipped = 0
+
         for document_type in WORKER_DOCUMENT_TYPES:
             try:
                 records = _tcbs_records(payload, document_type)
@@ -1650,10 +1749,10 @@ def import_tcbs_crawled_directory(
                         statuses.get(key),
                         retry_failed_only=retry_failed_only,
                     ):
-                        skipped_documents += 1
+                        sym_skipped += 1
                         continue
                     _save_document(
-                        symbol,
+                        sym,
                         "tcbs",
                         document_type,
                         period_type,
@@ -1667,10 +1766,9 @@ def import_tcbs_crawled_directory(
                         detail,
                         run_id,
                     )
-                    failed_documents += 1
-                    symbol_failed += 1
+                    sym_failed += 1
                 _crawl_progress(
-                    symbol,
+                    sym,
                     f"file-failed document={document_type} "
                     f"code={code} status={status_label}",
                 )
@@ -1682,12 +1780,12 @@ def import_tcbs_crawled_directory(
                     statuses.get(key),
                     retry_failed_only=retry_failed_only,
                 ):
-                    skipped_documents += 1
+                    sym_skipped += 1
                     continue
                 try:
                     selected = _tcbs_select_record(
                         payload,
-                        symbol=symbol,
+                        symbol=sym,
                         document_type=document_type,
                         period_type=period_type,
                         year=year,
@@ -1695,13 +1793,13 @@ def import_tcbs_crawled_directory(
                     )
                     selected_payload = _tcbs_selected_payload(
                         selected,
-                        symbol=symbol,
+                        symbol=sym,
                         period_type=period_type,
                         year=year,
                         quarter=quarter,
                     )
                     _save_document(
-                        symbol,
+                        sym,
                         "tcbs",
                         document_type,
                         period_type,
@@ -1715,13 +1813,12 @@ def import_tcbs_crawled_directory(
                         None,
                         run_id,
                     )
-                    imported_documents += 1
-                    symbol_imported += 1
+                    sym_imported += 1
                 except Exception as exc:
                     code, detail, status_label = _provider_failure(exc)
                     document_status = _document_status_for_failure(code)
                     _save_document(
-                        symbol,
+                        sym,
                         "tcbs",
                         document_type,
                         period_type,
@@ -1736,31 +1833,49 @@ def import_tcbs_crawled_directory(
                         run_id,
                     )
                     if document_status == "NOT_AVAILABLE":
-                        unavailable_documents += 1
-                        symbol_unavailable += 1
+                        sym_unavailable += 1
                         outcome = "file-unavailable"
                     else:
-                        failed_documents += 1
-                        symbol_failed += 1
+                        sym_failed += 1
                         outcome = "file-failed"
                     _crawl_progress(
-                        symbol,
+                        sym,
                         f"{outcome} document={document_type} "
                         f"period={period_type}:{year}"
                         + (f":Q{quarter}" if quarter else "")
                         + f" code={code} status={status_label}",
                     )
 
-        processed += 1
-        if symbol_failed:
-            failed_symbols.append(symbol)
-        else:
-            successful_symbols.append(symbol)
         _crawl_progress(
-            symbol,
-            f"file-completed imported={symbol_imported} "
-            f"failed={symbol_failed} unavailable={symbol_unavailable}",
+            sym,
+            f"file-completed imported={sym_imported} "
+            f"failed={sym_failed} unavailable={sym_unavailable}",
         )
+        return {
+            "symbol": sym,
+            "imported": sym_imported,
+            "failed": sym_failed,
+            "unavailable": sym_unavailable,
+            "skipped": sym_skipped,
+            "is_success": sym_failed == 0,
+        }
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # Dùng 8 workers xử lý song song để tăng tốc tối đa
+    max_workers = min(12, os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(process_file, fn) for fn in filenames]
+        for future in as_completed(futures):
+            res = future.result()
+            processed += 1
+            imported_documents += res["imported"]
+            failed_documents += res["failed"]
+            unavailable_documents += res["unavailable"]
+            skipped_documents += res["skipped"]
+            if res["is_success"]:
+                successful_symbols.append(res["symbol"])
+            else:
+                failed_symbols.append(res["symbol"])
 
     with _schema_connection(FINANCE_SCHEMA) as db:
         db.execute(
@@ -1778,10 +1893,8 @@ def import_tcbs_crawled_directory(
         "files",
         f"completed directory={directory_path} files={len(filenames)} "
         f"processed={processed} success_symbols={len(successful_symbols)} "
-        f"failed_symbols={len(failed_symbols)} "
-        f"imported_documents={imported_documents} "
-        f"failed_documents={failed_documents} "
-        f"unavailable_documents={unavailable_documents} "
+        f"failed_symbols={len(failed_symbols)} imported_documents={imported_documents} "
+        f"failed_documents={failed_documents} unavailable_documents={unavailable_documents} "
         f"skipped_documents={skipped_documents}",
     )
     return {
@@ -2539,15 +2652,25 @@ def get_canonical_dividend_events(symbol: str) -> list[dict[str, Any]]:
     ticker = str(symbol).upper().strip()
     with _schema_connection(FINANCE_SCHEMA) as db:
         rows = db.execute(
-            """SELECT canonical_id AS event_key, symbol, dividend_type,
-                      effective_event_date, cash_per_share, stock_ratio,
-                      quality_status, evidence_json, last_seen_at
-               FROM dividend_canonical
-               WHERE symbol=? AND quality_status IN ('VERIFIED','SINGLE_SOURCE')
-               ORDER BY effective_event_date DESC""",
+            """SELECT c.canonical_id AS event_key, c.symbol, c.dividend_type,
+                      c.effective_event_date, c.cash_per_share, c.stock_ratio,
+                      c.quality_status, c.evidence_json, c.last_seen_at,
+                      o.ex_date, o.record_date, o.payment_date, o.announcement_date, o.provider
+               FROM dividend_canonical c
+               LEFT JOIN dividend_observations o ON o.id = c.chosen_observation_id
+               WHERE c.symbol=? AND c.quality_status IN ('VERIFIED','SINGLE_SOURCE')
+               ORDER BY c.effective_event_date DESC""",
             (ticker,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    out = []
+    for row in rows:
+        item = dict(row)
+        if item.get("stock_ratio") is not None:
+            item["stock_ratio_percent"] = float(item["stock_ratio"]) * 100.0
+        else:
+            item["stock_ratio_percent"] = None
+        out.append(item)
+    return out
 
 
 def _universe_progress(message: str) -> None:
