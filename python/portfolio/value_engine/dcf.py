@@ -27,6 +27,7 @@ class DCFValuationModel:
         growth_years: int = 5,
         terminal_growth: Decimal = Decimal("0.035"),  # 3.5%
         current_market_price: Optional[Decimal] = None,
+        is_equity_cash_flow: bool = True,
     ) -> ValuationScenario:
         if discount_rate <= terminal_growth:
             raise ValueError(f"Discount rate ({discount_rate}) must be strictly greater than terminal growth ({terminal_growth})")
@@ -50,8 +51,16 @@ class DCFValuationModel:
         pv_terminal_val = terminal_val / ((Decimal("1") + discount_rate) ** growth_years)
 
         # Enterprise & Equity Value
-        enterprise_val = pv_stage1 + pv_terminal_val
-        equity_val = enterprise_val - net_debt
+        # Section V Invariant: Owner Earnings / FCFE is already after interest expense (Equity Cash Flow).
+        # Discounting FCFE at Cost of Equity directly yields Equity Value (no secondary net debt deduction).
+        # FCFF (starting from EBIT*(1-T)) is Enterprise Cash Flow and requires Net Debt deduction.
+        if is_equity_cash_flow:
+            equity_val = pv_stage1 + pv_terminal_val
+            enterprise_val = equity_val + net_debt
+        else:
+            enterprise_val = pv_stage1 + pv_terminal_val
+            equity_val = enterprise_val - net_debt
+
         intrinsic_per_share = equity_val / shares_outstanding
 
         # Margin of Safety % = (Intrinsic Value - Market Price) / Intrinsic Value * 100%

@@ -41,11 +41,17 @@ class MoatRating(str, Enum):
 
 
 class ValuationPill(str, Enum):
-    DEEP_VALUE = "DEEP_VALUE"            # Thị giá dưới mức kịch bản Bear
-    UNDERVALUED = "UNDERVALUED"          # Thị giá dưới mức kịch bản Base (MoS > 15%)
-    FAIR_VALUE = "FAIR_VALUE"            # Thị giá nằm quanh vùng giá trị nội tại (-15% <= MoS <= 15%)
-    OVERVALUED = "OVERVALUED"            # Thị giá cao hơn giá trị nội tại (MoS < -15%)
-    GROWTH_PRICED_IN = "GROWTH_PRICED_IN"# Thị trường đang đòi hỏi mức tăng trưởng rất cao
+    HIGH_CONVICTION_VALUE = "HIGH_CONVICTION_VALUE" # Doanh nghiệp tuyệt vời ở mức giá có biên an toàn lớn
+    ATTRACTIVE = "ATTRACTIVE"                       # Thị giá dưới giá trị nội tại Base (đạt Required MOS)
+    FAIRLY_VALUED = "FAIRLY_VALUED"                 # Thị giá nằm quanh vùng giá trị nội tại (-15% <= MoS <= 15%)
+    FAIR_VALUE = "FAIR_VALUE"                       # Alias
+    WATCH = "WATCH"                                 # Doanh nghiệp tốt nhưng giá chưa đủ biên an toàn
+    AVOID_QUALITY = "AVOID_QUALITY"                 # Doanh nghiệp chất lượng thấp hoặc đòn bẩy rủi ro
+    UNVALUABLE = "UNVALUABLE"                       # Nằm ngoài vòng tròn năng lực, không thể chuẩn hóa dòng tiền
+    DEEP_VALUE = "DEEP_VALUE"                       # Legacy compatible alias
+    UNDERVALUED = "UNDERVALUED"                     # Legacy compatible alias
+    OVERVALUED = "OVERVALUED"                       # Legacy compatible alias
+    GROWTH_PRICED_IN = "GROWTH_PRICED_IN"           # Legacy compatible alias
 
 
 @dataclass
@@ -141,6 +147,10 @@ class ValuationReport:
     sensitivity_matrix: Optional[SensitivityMatrix]
     valuation_multiples: Optional[Dict[str, Any]] = None
     market_comparison: Optional[Dict[str, Any]] = None
+    valuation_model: str = "OWNER_EARNINGS_DCF"
+    archetype_profile: Optional[Dict[str, Any]] = None
+    quality_scorecard: Optional[Dict[str, Any]] = None
+    margin_of_safety_analysis: Optional[Dict[str, Any]] = None
     source_fact_ids: List[str] = field(default_factory=list)
     engine_version: str = "1.0.0"
     computed_at: str = ""

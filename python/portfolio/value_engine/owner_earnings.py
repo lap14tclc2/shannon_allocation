@@ -47,8 +47,7 @@ class OwnerEarningsCalculator:
         net_income = usable_facts["IS.PROFIT.NET"].value
         da_val = usable_facts["CF.OPERATING.DEPRECIATION"].value
         capex = abs(usable_facts["CF.CAPEX"].value)
-        # The maintenance/growth split is only a bounded interpretation of two
-        # reported cash-flow facts, never a synthetic percentage fallback.
+        # Bounded Maintenance CapEx heuristic: estimated as min(depreciation, total capex)
         maint_capex = min(capex, abs(da_val))
         growth_capex = max(Decimal("0"), capex - maint_capex)
         cf_ops = usable_facts["CF.OPERATING.NET"].value
@@ -57,7 +56,7 @@ class OwnerEarningsCalculator:
 
         source_ids = [usable_facts[code].canonical_fact_id for code in required_codes]
         desc = (
-            f"Owner Earnings = Net Income ({net_income:,.0f}) + D&A ({da_val:,.0f}) "
+            f"Estimated Normalized Owner Earnings = Net Income ({net_income:,.0f}) + D&A ({da_val:,.0f}) "
             f"- Maint CAPEX ({maint_capex:,.0f}) + ΔWC ({wc_change:,.0f}) = {owner_earnings:,.0f} VND"
         )
         return OwnerEarningsBridge(
@@ -69,4 +68,48 @@ class OwnerEarningsCalculator:
             owner_earnings=owner_earnings,
             formula_description=desc,
             source_fact_ids=source_ids,
+        )
+
+    @classmethod
+    def calculate_cycle_normalized(
+        cls,
+        facts: List[CanonicalFact],
+        latest_fiscal_year: int,
+        lookback_years: int = 5,
+    ) -> OwnerEarningsBridge:
+        """
+        Calculates 5-year cycle-normalized owner earnings for cyclical enterprises (HPG, DGC, etc.).
+        Averages multi-year owner earnings to eliminate peak/trough bias.
+        """
+        oe_list: List[Decimal] = []
+        bridges: List[OwnerEarningsBridge] = []
+        for y in range(latest_fiscal_year - lookback_years + 1, latest_fiscal_year + 1):
+            try:
+                b = cls.calculate(facts, fiscal_year=y)
+                if b.owner_earnings > Decimal("0"):
+                    oe_list.append(b.owner_earnings)
+                    bridges.append(b)
+            except Exception:
+                continue
+
+        if not oe_list:
+            # Fallback to latest year
+            return cls.calculate(facts, fiscal_year=latest_fiscal_year)
+
+        avg_oe = sum(oe_list) / Decimal(str(len(oe_list)))
+        latest_b = bridges[-1] if bridges else cls.calculate(facts, fiscal_year=latest_fiscal_year)
+
+        desc = (
+            f"Normalized {len(oe_list)}Y Mid-Cycle Owner Earnings = {avg_oe:,.0f} VND "
+            f"(Averaged across {lookback_years}-year business cycle to remove commodity/cyclical distortion)."
+        )
+        return OwnerEarningsBridge(
+            net_income=sum(b.net_income for b in bridges) / Decimal(str(len(bridges))),
+            depreciation_amortization=latest_b.depreciation_amortization,
+            maintenance_capex=latest_b.maintenance_capex,
+            growth_capex_estimated=latest_b.growth_capex_estimated,
+            working_capital_change=latest_b.working_capital_change,
+            owner_earnings=avg_oe,
+            formula_description=desc,
+            source_fact_ids=latest_b.source_fact_ids,
         )

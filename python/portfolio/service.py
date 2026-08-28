@@ -549,26 +549,40 @@ class PortfolioService:
         }
 
     def sync_daily(self) -> dict:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         state = self.current_state()
         current_symbols = sorted(state.positions)
         ledger_symbols = sorted({e.symbol.upper() for e in self.store.list_events() if e.symbol})
         today = datetime.now(VN_TZ).date()
         sync_rows = []
         errors = []
-        for symbol in ledger_symbols:
-            try:
-                sync_rows.append(self._sync_symbol(symbol, today))
-            except Exception as exc:
-                errors.append({"symbol": symbol, "error": str(exc)})
+
+        all_to_sync = list(ledger_symbols)
+        if "VNINDEX" not in all_to_sync:
+            all_to_sync.append("VNINDEX")
+
+        def _do_sync(sym: str):
+            return sym, self._sync_symbol(sym, today)
 
         benchmark_sync = None
         benchmark_error = None
-        try:
-            benchmark_sync = self._sync_symbol("VNINDEX", today)
-        except Exception as exc:
-            # A benchmark is contextual analysis only. Its provider outage must
-            # never block valuation, official snapshots or ledger operations.
-            benchmark_error = str(exc)
+
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(all_to_sync)))) as executor:
+            futures = {executor.submit(_do_sync, sym): sym for sym in all_to_sync}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, res = fut.result()
+                    if sym == "VNINDEX":
+                        benchmark_sync = res
+                    else:
+                        sync_rows.append(res)
+                except Exception as exc:
+                    if sym == "VNINDEX":
+                        benchmark_error = str(exc)
+                    else:
+                        errors.append({"symbol": sym, "error": str(exc)})
 
         rebuilt = self._rebuild_snapshot_history()
         prices = self.store.latest_prices(current_symbols)

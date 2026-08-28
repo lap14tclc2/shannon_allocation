@@ -822,3 +822,193 @@ button:active {
     grid-template-columns: 1fr;
   }
 }
+
+/* 10-Year Historical Financial Ledger Table */
+.history-10y-table-container {
+  overflow-x: auto;
+  margin-top: 10px;
+  border: 1px solid var(--retro-border, #9c927f);
+  border-radius: 2px;
+}
+
+.history-10y-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: right;
+  background: var(--surface, var(--retro-panel, #fcf6e8));
+}
+
+.history-10y-table th,
+.history-10y-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--retro-border, #9c927f) 50%, transparent);
+}
+
+.history-10y-table th {
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  font-weight: 600;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.history-10y-table th:first-child,
+.history-10y-table td:first-child {
+  text-align: left;
+}
+
+.history-10y-table tr:hover td {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 8%, var(--surface, #fcf6e8));
+}
+
+.highlight-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--retro-green, #2f6b4d) 15%, transparent);
+  color: var(--retro-green, #2f6b4d);
+  font-weight: 700;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--retro-green, #2f6b4d) 30%, transparent);
+}
+
+/* Value Investor Health Pillars (Miller's Law - 3 Pillars Grid) */
+.valuation-pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+
+@media (max-width: 768px) {
+  .valuation-pillars-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pillar-card {
+  padding: 12px 14px;
+  border: 1px solid var(--retro-border, #9c927f);
+  border-radius: 2px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pillar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pillar-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.pillar-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+
+.pillar-excellent .pillar-badge,
+.pillar-fortress .pillar-badge {
+  background: color-mix(in srgb, var(--retro-green, #2f6b4d) 18%, transparent);
+  color: var(--retro-green, #2f6b4d);
+}
+
+.pillar-good .pillar-badge,
+.pillar-strong .pillar-badge {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 18%, transparent);
+  color: var(--retro-gold, #7a551d);
+}
+
+.pillar-watch .pillar-badge,
+.pillar-moderate .pillar-badge {
+  background: color-mix(in srgb, var(--retro-terracotta, #b84a39) 18%, transparent);
+  color: var(--retro-terracotta, #b84a39);
+}
+
+.pillar-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.pillar-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.pillar-sub {
+  font-size: 0.74rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.pillar-desc {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+/* Sensitivity Analysis Matrix (Von Restorff Highlighting) */
+.sensitivity-matrix-container {
+  overflow-x: auto;
+  margin: 10px 0 6px;
+  border: 1px solid var(--retro-border, #9c927f);
+  border-radius: 2px;
+}
+
+.sensitivity-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: center;
+  background: var(--surface, var(--retro-panel, #fcf6e8));
+}
+
+.sensitivity-matrix-table th,
+.sensitivity-matrix-table td {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--retro-border, #9c927f) 40%, transparent);
+}
+
+.sensitivity-matrix-table th {
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  font-weight: 700;
+  font-size: 0.76rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.sensitivity-matrix-table th.th-base-rate {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 15%, var(--surface-soft, #f4ecd9));
+  color: var(--retro-gold, #7a551d);
+  font-weight: 800;
+}
+
+.sensitivity-matrix-table td.cell-base-case {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 20%, var(--surface, #fcf6e8));
+  color: var(--retro-gold, #7a551d);
+  font-weight: 800;
+  outline: 2px solid var(--retro-gold, #7a551d);
+  outline-offset: -2px;
+}
+
+.matrix-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  font-style: italic;
+}

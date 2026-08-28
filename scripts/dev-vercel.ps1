@@ -53,12 +53,12 @@ To use a different native PostgreSQL connection:
 
 Write-Host 'QPort Vercel-compatible local runtime'
 Write-Host '  Web: http://localhost:3000'
-Write-Host '  API: http://localhost:8000/api/health'
+Write-Host '  API: http://localhost:8001/api/health'
 Write-Host '  Database mode: native PostgreSQL'
 Write-Host "  DATABASE_URL: $env:DATABASE_URL"
 
 $api = Start-Process -FilePath $pythonExe -ArgumentList @(
-  '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
+  '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8001'
 ) -PassThru -NoNewWindow
 
 try {

@@ -1290,6 +1290,7 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
         "ok": True,
         "symbol": ticker,
         "provider": "finance_catalog",
+        "selected_period": f"FY:{latest['IS.PROFIT.NET']['fiscal_year']}",
         "fetched_at": latest["IS.PROFIT.NET"]["observed_at"],
         "fiscal_year": latest["IS.PROFIT.NET"]["fiscal_year"],
         "fiscal_quarter": None,

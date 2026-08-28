@@ -119,10 +119,10 @@ class AutoMarketData:
     name="auto"
     def __init__(self, providers: list[MarketDataProvider] | None=None) -> None:
         if providers is not None: self.providers=list(providers); return
-        resolved=[]
+        resolved = [VndirectProvider()]
         try: resolved.append(VnstockProvider())
         except MarketDataError as exc: log.info("vnstock provider unavailable: %s",exc)
-        resolved.append(VndirectProvider()); self.providers=resolved
+        self.providers=resolved
 
     @staticmethod
     def _clone_frame(frame: pd.DataFrame) -> pd.DataFrame:

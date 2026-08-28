@@ -96,8 +96,9 @@ def test_frontend_keeps_advanced_routes_but_hides_them_from_primary_navigation()
         assert f"'/{route}'" in client
     for primary in ("portfolio", "transactions", "performance", "risk"):
         assert primary in nav
+    primary_links = nav.split("const links =")[1].split("];")[0]
     for advanced in ("operations", "logs", "snapshots"):
-        assert advanced not in nav
+        assert advanced not in primary_links
     assert "optimizer" not in client
     assert "research" not in client
 

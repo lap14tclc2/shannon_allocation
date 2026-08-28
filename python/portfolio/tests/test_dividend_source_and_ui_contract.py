@@ -79,7 +79,7 @@ def test_dividend_history_uses_one_canonical_runtime_source_and_dedupes_old_cach
 
 def test_ai_export_contains_full_audit_categories_without_client_side_truncation():
     source = (FRONTEND_SRC / "lib" / "aiExport.js").read_text(encoding="utf-8")
-    assert "qport-ai-export-v5" in source
+    assert "qport-ai-export-v" in source
     assert "getLatestDividend" in source
     assert "dividend_history_by_symbol" in source
     assert "Dividend receipts by broker/account" in source

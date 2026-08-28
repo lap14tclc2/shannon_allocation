@@ -1,17 +1,17 @@
 import {
-  getActivityLog,
   getLatestDividend,
   getPortfolioDashboard,
   getPortfolioOperations,
   getPortfolioPerformance,
   getPortfolioRisk,
+  getValuationReports,
   listPortfolioSnapshots,
   listPortfolioTransactionAudit,
   listPortfolioTransactions,
   logClientActivity,
 } from './api.js';
 
-const EXPORT_SCHEMA = 'qport-ai-export-v5';
+const EXPORT_SCHEMA = 'qport-ai-export-v6';
 
 function finite(value) { const n = Number(value); return value == null || !Number.isFinite(n) ? null : n; }
 function money(value) { const n = finite(value); return n == null ? '-' : `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} VND`; }
@@ -32,8 +32,8 @@ function metadataSummary(metadata = {}) {
 }
 
 export function buildAIExportMarkdown({
-  dashboard = {}, performance = {}, risk = {}, operations = {}, activity = {},
-  snapshots = [], transactions = [], corrections = [], dividends = {}, generatedAt,
+  dashboard = {}, performance = {}, risk = {}, operations = {},
+  snapshots = [], transactions = [], corrections = [], dividends = {}, valuations = {}, generatedAt,
 }) {
   const portfolio = dashboard.portfolio || {};
   const positions = portfolio.positions || [];
@@ -42,7 +42,6 @@ export function buildAIExportMarkdown({
   const suggestions = dashboard.contribution_suggestions || {};
   const orderedSnapshots = [...snapshots].filter(Boolean).sort((a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)));
   const ledger = [...transactions].sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)) || Number(a.id || 0) - Number(b.id || 0));
-  const activityRows = activity.logs || [];
 
   const holdings = table(
     ['Ticker','Shares','Avg cost','Price','Cost value','Market value','P/L','NAV weight','Equity weight','Risk contrib.','Status'],
@@ -92,7 +91,6 @@ export function buildAIExportMarkdown({
   );
   const correctionAudit = table(['Correction','Event','Action','Reason','Created by','Created at'], corrections.map(c => [c.id,c.event_id,c.action,c.reason,c.created_by || '-',c.created_at]));
   const snapTable = table(['Date','Official','NAV','Cash','Equity','Daily P/L','Daily return','Drawdown','Quality'], orderedSnapshots.map(s => [s.snapshot_date,String(Boolean(s.official)),money(s.nav),money(s.cash),money(s.equity_value),money(s.daily_pnl),pct(s.daily_return),pct(s.current_drawdown),s.data_quality]));
-  const activityTable = table(['ID','Time UTC','Actor','Category','Action','Entity','Status','Summary'], activityRows.map(x => [x.id,x.occurred_at,`${x.actor_type}/${x.actor_id}`,x.category,x.action,`${x.entity_type || '-'}${x.entity_id ? `#${x.entity_id}` : ''}`,x.status,x.summary]));
 
   const dividendRows = [];
   for (const symbol of Object.keys(dividends).sort()) {
@@ -111,6 +109,84 @@ export function buildAIExportMarkdown({
   }
   const dividendHistory = table(['Ticker','Type','Event date','Ex date','Record date','Payment date','Cash/share','Stock ratio','Canonical source'], dividendRows);
 
+  // Fundamental Valuation & Value Investing Summary
+  const valuationSummaryRows = [];
+  const valuationPillarsRows = [];
+  const valuationHistorySections = [];
+
+  for (const symbol of Object.keys(valuations).sort()) {
+    const rep = valuations[symbol] || {};
+    const mult = rep.multiples || {};
+    const scen = rep.scenarios || {};
+    const pillars = rep.value_investor_pillars || {};
+
+    valuationSummaryRows.push([
+      symbol,
+      money(rep.current_market_price),
+      money(rep.intrinsic_value_base),
+      rep.margin_of_safety_base != null ? `${rep.margin_of_safety_base > 0 ? '+' : ''}${num(rep.margin_of_safety_base, 1)}%` : '-',
+      rep.valuation_pill || '-',
+      money(scen.BEAR?.intrinsic_value_per_share),
+      money(scen.BULL?.intrinsic_value_per_share),
+      money(rep.epv_result?.epv_per_share),
+      mult.pe != null ? `${num(mult.pe, 1)}x` : '-',
+      mult.pb != null ? `${num(mult.pb, 2)}x` : '-',
+      mult.roe != null ? `${num(mult.roe, 1)}%` : '-',
+    ]);
+
+    valuationPillarsRows.push([
+      symbol,
+      pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${num(pillars.earnings_quality.avg_cash_conversion_5y, 1)}% (${pillars.earnings_quality.status})` : '-',
+      pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm (FORTRESS)' : `${pillars.financial_fortress?.debt_payback_years} năm (${pillars.financial_fortress?.status})`,
+      pillars.capital_allocation?.avg_roe_5y != null ? `${num(pillars.capital_allocation.avg_roe_5y, 1)}% (${pillars.capital_allocation.status})` : '-',
+      pillars.capital_allocation?.share_dilution_5y_pct != null ? `+${num(pillars.capital_allocation.share_dilution_5y_pct, 1)}%` : '0%',
+      rep.cagr_5y_net_profit != null ? `+${num(rep.cagr_5y_net_profit, 1)}%` : '-',
+    ]);
+
+    if (Array.isArray(rep.financial_history_10y) && rep.financial_history_10y.length > 0) {
+      const histTable = table(
+        ['Year', 'Net Profit (VND)', 'Equity (VND)', 'ROE (%)', 'CFO (VND)', 'FCF (VND)', 'Cash Conversion (%)', 'Shares'],
+        rep.financial_history_10y.map(h => [
+          h.fiscal_year,
+          money(h.net_profit),
+          money(h.equity),
+          h.roe != null ? `${num(h.roe, 1)}%` : '-',
+          money(h.operating_cash_flow),
+          money(h.free_cash_flow),
+          h.cash_conversion_ratio != null ? `${num(h.cash_conversion_ratio, 1)}%` : '-',
+          h.shares_outstanding != null ? num(h.shares_outstanding, 0) : '-',
+        ]),
+      );
+
+      let sensTableStr = '';
+      if (rep.sensitivity_matrix?.grid_values_per_share) {
+        const discHeaders = ['Terminal Growth (g) \\ Discount (r)', ...rep.sensitivity_matrix.discount_rates.map(r => `${num(Number(r) * 100, 1)}%`)];
+        const sensRows = rep.sensitivity_matrix.terminal_growth_rates.map((g, rIdx) => [
+          `${num(Number(g) * 100, 1)}%`,
+          ...rep.sensitivity_matrix.grid_values_per_share[rIdx].map(v => money(v)),
+        ]);
+        sensTableStr = `\n\n#### Sensitivity Matrix (r vs g) for ${symbol}\n\n${table(discHeaders, sensRows)}`;
+      }
+
+      valuationHistorySections.push(`### ${symbol} — Financial History & Sensitivity\n\n` +
+        `**Analyst Verdict:** ${rep.analyst_verdict || '-'}\n\n` +
+        `**Owner Earnings Bridge:** Net Income: ${money(rep.owner_earnings_bridge?.net_income)} · D&A: ${money(rep.owner_earnings_bridge?.depreciation_amortization)} · Capex: ${money(rep.owner_earnings_bridge?.maintenance_capex)} $\\rightarrow$ Owner Earnings: ${money(rep.owner_earnings_bridge?.owner_earnings)}\n\n` +
+        `#### 10-Year Financial Ledger (${rep.financial_history_10y[0]?.fiscal_year} – ${rep.financial_history_10y[rep.financial_history_10y.length - 1]?.fiscal_year})\n\n${histTable}` +
+        sensTableStr
+      );
+    }
+  }
+
+  const valuationOverviewTable = table(
+    ['Ticker', 'Market Price', 'Intrinsic Value (Base)', 'Margin of Safety', 'Verdict', 'Bear DCF', 'Bull DCF', 'EPV', 'P/E', 'P/B', 'ROE'],
+    valuationSummaryRows,
+  );
+
+  const valuationPillarsTable = table(
+    ['Ticker', 'Cash Conversion 5Y', 'Debt Payback (Fortress)', '5Y Avg ROE', '5Y Share Dilution', '5Y Profit CAGR'],
+    valuationPillarsRows,
+  );
+
   const payload = clean({
     schema_version: EXPORT_SCHEMA,
     generated_at: generatedAt,
@@ -123,8 +199,8 @@ export function buildAIExportMarkdown({
       transactions: ledger.length,
       corrections: corrections.length,
       snapshots_returned_by_api: orderedSnapshots.length,
-      activity_rows_returned_by_api: activityRows.length,
       dividend_symbols: Object.keys(dividends).length,
+      valuation_symbols: Object.keys(valuations).length,
       broker_dividend_receipts: (operations.dividend_receipts_by_broker || []).length,
       note: 'Client-side export does not truncate API responses.',
     },
@@ -132,9 +208,8 @@ export function buildAIExportMarkdown({
     performance,
     risk,
     operations,
+    valuations,
     dividend_history_by_symbol: dividends,
-    activity_integrity: activity.integrity || {},
-    activity: activityRows,
     transactions: ledger,
     transaction_correction_audit: corrections,
     snapshots: orderedSnapshots,
@@ -143,12 +218,16 @@ export function buildAIExportMarkdown({
   return `# QPort AI Audit Export\n\n` +
     `> Read-only audit evidence. QPort is a Buy & Hold portfolio information system; this export never creates a trade.\n\n` +
     `## Export metadata\n\n${table(['Field','Value'], [
-      ['Schema',EXPORT_SCHEMA],['Generated at',generatedAt],['Portfolio state as of',dashboard.today || '-'],['Market data as of',market.market_date || '-'],['Performance as of',performance.latest_date || '-'],['Book type',operations.book_type || '-'],['Accounting cost method',operations.accounting_cost_method || '-'],['Position recognition',operations.position_recognition || '-'],['Activity chain',activity.integrity?.status || '-'],['Ledger rows',ledger.length],['Correction rows',corrections.length],['Snapshots returned',orderedSnapshots.length],['Activity rows returned',activityRows.length],['Dividend symbols audited',Object.keys(dividends).length]
+      ['Schema',EXPORT_SCHEMA],['Generated at',generatedAt],['Portfolio state as of',dashboard.today || '-'],['Market data as of',market.market_date || '-'],['Performance as of',performance.latest_date || '-'],['Book type',operations.book_type || '-'],['Accounting cost method',operations.accounting_cost_method || '-'],['Position recognition',operations.position_recognition || '-'],['Ledger rows',ledger.length],['Correction rows',corrections.length],['Snapshots returned',orderedSnapshots.length],['Dividend symbols audited',Object.keys(dividends).length],['Valuation symbols audited',Object.keys(valuations).length]
     ])}\n\n` +
     `## Current accounting\n\n${table(['Metric','Value'], [
       ['NAV',money(portfolio.nav)],['Equity',money(portfolio.equity_value)],['Cash',money(portfolio.cash)],['Cost value',money(portfolio.cost_value)],['Total P/L',money(portfolio.total_pnl)],['Accounting return',pct(portfolio.accounting_return)],['Realized P/L',money(portfolio.realized_pnl)],['Unrealized P/L',money(portfolio.unrealized_pnl)],['Gross cash dividends',money(portfolio.dividend_income)],['Cash-dividend tax',money(performance.cash_dividend_tax)],['Net cash-dividend income',money(performance.net_dividend_income)],['Stock-dividend sale tax',money(performance.stock_dividend_sale_tax)],['Fees + taxes',money(portfolio.fees_and_taxes)],['Performance history',performance.history_status || '-'],['TWR',pct(performance.returns?.since_inception)],['XIRR',pct(performance.xirr)],['Drawdown',pct(performance.current_drawdown)]
     ])}\n\n## Holdings\n\n${holdings}` +
-    `\n\n## Tax lots by broker/account\n\n${lots}` +
+    `\n\n## Fundamental Valuation & Value Investing Analysis\n\n` +
+    `### Valuation & Margin of Safety Overview\n\n${valuationOverviewTable}\n\n` +
+    `### Value Investor Health Pillars (Cash Quality, Fortress, Capital Allocation)\n\n${valuationPillarsTable}\n\n` +
+    (valuationHistorySections.length ? `${valuationHistorySections.join('\n\n')}\n\n` : '') +
+    `## Tax lots by broker/account\n\n${lots}` +
     `\n\n## Dividend receipts by broker/account\n\n${brokerDividends}` +
     `\n\n## Canonical dividend provider history\n\n${dividendHistory}` +
     `\n\n## Institutional cash & settlement\n\n${table(['Metric','Value'], [
@@ -167,7 +246,6 @@ export function buildAIExportMarkdown({
     `\n\n## Strategic cash policy\n\nCash reserve configured: **${String(prefs.cash_reserve_configured ?? false)}**  \nStrategic reserve: **${money(prefs.cash_reserve)}**  \nCash deployment policy: **${cell(suggestions.policy || '-')}**\n` +
     `\n\n## Effective ledger\n\n${effectiveLedger}` +
     `\n\n## Transaction correction audit\n\n${correctionAudit}` +
-    `\n\n## Activity log returned by API\n\n${activityTable}` +
     `\n\n## Snapshot history returned by API\n\n${snapTable}` +
     `\n\n## Interpretation rules for AI\n\n` +
     `- Effective ledger = immutable source events plus append-only corrections and is the source of truth for Holdings.\n` +
@@ -181,10 +259,10 @@ export function buildAIExportMarkdown({
     `- ISIN is resolved from reference/master data and is never fabricated from ticker.\n` +
     `- Trade-date positions and settlement-aware cash are separate concepts.\n` +
     `- Broker reconciliation differences are exceptions, never auto-corrections.\n` +
-    `- Activity records are append-only and hash chained; integrity status is included above.\n` +
     `- NAV restatements require review after historical corrections.\n` +
     `- Accounting return is not TWR/XIRR/CAGR. Missing performance evidence is N/A, never zero.\n` +
     `- Risk/portfolio guidance is informational and never creates a BUY/SELL transaction.\n` +
+    `- Fundamental valuation reports are built on 10-year audited canonical financial statements without speculative short-term price target extrapolation.\n` +
     `\n## Machine-readable payload\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n`;
 }
 
@@ -206,17 +284,23 @@ async function loadDividendAudit(symbols) {
 
 export async function downloadAIExport() {
   try { await logClientActivity('AI_EXPORT', { schema: EXPORT_SCHEMA }); } catch (_) { /* export must remain usable if audit endpoint is temporarily unavailable */ }
-  const [dashboard, performance, risk, operations, activity, snapshots, transactions, corrections] = await Promise.all([
-    getPortfolioDashboard(), getPortfolioPerformance(), getPortfolioRisk(), getPortfolioOperations(), getActivityLog(),
+  const [dashboard, performance, risk, operations, snapshots, transactions, corrections] = await Promise.all([
+    getPortfolioDashboard(), getPortfolioPerformance(), getPortfolioRisk(), getPortfolioOperations(),
     listPortfolioSnapshots(), listPortfolioTransactions(), listPortfolioTransactionAudit(),
   ]);
   const symbols = [...new Set([
     ...(dashboard?.portfolio?.positions || []).map(row => String(row.symbol || '').toUpperCase()),
     ...transactions.map(row => String(row.symbol || '').toUpperCase()),
   ].filter(Boolean))].sort();
-  const dividends = await loadDividendAudit(symbols);
+
+  const [dividends, valuationRes] = await Promise.all([
+    loadDividendAudit(symbols),
+    getValuationReports(symbols).catch(() => ({ reports: {} })),
+  ]);
+
+  const valuations = valuationRes.reports || {};
   const generatedAt = new Date().toISOString();
-  const markdown = buildAIExportMarkdown({ dashboard, performance, risk, operations, activity, snapshots, transactions, corrections, dividends, generatedAt });
+  const markdown = buildAIExportMarkdown({ dashboard, performance, risk, operations, snapshots, transactions, corrections, dividends, valuations, generatedAt });
   const date = String(dashboard?.today || generatedAt.slice(0, 10));
   const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);

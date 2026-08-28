@@ -835,20 +835,19 @@ def portfolio_latest_dividend(
             status="SUCCESS",
         )
         return result
-    # Normal user routes are database-only in every runtime. Provider crawling
-    # belongs to the admin/local-worker ingestion path and never runs as a
-    # cache-aside request from a user endpoint.
-    return JSONResponse(status_code=404, content={
+    # Normal user routes are database-only in every runtime. When a stock has no
+    # recorded dividend events in DB, return 200 with found=false and empty events.
+    return {
         "found": False,
         "symbol": ticker,
         "events": [],
         "event_count": 0,
         "data_origin": "DATABASE_CANONICAL",
         "code": "FINANCE_DATA_MISSING",
-        "error": "contact admin",
+        "error": None,
         "source_counts": {},
         "errors": [],
-    })
+    }
 
 
 @app.get("/api/portfolio/valuation/{symbol}")
@@ -965,7 +964,8 @@ def portfolio_symbol_valuation(
 
     sector = field(profile, "industry", "industry_name", "sector", "icb_name3", "icb_name2")
     company_type = str(field(profile, "company_type", "type", "industry") or "")
-    entity_type = EntityType.BANK if any(token in f"{sector or ''} {company_type}".lower() for token in ("bank", "ngân hàng")) else EntityType.NORMAL_ENTERPRISE
+    is_bank = any(token in f"{sector or ''} {company_type}".lower() for token in ("bank", "ngân hàng"))
+    entity_type = EntityType.BANK if is_bank else EntityType.NORMAL_ENTERPRISE
 
     if current_price is None or current_price <= 0:
         raise ApiError(422, f"Provider không trả giá mới nhất hợp lệ cho {ticker}.", "VALUATION_PRICE_MISSING")
@@ -987,7 +987,7 @@ def portfolio_symbol_valuation(
     def add_fact(code: str, statement_type: StatementType, value: Decimal | None, period_type: PeriodType) -> None:
         if value is None:
             return
-        # TCBS financial statements are expressed in billion VND (tỷ đồng) except for share counts
+        # Standardize unit scale: financial statements are expressed in billion VND (tỷ đồng) except for share counts
         fact_val = value if code == "IS.SHARES.OUTSTANDING" or abs(value) >= Decimal("1000000000") else value * Decimal("1000000000")
         fact_id = f"db-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
         facts.append(CanonicalFact(
@@ -1044,6 +1044,137 @@ def portfolio_symbol_valuation(
             return None
         return value * Decimal("100") if abs(value) <= Decimal("1") else value
 
+    # Query multi-year historical series for long-term compounding analysis
+    financial_history: list[dict[str, Any]] = []
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        hist_rows = db.execute(
+            """SELECT fiscal_year, line_item_code, value
+               FROM canonical_facts
+               WHERE symbol = ? AND period_type = 'FY' AND fiscal_quarter IS NULL
+               ORDER BY fiscal_year ASC""",
+            (ticker,),
+        ).fetchall()
+        by_year: dict[int, dict[str, Decimal]] = {}
+        for r in hist_rows:
+            by_year.setdefault(int(r["fiscal_year"]), {})[str(r["line_item_code"])] = Decimal(str(r["value"]))
+
+        for y in sorted(by_year.keys()):
+            items = by_year[y]
+            np_val = items.get("IS.PROFIT.NET")
+            eq_val = items.get("BS.EQUITY.TOTAL")
+            cfo_val = items.get("CF.OPERATING.NET")
+            capex_val = items.get("CF.CAPEX")
+            shares_val = items.get("IS.SHARES.OUTSTANDING")
+            debt_val = items.get("BS.DEBT.TOTAL")
+            cash_val = items.get("BS.ASSETS.CASH_AND_EQUIVALENTS")
+            rev_val = items.get("IS.REVENUE.NET")
+
+            np_scaled = float(np_val * Decimal("1000000000")) if np_val is not None else None
+            eq_scaled = float(eq_val * Decimal("1000000000")) if eq_val is not None else None
+            cfo_scaled = float(cfo_val * Decimal("1000000000")) if cfo_val is not None else None
+            capex_scaled = float(abs(capex_val) * Decimal("1000000000")) if capex_val is not None else None
+            fcf_scaled = (cfo_scaled - capex_scaled) if (cfo_scaled is not None and capex_scaled is not None) else None
+            debt_scaled = float(debt_val * Decimal("1000000000")) if debt_val is not None else None
+            cash_scaled = float(cash_val * Decimal("1000000000")) if cash_val is not None else None
+            shares_count = float(shares_val) if shares_val is not None else None
+
+            roe_hist = round((float(np_val) / float(eq_val) * 100), 1) if (np_val is not None and eq_val and eq_val > Decimal("0")) else None
+            conversion_hist = round((cfo_scaled / np_scaled * 100), 1) if (cfo_scaled is not None and np_scaled and np_scaled > 0) else None
+
+            financial_history.append({
+                "fiscal_year": y,
+                "revenue": float(rev_val * Decimal("1000000000")) if rev_val is not None else None,
+                "net_profit": np_scaled,
+                "equity": eq_scaled,
+                "roe": roe_hist,
+                "operating_cash_flow": cfo_scaled,
+                "free_cash_flow": fcf_scaled,
+                "cash_conversion_ratio": conversion_hist,
+                "shares_outstanding": shares_count,
+                "total_debt": debt_scaled,
+                "cash_and_equivalents": cash_scaled,
+            })
+
+    # Compute Value Investing Pillar Metrics
+    np_series = [(h["fiscal_year"], h["net_profit"]) for h in financial_history if h.get("net_profit") is not None]
+    cagr_5y = None
+    if len(np_series) >= 5 and np_series[-5][1] and np_series[-1][1] and np_series[-5][1] > 0 and np_series[-1][1] > 0:
+        y_start, v_start = np_series[-5]
+        y_end, v_end = np_series[-1]
+        span = y_end - y_start
+        if span > 0:
+            cagr_5y = round(((v_end / v_start) ** (1.0 / span) - 1.0) * 100, 1)
+
+    # 1. Earnings Quality: Average 5Y Cash Conversion
+    recent_conversions = [h["cash_conversion_ratio"] for h in financial_history[-5:] if h.get("cash_conversion_ratio") is not None]
+    avg_cash_conversion_5y = round(sum(recent_conversions) / len(recent_conversions), 1) if recent_conversions else None
+    latest_conversion = financial_history[-1].get("cash_conversion_ratio") if financial_history else None
+
+    # 2. Financial Fortress: Debt Payback Period (Non-bank) or Capital Adequacy / Net Cash
+    latest_hist = financial_history[-1] if financial_history else {}
+    latest_debt = latest_hist.get("total_debt") or 0
+    latest_cash = latest_hist.get("cash_and_equivalents") or 0
+    net_debt_calc = 0.0 if is_bank else max(0.0, float(latest_debt - latest_cash))
+    latest_cfo = latest_hist.get("operating_cash_flow") or 0
+    debt_payback_years = round(net_debt_calc / latest_cfo, 1) if (latest_cfo and latest_cfo > 0 and net_debt_calc > 0) else 0.0
+
+    fortress_status = "FORTRESS" if (is_bank or net_debt_calc == 0) else ("STRONG" if debt_payback_years < 3.0 else "MODERATE")
+    fortress_diag = "Cơ cấu tài chính ngân hàng chuẩn mực (Huy động tiền gửi kinh doanh)." if is_bank else ("Pháo đài tiền mặt ròng dồi dào (Không có áp lực nợ)." if net_debt_calc == 0 else (f"Khả năng hoàn trả nợ ròng nhanh ({debt_payback_years} năm)." if debt_payback_years < 3.0 else f"Cần theo dõi đòn bẩy nợ ({debt_payback_years} năm hoàn nợ)."))
+
+    # 3. Capital Allocation: 5Y Average ROE & Share Dilution
+    recent_roes = [h["roe"] for h in financial_history[-5:] if h.get("roe") is not None]
+    avg_roe_5y = round(sum(recent_roes) / len(recent_roes), 1) if recent_roes else None
+
+    shares_series = [(h["fiscal_year"], h["shares_outstanding"]) for h in financial_history if h.get("shares_outstanding") is not None]
+    share_dilution_5y = None
+    true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được duy trì tốt."
+    if len(shares_series) >= 5 and shares_series[-5][1] and shares_series[-1][1] and shares_series[-5][1] > 0:
+        s_old = shares_series[-5][1]
+        s_new = shares_series[-1][1]
+        with _schema_connection(FINANCE_SCHEMA) as db:
+            stock_div_rows = db.execute(
+                """SELECT stock_ratio FROM dividend_canonical 
+                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND' 
+                   AND effective_event_date >= ?""",
+                (ticker, f"{shares_series[-5][0]}-01-01")
+            ).fetchall()
+            cumulative_stock_div = 1.0
+            for r in stock_div_rows:
+                if r["stock_ratio"]:
+                    cumulative_stock_div *= (1.0 + float(r["stock_ratio"]))
+            
+            expected_shares_from_bonus = s_old * cumulative_stock_div
+            economic_dilution_pct = max(0.0, ((s_new - expected_shares_from_bonus) / s_old) * 100)
+            share_dilution_5y = round(economic_dilution_pct, 1)
+
+            if cumulative_stock_div > 1.05 and economic_dilution_pct < 5.0:
+                true_dilution_diag = f"Số lượng CP tăng chủ yếu do chia thưởng/cổ tức cổ phiếu ({(cumulative_stock_div-1)*100:.0f}%), không gây pha loãng kinh tế thực cho cổ đông."
+            elif economic_dilution_pct >= 10.0:
+                true_dilution_diag = f"Có phát hành thêm/ESOP gây pha loãng kinh tế thực ({share_dilution_5y}% trong 5 năm)."
+            else:
+                true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
+
+    value_investor_pillars = {
+        "earnings_quality": {
+            "latest_cash_conversion": latest_conversion,
+            "avg_cash_conversion_5y": avg_cash_conversion_5y,
+            "status": "EXCELLENT" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else ("GOOD" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 70) else "WATCH"),
+            "diagnosis": "Dòng tiền kinh doanh dồi dào, lợi nhuận chuyển hóa thành tiền mặt cao." if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else "Lợi nhuận có độ trễ hoặc thâm dụng vốn lưu động.",
+        },
+        "financial_fortress": {
+            "net_debt_vnd": net_debt_calc,
+            "debt_payback_years": debt_payback_years,
+            "status": fortress_status,
+            "diagnosis": fortress_diag,
+        },
+        "capital_allocation": {
+            "avg_roe_5y": avg_roe_5y,
+            "share_dilution_5y_pct": share_dilution_5y,
+            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (share_dilution_5y is None or share_dilution_5y < 5)) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
+            "diagnosis": true_dilution_diag,
+        },
+    }
+
     report = ValuationEngine.evaluate(
         symbol=ticker,
         facts=facts,
@@ -1064,11 +1195,18 @@ def portfolio_symbol_valuation(
             "source": snapshot.get("provider"),
             "as_of": fetched_at,
         },
+        financial_history=financial_history,
+        value_investor_pillars=value_investor_pillars,
     )
     response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
+        "symbol": ticker,
+        "valuation_snapshot": snapshot,
         "report": {
             **asdict(report),
+            "financial_history_10y": financial_history,
+            "cagr_5y_net_profit": cagr_5y,
+            "value_investor_pillars": value_investor_pillars,
             "data_freshness": {
                 "cache": "DATABASE",
                 "fetched_at": fetched_at,
