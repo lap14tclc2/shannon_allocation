@@ -1,7 +1,7 @@
 ---
 id: TASK-20260829-001
 title: Review dev branch and annotate code-level findings
-status: in-progress
+status: completed
 priority: high
 created: 2026-08-29
 updated: 2026-08-29
@@ -21,13 +21,13 @@ Read the `dev` branch of `lap14tclc2/shannon_allocation` and place actionable re
 
 ## Acceptance Criteria
 
-- [ ] Add code-local `REVIEW(P0/P1)` comments only; do not change runtime behavior.
-- [ ] Flag Owner Earnings equity-cash-flow vs Enterprise Value/net-debt inconsistency.
-- [ ] Flag hard-coded generic growth assumptions and missing archetype/model routing in the dev valuation orchestrator.
-- [ ] Flag activity hash-chain concurrency/idempotency risk.
-- [ ] Flag `AI_EXPORT` activity logging as a side-effect risk for a read-only audit/export contract.
-- [ ] Flag missing regression tests for the above invariants.
-- [ ] Keep review changes isolated on a review branch; do not merge.
+- [x] Add code-local `REVIEW(P0/P1)` comments only; do not change runtime behavior.
+- [x] Flag Owner Earnings equity-cash-flow vs Enterprise Value/net-debt inconsistency.
+- [x] Flag hard-coded generic growth assumptions and missing archetype/model routing in the dev valuation orchestrator.
+- [x] Flag activity hash-chain concurrency/idempotency risk.
+- [x] Flag `AI_EXPORT` activity logging as a side-effect risk for a read-only audit/export contract.
+- [x] Flag missing regression tests for the above invariants.
+- [x] Keep review changes isolated on a review branch; do not merge.
 
 ## Constraints and Invariants
 
@@ -38,11 +38,11 @@ Read the `dev` branch of `lap14tclc2/shannon_allocation` and place actionable re
 
 ## Implementation Tasks
 
-- [ ] Annotate `python/portfolio/value_engine/dcf.py`.
-- [ ] Annotate `python/portfolio/value_engine/engine.py`.
-- [ ] Annotate `python/portfolio/activity.py`.
-- [ ] Annotate `python/portfolio/correctable_service.py`.
-- [ ] Annotate `python/portfolio/tests/test_value_engine.py`.
+- [x] Annotate `python/portfolio/value_engine/dcf.py`.
+- [x] Annotate `python/portfolio/value_engine/engine.py`.
+- [x] Annotate `python/portfolio/activity.py`.
+- [x] Annotate `python/portfolio/correctable_service.py`.
+- [x] Annotate `python/portfolio/tests/test_value_engine.py`.
 
 ## Related Notes
 
@@ -50,7 +50,7 @@ The review branch intentionally starts from `dev`, not `main`, because the reque
 
 ## Validation Evidence
 
-Pending code diff review.
+Validated with `compare_commits(dev, review/dev-code-feedback-20260829)`: only the task file plus comment-only additions in five reviewed source/test files; 0 deletions and no runtime statements changed.
 
 ## Decisions
 
@@ -58,4 +58,4 @@ Use a dedicated review branch `review/dev-code-feedback-20260829` so feedback ap
 
 ## Result
 
-Pending.
+Completed. Review comments are present directly in code on the dedicated review branch; no product behavior was modified and nothing was merged.
