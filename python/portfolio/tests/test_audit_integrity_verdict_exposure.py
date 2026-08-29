@@ -319,6 +319,55 @@ def test_healthy_net_cash_has_no_leverage_penalty():
     assert calc.leverage_penalty_pct == 0.0
 
 
+def test_net_cash_with_excessive_dilution_has_no_leverage_penalty():
+    # P1 audit (TASK-069): has_solvency_risk must mean ONLY SOLVENCY_RISK. A
+    # net-cash company with EXCESSIVE_DILUTION must NOT get a +10 leverage penalty.
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.INVESTABLE,
+        actual_base_mos=30.0,
+        confidence_level="MEDIUM",
+        net_debt=-5e12,
+        debt_payback_years=0.0,
+        has_solvency_risk=False,
+        hard_rejects=["EXCESSIVE_DILUTION"],
+    )
+    assert calc.leverage_penalty_pct == 0.0
+
+
+def test_solvency_risk_hard_reject_overrides_low_quality():
+    # P1 audit (TASK-069): precedence SOLVENCY > UNVALUABLE > LOW_QUALITY.
+    # LOW_QUALITY + SOLVENCY_RISK -> AVOID_SOLVENCY, not AVOID_QUALITY.
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.LOW_QUALITY,
+        actual_base_mos=48.0,
+        confidence_level="MEDIUM",
+        hard_rejects=["SOLVENCY_RISK"],
+    )
+    assert calc.verdict_status == "AVOID_SOLVENCY"
+
+
+def test_unnormalizable_hard_reject_overrides_low_quality():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.LOW_QUALITY,
+        actual_base_mos=48.0,
+        confidence_level="MEDIUM",
+        hard_rejects=["UNNORMALIZABLE_EARNINGS"],
+    )
+    assert calc.verdict_status == "UNVALUABLE"
+
+
 # ---------------------------------------------------------------------------
 # 4. Economic dilution semantics
 # ---------------------------------------------------------------------------
@@ -388,8 +437,31 @@ def test_classifier_confirmed_vs_unexplained_split():
         economic_events=[{"action_type": "RIGHTS_ISSUE", "stock_ratio": 0.5}],
     )
     assert confirmed["classification"] == "EXCESSIVE_DILUTION"
-    assert confirmed["confirmed_economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
-    assert confirmed["unexplained_share_change_pct"] is None
+    # P1 audit (TASK-069): confirmed dilution is capped by event value-transfer
+    # evidence. A 50% rights issue confirms at most 50% (residual=100%); the other
+    # 50% stays unexplained - it is NOT auto-confirmed by the single event.
+    assert confirmed["confirmed_economic_dilution_pct"] == pytest.approx(50.0, abs=0.1)
+    assert confirmed["unexplained_share_change_pct"] is not None
+    assert confirmed["unexplained_share_change_pct"] == pytest.approx(50.0, abs=0.1)
+
+
+def test_confirmed_dilution_is_capped_by_event_value_transfer():
+    # A near-fair-value rights issue transfers almost no economic value: confirmed
+    # dilution must be ~0 even though a large residual share increase exists.
+    result = classify_share_change(
+        shares_old=100,
+        shares_new=300,
+        non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
+        economic_events=[{
+            "action_type": "RIGHTS_ISSUE",
+            "stock_ratio": 1.0,          # issued 100 shares
+            "issue_price": 95.0,         # near fair value
+            "fair_value": 100.0,
+        }],
+    )
+    # ValueTransfer = 100 shares * max(100-95,0)/100 = 5% of base -> confirmed 5.
+    assert result["confirmed_economic_dilution_pct"] == pytest.approx(5.0, abs=0.1)
+    assert result["unexplained_share_change_pct"] == pytest.approx(95.0, abs=0.1)
 
 
 def test_engine_uses_economic_dilution_for_hard_reject():

@@ -624,14 +624,19 @@ class ValuationEngine:
             dilution_evidence=dilution_evidence,
         )
 
+        # P1 audit (2026-08-29): has_solvency_risk must mean ONLY a SOLVENCY_RISK hard
+        # reject, not any hard reject. A net-cash company with EXCESSIVE_DILUTION
+        # must not receive a +10 leverage penalty.
+        hard_reject_values = [r.value for r in quality_scorecard.hard_rejects]
+        has_solvency_risk = "SOLVENCY_RISK" in hard_reject_values
         mos_calc = MarginOfSafetyEngine.calculate(
             archetype_prof=archetype_prof,
             quality_tier=quality_scorecard.tier,
             actual_base_mos=float(mos_base),
-            has_solvency_risk=len(quality_scorecard.hard_rejects) > 0,
+            has_solvency_risk=has_solvency_risk,
             confidence_level=confidence.value if confidence else "MEDIUM",
             has_negative_intrinsic_value=has_negative_intrinsic_value,
-            hard_rejects=[r.value for r in quality_scorecard.hard_rejects],
+            hard_rejects=hard_reject_values,
             # P1 audit (2026-08-29): pass REAL leverage metrics so the MOS leverage
             # penalty reflects actual debt serviceability, not a boolean proxy.
             net_debt=fortress.get("net_debt_vnd"),

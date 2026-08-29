@@ -103,17 +103,18 @@ class MarginOfSafetyEngine:
         net_debt_to_ebitda: float | None = None,
     ) -> MOSCalculation:
         hard_rejects = [str(r) for r in (hard_rejects or [])]
-        # P0 audit (2026-08-29): a hard reject (EXCESSIVE_DILUTION, SOLVENCY_RISK,
-        # ACCOUNTING_UNRELIABLE, DATA_INSUFFICIENT, ...) overrides the final verdict.
-        # Even a satisfied MOS can never yield ATTRACTIVE / HIGH_CONVICTION_VALUE.
+        # P0/P1 audit (2026-08-29): hard rejects override the final verdict with a
+        # defined precedence. SOLVENCY_RISK is the most severe (the company may not
+        # survive), then unnormalizable/circle-of-competence failures, then LOW_QUALITY.
+        # This precedence is applied AFTER the valuation-math verdict below, so a
+        # LOW_QUALITY company with SOLVENCY_RISK ends as AVOID_SOLVENCY (not AVOID_QUALITY).
         reject_override = None
-        if hard_rejects:
-            if "SOLVENCY_RISK" in hard_rejects:
-                reject_override = "AVOID_SOLVENCY"
-            elif "UNNORMALIZABLE_EARNINGS" in hard_rejects or "CIRCLE_OF_COMPETENCE_FAIL" in hard_rejects:
-                reject_override = "UNVALUABLE"
-            else:
-                reject_override = "AVOID_QUALITY"
+        if "SOLVENCY_RISK" in hard_rejects:
+            reject_override = "AVOID_SOLVENCY"
+        elif "UNNORMALIZABLE_EARNINGS" in hard_rejects or "CIRCLE_OF_COMPETENCE_FAIL" in hard_rejects:
+            reject_override = "UNVALUABLE"
+        elif hard_rejects:
+            reject_override = "AVOID_QUALITY"
         # Hard invariant (audit 68-symbol): a negative intrinsic value is never
         # FAIRLY_VALUED. MOS is meaningless for a destroyed equity value.
         if has_negative_intrinsic_value:
@@ -180,8 +181,10 @@ class MarginOfSafetyEngine:
         else:
             verdict = "WATCH"
 
-        # P0 audit (2026-08-29): hard rejects override any valuation-positive verdict.
-        if reject_override and verdict in ("HIGH_CONVICTION_VALUE", "ATTRACTIVE", "FAIRLY_VALUED"):
+        # P0/P1 audit (2026-08-29): hard rejects override any valuation-positive
+        # verdict AND any LOW_QUALITY label, with SOLVENCY > UNVALUABLE > AVOID_QUALITY
+        # precedence (already encoded in reject_override).
+        if reject_override:
             verdict = reject_override
 
         return MOSCalculation(

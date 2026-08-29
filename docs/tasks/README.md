@@ -45,4 +45,5 @@
 | [TASK-20260829-066](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-066-p0-event-evidence-dilution-epv-gating-activity-trace.md) | P0 Event-Evidence Dilution, EPV Gating & Activity Trace | completed | high | 2026-08-29 |
 | [TASK-20260829-067](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-067-resolve-pr-51-review-findings.md) | Resolve PR #51 REVIEW(P0/P1) findings on dev | verified | high | 2026-08-29 |
 | [TASK-20260829-068](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-068-fix-low-quality-verdict-leverage-and-dilution-split.md) | Fix LOW_QUALITY verdict, real leverage penalty & dilution split | verified | high | 2026-08-29 |
+| [TASK-20260829-069](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-069-fix-status-typeerror-and-precedence.md) | Fix capital_allocation.status TypeError & verdict/dilution precedence | verified | high | 2026-08-29 |
 

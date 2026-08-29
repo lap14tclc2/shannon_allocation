@@ -1258,7 +1258,7 @@ def portfolio_symbol_valuation(
                 ca_rows = [
                     dict(r)
                     for r in db.execute(
-                        """SELECT action_type, stock_ratio, record_date FROM corporate_actions
+                        """SELECT action_type, stock_ratio, record_date, raw_json FROM corporate_actions
                            WHERE symbol = ? AND record_date >= ?""",
                         (ticker, window_start),
                     ).fetchall()
@@ -1267,10 +1267,22 @@ def portfolio_symbol_valuation(
             ca_rows = []
         for r in ca_rows:
             atype = str(r.get("action_type") or "").upper()
+            raw = {}
+            try:
+                raw = json.loads(r.get("raw_json") or "{}")
+            except Exception:
+                raw = {}
             if atype in ("STOCK_DIVIDEND", "BONUS_SHARE", "SPLIT"):
                 non_economic_events.append({"action_type": atype, "stock_ratio": r.get("stock_ratio"), "effective_event_date": r.get("record_date")})
             elif atype in ("RIGHTS_ISSUE", "STOCK_ISSUE", "ESOP", "CONVERTIBLE"):
-                economic_events.append({"action_type": atype, "stock_ratio": r.get("stock_ratio"), "effective_event_date": r.get("record_date")})
+                economic_events.append({
+                    "action_type": atype,
+                    "stock_ratio": r.get("stock_ratio"),
+                    "shares_issued": raw.get("shares_issued") or raw.get("issued_shares"),
+                    "issue_price": raw.get("issue_price") or raw.get("subscription_price"),
+                    "fair_value": raw.get("fair_value") or raw.get("market_price") or raw.get("reference_price"),
+                    "effective_event_date": r.get("record_date"),
+                })
 
         dilution_breakdown = classify_share_change(
             shares_old=float(s_old),
@@ -1293,6 +1305,20 @@ def portfolio_symbol_valuation(
         else:
             true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
 
+    confirmed_dilution_pct = (dilution_breakdown or {}).get("confirmed_economic_dilution_pct")
+    # P0 audit (2026-08-29): never let `None < 5` (unexplained dilution) raise a
+    # TypeError in the status expression. Split the variable and group explicitly.
+    if (
+        avg_roe_5y is not None
+        and avg_roe_5y >= 18
+        and (confirmed_dilution_pct is None or confirmed_dilution_pct < 5)
+    ):
+        capital_alloc_status = "EXCELLENT"
+    elif avg_roe_5y is not None and avg_roe_5y >= 13:
+        capital_alloc_status = "GOOD"
+    else:
+        capital_alloc_status = "WATCH"
+
     value_investor_pillars = {
         "earnings_quality": earnings_quality,
         "financial_fortress": {
@@ -1307,15 +1333,20 @@ def portfolio_symbol_valuation(
             # never presented or scored as proven economic dilution. Only a
             # classification with actual economic events may populate the confirmed
             # field; the unexplained residual is surfaced separately.
-            "share_dilution_5y_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
-            "economic_dilution_5y_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
-            "confirmed_economic_dilution_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
+            # P2: `share_dilution_5y_pct` is deprecated (was the raw residual). Use
+            # the explicit fields below; kept as confirmed for legacy consumers.
+            "share_dilution_5y_pct": confirmed_dilution_pct,
+            "economic_dilution_5y_pct": confirmed_dilution_pct,
+            "confirmed_economic_dilution_5y_pct": confirmed_dilution_pct,
+            "confirmed_economic_dilution_pct": confirmed_dilution_pct,
+            "unexplained_share_change_5y_pct": (dilution_breakdown or {}).get("unexplained_share_change_pct"),
             "unexplained_share_change_pct": (dilution_breakdown or {}).get("unexplained_share_change_pct"),
             "non_economic_share_change_5y_pct": (dilution_breakdown or {}).get("non_economic_share_change_pct"),
+            "raw_share_change_5y_pct": (dilution_breakdown or {}).get("raw_share_change_pct"),
             "raw_share_change_pct": (dilution_breakdown or {}).get("raw_share_change_pct"),
             "dilution_classification": (dilution_breakdown or {}).get("classification"),
             "dilution_breakdown": dilution_breakdown,
-            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (dilution_breakdown or {}).get("confirmed_economic_dilution_pct") is None or (dilution_breakdown or {}).get("confirmed_economic_dilution_pct", 0) < 5) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
+            "status": capital_alloc_status,
             "diagnosis": true_dilution_diag,
         },
     }
