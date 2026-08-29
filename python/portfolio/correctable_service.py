@@ -128,6 +128,12 @@ class CorrectablePortfolioService(PortfolioService):
         )
 
     def log_client_activity(self, action: str, details: dict | None = None) -> dict:
+        # REVIEW(P0): AI_EXPORT is a write-side activity even though the exported audit
+        # artifact is described as read-only. If the UI calls this endpoint as part of
+        # generating/downloading an export, repeated exports mutate activity state and can
+        # break idempotence tests. Keep export generation itself side-effect free; if export
+        # access must be audited, log it explicitly outside the read path with an idempotency
+        # key and make that distinction visible in the export contract.
         allowed = {"AI_EXPORT", "PAGE_OPERATION"}
         action = str(action or "").upper()
         if action not in allowed:
