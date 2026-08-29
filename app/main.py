@@ -1303,12 +1303,19 @@ def portfolio_symbol_valuation(
         },
         "capital_allocation": {
             "avg_roe_5y": avg_roe_5y,
-            "share_dilution_5y_pct": share_dilution_5y,
-            "economic_dilution_5y_pct": share_dilution_5y,
+            # P1 audit (2026-08-29): split dilution so an unexplained residual is
+            # never presented or scored as proven economic dilution. Only a
+            # classification with actual economic events may populate the confirmed
+            # field; the unexplained residual is surfaced separately.
+            "share_dilution_5y_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
+            "economic_dilution_5y_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
+            "confirmed_economic_dilution_pct": (dilution_breakdown or {}).get("confirmed_economic_dilution_pct"),
+            "unexplained_share_change_pct": (dilution_breakdown or {}).get("unexplained_share_change_pct"),
             "non_economic_share_change_5y_pct": (dilution_breakdown or {}).get("non_economic_share_change_pct"),
+            "raw_share_change_pct": (dilution_breakdown or {}).get("raw_share_change_pct"),
             "dilution_classification": (dilution_breakdown or {}).get("classification"),
             "dilution_breakdown": dilution_breakdown,
-            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (share_dilution_5y is None or share_dilution_5y < 5)) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
+            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (dilution_breakdown or {}).get("confirmed_economic_dilution_pct") is None or (dilution_breakdown or {}).get("confirmed_economic_dilution_pct", 0) < 5) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
             "diagnosis": true_dilution_diag,
         },
     }

@@ -582,11 +582,13 @@ class ValuationEngine:
         
         five_yr_roe = cap_alloc.get("avg_roe_5y") or (float(roe_val) if roe_val else None)
         five_yr_cash_conv = earn_qual.get("avg_cash_conversion_5y") if not is_bank else None
-        # P0 audit (2026-08-29): only ECONOMIC dilution may trigger the
-        # EXCESSIVE_DILUTION hard reject. Non-economic share changes (stock
-        # dividend / bonus shares / split) are not dilution. A residual increase
-        # with NO economic events is UNEXPLAINED and must not hard-reject.
-        true_dilution = cap_alloc.get("economic_dilution_5y_pct")
+        # P1 audit (2026-08-29): only CONFIRMED economic dilution may drive the
+        # EXCESSIVE_DILUTION hard reject AND the capital-allocation scoring. The
+        # unexplained residual is surfaced for verification but never scored as
+        # proven dilution.
+        true_dilution = cap_alloc.get("confirmed_economic_dilution_pct")
+        if true_dilution is None:
+            true_dilution = cap_alloc.get("economic_dilution_5y_pct")
         if true_dilution is None:
             true_dilution = cap_alloc.get("share_dilution_5y_pct")
         if true_dilution is None:
@@ -630,6 +632,11 @@ class ValuationEngine:
             confidence_level=confidence.value if confidence else "MEDIUM",
             has_negative_intrinsic_value=has_negative_intrinsic_value,
             hard_rejects=[r.value for r in quality_scorecard.hard_rejects],
+            # P1 audit (2026-08-29): pass REAL leverage metrics so the MOS leverage
+            # penalty reflects actual debt serviceability, not a boolean proxy.
+            net_debt=fortress.get("net_debt_vnd"),
+            debt_payback_years=fortress.get("debt_payback_years"),
+            net_debt_to_ebitda=cls._net_debt_to_ebitda(facts, fiscal_year, net_debt),
         )
 
         val_status = ValuationPill(mos_calc.verdict_status)
@@ -971,6 +978,45 @@ class ValuationEngine:
             engine_version=cls.ENGINE_VERSION,
             computed_at=now_utc,
         )
+
+    @classmethod
+    def _net_debt_to_ebitda(
+        cls,
+        facts: List[CanonicalFact],
+        fiscal_year: int,
+        net_debt: Decimal,
+    ) -> Optional[float]:
+        """Net Debt / EBITDA from the latest available facts (P1 audit).
+
+        EBITDA ≈ IS.PROFIT.OPERATING + CF.OPERATING.DEPRECIATION for the latest
+        fiscal year. Returns None when the inputs are unavailable so the MOS
+        engine falls back to debt_payback_years / net_debt evidence.
+        """
+        if net_debt is None or net_debt <= Decimal("0"):
+            return 0.0
+        try:
+            op_fact = next(
+                f for f in facts
+                if f.identity.fiscal_year == fiscal_year
+                and f.identity.fiscal_quarter is None
+                and f.identity.line_item_code == "IS.PROFIT.OPERATING"
+                and f.value is not None
+                and f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING)
+            )
+            da_fact = next(
+                f for f in facts
+                if f.identity.fiscal_year == fiscal_year
+                and f.identity.fiscal_quarter is None
+                and f.identity.line_item_code == "CF.OPERATING.DEPRECIATION"
+                and f.value is not None
+                and f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING)
+            )
+        except StopIteration:
+            return None
+        ebitda = float(op_fact.value) + float(abs(da_fact.value))
+        if ebitda <= 0:
+            return None
+        return float(net_debt) / ebitda
 
     @classmethod
     def _derive_growth(

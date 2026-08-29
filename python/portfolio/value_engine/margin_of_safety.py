@@ -35,10 +35,58 @@ class MOSCalculation:
     confidence_level: str = "MEDIUM"
     has_negative_intrinsic_value: bool = False
     hard_rejects: List[str] = field(default_factory=list)
+    leverage_evidence: dict = field(default_factory=dict)
 
 
 class MarginOfSafetyEngine:
     """Calculates dynamic required margin of safety and validates value investment status."""
+
+    @classmethod
+    def _leverage_penalty(
+        cls,
+        *,
+        has_solvency_risk: bool,
+        is_capital_intensive: bool,
+        net_debt: float | None = None,
+        debt_payback_years: float | None = None,
+        net_debt_to_ebitda: float | None = None,
+    ) -> tuple[float, dict]:
+        """Derive a leverage MOS penalty from REAL leverage metrics (P1 audit).
+
+        Priority:
+          1. A hard SOLVENCY_RISK reject -> maximum penalty (10).
+          2. net_debt_to_ebitda >= 6.0  -> 10 (debt far exceeds EBITDA).
+          3. debt_payback_years >= 10    -> 10 (CFO cannot service debt quickly).
+          4. net_debt_to_ebitda >= 4.0  or debt_payback_years >= 5 -> 6.
+          5. net_debt_to_ebitda >= 2.0  or debt_payback_years >= 2 -> 3.
+          6. Positive net debt with no EBITDA/payback evidence -> 3 (conservative).
+          7. Net cash (net_debt <= 0)    -> 0.
+        ``is_capital_intensive`` alone no longer adds a penalty; it only matters
+        when combined with real leverage evidence.
+        """
+        evidence = {
+            "net_debt": net_debt,
+            "debt_payback_years": debt_payback_years,
+            "net_debt_to_ebitda": net_debt_to_ebitda,
+        }
+        if has_solvency_risk:
+            return 10.0, evidence
+        if net_debt is not None and net_debt <= 0:
+            return 0.0, evidence
+        nd_ebitda = float(net_debt_to_ebitda) if net_debt_to_ebitda is not None else None
+        payback = float(debt_payback_years) if debt_payback_years is not None else None
+        if nd_ebitda is not None and nd_ebitda >= 6.0:
+            return 10.0, evidence
+        if payback is not None and payback >= 10.0:
+            return 10.0, evidence
+        if (nd_ebitda is not None and nd_ebitda >= 4.0) or (payback is not None and payback >= 5.0):
+            return 6.0, evidence
+        if (nd_ebitda is not None and nd_ebitda >= 2.0) or (payback is not None and payback >= 2.0):
+            return 3.0, evidence
+        if net_debt is not None and net_debt > 0:
+            # Positive debt but no coverage evidence: keep a small conservative penalty.
+            return 3.0, evidence
+        return 0.0, evidence
 
     @classmethod
     def calculate(
@@ -50,6 +98,9 @@ class MarginOfSafetyEngine:
         confidence_level: str = "MEDIUM",
         has_negative_intrinsic_value: bool = False,
         hard_rejects: List[str] | None = None,
+        net_debt: float | None = None,
+        debt_payback_years: float | None = None,
+        net_debt_to_ebitda: float | None = None,
     ) -> MOSCalculation:
         hard_rejects = [str(r) for r in (hard_rejects or [])]
         # P0 audit (2026-08-29): a hard reject (EXCESSIVE_DILUTION, SOLVENCY_RISK,
@@ -86,7 +137,14 @@ class MarginOfSafetyEngine:
 
         # Penalties
         cyclicality_pen = 10.0 if ArchetypeOverlay.HIGH_CYCLICALITY in archetype_prof.overlays else 0.0
-        leverage_pen = 10.0 if has_solvency_risk else (5.0 if ArchetypeOverlay.CAPITAL_INTENSIVE in archetype_prof.overlays else 0.0)
+        is_capital_intensive = ArchetypeOverlay.CAPITAL_INTENSIVE in archetype_prof.overlays
+        leverage_pen, leverage_evidence = cls._leverage_penalty(
+            has_solvency_risk=has_solvency_risk,
+            is_capital_intensive=is_capital_intensive,
+            net_debt=net_debt,
+            debt_payback_years=debt_payback_years,
+            net_debt_to_ebitda=net_debt_to_ebitda,
+        )
         confidence_pen = CONFIDENCE_MOS_PENALTY.get(str(confidence_level).upper(), 5.0)
 
         # Discounts
@@ -99,7 +157,14 @@ class MarginOfSafetyEngine:
         satisfied = actual_base_mos >= clamped_required
 
         confidence_high = str(confidence_level).upper() == "HIGH"
-        if (
+        # P0 audit (2026-08-29): LOW_QUALITY is a hard quality gate. A LOW_QUALITY
+        # business must NEVER be ATTRACTIVE / HIGH_CONVICTION_VALUE even when the
+        # valuation math (MOS) is satisfied. This invariant runs BEFORE the
+        # satisfied-MOS branch so FRT-like cases (LOW_QUALITY + MOS 48%) resolve
+        # to AVOID_QUALITY, not ATTRACTIVE.
+        if quality_tier == QualityTier.LOW_QUALITY:
+            verdict = "AVOID_QUALITY"
+        elif (
             satisfied
             and confidence_high
             and quality_tier in (QualityTier.EXCEPTIONAL, QualityTier.HIGH_QUALITY)
@@ -131,4 +196,5 @@ class MarginOfSafetyEngine:
             verdict_status=verdict,
             confidence_level=str(confidence_level).upper(),
             hard_rejects=hard_rejects,
+            leverage_evidence=leverage_evidence,
         )

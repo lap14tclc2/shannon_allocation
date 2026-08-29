@@ -237,6 +237,88 @@ def test_no_hard_reject_still_allows_attractive():
     assert calc.verdict_status == "HIGH_CONVICTION_VALUE"
 
 
+def test_low_quality_never_attractive_even_when_mos_satisfied():
+    # P0 audit (10:56 / TASK-068): LOW_QUALITY + satisfied MOS (FRT reproducer)
+    # must resolve to AVOID_QUALITY, never ATTRACTIVE / HIGH_CONVICTION_VALUE.
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("FRT", sector_text="Bán lẻ")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.LOW_QUALITY,
+        actual_base_mos=48.0,
+        confidence_level="MEDIUM",
+    )
+    assert calc.mos_satisfied is True  # the math is satisfied...
+    assert calc.verdict_status == "AVOID_QUALITY"  # ...but quality gate wins
+    assert calc.verdict_status not in ("ATTRACTIVE", "HIGH_CONVICTION_VALUE")
+
+
+def test_low_quality_with_hard_reject_stays_avoid_quality():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("FRT", sector_text="Bán lẻ")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.LOW_QUALITY,
+        actual_base_mos=48.0,
+        confidence_level="MEDIUM",
+        hard_rejects=["EXCESSIVE_DILUTION"],
+    )
+    assert calc.verdict_status == "AVOID_QUALITY"
+
+
+# ---------------------------------------------------------------------------
+# 3b. Leverage penalty from real leverage (P1 / TASK-068)
+# ---------------------------------------------------------------------------
+
+def test_leverage_penalty_from_real_debt_payback():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    # 12-year debt payback must carry a heavy leverage penalty.
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.INVESTABLE,
+        actual_base_mos=30.0,
+        confidence_level="MEDIUM",
+        net_debt=12e12,
+        debt_payback_years=12.0,
+    )
+    assert calc.leverage_penalty_pct >= 6.0
+    assert calc.leverage_evidence.get("debt_payback_years") == 12.0
+
+
+def test_leverage_penalty_from_net_debt_to_ebitda():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.INVESTABLE,
+        actual_base_mos=30.0,
+        confidence_level="MEDIUM",
+        net_debt=50e12,
+        net_debt_to_ebitda=7.0,
+    )
+    assert calc.leverage_penalty_pct >= 10.0
+
+
+def test_healthy_net_cash_has_no_leverage_penalty():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.INVESTABLE,
+        actual_base_mos=30.0,
+        confidence_level="MEDIUM",
+        net_debt=-5e12,
+        debt_payback_years=0.0,
+    )
+    assert calc.leverage_penalty_pct == 0.0
+
+
 # ---------------------------------------------------------------------------
 # 4. Economic dilution semantics
 # ---------------------------------------------------------------------------
@@ -284,6 +366,30 @@ def test_classifier_split_is_non_economic():
     )
     assert result["economic_dilution_pct"] == pytest.approx(0.0, abs=0.1)
     assert result["classification"] == "NON_ECONOMIC_SHARE_CHANGE"
+
+
+def test_classifier_confirmed_vs_unexplained_split():
+    # P1 audit (TASK-068): unexplained residual must NOT be reported as confirmed
+    # economic dilution.
+    unexplained = classify_share_change(
+        shares_old=100,
+        shares_new=300,
+        non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
+    )
+    assert unexplained["classification"] == "UNEXPLAINED_SHARE_CHANGE"
+    assert unexplained["economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
+    assert unexplained["confirmed_economic_dilution_pct"] is None
+    assert unexplained["unexplained_share_change_pct"] == pytest.approx(100.0, abs=0.1)
+
+    confirmed = classify_share_change(
+        shares_old=100,
+        shares_new=300,
+        non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
+        economic_events=[{"action_type": "RIGHTS_ISSUE", "stock_ratio": 0.5}],
+    )
+    assert confirmed["classification"] == "EXCESSIVE_DILUTION"
+    assert confirmed["confirmed_economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
+    assert confirmed["unexplained_share_change_pct"] is None
 
 
 def test_engine_uses_economic_dilution_for_hard_reject():

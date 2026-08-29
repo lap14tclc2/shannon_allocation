@@ -106,10 +106,20 @@ def classify_share_change(
     else:
         classification = "NO_MATERIAL_CHANGE"
 
+    # P1 audit (2026-08-29): only classifications with actual economic events are
+    # "confirmed" economic dilution. The unexplained residual is carried separately
+    # so the quality/capital-allocation scoring never penalises as if proven.
+    confirmed_economic = economic_dilution_pct if classification in (
+        "EXCESSIVE_DILUTION", "ECONOMIC_DILUTION", "ECONOMIC_DILUTION_MINOR",
+    ) else None
+    unexplained = economic_dilution_pct if classification == "UNEXPLAINED_SHARE_CHANGE" else None
+
     return {
         "raw_share_change_pct": round(raw_share_change_pct, 1),
         "non_economic_share_change_pct": round(non_economic_share_change_pct, 1),
         "economic_dilution_pct": round(economic_dilution_pct, 1),
+        "confirmed_economic_dilution_pct": round(confirmed_economic, 1) if confirmed_economic is not None else None,
+        "unexplained_share_change_pct": round(unexplained, 1) if unexplained is not None else None,
         "classification": classification,
         "excess_threshold_pct": excess_threshold_pct,
         "expected_shares_from_non_economic": round(expected_shares, 2),
