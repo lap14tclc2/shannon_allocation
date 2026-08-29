@@ -8,7 +8,6 @@ import {
   listPortfolioSnapshots,
   listPortfolioTransactionAudit,
   listPortfolioTransactions,
-  logClientActivity,
 } from './api.js';
 
 const EXPORT_SCHEMA = 'qport-ai-export-v6';
@@ -119,16 +118,24 @@ export function buildAIExportMarkdown({
     const mult = rep.multiples || {};
     const scen = rep.scenarios || {};
     const pillars = rep.value_investor_pillars || {};
+    // P0 audit (2026-08-29): only a verified model may publish IV/MOS. For
+    // MODEL_INCOMPLETE/PARTIAL/FALLBACK the public fields are null (shown as '-').
+    const verified = rep.model_status === 'MODEL_VERIFIED';
+    const baseIV = verified ? (rep.public_base_iv ?? scen.BASE?.intrinsic_value_per_share) : null;
+    const bearIV = verified ? (rep.public_bear_iv ?? scen.BEAR?.intrinsic_value_per_share) : null;
+    const bullIV = verified ? (rep.public_bull_iv ?? scen.BULL?.intrinsic_value_per_share) : null;
+    const mos = verified ? (rep.public_mos ?? rep.margin_of_safety_pct) : null;
+    const epv = verified ? (rep.public_epv ?? rep.epv_result?.epv_per_share) : null;
 
     valuationSummaryRows.push([
       symbol,
       money(rep.current_market_price),
-      money(rep.intrinsic_value_base),
-      rep.margin_of_safety_base != null ? `${rep.margin_of_safety_base > 0 ? '+' : ''}${num(rep.margin_of_safety_base, 1)}%` : '-',
+      money(baseIV),
+      mos != null ? `${mos > 0 ? '+' : ''}${num(mos, 1)}%` : '-',
       rep.valuation_pill || '-',
-      money(scen.BEAR?.intrinsic_value_per_share),
-      money(scen.BULL?.intrinsic_value_per_share),
-      money(rep.epv_result?.epv_per_share),
+      money(bearIV),
+      money(bullIV),
+      money(epv),
       mult.pe != null ? `${num(mult.pe, 1)}x` : '-',
       mult.pb != null ? `${num(mult.pb, 2)}x` : '-',
       mult.roe != null ? `${num(mult.roe, 1)}%` : '-',
@@ -169,8 +176,8 @@ export function buildAIExportMarkdown({
       }
 
       valuationHistorySections.push(`### ${symbol} — Financial History & Sensitivity\n\n` +
-        `**Analyst Verdict:** ${rep.analyst_verdict || '-'}\n\n` +
-        `**Owner Earnings Bridge:** Net Income: ${money(rep.owner_earnings_bridge?.net_income)} · D&A: ${money(rep.owner_earnings_bridge?.depreciation_amortization)} · Capex: ${money(rep.owner_earnings_bridge?.maintenance_capex)} $\\rightarrow$ Owner Earnings: ${money(rep.owner_earnings_bridge?.owner_earnings)}\n\n` +
+        `**Analyst Verdict:** ${verified ? (rep.verdict || rep.analyst_verdict || '-') : '_Mô hình chưa verified – kết luận định giá chỉ dùng để kiểm toán (AUDIT_ONLY)._'}\n\n` +
+        `**Owner Earnings Bridge:** ${verified ? `Net Income: ${money(rep.owner_earnings_bridge?.net_income)} · D&A: ${money(rep.owner_earnings_bridge?.depreciation_amortization)} · Capex: ${money(rep.owner_earnings_bridge?.maintenance_capex)} $\\rightarrow$ Owner Earnings: ${money(rep.owner_earnings_bridge?.owner_earnings)}` : '_Ẩn theo nguyên tắc model-verified (AUDIT_ONLY)._'}\n\n` +
         `#### 10-Year Financial Ledger (${rep.financial_history_10y[0]?.fiscal_year} – ${rep.financial_history_10y[rep.financial_history_10y.length - 1]?.fiscal_year})\n\n${histTable}` +
         sensTableStr
       );
@@ -283,7 +290,9 @@ async function loadDividendAudit(symbols) {
 }
 
 export async function downloadAIExport() {
-  try { await logClientActivity('AI_EXPORT', { schema: EXPORT_SCHEMA }); } catch (_) { /* export must remain usable if audit endpoint is temporarily unavailable */ }
+  // P0 audit (2026-08-29): the export is "Read-only audit evidence" and MUST be
+  // side-effect free. It no longer POSTs an AI_EXPORT client activity record, so
+  // repeated exports never grow the activity log (count_before == count_after).
   const [dashboard, performance, risk, operations, snapshots, transactions, corrections] = await Promise.all([
     getPortfolioDashboard(), getPortfolioPerformance(), getPortfolioRisk(), getPortfolioOperations(),
     listPortfolioSnapshots(), listPortfolioTransactions(), listPortfolioTransactionAudit(),

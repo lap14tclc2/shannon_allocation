@@ -13,6 +13,7 @@ from .corrections import (
     append_delete,
     append_edit,
     audit_log,
+    clear_request_memo,
     effective_event,
     effective_events,
     ensure_schema,
@@ -34,6 +35,10 @@ AUTHORITATIVE_CA_HOSTS = ("vsd.vn", "hnx.vn", "hsx.vn", "hose.vn")
 IMPORT_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]{8,128}$")
 IMPORT_MODES = {"CURRENT"}
 CURRENT_IMPORT_TYPES = {EventType.POSITION_IMPORT, EventType.CASH_DEPOSIT}
+
+
+def _now_utc_day() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 class CorrectablePortfolioService(PortfolioService):
@@ -104,6 +109,7 @@ class CorrectablePortfolioService(PortfolioService):
         entity_id=None,
         details: dict | None = None,
         status: str = "SUCCESS",
+        idempotency_key: str | None = None,
     ) -> int | None:
         try:
             return append_activity(
@@ -117,6 +123,7 @@ class CorrectablePortfolioService(PortfolioService):
                 entity_id=entity_id,
                 details=details,
                 status=status,
+                idempotency_key=idempotency_key,
             )
         except Exception:
             return None
@@ -132,11 +139,30 @@ class CorrectablePortfolioService(PortfolioService):
         action = str(action or "").upper()
         if action not in allowed:
             raise InputValidationError("INVALID_ACTIVITY", "Unsupported client activity.", "action")
-        log_id = self._log("USER", "local", "CLIENT", action, action.replace("_", " ").title(), details=details or {})
+        details = details or {}
+        # P0 audit (2026-08-29): AI exports are audit-only reads of the whole
+        # portfolio. Repeated exports of the same schema on the same day must be
+        # idempotent: one record per (actor, schema, UTC day), never one per export.
+        idempotency_key = None
+        if action == "AI_EXPORT":
+            schema = str(details.get("schema") or "default").upper()[:80]
+            day = _now_utc_day()
+            idempotency_key = f"AI_EXPORT:{day}:{schema}"
+        log_id = self._log("USER", "local", "CLIENT", action, action.replace("_", " ").title(), details=details, idempotency_key=idempotency_key)
         return {"ok": True, "log_id": log_id}
 
     def activity_log(self, limit: int = 500, category: str | None = None) -> dict:
         return {"logs": list_activity(self.store, limit=limit, category=category), "integrity": verify_activity_chain(self.store)}
+
+    def activity_chain_trace(self, from_id: int, limit: int = 10) -> dict:
+        """Return the audit trace requested by review from ``from_id``.
+
+        Surfaces event_id, event_type, occurred_at, source, idempotency_key,
+        previous_hash and current_hash so a broken chain can be inspected before
+        an operator runs the repair tool.
+        """
+        from .activity import trace_activity_chain
+        return trace_activity_chain(self.store, from_id=from_id, limit=limit)
 
     def transactions(self) -> list[dict]:
         rows = []
@@ -196,6 +222,7 @@ class CorrectablePortfolioService(PortfolioService):
         )
         latest_snapshot = self.store.latest_snapshot()
         eid = self.store.append_event(stored)
+        clear_request_memo()
         history = None
         if latest_snapshot and event.event_date <= latest_snapshot["snapshot_date"]:
             self.book.mark_restatement(event.event_date, f"Historical transaction #{eid} was added after NAV snapshots existed.", correction_event_id=eid)
@@ -566,6 +593,7 @@ class CorrectablePortfolioService(PortfolioService):
         history = None
         latest_snapshot = self.store.latest_snapshot()
         earliest = min(event.event_date for event in prepared["events"])
+        clear_request_memo()
         if latest_snapshot and earliest <= latest_snapshot["snapshot_date"]:
             self.book.mark_restatement(
                 earliest,
@@ -627,6 +655,7 @@ class CorrectablePortfolioService(PortfolioService):
         self._validate_ledger([e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)] + [replacement])
         affected_from = min(current.event_date, replacement.event_date)
         correction_id = append_edit(self.store, int(event_id), replacement, reason=reason, created_by=created_by)
+        clear_request_memo()
         self._mark_restatement_if_needed(affected_from, f"EDIT transaction #{event_id}: {reason}", int(event_id))
         history = self._refresh_derived_history()
         self._log(
@@ -667,6 +696,7 @@ class CorrectablePortfolioService(PortfolioService):
             reason=reason,
             created_by=created_by,
         )
+        clear_request_memo()
         self._mark_restatement_if_needed(
             current.event_date,
             f"SOFT_DELETE transaction #{event_id}: {reason}",

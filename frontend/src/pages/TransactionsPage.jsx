@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import QuickImportPanel from '../components/QuickImportPanel.jsx';
+import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import { formatMoney, formatShares } from '../lib/format.js';
 import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
@@ -161,7 +162,16 @@ export default function TransactionsPage({ transactions: initialTransactions = [
 
   function applyHoldingSymbol(symbol) {
     const firstBook = holdingBooks.find(book => book.symbol === symbol);
-    applySellBook(firstBook ? holdingBookKey(firstBook) : '');
+    if (firstBook) {
+      applySellBook(holdingBookKey(firstBook));
+    } else {
+      setSelectedSellKey('');
+      setForm(current => ({
+        ...current,
+        symbol: symbol || '',
+      }));
+      setFieldErrors(current => ({ ...current, symbol: undefined, sell_source: undefined }));
+    }
   }
 
   function applySellBook(key) {
@@ -421,10 +431,14 @@ export default function TransactionsPage({ transactions: initialTransactions = [
           <div className="sell-source-title"><b>Nguồn cổ phiếu cần bán</b><span>CTCK đang lưu ký</span></div>
           <div className="form-grid">
             <label>Mã cổ phiếu
-              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.sell_source}>
-                <option value="">-- Chọn mã cổ phiếu --</option>
-                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
-              </select>
+              <SymbolSuggestInput
+                value={form.symbol}
+                onChange={sym => applyHoldingSymbol(sym)}
+                holdingSymbols={holdingSymbols}
+                holdingBooks={holdingBooks}
+                placeholder="Tìm hoặc chọn mã cần bán..."
+                ariaInvalid={!!fieldErrors.sell_source}
+              />
             </label>
             <label>CTCK / tài khoản
               <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.sell_source}>
@@ -502,18 +516,22 @@ export default function TransactionsPage({ transactions: initialTransactions = [
         </label>
       </> : <>
         {requirements.holding && <div className="sell-source-panel">
-          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : type === 'RIGHTS_ISSUE' ? 'Nguồn nhận cổ phiếu phát hành thêm' : 'Vị thế áp dụng sự kiện'}</b><span>Chọn từ danh mục đang nắm giữ</span></div>
+          <div className="sell-source-title"><b>{type === 'BUY' ? 'Nguồn nhận cổ phiếu mua thêm' : type === 'RIGHTS_ISSUE' ? 'Nguồn nhận cổ phiếu phát hành thêm' : 'Vị thế áp dụng sự kiện'}</b><span>Chọn hoặc tìm từ toàn bộ sàn</span></div>
           <div className="form-grid">
             <label>Mã cổ phiếu
-              <select value={form.symbol} onChange={event => applyHoldingSymbol(event.target.value)} aria-invalid={!!fieldErrors.symbol}>
-                <option value="">-- Chọn mã cổ phiếu --</option>
-                {holdingSymbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
-              </select>
+              <SymbolSuggestInput
+                value={form.symbol}
+                onChange={sym => applyHoldingSymbol(sym)}
+                holdingSymbols={holdingSymbols}
+                holdingBooks={holdingBooks}
+                placeholder="Tìm mã hoặc tên công ty (FPT, HPG, MBB...)"
+                ariaInvalid={!!fieldErrors.symbol}
+              />
               <FieldError error={fieldErrors.symbol} />
             </label>
             <label>CTCK / tài khoản
-              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol} aria-invalid={!!fieldErrors.broker_code}>
-                <option value="">-- Chọn CTCK / tài khoản --</option>
+              <select value={selectedSellKey} onChange={event => applySellBook(event.target.value)} disabled={!form.symbol || selectedSymbolBooks.length === 0} aria-invalid={!!fieldErrors.broker_code}>
+                <option value="">{selectedSymbolBooks.length === 0 ? '-- Tạo vị thế mới tại CTCK dưới --' : '-- Chọn CTCK / tài khoản hiện có --'}</option>
                 {selectedSymbolBooks.map(book => <option key={holdingBookKey(book)} value={holdingBookKey(book)}>
                   {brokerName(book.broker_code)} · {book.account_id} · {shares(book.shares)} CP hiện có
                 </option>)}
@@ -521,7 +539,6 @@ export default function TransactionsPage({ transactions: initialTransactions = [
               <FieldError error={fieldErrors.broker_code} />
             </label>
           </div>
-          {holdingBooks.length === 0 && <div className="empty-state compact-empty">Chưa có cổ phiếu trong danh mục. Hãy nhập danh mục ban đầu trước.</div>}
         </div>}
         <div className="form-grid">
           {!isOpeningPosition && <label className="transaction-date-field">{requirements.trade ? 'Ngày giao dịch' : 'Ngày'}
@@ -529,7 +546,14 @@ export default function TransactionsPage({ transactions: initialTransactions = [
             <FieldError error={fieldErrors.event_date} />
           </label>}
           {requirements.symbol && !requirements.holding && <label>Mã cổ phiếu
-            <input value={form.symbol} maxLength={10} onChange={event => set('symbol', event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} placeholder="FPT" aria-invalid={!!fieldErrors.symbol} />
+            <SymbolSuggestInput
+              value={form.symbol}
+              onChange={sym => set('symbol', sym)}
+              holdingSymbols={holdingSymbols}
+              holdingBooks={holdingBooks}
+              placeholder="Nhập hoặc tìm mã (FPT, HPG...)"
+              ariaInvalid={!!fieldErrors.symbol}
+            />
             <FieldError error={fieldErrors.symbol} />
           </label>}
           {requirements.quantity && <label>Số lượng cổ phiếu

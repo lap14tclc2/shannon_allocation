@@ -45,10 +45,75 @@
   box-shadow: 3px 3px 0 var(--retro-shadow, rgba(65, 55, 42, 0.18));
 }
 
+/* Dividend Tree Toolbar & Filters */
+.dividend-tree-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.dividend-toolbar-search {
+  position: relative;
+  flex: 1 1 240px;
+  max-width: 380px;
+}
+
+.dividend-search-input {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+}
+
+.btn-clear-filter {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  cursor: pointer;
+}
+
+.dividend-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-accordion-action {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.btn-accordion-action:hover {
+  background: var(--panel-2, var(--retro-panel-subtle, #eee3cf));
+}
+
 /* Table Groups Container */
 .dividend-table-groups {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   width: 100%;
 }
 
@@ -58,21 +123,50 @@
   background: var(--panel, var(--retro-panel, #fffaf0));
   overflow: hidden;
   box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.12));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dividend-symbol-section:hover {
+  border-color: var(--border-strong, var(--retro-border-bold, #5d5549));
+}
+
+.dividend-symbol-section.is-open {
+  border-color: var(--border-strong, var(--retro-border-bold, #5d5549));
+  box-shadow: 3px 3px 0 var(--retro-shadow, rgba(65, 55, 42, 0.18));
 }
 
 .dividend-section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 12px 18px;
   background: var(--panel-2, var(--retro-panel-subtle, #eee3cf));
   border-bottom: 1px solid var(--border, var(--retro-border, #9c927f));
+  cursor: pointer;
+  user-select: none;
+}
+
+.dividend-symbol-section.is-collapsed .dividend-section-header {
+  border-bottom: none;
+}
+
+.dividend-section-header:hover {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 10%, var(--panel-2, #eee3cf));
 }
 
 .section-title-badge {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+}
+
+.accordion-chevron-icon {
+  font-size: 0.8rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  width: 14px;
+  display: inline-block;
+  text-align: center;
 }
 
 .stock-ticker-title {
@@ -84,13 +178,49 @@
 }
 
 .event-count-tag {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-secondary, var(--retro-muted, #696257));
   background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
   padding: 2px 8px;
   border-radius: 2px;
   border: 1px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.dividend-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.latest-dividend-peek {
+  font-size: 0.78rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 8%, var(--surface-soft, #f4ecd9));
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--retro-gold, #7a551d) 20%, var(--border, #9c927f));
+}
+
+.latest-dividend-peek strong {
+  font-family: var(--font-mono-num, monospace);
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.accordion-toggle-hint {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent, var(--retro-hanko, #a63f30));
+  text-decoration: underline;
+}
+
+.dividend-accordion-content {
+  animation: fadeInAccordion 0.15s ease-out;
+}
+
+@keyframes fadeInAccordion {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .loading-badge {
@@ -197,6 +327,32 @@
   color: var(--text, var(--retro-ink, #201d18));
 }
 
+.mobile-label {
+  display: none;
+}
+
+.mobile-badge {
+  display: none;
+}
+
+.desktop-badge {
+  display: inline-flex;
+}
+
+.mobile-toggle-hint {
+  display: none;
+}
+
+.desktop-toggle-hint {
+  display: inline-block;
+}
+
+.ticker-badge-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .dividend-tree-placeholder {
   min-height: 64px;
   display: grid;
@@ -208,15 +364,159 @@
   background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
 }
 
-@media (max-width: 719px) {
-  .dividend-section-header {
-    padding: 10px 14px;
+@media (max-width: 720px) {
+  .dividend-tree-card {
+    padding: 12px;
   }
-  .dividend-event-table th, .dividend-event-table td {
+
+  .dividend-tree-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .dividend-toolbar-search {
+    max-width: 100%;
+  }
+
+  .dividend-toolbar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .btn-accordion-action {
+    text-align: center;
+    padding: 8px;
+    font-size: 11.5px;
+  }
+
+  .dividend-section-header {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     padding: 10px 12px;
   }
-  .col-header-date, .col-header-pay {
-    width: 110px;
+
+  .section-title-badge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .ticker-badge-cluster {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .stock-ticker-title {
+    font-size: 1.15rem;
+  }
+
+  .event-count-tag {
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
+  .mobile-toggle-hint {
+    display: inline-block;
+    font-size: 0.76rem;
+    white-space: nowrap;
+  }
+
+  .desktop-toggle-hint {
+    display: none;
+  }
+
+  .dividend-header-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .latest-dividend-peek {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 0.74rem;
+    padding: 4px 8px;
+    line-height: 1.35;
+    border-radius: 3px;
+  }
+
+  /* Responsive Event Cards instead of squished table */
+  .dividend-event-table thead {
+    display: none;
+  }
+
+  .dividend-event-table,
+  .dividend-event-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .dividend-table-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border-bottom: 1px dashed var(--border, var(--retro-border, #9c927f));
+  }
+
+  .dividend-table-row td {
+    display: block;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .dividend-table-row .col-ex-date {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .mobile-label {
+    display: inline-block;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--text-secondary, var(--retro-muted, #696257));
+    margin-right: 4px;
+  }
+
+  .mobile-badge {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .desktop-badge {
+    display: none;
+  }
+
+  .dividend-table-row .col-desc {
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+
+  .desc-cell {
+    display: block;
+    width: 100%;
+  }
+
+  .dividend-table-row .col-pay-date {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-secondary, var(--retro-muted, #696257));
   }
 }
 

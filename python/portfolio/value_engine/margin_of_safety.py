@@ -6,11 +6,19 @@ Clamps required MOS strictly between 20% and 50%.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import List
 from .archetypes import ArchetypeOverlay, ArchetypeProfile
 from .quality_scorer import QualityTier
+
+# Confidence -> additional required MOS (audit P0-1)
+CONFIDENCE_MOS_PENALTY = {
+    "HIGH": 0.0,
+    "MEDIUM": 5.0,
+    "LOW": 10.0,
+    "BLOCKED": 10.0,
+}
 
 
 @dataclass
@@ -24,6 +32,9 @@ class MOSCalculation:
     actual_base_mos_pct: float
     mos_satisfied: bool
     verdict_status: str
+    confidence_level: str = "MEDIUM"
+    has_negative_intrinsic_value: bool = False
+    hard_rejects: List[str] = field(default_factory=list)
 
 
 class MarginOfSafetyEngine:
@@ -36,25 +47,64 @@ class MarginOfSafetyEngine:
         quality_tier: QualityTier,
         actual_base_mos: float,
         has_solvency_risk: bool = False,
-        confidence_is_low: bool = False,
+        confidence_level: str = "MEDIUM",
+        has_negative_intrinsic_value: bool = False,
+        hard_rejects: List[str] | None = None,
     ) -> MOSCalculation:
+        hard_rejects = [str(r) for r in (hard_rejects or [])]
+        # P0 audit (2026-08-29): a hard reject (EXCESSIVE_DILUTION, SOLVENCY_RISK,
+        # ACCOUNTING_UNRELIABLE, DATA_INSUFFICIENT, ...) overrides the final verdict.
+        # Even a satisfied MOS can never yield ATTRACTIVE / HIGH_CONVICTION_VALUE.
+        reject_override = None
+        if hard_rejects:
+            if "SOLVENCY_RISK" in hard_rejects:
+                reject_override = "AVOID_SOLVENCY"
+            elif "UNNORMALIZABLE_EARNINGS" in hard_rejects or "CIRCLE_OF_COMPETENCE_FAIL" in hard_rejects:
+                reject_override = "UNVALUABLE"
+            else:
+                reject_override = "AVOID_QUALITY"
+        # Hard invariant (audit 68-symbol): a negative intrinsic value is never
+        # FAIRLY_VALUED. MOS is meaningless for a destroyed equity value.
+        if has_negative_intrinsic_value:
+            verdict = "AVOID_SOLVENCY" if has_solvency_risk else "UNVALUABLE"
+            return MOSCalculation(
+                required_mos_pct=0.0,
+                base_sector_mos_pct=archetype_prof.base_required_mos * 100.0,
+                cyclicality_penalty_pct=0.0,
+                leverage_penalty_pct=0.0,
+                confidence_penalty_pct=0.0,
+                predictability_discount_pct=0.0,
+                actual_base_mos_pct=round(actual_base_mos, 1),
+                mos_satisfied=False,
+                verdict_status=verdict,
+                confidence_level=str(confidence_level).upper(),
+                has_negative_intrinsic_value=True,
+                hard_rejects=hard_rejects,
+            )
+
         base_mos = archetype_prof.base_required_mos * 100.0
-        
+
         # Penalties
         cyclicality_pen = 10.0 if ArchetypeOverlay.HIGH_CYCLICALITY in archetype_prof.overlays else 0.0
         leverage_pen = 10.0 if has_solvency_risk else (5.0 if ArchetypeOverlay.CAPITAL_INTENSIVE in archetype_prof.overlays else 0.0)
-        confidence_pen = 10.0 if confidence_is_low else 0.0
-        
+        confidence_pen = CONFIDENCE_MOS_PENALTY.get(str(confidence_level).upper(), 5.0)
+
         # Discounts
         predictability_disc = 5.0 if quality_tier in (QualityTier.EXCEPTIONAL, QualityTier.HIGH_QUALITY) else 0.0
-        
+
         raw_required = base_mos + cyclicality_pen + leverage_pen + confidence_pen - predictability_disc
         # Clamp strictly between 20.0% and 50.0%
         clamped_required = max(20.0, min(50.0, raw_required))
-        
+
         satisfied = actual_base_mos >= clamped_required
-        
-        if satisfied and quality_tier in (QualityTier.EXCEPTIONAL, QualityTier.HIGH_QUALITY) and not has_solvency_risk:
+
+        confidence_high = str(confidence_level).upper() == "HIGH"
+        if (
+            satisfied
+            and confidence_high
+            and quality_tier in (QualityTier.EXCEPTIONAL, QualityTier.HIGH_QUALITY)
+            and not has_solvency_risk
+        ):
             verdict = "HIGH_CONVICTION_VALUE"
         elif satisfied:
             verdict = "ATTRACTIVE"
@@ -64,6 +114,10 @@ class MarginOfSafetyEngine:
             verdict = "AVOID_QUALITY"
         else:
             verdict = "WATCH"
+
+        # P0 audit (2026-08-29): hard rejects override any valuation-positive verdict.
+        if reject_override and verdict in ("HIGH_CONVICTION_VALUE", "ATTRACTIVE", "FAIRLY_VALUED"):
+            verdict = reject_override
 
         return MOSCalculation(
             required_mos_pct=round(clamped_required, 1),
@@ -75,4 +129,6 @@ class MarginOfSafetyEngine:
             actual_base_mos_pct=round(actual_base_mos, 1),
             mos_satisfied=satisfied,
             verdict_status=verdict,
+            confidence_level=str(confidence_level).upper(),
+            hard_rejects=hard_rejects,
         )

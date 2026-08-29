@@ -116,6 +116,20 @@ def normalize_observation(
     if dividend_type not in SUPPORTED_TYPES:
         raise ValueError(f"unsupported dividend_type: {dividend_type}")
     payload = event.get("raw_payload", event)
+    cash_val = _number(event.get("cash_per_share"))
+    stock_val = _number(event.get("stock_ratio"))
+    
+    status = "NORMALIZED"
+    if dividend_type == "STOCK_DIVIDEND" and stock_val is not None:
+        # If stock ratio was passed as percentage (e.g. 15.0 for 15% or 92.37 for 9.237% / 92.37%), convert to decimal
+        if 2.0 < stock_val <= 100.0:
+            stock_val = stock_val / 100.0
+        
+        # P0 Data Quality Invariant: Quarantine any stock dividend > 200% (ratio > 2.0) as outlier / parsing noise
+        if stock_val > 2.0 or stock_val <= 0.0:
+            status = "REJECTED"
+            stock_val = None
+
     return {
         "symbol": symbol,
         "provider": str(provider or "unknown").strip().lower(),
@@ -126,13 +140,13 @@ def normalize_observation(
         "ex_date": _date(event.get("ex_date")),
         "record_date": _date(event.get("record_date")),
         "payment_date": _date(event.get("payment_date")),
-        "cash_per_share": _number(event.get("cash_per_share")),
-        "stock_ratio": _number(event.get("stock_ratio")),
+        "cash_per_share": cash_val,
+        "stock_ratio": stock_val,
         "raw_payload": payload,
         "content_hash": _payload_hash(payload),
         "parser_version": parser_version,
         "observed_at": _now(),
-        "status": "NORMALIZED",
+        "status": status,
     }
 
 

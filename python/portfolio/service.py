@@ -132,7 +132,7 @@ class PortfolioService:
         return rows, equity
 
     def _histories(self, symbols: list[str], end: str | None = None, limit: int = 10000) -> dict[str, list[dict]]:
-        histories = {s: self.store.price_history(s, limit=limit, end=end) for s in symbols}
+        histories = self.store.price_histories(symbols, limit=limit, end=end) if symbols else {}
         if not symbols:
             return histories
         try:
@@ -635,7 +635,14 @@ class PortfolioService:
         cashflow_quality = "OPENING_BALANCE_ONLY" if has_opening_import else "COMPLETE"
         irr = None
         irr_status = "UNAVAILABLE_OPENING_BALANCE" if has_opening_import else "INSUFFICIENT_CASHFLOWS"
-        if not has_opening_import:
+        # P0 audit (2026-08-29): NO_HISTORY means there are no official NAV
+        # snapshots, so a terminal NAV cannot be anchored to a real portfolio
+        # date. Computing XIRR against a synthetic terminal cashflow produced a
+        # spurious -99.97% artifact; the correct contract is xirr = null.
+        if history_status == "NO_HISTORY" and not has_opening_import:
+            irr = None
+            irr_status = "NO_HISTORY"
+        elif not has_opening_import:
             cashflows = []
             for e in events:
                 d = date.fromisoformat(e.event_date)
@@ -643,10 +650,10 @@ class PortfolioService:
                     cashflows.append((d, -float(e.amount or 0)))
                 elif e.event_type == EventType.CASH_WITHDRAW:
                     cashflows.append((d, float(e.amount or 0)))
-            terminal_date = snapshots[-1]["snapshot_date"] if snapshots else latest_market_date
+            terminal_date = snapshots[-1]["snapshot_date"] if snapshots else None
             if nav > 0 and terminal_date:
                 cashflows.append((date.fromisoformat(terminal_date), nav))
-            if cashflows:
+            if len(cashflows) >= 2:
                 irr = xirr(cashflows)
                 irr_status = "AVAILABLE" if irr is not None else "INSUFFICIENT_CASHFLOWS"
 

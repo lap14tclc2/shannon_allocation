@@ -204,6 +204,13 @@ export const getDividendHistory = (symbol, options = {}) => {
   return refresh ? getJSON(url) : getJSONCached(url, 5 * 60_000);
 };
 
+export const lookupSecurities = (query = '', limit = 20) => {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (limit) params.set('limit', String(limit));
+  return getJSON(`/api/portfolio/securities/lookup?${params.toString()}`);
+};
+
 export const getValuationReport = (symbol) => {
   const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
   return getJSON(`/api/portfolio/valuation/${ticker}`);

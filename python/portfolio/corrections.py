@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from dataclasses import asdict
 
 from .domain import EventType, LedgerEvent
@@ -8,6 +9,34 @@ from .domain import EventType, LedgerEvent
 
 class CorrectionError(ValueError):
     pass
+
+
+# Request-scoped memo: effective_events is called many times per dashboard (risk,
+# performance, contribution, market metadata...). Within one HTTP request the
+# ledger is read-only, so the derived effective event list can be reused. Writes
+# invalidate it via clear_request_memo(). Only active inside begin/end_request_memo
+# (the FastAPI middleware); tests/CLI (no request scope) never memoize.
+_request_memo: ContextVar[dict | None] = ContextVar("qport_request_memo", default=None)
+
+
+def request_memo() -> dict | None:
+    return _request_memo.get()
+
+
+def begin_request_memo() -> tuple[dict, object]:
+    memo = {}
+    token = _request_memo.set(memo)
+    return memo, token
+
+
+def end_request_memo(token: object) -> None:
+    _request_memo.reset(token)
+
+
+def clear_request_memo() -> None:
+    memo = _request_memo.get()
+    if memo:
+        memo.clear()
 
 
 _EDITABLE_STOCK_TYPES = {
@@ -152,6 +181,14 @@ def transaction_versions(store) -> list[dict]:
 
 def effective_events(store, start: str | None = None, end: str | None = None) -> list[LedgerEvent]:
     """Return active ledger events without mutating immutable source rows."""
+    memo = _request_memo.get()
+    if memo is not None:
+        memo_key = ("effective_events", id(store), start, end)
+        cached = memo.get(memo_key)
+        if cached is not None:
+            # Return a shallow copy so a caller that mutates the list cannot
+            # corrupt the request-scoped cache.
+            return list(cached)
     out: list[LedgerEvent] = []
     for version in transaction_versions(store):
         if version["status"] == "SOFT_DELETED":
@@ -163,6 +200,8 @@ def effective_events(store, start: str | None = None, end: str | None = None) ->
             continue
         out.append(event)
     out.sort(key=lambda e: (e.event_date, int(e.id or 0)))
+    if memo is not None and len(memo) < 64:
+        memo[memo_key] = out
     return out
 
 

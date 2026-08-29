@@ -10,6 +10,25 @@ T = TypeVar("T")
 
 _LOCK = threading.RLock()
 _CACHE: dict[tuple[str, Hashable], tuple[float, object]] = {}
+_MAX_ENTRIES = int(os.environ.get("QPORT_EXTERNAL_CACHE_MAX", "512"))
+
+
+def _evict_if_needed() -> None:
+    """Bound the process-local cache to prevent unbounded RAM growth.
+
+    Expired entries are dropped first, then the oldest inserted entries (dicts
+    preserve insertion order) until there is room for one more entry.
+    """
+    if len(_CACHE) < _MAX_ENTRIES:
+        return
+    now = time.monotonic()
+    for key in [k for k, (exp, _) in _CACHE.items() if exp <= now]:
+        _CACHE.pop(key, None)
+    while len(_CACHE) >= _MAX_ENTRIES:
+        try:
+            _CACHE.pop(next(iter(_CACHE)))
+        except StopIteration:
+            break
 
 
 def ttl_from_env(name: str, default_seconds: int) -> int:
@@ -55,6 +74,7 @@ def cached_external_call(
     if ttl > 0:
         stored = clone(value) if clone is not None else value
         with _LOCK:
+            _evict_if_needed()
             _CACHE[cache_key] = (now + ttl, stored)
     return clone(value) if clone is not None else value
 

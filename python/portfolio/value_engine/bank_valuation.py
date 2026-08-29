@@ -16,13 +16,60 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Dict, List, Optional
-from .models import ScenarioType, ValuationScenario
+from .models import ScenarioType, SensitivityMatrix, ValuationScenario
 
 
 class BankValuationModel:
     """
     Dedicated Banking Valuation Engine implementing the Residual Income Model (RIM).
     """
+
+    @classmethod
+    def calculate_rim_sensitivity(
+        cls,
+        current_bvps: Decimal,
+        base_roe: Decimal,  # e.g. Decimal("0.19") for 19%
+        shares_outstanding: Decimal,
+        current_market_price: Decimal,
+        roe_rates: List[Decimal],
+        cost_of_equity_rates: List[Decimal],
+        retention_ratio: Decimal = Decimal("0.80"),
+        terminal_growth: Decimal = Decimal("0.035"),
+        growth_years: int = 5,
+    ) -> SensitivityMatrix:
+        """
+        Bank-appropriate sensitivity: RIM intrinsic value across Normalized ROE (rows)
+        and Cost of Equity (cols). NOT a generic Gordon DCF matrix (audit P0-3).
+        """
+        grid: List[List[Decimal]] = []
+        for roe in roe_rates:
+            row: List[Decimal] = []
+            for coe in cost_of_equity_rates:
+                if coe <= terminal_growth:
+                    row.append(Decimal("0"))
+                    continue
+                scen = cls.calculate_rim_scenario(
+                    current_bvps=current_bvps,
+                    base_roe=roe,
+                    cost_of_equity=coe,
+                    retention_ratio=retention_ratio,
+                    terminal_growth=terminal_growth,
+                    shares_outstanding=shares_outstanding,
+                    current_market_price=current_market_price,
+                    scenario_type=ScenarioType.BASE,
+                    growth_years=growth_years,
+                )
+                row.append(round(scen.intrinsic_value_per_share, 0))
+            grid.append(row)
+
+        return SensitivityMatrix(
+            discount_rates=roe_rates,
+            terminal_growth_rates=cost_of_equity_rates,
+            grid_values_per_share=grid,
+            sensitivity_type="RIM_ROE_COE",
+            col_label="Tỷ suất Sinh lời trên Vốn (ROE)",
+            row_label="Chi phí vốn cổ phần (CoE)",
+        )
 
     @classmethod
     def calculate_rim_scenario(
@@ -94,11 +141,18 @@ class BankValuationModel:
             terminal_growth_rate=terminal_growth,
             projected_cash_flows=projected_excess_returns,
             terminal_value=terminal_val,
+            # RIM produces EQUITY value directly (book value + PV excess ROE).
+            # enterprise_value is declared equal to equity value so no downstream
+            # consumer can mis-read a net-debt-adjusted enterprise number.
             enterprise_value=equity_val,
             net_debt=Decimal("0"),
             equity_value=equity_val,
             intrinsic_value_per_share=intrinsic_value_per_share,
             margin_of_safety_pct=margin_of_safety,
+            cashflow_basis="RESIDUAL_INCOME",
+            discount_rate_basis="COST_OF_EQUITY",
+            result_type="EQUITY_VALUE",
+            debt_adjustment_policy="NO_NET_DEBT_ADJUSTMENT",
         )
 
     @classmethod

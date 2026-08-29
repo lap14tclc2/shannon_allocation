@@ -47,11 +47,27 @@ class ValuationPill(str, Enum):
     FAIR_VALUE = "FAIR_VALUE"                       # Alias
     WATCH = "WATCH"                                 # Doanh nghiệp tốt nhưng giá chưa đủ biên an toàn
     AVOID_QUALITY = "AVOID_QUALITY"                 # Doanh nghiệp chất lượng thấp hoặc đòn bẩy rủi ro
+    AVOID_SOLVENCY = "AVOID_SOLVENCY"               # Giá trị nội tại âm / mất khả năng thanh toán
     UNVALUABLE = "UNVALUABLE"                       # Nằm ngoài vòng tròn năng lực, không thể chuẩn hóa dòng tiền
     DEEP_VALUE = "DEEP_VALUE"                       # Legacy compatible alias
     UNDERVALUED = "UNDERVALUED"                     # Legacy compatible alias
     OVERVALUED = "OVERVALUED"                       # Legacy compatible alias
     GROWTH_PRICED_IN = "GROWTH_PRICED_IN"           # Legacy compatible alias
+    MODEL_INCOMPLETE = "MODEL_INCOMPLETE"           # Thiếu dữ liệu mô hình đặc thù
+    MODEL_PENDING = "MODEL_PENDING"                 # Đang hoàn thiện mô hình
+    ARCHETYPE_UNSUPPORTED = "ARCHETYPE_UNSUPPORTED" # Chưa xác định được mô hình định giá phù hợp
+    FALLBACK_MODEL_ONLY = "FALLBACK_MODEL_ONLY"     # Chỉ có mô hình định giá tham chiếu, chưa verified
+
+
+class ModelStatus(str, Enum):
+    MODEL_VERIFIED = "MODEL_VERIFIED"
+    MODEL_INCOMPLETE = "MODEL_INCOMPLETE"
+    MODEL_PARTIAL = "MODEL_PARTIAL"
+    MODEL_PENDING = "MODEL_PENDING"
+    FALLBACK_MODEL = "FALLBACK_MODEL"
+    FALLBACK_MODEL_ONLY = "FALLBACK_MODEL_ONLY"
+    ARCHETYPE_UNKNOWN = "ARCHETYPE_UNKNOWN"
+    ARCHETYPE_UNSUPPORTED = "ARCHETYPE_UNSUPPORTED"
 
 
 @dataclass
@@ -79,6 +95,15 @@ class OwnerEarningsBridge:
     owner_earnings: Decimal
     formula_description: str
     source_fact_ids: List[str] = field(default_factory=list)
+    normalization_years: Optional[int] = None
+    normalization_method: str = "LATEST_FY"  # LATEST_FY | POSITIVE_AVG | MID_CYCLE_MEDIAN
+    mid_cycle_margin: Optional[Decimal] = None
+    mid_cycle_revenue: Optional[Decimal] = None
+    maintenance_capex_confidence: str = "MEDIUM"  # HIGH | MEDIUM | LOW
+    owner_earnings_confidence: str = "MEDIUM"  # HIGH | MEDIUM | LOW
+    maintenance_capex_method: str = "MIN_DEPRECIATION_CAPEX_PROXY"  # EXPLICIT_PPE_ROLLFORWARD | MIN_DEPRECIATION_CAPEX_PROXY
+    current_owner_earnings: Optional[Decimal] = None
+    normalized_owner_earnings: Optional[Decimal] = None
 
 
 @dataclass
@@ -95,6 +120,15 @@ class ValuationScenario:
     equity_value: Decimal
     intrinsic_value_per_share: Decimal
     margin_of_safety_pct: Optional[Decimal] = None
+    terminal_value_contribution_pct: Optional[Decimal] = None
+    scenario_warnings: List[str] = field(default_factory=list)
+    # Cash-flow basis invariant (audit 2026-08-29): NI-based Owner Earnings is
+    # an equity cash flow (after interest) -> discount at Cost of Equity to get
+    # Equity Value directly; FCFF -> WACC -> Enterprise Value -> subtract Net Debt.
+    cashflow_basis: str = "NET_INCOME_OWNER_EARNINGS"  # NET_INCOME_OWNER_EARNINGS | FCFE | FCFF | RESIDUAL_INCOME | NAV_COMPONENTS
+    discount_rate_basis: str = "COST_OF_EQUITY"  # COST_OF_EQUITY | WACC
+    result_type: str = "EQUITY_VALUE"  # EQUITY_VALUE | ENTERPRISE_VALUE
+    debt_adjustment_policy: str = "NO_NET_DEBT_ADJUSTMENT"  # NO_NET_DEBT_ADJUSTMENT | SUBTRACT_NET_DEBT
 
 
 @dataclass
@@ -125,6 +159,9 @@ class SensitivityMatrix:
     discount_rates: List[Decimal]  # Column headers
     terminal_growth_rates: List[Decimal]  # Row headers
     grid_values_per_share: List[List[Decimal]]  # 2D Grid of intrinsic values
+    sensitivity_type: str = "DCF"  # DCF | RIM_ROE_COE
+    col_label: str = "Tỷ lệ chiết khấu (r)"
+    row_label: str = "Tăng trưởng dài hạn (g)"
 
 
 @dataclass
@@ -140,7 +177,7 @@ class ValuationReport:
     confidence_level: ConfidenceLevel
     confidence_reasons: List[str]
     assessment: ValueInvestingAssessment
-    owner_earnings_bridge: OwnerEarningsBridge
+    owner_earnings_bridge: Optional[OwnerEarningsBridge]
     scenarios: Dict[ScenarioType, ValuationScenario]
     epv_result: Optional[EPVResult]
     reverse_dcf_result: Optional[ReverseDCFResult]
@@ -151,6 +188,28 @@ class ValuationReport:
     archetype_profile: Optional[Dict[str, Any]] = None
     quality_scorecard: Optional[Dict[str, Any]] = None
     margin_of_safety_analysis: Optional[Dict[str, Any]] = None
+    growth_derivation: Optional[Dict[str, Any]] = None
+    base_iv: Optional[Decimal] = None
+    margin_of_safety_pct: Optional[Decimal] = None
+    # P0 audit (2026-08-29): public (presentation-facing) valuation surface.
+    # When model_status != MODEL_VERIFIED these are always null; the diagnostic
+    # values below remain available under ``diagnostic_fallback`` with
+    # usage=AUDIT_ONLY so no MODEL_INCOMPLETE report leaks a "verified-looking" IV.
+    public_bear_iv: Optional[Decimal] = None
+    public_base_iv: Optional[Decimal] = None
+    public_bull_iv: Optional[Decimal] = None
+    public_mos: Optional[Decimal] = None
+    public_epv: Optional[Decimal] = None
+    diagnostic_fallback: Optional[Dict[str, Any]] = None
+    valuation_pill: Optional[str] = None
+    verdict: Optional[str] = None
+    sector_conflict_warning: Optional[str] = None
+    model_status: str = "MODEL_VERIFIED"
+    sotp_breakdown: Optional[Dict[str, Any]] = None
+    rnav_breakdown: Optional[Dict[str, Any]] = None
+    kcn_lease_parameters: Optional[Dict[str, Any]] = None
+    holding_cash_quality: Optional[Dict[str, Any]] = None
+    sotp_sensitivity_matrix: Optional[SensitivityMatrix] = None
     source_fact_ids: List[str] = field(default_factory=list)
     engine_version: str = "1.0.0"
     computed_at: str = ""
