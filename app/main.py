@@ -896,11 +896,33 @@ def portfolio_latest_dividend(
     }
 
 
+@app.get("/api/portfolio/screener")
+def portfolio_screener_endpoint(
+    min_score: int = 80,
+    exchange: str | None = None,
+    search: str | None = None,
+    sort_by: str = "score",
+    limit: int = 200,
+    qport_session: str | None = Cookie(default=None),
+):
+    """Screen universe by Buffett-Munger Quality Score (Score >= 80, exchange, search)."""
+    require_portfolio_user(qport_session)
+    from portfolio.screener import get_screener_results
+    return get_screener_results(
+        min_score=min_score,
+        exchange=exchange,
+        search=search,
+        sort_by=sort_by,
+        limit=limit,
+    )
+
+
 @app.get("/api/portfolio/valuation/{symbol}")
 def portfolio_symbol_valuation(
     symbol: str,
     qport_session: str | None = Cookie(default=None),
 ):
+
     """Build a valuation from validated Finance DB facts only."""
     import re
     from dataclasses import asdict
