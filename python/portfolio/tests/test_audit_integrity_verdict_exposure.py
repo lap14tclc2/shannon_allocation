@@ -192,31 +192,53 @@ def test_activity_chain_forensic_distinguishes_prev_hash_break(tmp_path: Path):
     assert result.get("actual_prev_hash") == "0" * 64
 
 
-def test_reanchor_activity_chain_after_historical_break(tmp_path: Path):
+def test_reanchor_activity_chain_after_historical_link_break(tmp_path: Path):
     from portfolio.activity import reanchor_activity_chain
     store = PortfolioStore(tmp_path / "reanchor.sqlite3")
     append_activity(store, actor_type="USER", actor_id="a", category="LEDGER", action="A", summary="a")
     append_activity(store, actor_type="USER", actor_id="b", category="LEDGER", action="B", summary="b")
-    # Simulate historical corruption at id=2 (pre-fix concurrency race).
+    # Simulate the historical concurrent-writer failure class: payload is intact,
+    # but row 2 points at the wrong previous hash.
     with store.connect() as db:
-        db.execute("UPDATE activity_log SET summary='mutated' WHERE id=2")
-    assert verify_activity_chain(store)["status"] == "BROKEN"
+        before = db.execute("SELECT summary FROM activity_log WHERE id=2").fetchone()
+        db.execute("UPDATE activity_log SET prev_hash=? WHERE id=2", ("0" * 64,))
+    broken = verify_activity_chain(store)
+    assert broken["status"] == "BROKEN"
+    assert broken["failure"] == "PREV_HASH_MISMATCH"
+
     result = reanchor_activity_chain(store, operator="audit-test", reason="verify-anchor")
     assert result["reanchored"] is True
     assert result["status"] == "VERIFIED_FROM_ANCHOR"
     assert result.get("anchor") is not None
     assert result["anchor"]["prev_segment_status"] == "BROKEN_HISTORICAL"
     assert result.get("genesis_anchor") is not None
-    # Legacy broken row remains unchanged (no silent history rewrite).
+
+    # Legacy business payload remains unchanged; no silent history rewrite.
     with store.connect() as db:
-        row = db.execute("SELECT summary FROM activity_log WHERE id=2").fetchone()
-        assert row["summary"] == "mutated"
-    # New appends chain to the anchor and stay verifiable.
+        row = db.execute("SELECT summary, prev_hash FROM activity_log WHERE id=2").fetchone()
+        assert row["summary"] == before["summary"]
+        assert row["prev_hash"] == "0" * 64
+
     append_activity(store, actor_type="USER", actor_id="c", category="LEDGER", action="C", summary="c")
     assert verify_activity_chain(store)["status"] == "VERIFIED_FROM_ANCHOR"
-    # Re-invoking the re-anchor is idempotent.
     again = reanchor_activity_chain(store)
     assert again["reanchored"] is False
+
+
+def test_reanchor_refuses_payload_hash_corruption(tmp_path: Path):
+    from portfolio.activity import reanchor_activity_chain
+    store = PortfolioStore(tmp_path / "reanchor-tamper.sqlite3")
+    append_activity(store, actor_type="USER", actor_id="a", category="LEDGER", action="A", summary="a")
+    append_activity(store, actor_type="USER", actor_id="b", category="LEDGER", action="B", summary="b")
+    with store.connect() as db:
+        db.execute("UPDATE activity_log SET summary='mutated' WHERE id=2")
+    broken = verify_activity_chain(store)
+    assert broken["failure"] == "CURRENT_HASH_MISMATCH"
+    result = reanchor_activity_chain(store, operator="audit-test", reason="must-refuse")
+    assert result["reanchored"] is False
+    assert result["reanchor_allowed"] is False
+    assert result["reanchor_block_reason"] == "NON_LINK_CORRUPTION_REQUIRES_INVESTIGATION"
+    assert verify_activity_chain(store)["status"] == "BROKEN"
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +572,8 @@ def test_unexplained_share_change_does_not_hard_reject_and_lowers_confidence():
     # The residual must not cause an EXCESSIVE_DILUTION hard reject; FRT's
     # AVOID_QUALITY here stems from LOW_QUALITY tier + MOS, not from dilution.
     assert report.valuation_pill not in ("ATTRACTIVE", "HIGH_CONVICTION_VALUE")
+    assert "LATEST_FY" in report.assessment.earnings_quality_diagnosis
+    assert "bình quân chu kỳ" not in report.assessment.earnings_quality_diagnosis
 
 
 def test_healthy_positive_debt_has_zero_leverage_penalty_when_metrics_available():
