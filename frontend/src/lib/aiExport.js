@@ -141,12 +141,21 @@ export function buildAIExportMarkdown({
       mult.roe != null ? `${num(mult.roe, 1)}%` : '-',
     ]);
 
+    const confirmed = pillars.capital_allocation?.confirmed_economic_dilution_5y_pct ?? pillars.capital_allocation?.share_dilution_5y_pct ?? null;
+      const unexplained = pillars.capital_allocation?.unexplained_share_change_5y_pct ?? pillars.capital_allocation?.unexplained_share_change_pct ?? null;
+      const isUnknown = pillars.capital_allocation?.dilution_classification === 'UNEXPLAINED_SHARE_CHANGE';
+      // P0/P1 audit (2026-08-29): unknown dilution renders as "N/A · X% unexplained",
+      // never a misleading 0%.
+      const dilutionCell = isUnknown && unexplained != null && Number.isFinite(Number(unexplained))
+        ? `N/A · ${num(unexplained, 1)}% unexplained`
+        : (confirmed != null && Number.isFinite(Number(confirmed)) ? `+${num(confirmed, 1)}%` : '0%');
+
     valuationPillarsRows.push([
       symbol,
       pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${num(pillars.earnings_quality.avg_cash_conversion_5y, 1)}% (${pillars.earnings_quality.status})` : '-',
       pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm (FORTRESS)' : `${pillars.financial_fortress?.debt_payback_years} năm (${pillars.financial_fortress?.status})`,
       pillars.capital_allocation?.avg_roe_5y != null ? `${num(pillars.capital_allocation.avg_roe_5y, 1)}% (${pillars.capital_allocation.status})` : '-',
-      pillars.capital_allocation?.share_dilution_5y_pct != null ? `+${num(pillars.capital_allocation.share_dilution_5y_pct, 1)}%` : '0%',
+      dilutionCell,
       rep.cagr_5y_net_profit != null ? `+${num(rep.cagr_5y_net_profit, 1)}%` : '-',
     ]);
 
@@ -190,7 +199,7 @@ export function buildAIExportMarkdown({
   );
 
   const valuationPillarsTable = table(
-    ['Ticker', 'Cash Conversion 5Y', 'Debt Payback (Fortress)', '5Y Avg ROE', '5Y Share Dilution', '5Y Profit CAGR'],
+    ['Ticker', 'Cash Conversion 5Y', 'Debt Payback (Fortress)', '5Y Avg ROE', '5Y Dilution (Confirmed | Unexplained)', '5Y Profit CAGR'],
     valuationPillarsRows,
   );
 

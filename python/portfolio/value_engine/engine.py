@@ -582,19 +582,26 @@ class ValuationEngine:
         
         five_yr_roe = cap_alloc.get("avg_roe_5y") or (float(roe_val) if roe_val else None)
         five_yr_cash_conv = earn_qual.get("avg_cash_conversion_5y") if not is_bank else None
-        # P1 audit (2026-08-29): only CONFIRMED economic dilution may drive the
+        # P0/P1 audit (2026-08-29): only CONFIRMED economic dilution may drive the
         # EXCESSIVE_DILUTION hard reject AND the capital-allocation scoring. The
         # unexplained residual is surfaced for verification but never scored as
-        # proven dilution.
-        true_dilution = cap_alloc.get("confirmed_economic_dilution_pct")
-        if true_dilution is None:
-            true_dilution = cap_alloc.get("economic_dilution_5y_pct")
-        if true_dilution is None:
-            true_dilution = cap_alloc.get("share_dilution_5y_pct")
-        if true_dilution is None:
-            true_dilution = 0.0
+        # proven dilution. CRITICAL: `None` must stay `None` ("unknown"), it must
+        # never be collapsed to 0 ("verified no dilution") - otherwise a company
+        # with 88.8% unexplained share growth would score 15/15 on dilution.
         dilution_classification = cap_alloc.get("dilution_classification")
         dilution_evidence = cap_alloc.get("dilution_breakdown") or {}
+        unexplained_pct = dilution_evidence.get("unexplained_share_change_pct") or cap_alloc.get("unexplained_share_change_pct")
+        true_dilution = cap_alloc.get("confirmed_economic_dilution_pct")
+        if true_dilution is None:
+            true_dilution = cap_alloc.get("confirmed_economic_dilution_5y_pct")
+        if true_dilution is None:
+            true_dilution = cap_alloc.get("economic_dilution_5y_pct")
+        # Keep None (unknown) as None for the scorer so it can cap the score; only
+        # a genuinely confirmed classification yields a non-null value.
+        if true_dilution is None and dilution_classification in (
+            "EXCESSIVE_DILUTION", "ECONOMIC_DILUTION", "ECONOMIC_DILUTION_MINOR",
+        ):
+            true_dilution = cap_alloc.get("share_dilution_5y_pct")
         if dilution_classification == "UNEXPLAINED_SHARE_CHANGE":
             confidence_reasons.append(
                 "Tăng số lượng CP chưa được giải thích bởi sự kiện cổ phiếu phi kinh tế; chưa có bằng chứng ESOP/quyền mua/phát hành để kết luận pha loãng kinh tế."
@@ -622,6 +629,7 @@ class ValuationEngine:
             true_dilution_5y_pct=true_dilution,
             dilution_classification=dilution_classification,
             dilution_evidence=dilution_evidence,
+            unexplained_share_change_pct=unexplained_pct,
         )
 
         # P1 audit (2026-08-29): has_solvency_risk must mean ONLY a SOLVENCY_RISK hard

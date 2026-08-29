@@ -75,14 +75,21 @@ class MarginOfSafetyEngine:
             return 0.0, evidence
         nd_ebitda = float(net_debt_to_ebitda) if net_debt_to_ebitda is not None else None
         payback = float(debt_payback_years) if debt_payback_years is not None else None
-        if nd_ebitda is not None and nd_ebitda >= 6.0:
-            return 10.0, evidence
-        if payback is not None and payback >= 10.0:
-            return 10.0, evidence
-        if (nd_ebitda is not None and nd_ebitda >= 4.0) or (payback is not None and payback >= 5.0):
-            return 6.0, evidence
-        if (nd_ebitda is not None and nd_ebitda >= 2.0) or (payback is not None and payback >= 2.0):
-            return 3.0, evidence
+        metrics_available = (nd_ebitda is not None) or (payback is not None)
+        # P1 audit (2026-08-29): when leverage METRICS are available and healthy,
+        # positive net debt is NOT a penalty. A company with ND/EBITDA 0.54x and
+        # 0.7y payback (SCS) must get +0, not +3. The +3 conservative penalty only
+        # applies when positive debt exists but NO leverage metrics were provided.
+        if metrics_available:
+            if nd_ebitda is not None and nd_ebitda >= 6.0:
+                return 10.0, evidence
+            if payback is not None and payback >= 10.0:
+                return 10.0, evidence
+            if (nd_ebitda is not None and nd_ebitda >= 4.0) or (payback is not None and payback >= 5.0):
+                return 6.0, evidence
+            if (nd_ebitda is not None and nd_ebitda >= 2.0) or (payback is not None and payback >= 2.0):
+                return 3.0, evidence
+            return 0.0, evidence
         if net_debt is not None and net_debt > 0:
             # Positive debt but no coverage evidence: keep a small conservative penalty.
             return 3.0, evidence

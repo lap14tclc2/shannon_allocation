@@ -52,6 +52,7 @@ def ensure_activity_schema(store) -> None:
                 details_json TEXT NOT NULL DEFAULT '{}',
                 source TEXT NOT NULL DEFAULT 'QPORT',
                 idempotency_key TEXT,
+                chain_anchor TEXT,
                 prev_hash TEXT,
                 record_hash TEXT NOT NULL
             );
@@ -63,11 +64,13 @@ def ensure_activity_schema(store) -> None:
             CREATE INDEX IF NOT EXISTS idx_activity_log_category_status ON activity_log(category, status, occurred_at DESC);
             """
         )
-        # Migrate pre-existing logs that predate the idempotency column.
+        # Migrate pre-existing logs that predate the idempotency / chain-anchor columns.
         try:
             cols = {r["name"] for r in db.execute("PRAGMA table_info(activity_log)").fetchall()}
             if "idempotency_key" not in cols:
                 db.execute("ALTER TABLE activity_log ADD COLUMN idempotency_key TEXT")
+            if "chain_anchor" not in cols:
+                db.execute("ALTER TABLE activity_log ADD COLUMN chain_anchor TEXT")
         except Exception:
             pass
         db.executescript(
@@ -235,22 +238,65 @@ def verify_activity_chain(store) -> dict:
     ensure_activity_schema(store)
     with store.connect() as db:
         rows = [dict(r) for r in db.execute("SELECT * FROM activity_log ORDER BY id").fetchall()]
+    # Detect a re-anchor: a row with chain_anchor set is the genesis of a new chain.
+    anchor_idx = None
+    for idx, row in enumerate(rows):
+        if row.get("chain_anchor") is not None:
+            anchor_idx = idx
+            break
+    if anchor_idx is not None:
+        # Verify the anchor row itself (prev_hash must be None and its hash must
+        # match its own payload), then verify every row AFTER the anchor.
+        anchor = rows[anchor_idx]
+        previous_hash = None
+        payload = _chain_payload(anchor)
+        expected = hashlib.sha256(((previous_hash or "") + _canonical_payload(payload)).encode("utf-8")).hexdigest()
+        if anchor["prev_hash"] is not None or anchor["record_hash"] != expected:
+            return {
+                "status": "BROKEN",
+                "records": len(rows),
+                "first_bad_id": anchor["id"],
+                "failure": "ANCHOR_HASH_MISMATCH",
+                "first_bad": trace_row(anchor),
+            }
+        previous_hash = anchor["record_hash"]
+        for row in rows[anchor_idx + 1:]:
+            payload = _chain_payload(row)
+            expected = hashlib.sha256(((previous_hash or "") + _canonical_payload(payload)).encode("utf-8")).hexdigest()
+            if row["prev_hash"] != previous_hash or row["record_hash"] != expected:
+                failure = "PREV_HASH_MISMATCH" if row["prev_hash"] != previous_hash else "CURRENT_HASH_MISMATCH"
+                return {
+                    "status": "BROKEN",
+                    "records": len(rows),
+                    "first_bad_id": row["id"],
+                    "failure": failure,
+                    "expected_prev_hash": previous_hash,
+                    "actual_prev_hash": row["prev_hash"],
+                    "expected_hash": expected,
+                    "actual_hash": row["record_hash"],
+                    "first_bad": trace_row(row),
+                    "anchor": {
+                        "anchor_id": anchor["id"],
+                        "anchor_digest": anchor.get("chain_anchor"),
+                        "prev_segment_status": "BROKEN_HISTORICAL",
+                    },
+                }
+            previous_hash = row["record_hash"]
+        return {
+            "status": "VERIFIED_FROM_ANCHOR",
+            "records": len(rows),
+            "first_bad_id": None,
+            "head_hash": previous_hash,
+            "anchor": {
+                "anchor_id": anchor["id"],
+                "anchor_digest": anchor.get("chain_anchor"),
+                "prev_segment_status": "BROKEN_HISTORICAL",
+            },
+            "note": "Activity chain re-anchored after a historical break; the legacy broken segment is preserved as BROKEN_HISTORICAL and a new verified chain begins at the anchor.",
+        }
     previous_hash = None
     for idx, row in enumerate(rows):
-        payload = {
-            "occurred_at": row["occurred_at"],
-            "actor_type": row["actor_type"],
-            "actor_id": row["actor_id"],
-            "category": row["category"],
-            "action": row["action"],
-            "entity_type": row["entity_type"],
-            "entity_id": row["entity_id"],
-            "status": row["status"],
-            "summary": row["summary"],
-            "details_json": row["details_json"],
-            "source": row["source"],
-            "prev_hash": row["prev_hash"],
-        }
+        payload = _chain_payload(row)
         expected = hashlib.sha256(((previous_hash or "") + _canonical_payload(payload)).encode("utf-8")).hexdigest()
         if row["prev_hash"] != previous_hash or row["record_hash"] != expected:
             # REVIEW(P1, PR #51): forensic evidence to distinguish a broken link
@@ -275,6 +321,119 @@ def verify_activity_chain(store) -> dict:
             }
         previous_hash = row["record_hash"]
     return {"status": "VERIFIED", "records": len(rows), "first_bad_id": None, "head_hash": previous_hash}
+
+
+def _chain_payload(row: dict) -> dict:
+    return {
+        "occurred_at": row["occurred_at"],
+        "actor_type": row["actor_type"],
+        "actor_id": row["actor_id"],
+        "category": row["category"],
+        "action": row["action"],
+        "entity_type": row["entity_type"],
+        "entity_id": row["entity_id"],
+        "status": row["status"],
+        "summary": row["summary"],
+        "details_json": row["details_json"],
+        "source": row["source"],
+        "prev_hash": row["prev_hash"],
+    }
+
+
+def reanchor_activity_chain(
+    store,
+    *,
+    operator: str = "system",
+    reason: str = "migration",
+) -> dict:
+    """Start a NEW verifiable chain after a confirmed historical break.
+
+    P0/P1 audit (2026-08-29): an immutable audit log must NOT silently rehash
+    history to look green. Instead this records a `chain_anchor` row that binds
+    the new chain to the last known-good state plus migration metadata, so:
+
+        Activity Chain Segment 1 (id 1..last_good) -> legacy (may be BROKEN_HISTORICAL)
+        chain_anchor row                          -> genesis of the new verified chain
+        Activity Chain Segment 2 (id > anchor)    -> VERIFIED_FROM_ANCHOR
+
+    This preserves the historical evidence that the old chain was broken while
+    giving a verifiable chain from the migration point forward.
+    """
+    ensure_activity_schema(store)
+    # Verify first; if the chain is already verified we do nothing.
+    current = verify_activity_chain(store)
+    if current["status"] in ("VERIFIED", "VERIFIED_FROM_ANCHOR"):
+        return {**current, "reanchored": False}
+    last_good_id = current.get("previous_good_id") or current.get("first_bad_id", 1) - 1
+    with store.connect() as db:
+        last_good = db.execute(
+            "SELECT record_hash FROM activity_log WHERE id = ?", (int(last_good_id),)
+        ).fetchone()
+        last_good_hash = last_good["record_hash"] if last_good else None
+    # The anchor row hashes last_good_hash + migration metadata and becomes the new
+    # genesis (prev_hash = None). Its own hash is the chain_anchor digest.
+    occurred_at = _now()
+    migration_meta = {
+        "operator": str(operator or "system")[:100],
+        "reason": str(reason or "migration")[:200],
+        "last_good_id": int(last_good_id),
+        "last_good_hash": last_good_hash,
+        "legacy_status": "BROKEN_HISTORICAL",
+        "migrated_at": occurred_at,
+    }
+    meta_json = json.dumps(migration_meta, ensure_ascii=False, sort_keys=True, default=str)
+    anchor_payload = {
+        "occurred_at": occurred_at,
+        "actor_type": "SYSTEM",
+        "actor_id": "qport-migrator",
+        "category": "SYSTEM",
+        "action": "CHAIN_REANCHOR",
+        "entity_type": "ACTIVITY_CHAIN",
+        "entity_id": str(int(last_good_id) + 1),
+        "status": "SUCCESS",
+        "summary": f"Activity chain re-anchored after historical break (last good id={last_good_id}).",
+        "details_json": meta_json,
+        "source": "QPORT",
+        "prev_hash": None,
+    }
+    # The anchor row is a normal genesis for the NEW chain: record_hash is the
+    # canonical hash of its own payload with prev_hash = None (this is what
+    # verify_activity_chain recomputes). The binding to the last-known-good state
+    # is captured separately in the chain_anchor digest below.
+    anchor_digest = hashlib.sha256(
+        ("" + _canonical_payload(anchor_payload)).encode("utf-8")
+    ).hexdigest()
+    # genesis_anchor binds the new chain to the historical last-good state +
+    # migration metadata so an observer can confirm the migration point.
+    genesis_anchor = hashlib.sha256(
+        ((last_good_hash or "") + meta_json).encode("utf-8")
+    ).hexdigest()
+    with store.connect() as db:
+        _acquire_append_serialization(db)
+        # A row with this exact idempotency key can only be created once.
+        existing = db.execute(
+            "SELECT id FROM activity_log WHERE idempotency_key=? ORDER BY id LIMIT 1",
+            ("CHAIN_REANCHOR",),
+        ).fetchone()
+        if existing:
+            return {**verify_activity_chain(store), "reanchored": False, "anchor_id": int(existing["id"])}
+        cur = db.execute(
+            """
+            INSERT INTO activity_log(
+                occurred_at,actor_type,actor_id,category,action,entity_type,entity_id,
+                status,summary,details_json,source,idempotency_key,prev_hash,record_hash,chain_anchor
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                occurred_at, "SYSTEM", "qport-migrator", "SYSTEM", "CHAIN_REANCHOR",
+                "ACTIVITY_CHAIN", str(int(last_good_id) + 1), "SUCCESS",
+                f"Activity chain re-anchored after historical break (last good id={last_good_id}).",
+                meta_json, "QPORT", "CHAIN_REANCHOR", None, anchor_digest, genesis_anchor,
+            ),
+        )
+        anchor_id = int(cur.lastrowid)
+    result = verify_activity_chain(store)
+    return {**result, "reanchored": True, "anchor_id": anchor_id, "genesis_anchor": genesis_anchor}
 
 
 def trace_row(row: dict) -> dict:

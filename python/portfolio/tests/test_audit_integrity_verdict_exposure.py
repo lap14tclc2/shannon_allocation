@@ -192,6 +192,33 @@ def test_activity_chain_forensic_distinguishes_prev_hash_break(tmp_path: Path):
     assert result.get("actual_prev_hash") == "0" * 64
 
 
+def test_reanchor_activity_chain_after_historical_break(tmp_path: Path):
+    from portfolio.activity import reanchor_activity_chain
+    store = PortfolioStore(tmp_path / "reanchor.sqlite3")
+    append_activity(store, actor_type="USER", actor_id="a", category="LEDGER", action="A", summary="a")
+    append_activity(store, actor_type="USER", actor_id="b", category="LEDGER", action="B", summary="b")
+    # Simulate historical corruption at id=2 (pre-fix concurrency race).
+    with store.connect() as db:
+        db.execute("UPDATE activity_log SET summary='mutated' WHERE id=2")
+    assert verify_activity_chain(store)["status"] == "BROKEN"
+    result = reanchor_activity_chain(store, operator="audit-test", reason="verify-anchor")
+    assert result["reanchored"] is True
+    assert result["status"] == "VERIFIED_FROM_ANCHOR"
+    assert result.get("anchor") is not None
+    assert result["anchor"]["prev_segment_status"] == "BROKEN_HISTORICAL"
+    assert result.get("genesis_anchor") is not None
+    # Legacy broken row remains unchanged (no silent history rewrite).
+    with store.connect() as db:
+        row = db.execute("SELECT summary FROM activity_log WHERE id=2").fetchone()
+        assert row["summary"] == "mutated"
+    # New appends chain to the anchor and stay verifiable.
+    append_activity(store, actor_type="USER", actor_id="c", category="LEDGER", action="C", summary="c")
+    assert verify_activity_chain(store)["status"] == "VERIFIED_FROM_ANCHOR"
+    # Re-invoking the re-anchor is idempotent.
+    again = reanchor_activity_chain(store)
+    assert again["reanchored"] is False
+
+
 # ---------------------------------------------------------------------------
 # 3. HARD_REJECT overrides final verdict
 # ---------------------------------------------------------------------------
@@ -493,15 +520,18 @@ def test_unexplained_share_change_does_not_hard_reject_and_lowers_confidence():
         {"sector": "Bán lẻ"},
         value_investor_pillars={
             "capital_allocation": {
-                "avg_roe_5y": 12.0,
+                "avg_roe_5y": 20.0,
                 "share_dilution_5y_pct": 88.8,
-                "economic_dilution_5y_pct": 88.8,
+                "economic_dilution_5y_pct": None,
+                "confirmed_economic_dilution_pct": None,
                 "non_economic_share_change_5y_pct": 26.8,
                 "dilution_classification": "UNEXPLAINED_SHARE_CHANGE",
                 "dilution_breakdown": {
                     "raw_share_change_pct": 115.6,
                     "non_economic_share_change_pct": 26.8,
                     "economic_dilution_pct": 88.8,
+                    "confirmed_economic_dilution_pct": None,
+                    "unexplained_share_change_pct": 88.8,
                     "classification": "UNEXPLAINED_SHARE_CHANGE",
                     "non_economic_events": [{"action_type": "STOCK_DIVIDEND", "stock_ratio": 0.268}],
                     "economic_events": [],
@@ -514,9 +544,44 @@ def test_unexplained_share_change_does_not_hard_reject_and_lowers_confidence():
     assert report.confidence_level.value in ("MEDIUM", "LOW")
     reasons = " ".join(report.confidence_reasons)
     assert "UNEXPLAINED" in reasons or "chưa giải thích" in reasons
+    # P0/P1 audit (TASK-070): unknown dilution must be capped, not awarded 15/15.
+    scorecard = report.quality_scorecard or {}
+    assert scorecard["capital_allocation_score"] <= 10
     # The residual must not cause an EXCESSIVE_DILUTION hard reject; FRT's
     # AVOID_QUALITY here stems from LOW_QUALITY tier + MOS, not from dilution.
     assert report.valuation_pill not in ("ATTRACTIVE", "HIGH_CONVICTION_VALUE")
+
+
+def test_healthy_positive_debt_has_zero_leverage_penalty_when_metrics_available():
+    # P0/P1 audit (TASK-070): SCS-like healthy leverage (ND/EBITDA 0.54x, 0.7y
+    # payback) must get +0 leverage penalty, not +3.
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("SCS", sector_text="Dịch vụ")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.HIGH_QUALITY,
+        actual_base_mos=40.0,
+        confidence_level="MEDIUM",
+        net_debt=0.54e12,
+        debt_payback_years=0.7,
+        net_debt_to_ebitda=0.54,
+    )
+    assert calc.leverage_penalty_pct == 0.0
+
+
+def test_positive_debt_without_metrics_gets_conservative_penalty():
+    from portfolio.value_engine.archetypes import ArchetypeClassifier
+    from portfolio.value_engine.quality_scorer import QualityTier
+    prof = ArchetypeClassifier.classify("TEST", sector_text="Doanh nghiệp niêm yết")
+    calc = MarginOfSafetyEngine.calculate(
+        archetype_prof=prof,
+        quality_tier=QualityTier.INVESTABLE,
+        actual_base_mos=30.0,
+        confidence_level="MEDIUM",
+        net_debt=5e12,
+    )
+    assert calc.leverage_penalty_pct == 3.0
 
 
 def test_proven_economic_dilution_still_hard_rejects():

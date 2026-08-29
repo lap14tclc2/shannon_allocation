@@ -341,7 +341,18 @@ function ValuationCard({ symbol, report, error, locale }) {
           </div>
           <div className="pillar-metric">
             <span className="pillar-val">{report.value_investor_pillars.capital_allocation?.avg_roe_5y != null ? `${report.value_investor_pillars.capital_allocation.avg_roe_5y}%` : '—'}</span>
-            <span className="pillar-sub">Sinh lời ROE 5 năm · Pha loãng thực: {report.value_investor_pillars.capital_allocation?.share_dilution_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.share_dilution_5y_pct}%` : '0%'}</span>
+            {(() => {
+              const ca = report.value_investor_pillars?.capital_allocation || {};
+              const confirmed = ca.confirmed_economic_dilution_5y_pct ?? ca.share_dilution_5y_pct ?? null;
+              const unexplained = ca.unexplained_share_change_5y_pct ?? ca.unexplained_share_change_pct ?? null;
+              const isUnknown = ca.dilution_classification === 'UNEXPLAINED_SHARE_CHANGE';
+              // P0/P1 audit (2026-08-29): unknown dilution must render as N/A · X% unexplained,
+              // never a misleading 0%.
+              if (isUnknown && unexplained != null && Number.isFinite(Number(unexplained))) {
+                return <span className="pillar-sub">Sinh lời ROE 5 năm · Pha loãng: N/A · {Number(unexplained).toFixed(1)}% chưa giải thích</span>;
+              }
+              return <span className="pillar-sub">Sinh lời ROE 5 năm · Pha loãng thực: {confirmed != null && Number.isFinite(Number(confirmed)) ? `${Number(confirmed).toFixed(1)}%` : '—'}</span>;
+            })()}
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.capital_allocation?.diagnosis}</p>
         </div>

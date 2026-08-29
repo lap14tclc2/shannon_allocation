@@ -1,580 +1,433 @@
-Tôi đã review commit mới nhất trên `dev`:
+Tôi đã audit export mới **12:25:33 UTC ngày 29/08/2026**, tức sau commit `7b8813b`. Export vẫn đủ **68 mã valuation** và dùng market data tới 28/08/2026. 
 
-**`6a80537825e672cf5598405deaae1b7f02116009`**
-`fix: LOW_QUALITY verdict gate, real leverage penalty & dilution split`
+Kết luận: **commit mới đã sửa đúng các blocker trước**, nhưng regression 68 mã làm lộ thêm 2 lỗi logic khá rõ. Tôi nâng valuation-core lên khoảng **9.0/10**, nhưng chưa coi toàn hệ thống production-grade vì `activity_integrity` vẫn broken và quality/dilution uncertainty vẫn chưa xử lý chuẩn.
 
-Commit này sửa đúng phần lớn 3 issue tôi nêu ở vòng trước, nhưng tôi **chưa cho `TASK-068 = verified` hoàn toàn** vì phát hiện một **P0 runtime regression mới** và hai vấn đề semantic còn sót.
+## Những phần PASS rõ ràng
 
-## Kết luận nhanh
+**FRT đã đúng verdict.** Hiện FRT có `LOW_QUALITY`, confidence `LOW`, MOS +48.2% nhưng final là `AVOID_QUALITY`, không còn quay lại `ATTRACTIVE`. 
 
-| Hạng mục                            | Kết quả           |
-| ----------------------------------- | ----------------- |
-| LOW_QUALITY → AVOID_QUALITY         | ✅ PASS            |
-| Net debt / EBITDA leverage input    | ✅ cải thiện       |
-| Debt payback leverage input         | ✅ cải thiện       |
-| Capital-intensive không tự +5       | ✅ PASS            |
-| Unexplained vs confirmed dilution   | ✅ cải thiện       |
-| `capital_allocation.status`         | 🔴 **P0 bug mới** |
-| Hard reject ≠ solvency risk         | 🟠 chưa sửa hết   |
-| Event existence = economic dilution | 🟠 vẫn quá mạnh   |
-| Full test suite                     | ⚠️ còn 6 fail     |
-| Vercel                              | ✅ success         |
+Cash-flow basis cũng vẫn đúng:
 
-Tôi chấm commit khoảng **8.6–8.8/10**, chưa merge `main`.
+```text
+NET_INCOME_OWNER_EARNINGS
+→ COST_OF_EQUITY
+→ EQUITY_VALUE
+→ NO_NET_DEBT_ADJUSTMENT
+```
+
+
+
+Tôi parse toàn bộ 204 scenarios và không tìm thấy basis violation.
+
+Public model gating cũng PASS toàn bộ 68 mã: `MODEL_INCOMPLETE/PARTIAL/UNVALUABLE` không còn leak public Base/Bear/Bull IV, MOS hay EPV. Overview hiện phản ánh đúng điều này. 
+
+Negative IV cũng vẫn đúng: BWE, CII, CNG, GEG, HHV, TDM đều `UNVALUABLE`, MOS không được tính.
 
 ---
 
-# 1. LOW_QUALITY gate: ✅ sửa đúng
+# P1 mới: leverage penalty vẫn phạt công ty leverage khỏe
 
-Trước commit:
+SCS là ví dụ rõ nhất.
 
-```python
-elif satisfied:
-    verdict = "ATTRACTIVE"
-...
-elif quality_tier == LOW_QUALITY:
-    verdict = "AVOID_QUALITY"
-```
-
-Commit mới đã đưa quality gate lên trước:
-
-```python
-if quality_tier == QualityTier.LOW_QUALITY:
-    verdict = "AVOID_QUALITY"
-elif satisfied ...
-```
-
-Nên case FRT:
+Machine payload:
 
 ```text
-quality = LOW_QUALITY
-MOS = 48%
-MOS requirement satisfied
+net debt / EBITDA = 0.54x
+debt payback       = 0.7 năm
 ```
 
-giờ sẽ thành:
+đây là leverage rất nhẹ, nhưng engine vẫn:
 
 ```text
-AVOID_QUALITY
+leverage_penalty_pct = +3
 ```
 
-không còn `ATTRACTIVE`.
 
-Regression test cũng đúng:
+
+Tôi parse toàn 68 mã và tìm được **16 trường hợp** tương tự, trong đó cả hai metric đều <2 nhưng vẫn bị +3, ví dụ:
+
+```text
+AST   0.33x / 0.4y → +3
+ACV   1.05x / 1.1y → +3
+DHG   0.85x / 0.7y → +3
+GAS   1.20x / 1.5y → +3
+GMD   1.59x / 1.5y → +3
+SCS   0.54x / 0.7y → +3
+VGI   1.35x / 1.2y → +3
+```
+
+Nguyên nhân khớp với code vừa review: sau khi các threshold `>=2` không match, `_leverage_penalty()` vẫn làm:
 
 ```python
-test_low_quality_never_attractive_even_when_mos_satisfied()
+if net_debt > 0:
+    return 3
 ```
 
-**P0 cũ này đóng được.**
+Nó đang hiểu:
+
+> positive net debt = thiếu leverage evidence
+
+trong khi ở SCS **evidence đã có và rất khỏe**.
+
+Phải đổi thành:
+
+```python
+if metrics_available:
+    if ND_EBITDA >= 6 or payback >= 10:
+        return 10
+    if ND_EBITDA >= 4 or payback >= 5:
+        return 6
+    if ND_EBITDA >= 2 or payback >= 2:
+        return 3
+    return 0
+
+if net_debt > 0 and metrics_unavailable:
+    return 3
+```
+
+Đây là P1 correctness, không phải cosmetic.
 
 ---
 
-# 2. 🔴 P0 mới: expression `capital_allocation.status` có thể crash
+# P1 quan trọng hơn: `unknown dilution` đang biến thành `0 dilution`
 
-Trong `app/main.py` commit mới thêm:
-
-```python
-"status": "EXCELLENT" if (
-    avg_roe_5y
-    and avg_roe_5y >= 18
-    and confirmed_dilution is None
-    or confirmed_dilution < 5
-) else ...
-```
-
-Code thực tế đang viết một dòng nhưng semantics tương đương như trên.
-
-Do precedence:
+FRT hiện được tách dữ liệu đúng:
 
 ```text
-and > or
+raw share change           = 115.6%
+non-economic explained      = 26.8%
+confirmed economic dilution = null
+unexplained share change    = 88.8%
+classification              = UNEXPLAINED_SHARE_CHANGE
 ```
 
-nó thực sự được evaluate thành:
 
-```python
-(
-    avg_roe_5y
-    and avg_roe_5y >= 18
-    and confirmed is None
-)
-or confirmed < 5
-```
 
-### Case rất dễ xảy ra
+Đây là rất tốt.
+
+Nhưng sau đó quality scorer lại cho:
 
 ```text
-avg_roe_5y = 12
-confirmed_economic_dilution_pct = None
+capital_allocation_score = 15/15
+economic_dilution_5y_pct = 0
 ```
 
-Left side = false.
-
-Python tiếp tục evaluate:
-
-```python
-None < 5
-```
-
-→ **`TypeError`**
-
-Tức chính trường hợp:
+và capital allocation pillar còn ghi:
 
 ```text
-UNEXPLAINED_SHARE_CHANGE
+status = GOOD
+```
+
+trong khi 88.8% share increase vẫn chưa giải thích được. 
+
+Đây là lỗi **unknown → zero**.
+
+Semantics phải là:
+
+```text
 confirmed dilution = null
-ROE < 18
 ```
 
-có khả năng làm valuation/report endpoint crash.
+không phải:
 
-### Cần sửa ngay
+```text
+confirmed dilution = 0
+```
 
-Tách biến:
+`null` nghĩa là:
+
+> chưa biết.
+
+`0` nghĩa là:
+
+> đã xác nhận không có economic dilution.
+
+Hai thứ hoàn toàn khác nhau.
+
+### Tôi đề xuất invariant
 
 ```python
-confirmed_dilution = (
-    dilution_breakdown or {}
-).get("confirmed_economic_dilution_pct")
+if classification == UNEXPLAINED_SHARE_CHANGE:
+    confirmed_economic_dilution = None
 
-if (
-    avg_roe_5y is not None
-    and avg_roe_5y >= 18
-    and (
-        confirmed_dilution is None
-        or confirmed_dilution < 5
+    # no hard reject
+    # no proven-dilution penalty
+    confidence = LOW
+
+    capital_allocation_score = min(
+        capital_allocation_score,
+        10,
     )
-):
-    status = "EXCELLENT"
-elif avg_roe_5y is not None and avg_roe_5y >= 13:
-    status = "GOOD"
-else:
-    status = "WATCH"
 ```
 
-Tôi sẽ thêm regression test:
+Không nên hard-reject FRT chỉ vì thiếu evidence, nhưng cũng **không nên award 15/15** khi 88.8% biến động số cổ phiếu chưa giải thích.
 
-```python
-confirmed_dilution = None
-avg_roe = 12
-
-assert no_exception
-assert status != "EXCELLENT"
-```
-
-Đây là **blocker merge**.
+Đây là cách cân bằng đúng nhất.
 
 ---
 
-# 3. Leverage penalty: tốt hơn nhưng chưa thật sự tách khỏi hard reject
+# Health table đang che mất uncertainty
 
-Commit thêm `_leverage_penalty()` với:
-
-```text
-net cash                     → 0
-ND/EBITDA >= 2               → +3
-ND/EBITDA >= 4               → +6
-ND/EBITDA >= 6               → +10
-
-debt payback >= 2y           → +3
-debt payback >= 5y           → +6
-debt payback >= 10y          → +10
-```
-
-Cấu trúc này tốt hơn bản trước rất nhiều.
-
-Nhưng engine vẫn gọi:
-
-```python
-has_solvency_risk = len(
-    quality_scorecard.hard_rejects
-) > 0
-```
-
-Đây vẫn sai.
-
-Ví dụ:
+Table hiện hiển thị:
 
 ```text
-hard_rejects = [EXCESSIVE_DILUTION]
-net_debt = 0
+FRT → 5Y Share Dilution = 0%
+BAF → 0%
+HAH → 0%
+VSC → 0%
+TNH → 0%
 ```
 
-thì:
 
-```python
-has_solvency_risk = True
-```
 
-và `_leverage_penalty()` chạy dòng đầu:
-
-```python
-if has_solvency_risk:
-    return 10.0
-```
-
-→ công ty **net cash** nhưng bị leverage penalty +10 chỉ vì dilution.
-
-### Phải là
-
-```python
-has_solvency_risk = (
-    HardRejectReason.SOLVENCY_RISK
-    in quality_scorecard.hard_rejects
-)
-```
-
-Không phải:
-
-```python
-len(hard_rejects) > 0
-```
-
-Regression test cần:
+Nhưng machine payload lại có nhiều residual rất lớn. Tôi parse được:
 
 ```text
-net_debt = -5T
-hard_reject = EXCESSIVE_DILUTION
-
-expected leverage penalty = 0
+BAF  unexplained 248.2%
+FRT               88.8%
+HAG               36.7%
+HAH               94.9%
+HHV               56.0%
+HVN               40.5%
+KBC               30.3%
+TNH              250.0%
+VSC              210.3%
 ```
 
-Hiện test net-cash không truyền hard reject nên không bắt được bug này.
+Vậy cột:
+
+```text
+5Y Share Dilution
+```
+
+không nên hiện `0%`.
+
+Nên đổi UI thành một trong hai dạng:
+
+```text
+Economic dilution | Unexplained share change
+
+FRT:
+N/A                | 88.8%
+```
+
+hoặc:
+
+```text
+FRT → N/A · 88.8% unexplained
+```
+
+`0%` hiện tại tạo cảm giác chắc chắn sai.
 
 ---
 
-# 4. Hard reject precedence cũng còn một edge case
+# Value-transfer dilution code chưa được regression 68 mã kiểm nghiệm
 
-Code tính:
+Đây là điểm quan trọng.
 
-```python
-reject_override =
-    SOLVENCY_RISK → AVOID_SOLVENCY
-    UNNORMALIZABLE → UNVALUABLE
-    otherwise → AVOID_QUALITY
-```
-
-nhưng sau đó:
-
-```python
-if quality_tier == LOW_QUALITY:
-    verdict = AVOID_QUALITY
-```
-
-và reject override chỉ được áp khi verdict hiện tại là:
+Trong **toàn bộ 68 mã** của export này:
 
 ```text
-HIGH_CONVICTION
-ATTRACTIVE
-FAIRLY_VALUED
+confirmed_economic_dilution_pct > 0
+= 0 mã
 ```
 
-Do đó:
+Tức implementation mới:
 
 ```text
-LOW_QUALITY
-+
-SOLVENCY_RISK
-```
-
-có thể cuối cùng vẫn là:
-
-```text
-AVOID_QUALITY
-```
-
-thay vì:
-
-```text
-AVOID_SOLVENCY
-```
-
-Tương tự:
-
-```text
-LOW_QUALITY
-+
-UNNORMALIZABLE_EARNINGS
-```
-
-có thể không trở thành `UNVALUABLE`.
-
-Nên precedence rõ:
-
-```python
-if SOLVENCY_RISK:
-    AVOID_SOLVENCY
-elif UNNORMALIZABLE / CIRCLE_FAIL:
-    UNVALUABLE
-elif quality == LOW_QUALITY:
-    AVOID_QUALITY
-...
-```
-
----
-
-# 5. Dilution split: ✅ direction đúng
-
-Commit mới đã tách:
-
-```text
-raw_share_change_pct
-non_economic_share_change_pct
-unexplained_share_change_pct
-confirmed_economic_dilution_pct
-```
-
-Với unexplained:
-
-```text
-confirmed_economic_dilution_pct = null
-unexplained_share_change_pct = residual
-```
-
-Đây chính xác là schema tôi muốn.
-
-`app/main.py` cũng không còn đưa residual thẳng vào:
-
-```text
-economic_dilution_5y_pct
-```
-
-nữa.
-
-Phần này **PASS về separation**.
-
----
-
-# 6. Nhưng `confirmed economic dilution` vẫn chưa thực sự được chứng minh
-
-Đây là vấn đề sâu hơn.
-
-Classifier hiện làm:
-
-```python
-if residual >= 20 and economic_events:
-    classification = "EXCESSIVE_DILUTION"
-```
-
-rồi:
-
-```python
-confirmed_economic_dilution_pct = residual
-```
-
-Tức chỉ cần tồn tại **một** economic event là toàn bộ residual được coi confirmed.
-
-Test commit mới tự cho thấy vấn đề:
-
-```text
-shares old = 100
-
-bonus share 100%
-→ expected = 200
-
-actual shares = 300
-→ residual = 100%
-
-RIGHTS_ISSUE event ratio = 50%
-```
-
-Nhưng code kết luận:
-
-```text
-confirmed economic dilution = 100%
-```
-
-Trong khi event được cung cấp chỉ nói rights issue 50%.
-
-Quan trọng hơn nữa:
-
-> Có phát hành cổ phiếu không đồng nghĩa 100% với economic value dilution.
-
-Nếu phát hành gần fair value và công ty nhận tài sản/cash tương ứng thì economic dilution khác rất nhiều ESOP giá rẻ.
-
-### Audit-grade classifier cần
-
-Ít nhất:
-
-```text
-event_type
-shares_issued
 issue_price
-market/reference price
-cash/proceeds received
-ownership transfer
-convertible terms
+fair_value
+shares_issued
+→ value-transfer estimate
 ```
 
-Ví dụ:
+chưa được dữ liệu production trong export này kích hoạt.
 
-$$
-ValueTransfer =
-SharesIssued \times
-\max(FairValue-IssuePrice,0)
-$$
-
-rồi mới ước lượng economic dilution.
-
-Hiện classifier mới chứng minh:
+Do đó hiện chúng ta mới có:
 
 ```text
-share issuance occurred
+unit tests              ✅
+68-symbol production evidence ❌
 ```
 
-chưa chứng minh:
+Không thể dùng export này để kết luận phần value-transfer dilution đã production-verified.
+
+Nên thêm audit fixtures có ít nhất:
 
 ```text
-economic value destroyed = residual share increase
+1 ESOP below market
+1 rights issue near fair value
+1 rights issue heavily discounted
+1 private placement
+1 stock dividend
 ```
 
-Tôi xếp phần này **P1 correctness**, chưa P0 vì engine giờ đã ít nguy hiểm hơn trước.
+rồi export phải cho kết quả expected.
 
 ---
 
-# 7. `share_dilution_5y_pct` đổi semantics
+# Activity integrity vẫn chưa được chữa
 
-Trước đây:
-
-```text
-share_dilution_5y_pct = residual share change
-```
-
-Commit mới:
-
-```python
-"share_dilution_5y_pct":
-    confirmed_economic_dilution_pct
-```
-
-Tức tên field vẫn là:
+Hiện:
 
 ```text
-share_dilution
+status = BROKEN
+records = 774
+first_bad_id = 73
+failure = PREV_HASH_MISMATCH
+previous_good_id = 72
 ```
 
-nhưng semantics đã thành:
+và evidence giờ rất đầy đủ: expected/actual hash đều đã có. 
+
+Đây không còn là thiếu diagnostic nữa.
+
+Khả năng cao đây là **historical corruption trước fix concurrency**, vì first bad vẫn giữ nguyên id 73.
+
+Tôi không khuyến nghị âm thầm rewrite history.
+
+Nên triển khai:
 
 ```text
-confirmed economic dilution
+Activity Chain Segment 1
+id 1–72
+VERIFIED
+
+Legacy broken segment
+first_bad = 73
+BROKEN_HISTORICAL
+
+New secured chain
+genesis_anchor =
+    hash(last known state + migration metadata)
+
+status = VERIFIED_FROM_ANCHOR
 ```
 
-Đây dễ phá consumer cũ hoặc khiến frontend hiểu sai.
+Có nghĩa là giữ nguyên bằng chứng lịch sử rằng chain cũ từng hỏng, nhưng từ migration trở đi ta có chain mới xác minh được.
 
-Tôi khuyên deprecated field:
+Một hệ thống immutable audit không nên “rehash để trông xanh”.
+
+---
+
+# Normalization vẫn là blocker chức năng lớn
+
+Tôi parse toàn bộ valuation:
 
 ```text
-share_dilution_5y_pct
+59 mã → 1Y LATEST_FY
+ 3 mã → 3Y MID_CYCLE_MEDIAN
+ 6 mã → N/A / model khác
 ```
 
-và dùng explicit:
+**Không có mã nào thực sự dùng 7–10Y full-cycle normalization.**
+
+FRT chẳng hạn vẫn:
 
 ```text
-raw_share_change_5y_pct
-confirmed_economic_dilution_5y_pct
-unexplained_share_change_5y_pct
-non_economic_share_change_5y_pct
+normalization_years = 1
+normalization_method = LATEST_FY
+maintenance CapEx confidence = LOW
+```
+
+
+
+Đây hiện là gap lớn hơn hầu hết các bug nhỏ còn lại.
+
+---
+
+# Specialized model coverage vẫn y nguyên
+
+Tôi vẫn thấy 8 model mismatches được block đúng:
+
+```text
+HAH/VOS
+SHIPPING
+→ FLEET_NAV missing
+
+KSV/MSR
+MINING_RESOURCE
+→ RESERVE_NAV missing
+
+VJC/HVN
+AIRLINE
+→ AIRLINE_EBITDAR missing
+
+PVD/PVS
+OILFIELD_SERVICES
+→ MID_CYCLE_FCFF missing
+```
+
+Điểm tích cực là tất cả đều `MODEL_INCOMPLETE`, không expose valuation public. Overview xác nhận behavior này. 
+
+---
+
+## Một số archetype vẫn nên refine
+
+Không phải blocker ngay, nhưng vẫn còn:
+
+```text
+AST → LOGISTICS_SERVICES
+BAF → CONSUMER_STAPLES
+CTR → TECHNOLOGY_SERVICES
+TNH → PHARMACEUTICAL
+
+BWE / CHP / CII / CNG / GEG /
+HHV / NT2 / PPC / TDM / VSH
+→ CONCESSION_INFRASTRUCTURE
+```
+
+Tức power/water/BOT vẫn bị gom khá rộng.
+
+Tôi vẫn muốn tách:
+
+```text
+THERMAL_POWER
+HYDRO_POWER
+WATER_UTILITY
+BOT_CONCESSION
+RENEWABLE_POWER
+AIRPORT_SERVICES
+LIVESTOCK_AGRICULTURE
+HOSPITAL_HEALTHCARE
 ```
 
 ---
 
-# 8. Test coverage: cải thiện nhưng chưa bắt các bug trên
+# Score bản hiện tại
 
-Commit thêm 6 test rất hữu ích:
+| Hạng mục                      |       Điểm |
+| ----------------------------- | ---------: |
+| Cash-flow basis               |  **10/10** |
+| Model gating                  | **9.5/10** |
+| Public valuation safety       | **9.5/10** |
+| Quality verdict gate          | **9.5/10** |
+| Dilution schema               |   **9/10** |
+| Dilution uncertainty handling | **7.5/10** |
+| Leverage MOS                  |   **8/10** |
+| Normalization                 |   **6/10** |
+| Specialized models            |   **7/10** |
+| Activity integrity            |   **6/10** |
+| Report semantics              |   **8/10** |
 
-```text
-LOW_QUALITY gate
-LOW_QUALITY + hard reject
-debt payback penalty
-ND/EBITDA penalty
-net cash penalty
-confirmed/unexplained dilution
-```
+### Overall: khoảng **8.9–9.0/10**
 
-Nhưng còn thiếu chính các case tôi tìm thấy:
-
-```text
-□ avg_roe <18 + confirmed_dilution=None
-  → must not TypeError
-
-□ net cash + EXCESSIVE_DILUTION
-  → leverage penalty must remain 0
-
-□ LOW_QUALITY + SOLVENCY_RISK
-  → AVOID_SOLVENCY
-
-□ one small economic event + large unexplained residual
-  → do not mark entire residual confirmed
-
-□ fair-value rights issue
-  → should not automatically equal economic value dilution
-```
-
----
-
-# 9. Test status thực tế
-
-Commit message nói:
+Tôi sẽ ưu tiên tiếp theo:
 
 ```text
-29 exposure tests pass
-104 value-engine/activity/service tests pass
-frontend build clean
-```
-
-Task còn ghi:
-
-```text
-python/portfolio/tests:
-330 passed
-6 failed
-1 skipped
-```
-
-6 failures được ghi là pre-existing.
-
-Vì GitHub Actions không có run cho SHA này nên tôi chưa có CI artifact độc lập để xác nhận câu “pre-existing”; Vercel deployment status hiện **success**.
-
-Điều này nghĩa là:
-
-```text
-targeted suites → green
-full repo suite → chưa green
-```
-
-không nên ghi đơn giản là “all tests pass”.
-
----
-
-## Review verdict
-
-Tôi đánh giá:
-
-**`6a80537`: CHANGES REQUESTED**
-
-Không phải vì kiến trúc sai — thực tế commit sửa đúng hướng cả 3 issue trước — mà vì có **một runtime bug mới rất cụ thể trong `app/main.py`**.
-
-### Block merge
-
-```text
-P0
-1. Fix capital_allocation.status precedence / None TypeError
+P0/P1
+1. Preserve UNKNOWN dilution as null, never 0
+2. Cap capital-allocation score when unexplained share change is material
+3. Fix healthy-positive-debt leverage penalty → 0
+4. Show unexplained dilution in Health table
+5. Establish a verified activity-chain anchor after historical break
 
 P1
-2. has_solvency_risk =
-   only SOLVENCY_RISK,
-   not any hard reject
-
-3. Define hard-reject precedence:
-   SOLVENCY > UNVALUABLE > LOW_QUALITY
-
-4. Do not confirm entire residual dilution
-   merely because one economic event exists
-
-P2
-5. Deprecate ambiguous share_dilution_5y_pct
-6. Add regression tests for all cases above
+6. 7–10Y normalization engine
+7. Fleet NAV
+8. Reserve NAV
+9. Airline EBITDAR
+10. Mid-cycle FCFF
 ```
 
-Sau khi sửa **#1 và #2**, tôi sẽ xem commit đủ an toàn hơn đáng kể để tiếp tục regression 68 mã.
+Điểm quan trọng nhất từ export này: **guardrails đã hoạt động tốt hơn rất nhiều**. Vấn đề hiện tại đã chuyển từ “engine cho kết luận nguy hiểm” sang “engine xử lý uncertainty chưa đủ tinh tế”. Đây là dấu hiệu core architecture đã khá ổn; phần còn lại nên tập trung vào **unknown-state semantics + full-cycle/model coverage**, thay vì tiếp tục thay đổi DCF core.
