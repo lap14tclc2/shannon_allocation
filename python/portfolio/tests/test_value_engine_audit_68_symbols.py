@@ -288,6 +288,32 @@ def test_generic_oe_dcf_is_equity_cash_flow_no_debt_adjustment():
     assert base.enterprise_value == base.equity_value
 
 
+def test_equity_basis_iv_is_invariant_to_net_debt(PR_review="PR-51"):
+    # PR #51 review invariant: NI-based Owner Earnings is equity cash flow. The
+    # resulting equity value must be identical regardless of the net_debt argument
+    # (no debt double-counting). FCFF basis subtracts net debt exactly once.
+    from portfolio.value_engine.dcf import DCFValuationModel
+    kwargs = dict(
+        base_owner_earnings=Decimal("8000000000000"),
+        shares_outstanding=Decimal("1460000000"),
+        scenario_type=ScenarioType.BASE,
+        discount_rate=Decimal("0.11"),
+        growth_rate=Decimal("0.12"),
+    )
+    equity_debt0 = DCFValuationModel.calculate_scenario(net_debt=Decimal("0"), **kwargs)
+    equity_debt5t = DCFValuationModel.calculate_scenario(net_debt=Decimal("5000000000000"), **kwargs)
+    assert equity_debt0.debt_adjustment_policy == "NO_NET_DEBT_ADJUSTMENT"
+    assert equity_debt0.equity_value == equity_debt5t.equity_value
+    assert equity_debt0.intrinsic_value_per_share == equity_debt5t.intrinsic_value_per_share
+
+    fcff = DCFValuationModel.calculate_scenario(
+        net_debt=Decimal("5000000000000"), is_equity_cash_flow=False, **kwargs
+    )
+    assert fcff.debt_adjustment_policy == "SUBTRACT_NET_DEBT"
+    assert fcff.result_type == "ENTERPRISE_VALUE"
+    assert fcff.enterprise_value - fcff.equity_value == Decimal("5000000000000")
+
+
 def test_concession_declares_fcff_enterprise_basis():
     report = ValuationEngine.evaluate(
         symbol="GAS",

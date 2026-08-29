@@ -236,7 +236,7 @@ def verify_activity_chain(store) -> dict:
     with store.connect() as db:
         rows = [dict(r) for r in db.execute("SELECT * FROM activity_log ORDER BY id").fetchall()]
     previous_hash = None
-    for row in rows:
+    for idx, row in enumerate(rows):
         payload = {
             "occurred_at": row["occurred_at"],
             "actor_type": row["actor_type"],
@@ -253,12 +253,25 @@ def verify_activity_chain(store) -> dict:
         }
         expected = hashlib.sha256(((previous_hash or "") + _canonical_payload(payload)).encode("utf-8")).hexdigest()
         if row["prev_hash"] != previous_hash or row["record_hash"] != expected:
+            # REVIEW(P1, PR #51): forensic evidence to distinguish a broken link
+            # (prev_hash does not chain to the previous row) from a tampered payload
+            # (record_hash does not match the canonical re-computation). Includes
+            # expected_hash, actual_hash and the first bad event metadata.
+            if row["prev_hash"] != previous_hash:
+                failure = "PREV_HASH_MISMATCH"
+            else:
+                failure = "CURRENT_HASH_MISMATCH"
             return {
                 "status": "BROKEN",
                 "records": len(rows),
                 "first_bad_id": row["id"],
+                "failure": failure,
+                "expected_prev_hash": previous_hash,
+                "actual_prev_hash": row["prev_hash"],
+                "expected_hash": expected,
+                "actual_hash": row["record_hash"],
                 "first_bad": trace_row(row),
-                "previous_good_id": rows[rows.index(row) - 1]["id"] if rows.index(row) > 0 else None,
+                "previous_good_id": rows[idx - 1]["id"] if idx > 0 else None,
             }
         previous_hash = row["record_hash"]
     return {"status": "VERIFIED", "records": len(rows), "first_bad_id": None, "head_hash": previous_hash}

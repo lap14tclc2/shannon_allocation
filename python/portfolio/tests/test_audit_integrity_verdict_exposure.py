@@ -168,11 +168,28 @@ def test_activity_chain_trace_surfaces_broken_row(tmp_path: Path):
     first = trace["rows"][0]
     for field in ("event_id", "event_type", "occurred_at", "source", "idempotency_key", "previous_hash", "current_hash"):
         assert field in first
-    # verify_activity_chain now includes the offending row trace.
+    # verify_activity_chain now includes the offending row trace + forensic detail.
     result = verify_activity_chain(store)
     assert result["status"] == "BROKEN"
     assert result.get("first_bad", {}).get("event_id") == 2
     assert result.get("previous_good_id") == 1
+    # A payload mutation => CURRENT_HASH_MISMATCH, with expected/actual hashes.
+    assert result.get("failure") == "CURRENT_HASH_MISMATCH"
+    assert result.get("expected_hash") is not None
+    assert result.get("actual_hash") != result.get("expected_hash")
+
+
+def test_activity_chain_forensic_distinguishes_prev_hash_break(tmp_path: Path):
+    store = PortfolioStore(tmp_path / "forensic.sqlite3")
+    append_activity(store, actor_type="USER", actor_id="a", category="LEDGER", action="A", summary="a")
+    append_activity(store, actor_type="USER", actor_id="b", category="LEDGER", action="B", summary="b")
+    with store.connect() as db:
+        db.execute("UPDATE activity_log SET prev_hash=?, record_hash=? WHERE id=2", ("0" * 64, "f" * 64))
+    result = verify_activity_chain(store)
+    assert result["status"] == "BROKEN"
+    assert result.get("failure") == "PREV_HASH_MISMATCH"
+    assert result.get("expected_prev_hash") is not None
+    assert result.get("actual_prev_hash") == "0" * 64
 
 
 # ---------------------------------------------------------------------------

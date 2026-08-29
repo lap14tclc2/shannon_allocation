@@ -43,4 +43,5 @@
 | [TASK-20260829-064](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-064-dedicated-mobile-valuation-app-ui.md) | Implement Dedicated Mobile iPhone App UI for Valuation Page | completed | high | 2026-08-29 |
 | [TASK-20260829-065](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-065-p0-audit-integrity-verdict-and-model-exposure-fixes.md) | P0 Audit Integrity, Verdict & Model-Exposure Fixes | completed | high | 2026-08-29 |
 | [TASK-20260829-066](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-066-p0-event-evidence-dilution-epv-gating-activity-trace.md) | P0 Event-Evidence Dilution, EPV Gating & Activity Trace | completed | high | 2026-08-29 |
+| [TASK-20260829-067](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260829-067-resolve-pr-51-review-findings.md) | Resolve PR #51 REVIEW(P0/P1) findings on dev | verified | high | 2026-08-29 |
 
