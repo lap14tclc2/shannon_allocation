@@ -49,6 +49,12 @@ class DCFValuationModel:
         terminal_val = terminal_oe / (discount_rate - terminal_growth)
         pv_terminal_val = terminal_val / ((Decimal("1") + discount_rate) ** growth_years)
 
+        # REVIEW(P0): base_owner_earnings comes from Net Income in owner_earnings.py,
+        # so it is equity-basis cash flow (FCFE-like). Calling its PV "enterprise value"
+        # and subtracting net debt again double-counts financing. Choose one invariant:
+        #   (A) NI-based Owner Earnings -> Cost of Equity -> Equity Value, no debt adjustment; or
+        #   (B) rebuild FCFF from EBIT(1-T) -> WACC -> Enterprise Value -> subtract net debt.
+        # Add explicit cashflow_basis/discount_rate_basis/result_type fields so this cannot regress.
         # Enterprise & Equity Value
         enterprise_val = pv_stage1 + pv_terminal_val
         equity_val = enterprise_val - net_debt

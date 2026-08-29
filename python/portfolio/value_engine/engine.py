@@ -114,6 +114,16 @@ class ValuationEngine:
         if base_annual_oe <= Decimal("0"):
             raise ValueError("OWNER_EARNINGS_NON_POSITIVE: valuation blocked; no synthetic fallback is allowed.")
 
+        # REVIEW(P0): entity_type is accepted by evaluate() but is not used to route the
+        # company to a sector/archetype-specific model. On this branch banks, insurers,
+        # real estate, mining, shipping, airlines, cyclicals, etc. all fall through to
+        # the same Owner Earnings DCF. Model eligibility must be decided before valuation;
+        # unsupported/missing specialized inputs should return MODEL_INCOMPLETE, not a target.
+        #
+        # REVIEW(P1): Bear/Base/Bull growth rates below are hard-coded (8%/14%/20%) for
+        # every company. Derive growth from normalized history + reinvestment/incremental
+        # returns, apply archetype caps, and require 7-10Y full-cycle normalization for
+        # cyclical/commodity businesses instead of extrapolating one FY.
         # 4. Run 3-Scenario DCF Valuation (QVE-090, QVE-100, QVE-102)
         scenarios = {
             ScenarioType.BEAR: DCFValuationModel.calculate_scenario(
@@ -187,6 +197,10 @@ class ValuationEngine:
         bear_iv = scenarios[ScenarioType.BEAR].intrinsic_value_per_share
         mos_base = scenarios[ScenarioType.BASE].margin_of_safety_pct or Decimal("0")
 
+        # REVIEW(P0): this final valuation pill is based only on price vs intrinsic value.
+        # It has no independent business-quality / hard-reject override. Keep raw valuation
+        # attractiveness separate from final investment verdict, e.g. LOW_QUALITY or a hard
+        # failure must prevent ATTRACTIVE/HIGH_CONVICTION even when MOS is large.
         if current_market_price < bear_iv:
             val_status = ValuationPill.DEEP_VALUE
             val_verdict = f"Thị giá đang nằm dưới cả kịch bản thận trọng (Bear {bear_iv:,.0f} đ). Vùng định giá rất hấp dẫn theo tiêu chuẩn Benjamin Graham."

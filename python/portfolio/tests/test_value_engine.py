@@ -114,6 +114,10 @@ def test_owner_earnings_calculator_bridge():
 
 
 def test_dcf_valuation_scenarios_and_margin_of_safety():
+    # REVIEW(P0): this test only asserts that the result is positive; it does not catch
+    # debt double-counting. Add an invariant test where NI-based Owner Earnings produces
+    # the same equity value regardless of a net_debt argument (or remove net_debt from the
+    # equity-basis API), plus a separate FCFF test that explicitly subtracts net debt once.
     base_oe = Decimal("8000000000000")  # 8,000 tỷ VND annual
     shares = Decimal("1460000000")  # 1.46 tỷ cổ phiếu
     net_debt = Decimal("5000000000000")  # 5,000 tỷ VND
