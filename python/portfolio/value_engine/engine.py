@@ -850,7 +850,7 @@ class ValuationEngine:
                 earnings_diag = (
                     f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp năm tài chính gần nhất "
                     f"(LATEST_FY) đạt {oe_billions:,.1f} tỷ đồng. Dữ liệu hiện chỉ hỗ trợ "
-                    f"{normalization_years} năm nên chưa đủ cơ sở gọi là bình quân/giữa chu kỳ."
+                    f"{normalization_years} năm nên đây không phải số liệu chuẩn hóa đa năm hay giữa chu kỳ."
                 )
 
         moat_score = quality_scorecard.moat_score
