@@ -116,9 +116,11 @@ class OwnerEarningsCalculator:
         (never misleadingly called "averaged").
         """
         per_year: List[Tuple[int, Decimal, Decimal, Decimal]] = []  # (year, revenue, margin, oe)
+        valid_oe_bridges: List[Tuple[int, OwnerEarningsBridge]] = []
         for y in range(latest_fiscal_year - lookback_years + 1, latest_fiscal_year + 1):
             try:
                 b = cls.calculate(facts, fiscal_year=y)
+                valid_oe_bridges.append((y, b))
                 rev_fact = next(
                     (
                         f
@@ -138,6 +140,44 @@ class OwnerEarningsCalculator:
                 per_year.append((y, revenue, margin, b.owner_earnings))
             except Exception:
                 continue
+
+        def _median(vals: List[Decimal]) -> Decimal:
+            ordered = sorted(vals)
+            n = len(ordered)
+            if n % 2 == 1:
+                return ordered[n // 2]
+            return (ordered[n // 2 - 1] + ordered[n // 2]) / Decimal("2")
+
+        if len(per_year) < 3 and len(valid_oe_bridges) >= 3:
+            # We have multi-year OE history but revenue facts are absent (e.g. DGC)
+            # Calculate mid-cycle directly as the median of annual Owner Earnings.
+            oes = [b.owner_earnings for _, b in valid_oe_bridges]
+            mid_cycle_oe = _median(oes)
+            avg_oe = sum(oes) / Decimal(str(len(oes)))
+
+            if mid_cycle_oe > Decimal("0"):
+                desc = (
+                    f"Lợi nhuận Thực chu kỳ (Mid-Cycle) từ {len(valid_oe_bridges)} năm: "
+                    f"trung vị Owner Earnings {mid_cycle_oe / Decimal('1000000000'):,.1f} tỷ ₫. "
+                    f"(Loại bỏ nhiễu đỉnh/đáy chu kỳ hàng hóa; trung bình {avg_oe / Decimal('1000000000'):,.1f} tỷ ₫.)"
+                )
+                return OwnerEarningsBridge(
+                    net_income=avg_oe,
+                    depreciation_amortization=Decimal("0"),
+                    maintenance_capex=Decimal("0"),
+                    growth_capex_estimated=Decimal("0"),
+                    working_capital_change=Decimal("0"),
+                    owner_earnings=mid_cycle_oe,
+                    formula_description=desc,
+                    source_fact_ids=[],
+                    normalization_years=len(valid_oe_bridges),
+                    normalization_method="MID_CYCLE_MEDIAN",
+                    mid_cycle_margin=None,
+                    mid_cycle_revenue=None,
+                    maintenance_capex_confidence="HIGH" if len(valid_oe_bridges) >= 7 else "MEDIUM",
+                    owner_earnings_confidence="HIGH" if len(valid_oe_bridges) >= 7 else "MEDIUM",
+                    maintenance_capex_method="MULTI_YEAR_CYCLE_MEDIAN",
+                )
 
         if len(per_year) < 3:
             # Not enough history for honest cycle normalization -> use latest FY only.
@@ -162,6 +202,7 @@ class OwnerEarningsCalculator:
                 owner_earnings_confidence=latest_b.owner_earnings_confidence,
                 maintenance_capex_method=latest_b.maintenance_capex_method,
             )
+
 
         revenues = [Decimal(str(p[1])) for p in per_year]
         margins = [Decimal(str(p[2])) for p in per_year]
