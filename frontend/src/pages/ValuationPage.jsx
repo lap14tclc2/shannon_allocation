@@ -332,11 +332,11 @@ function ValuationCard({ symbol, report, error, locale }) {
           <p className="pillar-desc">{report.value_investor_pillars.financial_fortress?.diagnosis}</p>
         </div>
 
-        <div className={`pillar-card pillar-${report.value_investor_pillars.capital_allocation?.status?.toLowerCase() || 'good'}`}>
+        <div className={`pillar-card pillar-${report.value_investor_pillars.capital_allocation?.status === 'UNCERTAIN' ? 'watch' : (report.value_investor_pillars.capital_allocation?.status?.toLowerCase() || 'good')}`}>
           <div className="pillar-header">
             <span className="pillar-title">3. Hiệu quả Phân bổ Vốn</span>
             <span className="pillar-badge">
-              {report.value_investor_pillars.capital_allocation?.status === 'EXCELLENT' ? 'Xuất sắc' : report.value_investor_pillars.capital_allocation?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
+              {report.value_investor_pillars.capital_allocation?.status === 'UNCERTAIN' ? 'Chưa xác minh' : report.value_investor_pillars.capital_allocation?.status === 'EXCELLENT' ? 'Xuất sắc' : report.value_investor_pillars.capital_allocation?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
             </span>
           </div>
           <div className="pillar-metric">
