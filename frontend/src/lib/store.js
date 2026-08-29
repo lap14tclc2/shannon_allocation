@@ -93,6 +93,7 @@ async function fetchRoutePayload(pathname) {
       return { activity: await getActivityLog() };
     case '/settings':
       return { dashboard: await getPortfolioDashboard() };
+    case '/screener':
     case '/guide':
     case '/admin':
     case '/admin/auth':
@@ -102,6 +103,7 @@ async function fetchRoutePayload(pathname) {
       throw new Error('Trang không tồn tại.');
   }
 }
+
 
 export const bootstrapApp = createAsyncThunk('qport/bootstrap', async () => {
   const me = await getCurrentUser();
