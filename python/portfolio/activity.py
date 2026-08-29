@@ -74,7 +74,15 @@ def append_activity(
     summary = str(summary or action)[:1000]
     source = str(source or "QPORT")[:50]
     details_json = json.dumps(details or {}, ensure_ascii=False, sort_keys=True, default=str)
+    # REVIEW(P1): append_activity has no idempotency key. Repeated client/export/lookup
+    # operations can create duplicate logical events and inflate the audit log. Accept a
+    # caller-supplied idempotency_key and enforce uniqueness for idempotent event classes.
     with store.connect() as db:
+        # REVIEW(P0): read-head then insert is not serialized. Two concurrent writers can
+        # read the same record_hash and append sibling rows with the same prev_hash; the
+        # second row will make verify_activity_chain() fail. Use a write transaction/lock
+        # (e.g. BEGIN IMMEDIATE for SQLite, row/advisory lock for Postgres) or a single-writer
+        # append path so selecting the head and inserting the next record are atomic.
         previous = db.execute("SELECT record_hash FROM activity_log ORDER BY id DESC LIMIT 1").fetchone()
         prev_hash = previous["record_hash"] if previous else None
         payload = {
@@ -198,6 +206,10 @@ def verify_activity_chain(store) -> dict:
         }
         expected = hashlib.sha256(((previous_hash or "") + _canonical_payload(payload)).encode("utf-8")).hexdigest()
         if row["prev_hash"] != previous_hash or row["record_hash"] != expected:
+            # REVIEW(P1): return enough forensic evidence to distinguish PREV_HASH_MISMATCH
+            # from CURRENT_HASH/PAYLOAD_MISMATCH. Include previous_good_id, expected_hash,
+            # actual_hash and the first bad event metadata; otherwise operators know where
+            # the chain broke but not why.
             return {"status": "BROKEN", "records": len(rows), "first_bad_id": row["id"]}
         previous_hash = row["record_hash"]
     return {"status": "VERIFIED", "records": len(rows), "first_bad_id": None, "head_hash": previous_hash}
