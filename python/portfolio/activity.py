@@ -363,7 +363,21 @@ def reanchor_activity_chain(
     # Verify first; if the chain is already verified we do nothing.
     current = verify_activity_chain(store)
     if current["status"] in ("VERIFIED", "VERIFIED_FROM_ANCHOR"):
-        return {**current, "reanchored": False}
+        return {**current, "reanchored": False, "reanchor_allowed": False}
+
+    # TASK-071 audit boundary: only a link-only historical break may be
+    # re-anchored through the normal migration path. A CURRENT_HASH_MISMATCH
+    # means the canonical payload no longer matches its stored digest and may
+    # represent tampering/corruption; creating a new trusted segment would
+    # otherwise legitimize unknown history. Such cases require investigation.
+    if current.get("failure") != "PREV_HASH_MISMATCH":
+        return {
+            **current,
+            "reanchored": False,
+            "reanchor_allowed": False,
+            "reanchor_block_reason": "NON_LINK_CORRUPTION_REQUIRES_INVESTIGATION",
+        }
+
     last_good_id = current.get("previous_good_id") or current.get("first_bad_id", 1) - 1
     with store.connect() as db:
         last_good = db.execute(

@@ -246,6 +246,27 @@ def portfolio(user: dict) -> AutomatedPortfolioService:
     return svc
 
 
+def admin_portfolio_service(user_id: int, portfolio_id: int) -> tuple[dict, dict, AutomatedPortfolioService]:
+    """Resolve one exact user/portfolio for admin-only maintenance operations."""
+    target = admin_target_user(int(user_id))
+    selected = auth().portfolio_for_user(int(target["id"]), int(portfolio_id))
+    if selected is None:
+        raise ApiError(
+            404,
+            "Portfolio does not exist or does not belong to this account.",
+            "PORTFOLIO_NOT_FOUND",
+            "portfolio_id",
+        )
+    key = (int(target["id"]), int(selected["id"]))
+    svc = _services.get(key)
+    if svc is None:
+        svc = AutomatedPortfolioService(
+            store=PostgresPortfolioStore(int(target["id"]), selected["schema_name"])
+        )
+        _cache_service(key, svc)
+    return target, selected, svc
+
+
 def dividends(user: dict) -> SqliteDividendService:
     user_id = int(user["id"])
     selected = active_portfolio(user)
@@ -830,18 +851,68 @@ def portfolio_logs(qport_session: str | None = Cookie(default=None)):
 
 @app.get("/api/portfolio/activity/trace")
 def portfolio_activity_trace(
+    user_id: int = Query(..., ge=1),
+    portfolio_id: int = Query(..., ge=1),
     from_id: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=200),
     qport_session: str | None = Cookie(default=None),
 ):
-    """Admin-only audit trace from a broken-chain offset (review P0).
-
-    Read-only: surfaces event_id, event_type, occurred_at, source,
-    idempotency_key, previous_hash and current_hash so a corruption at e.g.
-    ``first_bad_id=73`` can be inspected before repair.
-    """
+    """Legacy admin-only trace route with explicit user/portfolio scope."""
     require_admin(qport_session)
-    return portfolio(require_portfolio_user(qport_session)).activity_chain_trace(from_id=from_id, limit=limit)
+    target, selected, svc = admin_portfolio_service(user_id, portfolio_id)
+    return {
+        "ok": True,
+        "user": target,
+        "portfolio": public_portfolio(selected),
+        **svc.activity_chain_trace(from_id=from_id, limit=limit),
+    }
+
+
+@app.get("/api/admin/users/{user_id}/portfolios/{portfolio_id}/activity/trace")
+def admin_portfolio_activity_trace(
+    user_id: int,
+    portfolio_id: int,
+    from_id: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=200),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Canonical admin-only activity-chain trace for one portfolio."""
+    require_admin(qport_session)
+    target, selected, svc = admin_portfolio_service(user_id, portfolio_id)
+    return {
+        "ok": True,
+        "user": target,
+        "portfolio": public_portfolio(selected),
+        **svc.activity_chain_trace(from_id=from_id, limit=limit),
+    }
+
+
+@app.post("/api/admin/users/{user_id}/portfolios/{portfolio_id}/activity/reanchor")
+def admin_portfolio_activity_reanchor(
+    user_id: int,
+    portfolio_id: int,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Explicit admin mutation: begin a new verified chain after a legacy link break."""
+    admin = require_admin(qport_session)
+    reason = str(body.get("reason") or "").strip()
+    if not reason:
+        raise ApiError(400, "A re-anchor reason is required.", "REANCHOR_REASON_REQUIRED", "reason")
+    target, selected, svc = admin_portfolio_service(user_id, portfolio_id)
+    result = svc.activity_chain_reanchor(
+        operator=str(admin.get("username") or admin.get("id") or "admin"),
+        reason=reason,
+    )
+    payload = {
+        "ok": result.get("status") in {"VERIFIED", "VERIFIED_FROM_ANCHOR"},
+        "user": target,
+        "portfolio": public_portfolio(selected),
+        **result,
+    }
+    if result.get("reanchor_allowed") is False and result.get("status") == "BROKEN":
+        return JSONResponse(status_code=409, content=jsonable_encoder(payload))
+    return payload
 
 
 @app.get("/api/portfolio/dividends/health")
@@ -1335,11 +1406,19 @@ def portfolio_symbol_valuation(
         and avg_roe_5y >= 18
         and (confirmed_dilution_pct is None or confirmed_dilution_pct < 5)
     ):
-        capital_alloc_status = "EXCELLENT"
+        underlying_capital_alloc_status = "EXCELLENT"
     elif avg_roe_5y is not None and avg_roe_5y >= 13:
-        capital_alloc_status = "GOOD"
+        underlying_capital_alloc_status = "GOOD"
     else:
-        capital_alloc_status = "WATCH"
+        underlying_capital_alloc_status = "WATCH"
+
+    unexplained_share_change_pct = (dilution_breakdown or {}).get("unexplained_share_change_pct")
+    material_allocation_uncertainty = (
+        (dilution_breakdown or {}).get("classification") == "UNEXPLAINED_SHARE_CHANGE"
+        and unexplained_share_change_pct is not None
+        and float(unexplained_share_change_pct) >= 20.0
+    )
+    capital_alloc_status = "UNCERTAIN" if material_allocation_uncertainty else underlying_capital_alloc_status
 
     value_investor_pillars = {
         "earnings_quality": earnings_quality,
@@ -1369,6 +1448,8 @@ def portfolio_symbol_valuation(
             "dilution_classification": (dilution_breakdown or {}).get("classification"),
             "dilution_breakdown": dilution_breakdown,
             "status": capital_alloc_status,
+            "underlying_status": underlying_capital_alloc_status,
+            "uncertainty_status": "UNEXPLAINED_SHARE_CHANGE" if material_allocation_uncertainty else None,
             "diagnosis": true_dilution_diag,
         },
     }

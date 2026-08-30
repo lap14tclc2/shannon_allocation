@@ -71,3 +71,17 @@ def test_portfolio_insight_styles_are_loaded_after_mobile_first_layer():
     assert "import './responsive.css';" in entry
     assert "import './portfolio-insights.css';" in entry
     assert entry.index("import './portfolio-insights.css';") > entry.index("import './responsive.css';")
+
+
+def test_admin_activity_reanchor_is_explicit_and_scoped():
+    app_source = (REPO_DIR / "app" / "main.py").read_text(encoding="utf-8")
+    activity_source = (PORTFOLIO_DIR / "activity.py").read_text(encoding="utf-8")
+    service_source = (PORTFOLIO_DIR / "correctable_service.py").read_text(encoding="utf-8")
+
+    assert '/api/admin/users/{user_id}/portfolios/{portfolio_id}/activity/reanchor' in app_source
+    assert "require_admin(qport_session)" in app_source
+    assert "REANCHOR_REASON_REQUIRED" in app_source
+    assert "admin_portfolio_service(user_id, portfolio_id)" in app_source
+    assert "NON_LINK_CORRUPTION_REQUIRES_INVESTIGATION" in activity_source
+    assert 'current.get("failure") != "PREV_HASH_MISMATCH"' in activity_source
+    assert "activity_chain_reanchor" in service_source

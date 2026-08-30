@@ -831,12 +831,27 @@ class ValuationEngine:
                 f"Cấu trúc vốn: Nợ ròng ở mức {net_debt / Decimal('1000000000'):,.1f} tỷ đồng. "
                 f"Hiệu quả sử dụng vốn đạt tỷ suất Sinh lời trên Vốn {roe_str} và hệ số Giá/Sổ sách {pb_str}."
             )
-            earnings_diag = (
-                f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp bình quân chu kỳ đạt "
-                f"{base_annual_oe / Decimal('1000000000'):,.1f} tỷ đồng, "
-                f"được tính bình quân qua các năm sau khi đã trừ chi phí tái đầu tư duy trì "
-                f"và biến động vốn lưu động."
-            )
+            oe_billions = base_annual_oe / Decimal("1000000000")
+            normalization_method = getattr(oe_bridge, "normalization_method", "LATEST_FY") if oe_bridge is not None else "LATEST_FY"
+            normalization_years = int(getattr(oe_bridge, "normalization_years", 1) or 1) if oe_bridge is not None else 1
+            if normalization_method == "MID_CYCLE_MEDIAN" and normalization_years >= 3:
+                earnings_diag = (
+                    f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp giữa chu kỳ đạt "
+                    f"{oe_billions:,.1f} tỷ đồng, được chuẩn hóa từ {normalization_years} năm "
+                    f"sau khi trừ chi phí tái đầu tư duy trì và biến động vốn lưu động."
+                )
+            elif normalization_years > 1:
+                earnings_diag = (
+                    f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp chuẩn hóa đa năm đạt "
+                    f"{oe_billions:,.1f} tỷ đồng dựa trên {normalization_years} năm dữ liệu; "
+                    f"chưa gán nhãn giữa chu kỳ nếu chưa đủ full-cycle evidence."
+                )
+            else:
+                earnings_diag = (
+                    f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp năm tài chính gần nhất "
+                    f"(LATEST_FY) đạt {oe_billions:,.1f} tỷ đồng. Dữ liệu hiện chỉ hỗ trợ "
+                    f"{normalization_years} năm nên đây không phải số liệu chuẩn hóa đa năm hay giữa chu kỳ."
+                )
 
         moat_score = quality_scorecard.moat_score
         moat_rating = MoatRating.WIDE if moat_score >= 14 else (MoatRating.NARROW if moat_score >= 8 else MoatRating.NONE)
@@ -854,11 +869,29 @@ class ValuationEngine:
             )
         )
 
+        material_unexplained = cap_alloc.get("unexplained_share_change_pct")
+        if (
+            dilution_classification == "UNEXPLAINED_SHARE_CHANGE"
+            and material_unexplained is not None
+            and float(material_unexplained) >= 20.0
+        ):
+            capital_allocation_diag = (
+                f"Điểm phân bổ vốn: {quality_scorecard.capital_allocation_score}/15 (CHƯA XÁC MINH). "
+                f"Hiệu quả sử dụng vốn đạt tỷ suất Sinh lời trên Vốn {roe_str}, nhưng "
+                f"{float(material_unexplained):.1f}% thay đổi số cổ phiếu vẫn chưa có event-level evidence; "
+                f"không coi đây là pha loãng kinh tế đã xác nhận."
+            )
+        else:
+            capital_allocation_diag = (
+                f"Điểm phân bổ vốn: {quality_scorecard.capital_allocation_score}/15. "
+                f"Hiệu quả sử dụng nguồn vốn của cổ đông đạt tỷ suất Sinh lời trên Vốn {roe_str}."
+            )
+
         assessment = ValueInvestingAssessment(
             moat_rating=moat_rating,
             valuation_status=val_status,
             moat_summary=moat_summary_text,
-            capital_allocation_diagnosis=f"Điểm phân bổ vốn: {quality_scorecard.capital_allocation_score}/15. Hiệu quả sử dụng nguồn vốn của cổ đông đạt tỷ suất Sinh lời trên Vốn {roe_str}.",
+            capital_allocation_diagnosis=capital_allocation_diag,
             earnings_quality_diagnosis=earnings_diag,
             financial_resilience_diagnosis=fin_diagnosis,
             valuation_verdict=val_verdict,

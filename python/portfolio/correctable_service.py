@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from .accounting import AccountingError, apply_event, derive_state
-from .activity import append_activity, ensure_activity_schema, list_activity, verify_activity_chain
+from .activity import append_activity, ensure_activity_schema, list_activity, reanchor_activity_chain, verify_activity_chain
 from .corrections import (
     CorrectionError,
     append_delete,
@@ -163,6 +163,19 @@ class CorrectablePortfolioService(PortfolioService):
         """
         from .activity import trace_activity_chain
         return trace_activity_chain(self.store, from_id=from_id, limit=limit)
+
+    def activity_chain_reanchor(self, *, operator: str, reason: str) -> dict:
+        """Explicitly start a verified segment after a confirmed legacy link break.
+
+        This is intentionally a write operation and must never be called by
+        dashboard/export/read paths. The activity module refuses payload/hash
+        corruption and only accepts PREV_HASH_MISMATCH legacy link breaks.
+        """
+        return reanchor_activity_chain(
+            self.store,
+            operator=str(operator or "admin"),
+            reason=str(reason or "legacy-link-break"),
+        )
 
     def transactions(self) -> list[dict]:
         rows = []
