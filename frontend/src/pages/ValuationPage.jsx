@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import ValuationDetailOverlay, {
-  ValuationReportBody,
+import {
   ValuationSkeletonCard,
   ValuationStatusPill,
 } from '../components/ValuationDetailOverlay.jsx';
@@ -11,7 +10,6 @@ import { formatMoney } from '../lib/format.js';
 import {
   archetypeLabel,
   modelStatusLabel,
-  qualityTierLabel,
   valuationModelLabel,
 } from '../lib/valuationLabels.js';
 
@@ -51,7 +49,7 @@ function MethodologyGuide() {
   </details>;
 }
 
-function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
+function ValuationCard({ symbol, report, error, locale }) {
   if (error) return <article id={`valuation-${symbol}`} className="valuation-card valuation-card-error">
     <div className="valuation-card-header">
       <div><h2>{symbol}</h2><span className="valuation-badge-error">Lỗi dữ liệu</span></div>
@@ -70,7 +68,6 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
   const bridge = report.owner_earnings_bridge || {};
   const assessment = report.assessment || {};
   const quality = report.quality_scorecard || {};
-  const arch = report.archetype_profile || {};
   const mosAnalysis = report.margin_of_safety_analysis || {};
   const scenarios = ['BEAR', 'BASE', 'BULL'];
   const freshness = report.data_freshness || {};
@@ -90,13 +87,8 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
         </div>
         <p className="valuation-period-subtitle">Kỳ Báo cáo Tài chính: <strong>{report.fiscal_period_latest || 'Năm 2025'}</strong></p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div>
         <ValuationStatusPill status={assessment.valuation_status} marginOfSafety={mos} />
-        {onOpenDetail && (
-          <button type="button" className="btn-small btn-view-detail" onClick={() => onOpenDetail(symbol)} title={`Mở cửa sổ chi tiết ${symbol}`}>
-            Chi tiết ↗
-          </button>
-        )}
       </div>
     </div>
 
@@ -277,35 +269,25 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
   </article>;
 }
 
-function SymbolTabStrip({ symbols = [], activeSymbol = null, onSelectSymbol }) {
-  return (
-    <nav className="valuation-symbol-tabs" aria-label="Chuyển nhanh tới mã cổ phiếu">
-      {symbols.map(symbol => (
-        <button
-          key={symbol}
-          type="button"
-          className={`valuation-symbol-tab ${activeSymbol === symbol ? 'is-active' : ''}`}
-          onClick={() => onSelectSymbol?.(symbol)}
-        >
-          {symbol}
-        </button>
-      ))}
-    </nav>
-  );
-}
+function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, locale = 'vi', onSelectSymbol }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
 
-function ValuationOverviewTable({ reports = {}, symbols = [], locale = 'vi', onSelectSymbol }) {
   const validRows = symbols
     .map(sym => ({ sym, rep: reports[sym] }))
     .filter(item => item.rep);
 
   if (validRows.length <= 1) return null;
 
+  const totalPages = Math.ceil(validRows.length / pageSize);
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedRows = validRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   return (
     <div className="valuation-overview-table-wrapper">
       <div className="valuation-overview-header-row">
-        <h3 className="valuation-overview-title">Bảng Tổng quan Định giá Toàn bộ Danh mục ({validRows.length} mã)</h3>
-        <span className="valuation-overview-hint">💡 Nhấp vào bất kỳ dòng nào để mở cửa sổ chi tiết định giá đầy đủ</span>
+        <h3 className="valuation-overview-title">Bảng Tổng quan Định giá Danh mục ({validRows.length} mã)</h3>
+        <span className="valuation-overview-hint">💡 Nhấp vào mã hoặc dòng để cuộn xem chi tiết bên dưới</span>
       </div>
       <div className="valuation-overview-scroll">
         <table className="valuation-overview-table">
@@ -326,7 +308,7 @@ function ValuationOverviewTable({ reports = {}, symbols = [], locale = 'vi', onS
             </tr>
           </thead>
           <tbody>
-            {validRows.map(({ sym, rep }) => {
+            {paginatedRows.map(({ sym, rep }) => {
               const base = rep.scenarios?.BASE || {};
               const bear = rep.scenarios?.BEAR || {};
               const bull = rep.scenarios?.BULL || {};
@@ -338,9 +320,19 @@ function ValuationOverviewTable({ reports = {}, symbols = [], locale = 'vi', onS
               const iv = isVerified ? base.intrinsic_value_per_share : null;
               const pubMos = isVerified ? mos : null;
               const reqMos = rep.margin_of_safety_analysis?.required_mos_pct;
+              const isSelected = selectedSymbol === sym;
               return (
-                <tr key={sym} className="valuation-overview-row clickable" onClick={() => onSelectSymbol?.(sym)} title={`Xem chi tiết định giá ${sym}`}>
-                  <td className="td-symbol"><strong>{sym}</strong></td>
+                <tr
+                  key={sym}
+                  className={`valuation-overview-row clickable ${isSelected ? 'row-selected' : ''}`}
+                  onClick={() => onSelectSymbol?.(sym)}
+                  title={`Xem chi tiết định giá ${sym}`}
+                  style={isSelected ? { backgroundColor: 'color-mix(in srgb, var(--accent, #a63f30) 10%, var(--surface-soft, #f4ecd9))' } : undefined}
+                >
+                  <td className="td-symbol">
+                    <strong>{sym}</strong>
+                    {isSelected && <span style={{ marginLeft: '6px', fontSize: '0.72rem', color: 'var(--accent)', fontWeight: '700' }}>● Đang xem</span>}
+                  </td>
                   <td className="td-arch">{archName}</td>
                   <td className="td-model">{modelName}</td>
                   <td className="td-status" style={{ textAlign: 'center' }}>
@@ -368,8 +360,12 @@ function ValuationOverviewTable({ reports = {}, symbols = [], locale = 'vi', onS
                     <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <button type="button" className="btn-small btn-view-detail" onClick={(e) => { e.stopPropagation(); onSelectSymbol?.(sym); }}>
-                      Chi tiết ↗
+                    <button
+                      type="button"
+                      className={`btn-small btn-view-detail ${isSelected ? 'btn-active-detail' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); onSelectSymbol?.(sym); }}
+                    >
+                      {isSelected ? 'Đang xem ↓' : 'Xem chi tiết ↓'}
                     </button>
                   </td>
                 </tr>
@@ -378,6 +374,54 @@ function ValuationOverviewTable({ reports = {}, symbols = [], locale = 'vi', onS
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="valuation-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: '8px' }}>
+          <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+            Hiển thị <strong>{(safePage - 1) * pageSize + 1}</strong> – <strong>{Math.min(safePage * pageSize, validRows.length)}</strong> trên tổng số <strong>{validRows.length}</strong> mã cổ phiếu
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              className="btn-small"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              style={{ padding: '4px 10px', fontSize: '0.82rem', background: 'var(--surface-soft)', border: '1px solid var(--border)', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.5 : 1, color: 'var(--text)' }}
+            >
+              ← Trang trước
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                type="button"
+                className="btn-small"
+                onClick={() => setCurrentPage(page)}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.82rem',
+                  fontWeight: safePage === page ? '700' : '500',
+                  background: safePage === page ? 'var(--accent)' : 'var(--surface-soft)',
+                  color: safePage === page ? '#ffffff' : 'var(--text)',
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  borderRadius: '2px',
+                }}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="btn-small"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              style={{ padding: '4px 10px', fontSize: '0.82rem', background: 'var(--surface-soft)', border: '1px solid var(--border)', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPages ? 0.5 : 1, color: 'var(--text)' }}
+            >
+              Trang sau →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -390,18 +434,20 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
   const [loading, setLoading] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
 
+  const activeSymbol = selectedSymbol && normalized.includes(selectedSymbol) ? selectedSymbol : (normalized[0] || null);
+
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
-  // Handle URL deep link query e.g. /valuation?symbol=XYZ or #XYZ
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const urlParams = new URLSearchParams(window.location.search);
-    const symParam = urlParams.get('symbol') || urlParams.get('ticker') || window.location.hash.replace('#', '');
-    if (symParam && normalized.includes(symParam.toUpperCase())) {
-      setSelectedSymbol(symParam.toUpperCase());
-    }
-  }, [symbolKey, normalized]);
+  function handleSelectSymbol(sym) {
+    setSelectedSymbol(sym);
+    setTimeout(() => {
+      const el = document.getElementById('valuation-detail-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
+  }
 
   async function exportForAI() {
     setExporting(true);
@@ -489,13 +535,6 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
           {exportMsg}
         </div>
       )}
-      {normalized.length > 1 && (
-        <SymbolTabStrip
-          symbols={normalized}
-          activeSymbol={selectedSymbol}
-          onSelectSymbol={setSelectedSymbol}
-        />
-      )}
       <MethodologyGuide />
       {!normalized.length ? (
         <div className="empty-state">Danh mục chưa có cổ phiếu để định giá.</div>
@@ -504,39 +543,36 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
           <ValuationOverviewTable
             reports={reports}
             symbols={normalized}
+            selectedSymbol={activeSymbol}
             locale={locale}
-            onSelectSymbol={setSelectedSymbol}
+            onSelectSymbol={handleSelectSymbol}
           />
-          <div className="valuation-grid">
-            {normalized.map(symbol => {
-              if (loading && !reports[symbol] && !errors[symbol]) {
-                return <ValuationSkeletonCard key={symbol} symbol={symbol} />;
-              }
-              return (
-                <ValuationCard
-                  key={symbol}
-                  symbol={symbol}
-                  report={reports[symbol]}
-                  error={errors[symbol]}
-                  locale={locale}
-                  onOpenDetail={setSelectedSymbol}
-                />
-              );
-            })}
+          <div id="valuation-detail-section" className="valuation-detail-section" style={{ marginTop: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <h2 style={{ fontSize: '1.25rem', margin: 0, color: 'var(--text)' }}>
+                Chi tiết Mô hình Định giá: <strong style={{ color: 'var(--accent)' }}>{activeSymbol}</strong>
+              </h2>
+              {normalized.length > 1 && (
+                <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                  (Đang hiển thị mã <strong>{activeSymbol}</strong> · Chọn mã khác từ bảng tổng quan trên để chuyển đổi)
+                </span>
+              )}
+            </div>
+
+            {loading && !reports[activeSymbol] && !errors[activeSymbol] ? (
+              <ValuationSkeletonCard symbol={activeSymbol} />
+            ) : (
+              <ValuationCard
+                key={activeSymbol}
+                symbol={activeSymbol}
+                report={reports[activeSymbol]}
+                error={errors[activeSymbol]}
+                locale={locale}
+              />
+            )}
           </div>
         </>
-      )}
-
-      {selectedSymbol && (
-        <ValuationDetailOverlay
-          symbol={selectedSymbol}
-          report={reports[selectedSymbol]}
-          error={errors[selectedSymbol]}
-          locale={locale}
-          onClose={() => setSelectedSymbol(null)}
-        />
       )}
     </main>
   </div>;
 }
-
