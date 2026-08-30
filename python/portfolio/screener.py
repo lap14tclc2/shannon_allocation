@@ -70,6 +70,15 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
 
             price_map = {}
             try:
+                db.execute(
+                    """CREATE TABLE IF NOT EXISTS market_prices (
+                           symbol TEXT,
+                           trading_date TEXT,
+                           close DOUBLE PRECISION,
+                           source TEXT,
+                           PRIMARY KEY (symbol, trading_date)
+                       )"""
+                )
                 price_rows = db.execute(
                     """SELECT symbol, close FROM (
                            SELECT symbol, close, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trading_date DESC) as rn
@@ -212,6 +221,53 @@ def get_screener_results(
 
     total_screened = len(filtered)
     results = filtered[:limit]
+
+    # Fetch missing prices for displayed results via VNDirect in parallel
+    missing_symbols = [it["symbol"] for it in results if it.get("current_price") is None]
+    if missing_symbols:
+        import concurrent.futures
+        from datetime import date, timedelta
+        from .market_data import VndirectProvider, frame_to_price_rows
+
+        provider = VndirectProvider()
+        today = date.today().isoformat()
+        start = (date.today() - timedelta(days=15)).isoformat()
+
+        def _fetch(sym):
+            try:
+                df = provider.daily_history(sym, start, today)
+                if not df.empty:
+                    rows = frame_to_price_rows(sym, df, source="vndirect")
+                    if rows:
+                        return sym, float(rows[-1]["close"]), rows
+            except Exception:
+                pass
+            return sym, None, []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            fetched = list(ex.map(_fetch, missing_symbols[:50]))
+
+        saved_rows = []
+        for sym, close_val, rows in fetched:
+            if close_val:
+                for it in results:
+                    if it["symbol"] == sym:
+                        it["current_price"] = close_val
+                if rows:
+                    saved_rows.extend(rows)
+
+        if saved_rows:
+            try:
+                with _schema_connection(FINANCE_SCHEMA) as db:
+                    for r in saved_rows:
+                        db.execute(
+                            """INSERT INTO market_prices (symbol, trading_date, close, source)
+                               VALUES (?, ?, ?, ?)
+                               ON CONFLICT (symbol, trading_date) DO UPDATE SET close = EXCLUDED.close""",
+                            [r["symbol"], r["trading_date"], r["close"], r["source"]]
+                        )
+            except Exception:
+                pass
 
     return {
         "ok": True,
