@@ -397,17 +397,10 @@ class Handler(BaseHTTPRequestHandler):
             refresh = str((parse_qs(query).get("refresh") or ["0"])[0]).lower() in {"1","true","yes"}
             try:
                 result = _dividends(user).latest(symbol, force_refresh=refresh)
-                svc._log(
-                    "USER", user["username"], "CORPORATE_ACTION", "DIVIDEND_HISTORY_LOOKUP",
-                    f"Loaded dividend history for {symbol}: {'FOUND' if result.get('found') else 'NOT_FOUND'} ({result.get('data_origin')}).",
-                    entity_type="SECURITY", entity_id=symbol,
-                    details={
-                        "found":result.get("found"), "event_count":result.get("event_count"),
-                        "latest":result.get("latest"), "data_origin":result.get("data_origin"),
-                        "source_counts":result.get("source_counts"), "errors":result.get("errors"),
-                    },
-                    status="SUCCESS" if result.get("found") else "PARTIAL",
-                )
+                # P0 audit (2026-08-29): GET endpoints are strictly read-only.
+                # A read must not append an activity record, otherwise every AI
+                # export appends one DIVIDEND_HISTORY_LOOKUP per holding and the
+                # activity count grows by the number of ledger rows per export.
                 return self._json(200, result)
             except DividendLookupError as exc:
                 svc.log_failure(method="GET", path=f"/api/portfolio/dividends/latest/{symbol}", error=str(exc), code="INVALID_TICKER")

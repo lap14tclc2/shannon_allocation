@@ -12,6 +12,7 @@ import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
 import ValuationPage from './pages/ValuationPage.jsx';
+import ScreenerPage from './pages/ScreenerPage.jsx';
 import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
@@ -80,6 +81,7 @@ const ROUTES = {
   '/admin/auth': AdminAuthPage,
   '/admin/finance-data': FinanceDataPage,
 };
+
 
 applyStoredTheme();
 document.body.classList.remove('mobile-sheet-open');

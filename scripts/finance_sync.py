@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import sys
 from typing import Any
@@ -17,9 +18,9 @@ import psycopg
 from psycopg.rows import dict_row
 
 SCHEMA = "qport_finance"
-MAX_ROWS_PER_TABLE = 250_000
+MAX_ROWS_PER_TABLE = 1_500_000
 PROVIDERS = {"tcbs", "cafef"}
-DOCUMENT_STATUSES = {"SUCCESS", "FAILED", "PENDING"}
+DOCUMENT_STATUSES = {"SUCCESS", "FAILED", "PENDING", "NOT_AVAILABLE"}
 QUALITY_STATUSES = {"SINGLE_SOURCE", "VERIFIED", "CONFLICT", "QUARANTINED"}
 TABLE_COLUMNS = {
     "crawl_runs": ("id", "requested_by", "status", "requested_at", "started_at", "finished_at", "total_symbols", "success_count", "failure_count", "error"),
@@ -180,8 +181,14 @@ def validate_rows(data: dict[str, list[dict[str, Any]]]) -> None:
             raise RuntimeError(f"Invalid dividend observation status: {row['status']}")
         if row["raw_payload"] is None:
             raise RuntimeError(f"Dividend observation has no raw payload: {row['id']}")
-        expected = hashlib.sha256(str(row["raw_payload"]).encode("utf-8")).hexdigest()
-        if row["content_hash"] != expected:
+        raw = row["raw_payload"]
+        try:
+            parsed_raw = json.loads(raw) if isinstance(raw, str) else raw
+            expected_json = hashlib.sha256(json.dumps(parsed_raw, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        except Exception:
+            expected_json = None
+        expected_raw = hashlib.sha256(str(raw).encode("utf-8")).hexdigest()
+        if row["content_hash"] not in (expected_json, expected_raw):
             raise RuntimeError(f"Dividend observation checksum mismatch: {row['id']}")
     for row in data["dividend_canonical"]:
         if row["quality_status"] not in QUALITY_STATUSES:

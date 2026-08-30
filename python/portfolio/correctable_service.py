@@ -37,6 +37,10 @@ IMPORT_MODES = {"CURRENT"}
 CURRENT_IMPORT_TYPES = {EventType.POSITION_IMPORT, EventType.CASH_DEPOSIT}
 
 
+def _now_utc_day() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 class CorrectablePortfolioService(PortfolioService):
     """Operational QPort service with corrections + institutional-lite controls."""
 
@@ -105,6 +109,7 @@ class CorrectablePortfolioService(PortfolioService):
         entity_id=None,
         details: dict | None = None,
         status: str = "SUCCESS",
+        idempotency_key: str | None = None,
     ) -> int | None:
         try:
             return append_activity(
@@ -118,6 +123,7 @@ class CorrectablePortfolioService(PortfolioService):
                 entity_id=entity_id,
                 details=details,
                 status=status,
+                idempotency_key=idempotency_key,
             )
         except Exception:
             return None
@@ -133,11 +139,30 @@ class CorrectablePortfolioService(PortfolioService):
         action = str(action or "").upper()
         if action not in allowed:
             raise InputValidationError("INVALID_ACTIVITY", "Unsupported client activity.", "action")
-        log_id = self._log("USER", "local", "CLIENT", action, action.replace("_", " ").title(), details=details or {})
+        details = details or {}
+        # P0 audit (2026-08-29): AI exports are audit-only reads of the whole
+        # portfolio. Repeated exports of the same schema on the same day must be
+        # idempotent: one record per (actor, schema, UTC day), never one per export.
+        idempotency_key = None
+        if action == "AI_EXPORT":
+            schema = str(details.get("schema") or "default").upper()[:80]
+            day = _now_utc_day()
+            idempotency_key = f"AI_EXPORT:{day}:{schema}"
+        log_id = self._log("USER", "local", "CLIENT", action, action.replace("_", " ").title(), details=details, idempotency_key=idempotency_key)
         return {"ok": True, "log_id": log_id}
 
     def activity_log(self, limit: int = 500, category: str | None = None) -> dict:
         return {"logs": list_activity(self.store, limit=limit, category=category), "integrity": verify_activity_chain(self.store)}
+
+    def activity_chain_trace(self, from_id: int, limit: int = 10) -> dict:
+        """Return the audit trace requested by review from ``from_id``.
+
+        Surfaces event_id, event_type, occurred_at, source, idempotency_key,
+        previous_hash and current_hash so a broken chain can be inspected before
+        an operator runs the repair tool.
+        """
+        from .activity import trace_activity_chain
+        return trace_activity_chain(self.store, from_id=from_id, limit=limit)
 
     def transactions(self) -> list[dict]:
         rows = []
