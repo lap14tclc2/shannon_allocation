@@ -202,7 +202,7 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           <div className="v-scenarios-panel">
             <div className="v-scenario-header-row">
               <span className="v-scenario-title">GIÁ TRỊ NỘI TẠI · KỊCH BẢN CƠ SỞ</span>
-              <span className="v-scenario-base-num">{money(base.intrinsic_value_per_share, locale)}</span>
+              <span className="v-scenario-base-num" style={{ whiteSpace: 'nowrap' }}>{money(base.intrinsic_value_per_share, locale)}</span>
             </div>
             <div className="v-scenario-track">
               <div className="v-scenario-node node-bear">
@@ -293,9 +293,11 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
                   {pillars.financial_fortress.debt_payback_years != null && (
                     <div className="v-pillar-metric">
                       <span className="v-pillar-val">
-                        {pillars.financial_fortress.debt_payback_years === 0 ? '0 năm (Tiền mặt ròng)' : `${pillars.financial_fortress.debt_payback_years} năm`}
+                        {pillars.financial_fortress.debt_payback_years === 0 ? '0 năm' : `${pillars.financial_fortress.debt_payback_years} năm`}
                       </span>
-                      <span className="v-pillar-sub">Thời gian trả hết Nợ bằng Dòng tiền</span>
+                      <span className="v-pillar-sub">
+                        {pillars.financial_fortress.debt_payback_years === 0 ? 'Tiền mặt ròng (Không áp lực nợ)' : 'Thời gian trả hết Nợ bằng Dòng tiền'}
+                      </span>
                     </div>
                   )}
                   {pillars.financial_fortress.diagnosis && (
@@ -1038,68 +1040,163 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
         }
         @keyframes vShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-        /* Responsive Mobile Sheet (< 720px) */
+        /* Responsive Mobile Sheet (< 720px) - Full-Height Ergonomic Experience */
         @media (max-width: 719px) {
           .v-overlay-backdrop {
             padding: 0;
-            align-items: flex-end;
-            background: rgba(0, 0, 0, 0.7);
+            align-items: stretch;
+            justify-content: stretch;
+            background: rgba(0, 0, 0, 0.75);
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
           }
           .v-overlay-modal {
-            width: 100%;
-            max-width: 100%;
-            max-height: 92vh;
-            border-radius: 16px 16px 0 0;
-            border-bottom: none;
-            border-left: none;
-            border-right: none;
-            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            max-width: 100vw;
+            height: 100dvh;
+            max-height: 100dvh;
+            border-radius: 0;
+            border: none;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface-bg, #fbf7ee);
           }
           .v-modal-grabber {
-            width: 38px;
-            height: 4px;
-            background: var(--retro-border, #9c927f);
-            border-radius: 2px;
-            margin: 8px auto 2px;
-            opacity: 0.6;
+            display: none;
           }
           .v-overlay-header {
-            padding: 10px 14px;
+            padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            flex-wrap: wrap;
+            border-bottom: 1.5px solid var(--retro-border, #9c927f);
+            background: var(--surface-soft, #f4ecd9);
+            flex-shrink: 0;
+          }
+          .v-header-left {
+            flex: 1;
+            min-width: 0;
+            gap: 2px;
           }
           .v-header-title-row {
+            display: flex;
+            align-items: center;
             gap: 6px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            overflow-x: auto;
           }
-          .v-header-ticker { font-size: 1.3rem; }
-          .v-tag { font-size: 0.72rem; padding: 2px 6px; }
+          .v-header-ticker {
+            font-size: 1.35rem;
+            font-weight: 800;
+            line-height: 1;
+            flex-shrink: 0;
+          }
+          .v-tag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
+          .v-header-sub-row {
+            font-size: 0.74rem;
+            white-space: nowrap;
+          }
           .v-header-actions {
-            width: 100%;
-            justify-content: space-between;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+          }
+          .v-status-badge {
+            padding: 4px 8px;
+            font-size: 0.75rem;
           }
           .v-close-btn {
-            min-width: 44px;
-            min-height: 44px;
-            font-size: 1.2rem;
+            min-width: 40px;
+            min-height: 40px;
+            width: 40px;
+            height: 40px;
+            font-size: 1.25rem;
+            border-radius: 8px;
           }
-          .v-overlay-body { padding: 12px; }
-          .v-hero-grid { grid-template-columns: 1fr; gap: 8px; }
-          .v-hero-card { padding: 12px 14px; }
-          .v-hero-value { font-size: 1.35rem; }
-          .v-multiples-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
-          .v-metric-card { padding: 8px 10px; }
-          .v-narrative-card { padding: 12px; }
-          .v-narrative-meta-grid { grid-template-columns: 1fr; gap: 6px; }
-          .v-scenario-track { flex-direction: column; gap: 6px; }
-          .v-scenario-arrow { display: none; }
-          .v-pillars-grid { grid-template-columns: 1fr; gap: 8px; }
-          .v-bridge-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+          .v-overlay-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 14px calc(36px + env(safe-area-inset-bottom, 0px));
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+          }
+          .v-hero-grid {
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+          }
+          .v-hero-card {
+            padding: 12px 14px;
+          }
+          .v-hero-value {
+            font-size: 1.4rem;
+            white-space: nowrap;
+          }
+          .v-multiples-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            margin-bottom: 12px;
+          }
+          .v-metric-card {
+            padding: 8px 10px;
+          }
+          .v-narrative-card {
+            padding: 14px 12px;
+            margin-bottom: 12px;
+            gap: 12px;
+          }
+          .v-narrative-meta-grid {
+            grid-template-columns: 1fr;
+            gap: 8px;
+            padding: 10px 12px;
+          }
+          .v-meta-value {
+            white-space: nowrap;
+          }
+          .v-scenario-track {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .v-scenario-node {
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+          }
+          .v-scenario-node .node-price {
+            margin-top: 0;
+            white-space: nowrap;
+          }
+          .v-scenario-arrow {
+            display: none;
+          }
+          .v-pillars-grid {
+            grid-template-columns: 1fr;
+            gap: 8px;
+          }
+          .v-pillar-card {
+            padding: 12px;
+          }
+          .v-bridge-grid {
+            grid-template-columns: 1fr;
+            gap: 6px;
+          }
         }
       `}</style>
 
       <div className="v-overlay-modal" onClick={e => e.stopPropagation()}>
-        <div className="v-modal-grabber" aria-hidden="true" />
         {/* Sleek Top Header Bar */}
         <header className="v-overlay-header">
           <div className="v-header-left">
@@ -1113,7 +1210,7 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
               )}
             </div>
             <div className="v-header-sub-row">
-              Kỳ Báo cáo Tài chính: <strong>{report?.fiscal_period_latest || 'Năm 2025'}</strong>
+              Kỳ BCTC: <strong>{report?.fiscal_period_latest || 'Năm 2025'}</strong>
             </div>
           </div>
 
