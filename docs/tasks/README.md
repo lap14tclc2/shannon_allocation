@@ -50,4 +50,5 @@
 | [TASK-20260830-071](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-071-restore-valuation-item-card-css.md) | Revert & Restore Valuation Page Item Card Layout & CSS | completed | high | 2026-08-30 |
 | [TASK-20260830-072](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-072-valuation-page-single-view-pagination-scroll.md) | Valuation Page Single-Symbol View, Pagination, and Smooth Scroll | completed | high | 2026-08-30 |
 | [TASK-20260830-073](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-073-valuation-page-dedicated-mobile-layout-ux.md) | Dedicated Mobile Layout & Laws of UX Responsiveness for Valuation Page | completed | high | 2026-08-30 |
+| [TASK-20260830-074](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-074-polish-valuation-card-visual-hierarchy.md) | Premium Visual Polish & Hierarchy for Valuation Cards | completed | high | 2026-08-30 |
 

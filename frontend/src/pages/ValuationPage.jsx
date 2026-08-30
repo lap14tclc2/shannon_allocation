@@ -95,23 +95,36 @@ function ValuationCard({ symbol, report, error, locale }) {
     {/* Primary Price & Valuation Row */}
     <div className="valuation-price-hero">
       <div className="price-box">
-        <span className="price-label">Thị giá hiện tại (VNDirect)</span>
+        <div className="price-box-head">
+          <span className="price-label">Thị giá hiện tại</span>
+          <span className="price-source-tag">VNDirect</span>
+        </div>
         <span className="price-value">{money(report.current_market_price, locale)}</span>
+        <span className="price-footnote">Giá thị trường khớp lệnh</span>
       </div>
+
       <div className="price-box price-box-intrinsic">
-        <span className="price-label">Giá trị Thực cơ sở</span>
+        <div className="price-box-head">
+          <span className="price-label">Giá trị Thực cơ sở</span>
+          <span className="price-highlight-tag">Định giá cốt lõi</span>
+        </div>
         <span className="price-value highlight">{money(base.intrinsic_value_per_share, locale)}</span>
+        <span className="price-footnote">Mô hình {valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}</span>
       </div>
+
       <div className="price-box price-box-mos">
-        <span className="price-label">Biên An Toàn Thực tế</span>
+        <div className="price-box-head">
+          <span className="price-label">Biên An Toàn Thực tế</span>
+          {mosAnalysis.required_mos_pct != null && (
+            <span className="price-req-tag">Yêu cầu: ≥{mosAnalysis.required_mos_pct}%</span>
+          )}
+        </div>
         <span className={`price-value ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
           {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
         </span>
-        {mosAnalysis.required_mos_pct != null && (
-          <small style={{ fontSize: '0.72rem', color: 'var(--retro-muted, #696257)', marginTop: '2px', display: 'block' }}>
-            Yêu cầu tối thiểu: ≥ {mosAnalysis.required_mos_pct}%
-          </small>
-        )}
+        <span className="price-footnote">
+          {mos != null && mos >= (mosAnalysis.required_mos_pct || 25) ? '✓ Đạt biên độ an toàn bảo vệ vốn' : 'Biên an toàn hiện tại'}
+        </span>
       </div>
     </div>
 
@@ -138,12 +151,13 @@ function ValuationCard({ symbol, report, error, locale }) {
     {/* Expert Financial Analysis Narrative */}
     <div className="valuation-analyst-opinion">
       <div className="opinion-header">
+        <span className="opinion-seal">📜</span>
         <span className="opinion-badge">Nhận định Chuyên sâu theo Chuẩn Buffett–Munger</span>
       </div>
       <p className="opinion-verdict">{assessment.valuation_verdict}</p>
       {assessment.financial_resilience_diagnosis && (
         <div className="opinion-subtext">
-          <small><strong>Cấu trúc vốn & Sức khỏe tài chính:</strong> {assessment.financial_resilience_diagnosis}</small>
+          <strong>Cấu trúc vốn & Sức khỏe tài chính:</strong> {assessment.financial_resilience_diagnosis}
         </div>
       )}
     </div>
@@ -153,42 +167,45 @@ function ValuationCard({ symbol, report, error, locale }) {
       <div className="valuation-pillars-grid">
         <div className={`pillar-card pillar-${report.value_investor_pillars.earnings_quality?.status?.toLowerCase() || 'watch'}`}>
           <div className="pillar-header">
-            <span className="pillar-title">1. Chất lượng Tiền mặt</span>
+            <span className="pillar-num">01</span>
+            <span className="pillar-title">Chất lượng Tiền mặt</span>
             <span className="pillar-badge">
               {report.value_investor_pillars.earnings_quality?.status === 'EXCEPTIONAL' ? 'Xuất sắc' : report.value_investor_pillars.earnings_quality?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
             </span>
           </div>
           <div className="pillar-metric">
             <span className="pillar-val">{report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y}%` : '—'}</span>
-            <span className="pillar-sub">Tỷ lệ đổi LNST ra Tiền mặt (5 năm)</span>
+            <span className="pillar-sub">Đổi LNST ra Tiền mặt (5 năm)</span>
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.earnings_quality?.diagnosis}</p>
         </div>
 
         <div className={`pillar-card pillar-${report.value_investor_pillars.financial_fortress?.status?.toLowerCase() || 'strong'}`}>
           <div className="pillar-header">
-            <span className="pillar-title">2. Pháo đài Tài chính</span>
+            <span className="pillar-num">02</span>
+            <span className="pillar-title">Pháo đài Tài chính</span>
             <span className="pillar-badge">
               {report.value_investor_pillars.financial_fortress?.status === 'STRONG' ? 'Rất Vững' : report.value_investor_pillars.financial_fortress?.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
             </span>
           </div>
           <div className="pillar-metric">
-            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm (Tiền mặt ròng)' : `${report.value_investor_pillars.financial_fortress?.debt_payback_years} năm`}</span>
-            <span className="pillar-sub">Thời gian trả hết Nợ bằng Dòng tiền</span>
+            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm' : `${report.value_investor_pillars.financial_fortress?.debt_payback_years} năm`}</span>
+            <span className="pillar-sub">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? 'Tiền mặt ròng (Không rủi ro nợ)' : 'Thời gian trả hết Nợ bằng Dòng tiền'}</span>
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.financial_fortress?.diagnosis}</p>
         </div>
 
         <div className={`pillar-card pillar-${report.value_investor_pillars.capital_allocation?.status?.toLowerCase() || 'good'}`}>
           <div className="pillar-header">
-            <span className="pillar-title">3. Hiệu quả Phân bổ Vốn</span>
+            <span className="pillar-num">03</span>
+            <span className="pillar-title">Hiệu quả Phân bổ Vốn</span>
             <span className="pillar-badge">
               {report.value_investor_pillars.capital_allocation?.status === 'EXCELLENT' ? 'Xuất sắc' : report.value_investor_pillars.capital_allocation?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
             </span>
           </div>
           <div className="pillar-metric">
             <span className="pillar-val">{report.value_investor_pillars.capital_allocation?.avg_roe_5y != null ? `${report.value_investor_pillars.capital_allocation.avg_roe_5y}%` : '—'}</span>
-            <span className="pillar-sub">Sinh lời ROE 5 năm · Pha loãng: {report.value_investor_pillars.capital_allocation?.share_dilution_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.share_dilution_5y_pct}%` : '0%'}</span>
+            <span className="pillar-sub">ROE 5 năm · Pha loãng: {report.value_investor_pillars.capital_allocation?.share_dilution_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.share_dilution_5y_pct}%` : '0%'}</span>
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.capital_allocation?.diagnosis}</p>
         </div>
@@ -252,9 +269,12 @@ function ValuationCard({ symbol, report, error, locale }) {
               return <div key={name} className={`scenario-card scenario-${name.toLowerCase()}`}>
                 <div className="scenario-head">
                   <b>{labelVn}</b>
-                  <span>{money(scenario.intrinsic_value_per_share, locale)}</span>
+                  <span className="scenario-val">{money(scenario.intrinsic_value_per_share, locale)}</span>
                 </div>
-                <small>Tăng trưởng dự phóng: {displayNumber(Number(scenario.growth_stage1_rate || 0) * 100, '%')} · Tỷ lệ chiết khấu: {displayNumber(Number(scenario.discount_rate || 0) * 100, '%')}</small>
+                <div className="scenario-meta">
+                  <span>Tăng trưởng dự phóng: <strong>{displayNumber(Number(scenario.growth_stage1_rate || 0) * 100, '%')}</strong></span>
+                  <span>Tỷ lệ chiết khấu: <strong>{displayNumber(Number(scenario.discount_rate || 0) * 100, '%')}</strong></span>
+                </div>
               </div>;
             })}
           </div>
