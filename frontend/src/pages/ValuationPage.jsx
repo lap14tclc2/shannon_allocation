@@ -241,7 +241,7 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
 
         {bridge && bridge.net_profit != null && (
           <div className="tech-section">
-            <h4>Bóc tách Lợi nhuận Thực của Chủ Doanh nghiệp (Owner Earnings)</h4>
+            <h4>Bóc tách Lợi nhuận Thực của Chủ Doanh nghiệp</h4>
             <dl className="valuation-calculation-grid">
               <div><dt>Lợi nhuận sau thuế</dt><dd>{money(bridge.net_profit, locale)}</dd></div>
               <div><dt>Khấu hao tài sản</dt><dd>{money(bridge.depreciation_amortization, locale)}</dd></div>
