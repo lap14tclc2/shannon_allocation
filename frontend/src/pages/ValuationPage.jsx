@@ -83,7 +83,7 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
           <h2>{symbol}</h2>
           <span className="valuation-sector-tag">{multiples.sector || 'Doanh nghiệp niêm yết'}</span>
           {quality.total_score != null && (
-            <span className="valuation-sector-tag" style={{ background: 'var(--surface-soft, #f4ecd9)', borderColor: 'var(--retro-border, #9c927f)', color: 'var(--retro-text, #2a251d)' }}>
+            <span className="valuation-sector-tag" style={{ background: 'var(--surface-soft, var(--panel-2))', borderColor: 'var(--border)', color: 'var(--text)' }}>
               Điểm Chất lượng: {quality.total_score}/100 ({quality.tier === 'EXCEPTIONAL' ? 'Xuất sắc' : quality.tier === 'HIGH_QUALITY' ? 'Chất lượng cao' : quality.tier === 'INVESTABLE' ? 'Đạt chuẩn đầu tư' : quality.tier === 'WATCH' ? 'Theo dõi' : 'Thấp'})
             </span>
           )}

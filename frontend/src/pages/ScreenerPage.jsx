@@ -261,7 +261,7 @@ export default function ScreenerPage() {
                           {item.exchange}
                         </span>
                         {item.current_price != null && (
-                          <span className="card-price-badge" style={{ fontSize: '0.88rem', fontWeight: '700', color: 'var(--retro-text, #2a251d)', background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--retro-border, rgba(0,0,0,0.12))' }}>
+                          <span className="card-price-badge" style={{ fontSize: '0.88rem', fontWeight: '700', color: 'var(--text)', background: 'var(--surface-soft, var(--panel-2))', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)' }}>
                             {Math.round(item.current_price).toLocaleString('vi-VN')} ₫
                           </span>
                         )}
@@ -280,8 +280,8 @@ export default function ScreenerPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
                         <span className="card-industry">{item.industry}</span>
                         {item.current_price != null && (
-                          <span style={{ fontSize: '0.82rem', color: 'var(--muted, #666)' }}>
-                            Thị giá: <strong style={{ color: 'var(--retro-text, #2a251d)' }}>{Math.round(item.current_price).toLocaleString('vi-VN')} ₫</strong>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--muted, var(--text-secondary))' }}>
+                            Thị giá: <strong style={{ color: 'var(--text)' }}>{Math.round(item.current_price).toLocaleString('vi-VN')} ₫</strong>
                           </span>
                         )}
                       </div>
