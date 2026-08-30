@@ -2,6 +2,7 @@
   width: min(1200px, calc(100% - 32px));
   margin: 0 auto;
   padding: 24px 0 64px;
+  box-sizing: border-box;
 }
 
 .valuation-header {
@@ -33,6 +34,7 @@
   border-radius: 4px;
   background: var(--panel, var(--retro-panel, #fffaf0));
   box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.15));
+  box-sizing: border-box;
 }
 
 .valuation-methodology-summary {
@@ -85,15 +87,14 @@
   color: var(--text-secondary, var(--retro-muted, #696257));
 }
 
-/* Main Cards Grid */
-.valuation-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
+/* ==========================================================================
+   Valuation Detail Section & Single-Card View
+   ========================================================================== */
+.valuation-detail-section {
   width: 100%;
+  margin-top: 24px;
 }
 
-/* Valuation Card Container */
 .valuation-card {
   width: 100%;
   display: flex;
@@ -105,7 +106,6 @@
   box-shadow: 3px 3px 0 var(--retro-shadow, rgba(65, 55, 42, 0.18));
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   box-sizing: border-box;
-  margin-bottom: 8px;
 }
 
 .valuation-card:hover {
@@ -539,11 +539,13 @@
 
 .sensitivity-matrix-container {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin: 8px 0;
 }
 
 .sensitivity-matrix-table {
   width: 100%;
+  min-width: 460px;
   border-collapse: collapse;
   font-size: 0.8rem;
 }
@@ -570,10 +572,12 @@
   border-top: 1px solid var(--border, var(--retro-border, #9c927f));
   font-size: 0.76rem;
   color: var(--text-secondary, var(--retro-muted, #696257));
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* ==========================================================================
-   Overview Table
+   Overview Table Wrapper & Responsive Split
    ========================================================================== */
 .valuation-overview-table-wrapper {
   margin-bottom: 24px;
@@ -582,6 +586,7 @@
   border-radius: 4px;
   padding: 16px 20px;
   box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.15));
+  box-sizing: border-box;
 }
 
 .valuation-overview-header-row {
@@ -605,8 +610,14 @@
   color: var(--text-secondary, #696257);
 }
 
+/* Desktop Data Grid */
+.valuation-overview-desktop {
+  display: block;
+}
+
 .valuation-overview-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .valuation-overview-table {
@@ -641,7 +652,7 @@
 }
 
 .btn-view-detail {
-  padding: 4px 10px;
+  padding: 6px 12px;
   font-size: 0.78rem;
   font-weight: 600;
   border-radius: 3px;
@@ -659,150 +670,268 @@
   border-color: var(--retro-indigo, #2b4c7e);
 }
 
-/* ==========================================================================
-   Overlay Modal Styles
-   ========================================================================== */
-.valuation-overlay-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(18, 22, 28, 0.72);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  box-sizing: border-box;
+.btn-active-detail {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 3px;
+  background: var(--accent, #a63f30);
+  border: 1px solid var(--accent, #a63f30);
+  color: #ffffff;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.valuation-overlay-modal {
-  background: var(--surface-bg, var(--panel, #fbf7ee));
-  border: 1.5px solid var(--retro-border, #9c927f);
-  border-radius: 8px;
-  width: 100%;
-  max-width: 980px;
-  max-height: 90vh;
+/* ==========================================================================
+   Mobile Overview Cards (< 720px)
+   ========================================================================== */
+.valuation-overview-mobile-list {
+  display: none;
+}
+
+.valuation-mobile-card {
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
-  overflow: hidden;
+  background: var(--surface-soft, var(--panel-2, #f4ecd9));
+  border: 1px solid var(--border, #9c927f);
+  border-radius: 4px;
+  padding: 12px 14px;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
   box-sizing: border-box;
 }
 
-.valuation-overlay-header {
+.valuation-mobile-card.is-selected {
+  border-color: var(--accent, #a63f30);
+  background: color-mix(in srgb, var(--accent, #a63f30) 8%, var(--surface-soft, #f4ecd9));
+  box-shadow: 0 0 0 1px var(--accent, #a63f30);
+}
+
+.vm-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1.5px solid var(--retro-border, #9c927f);
-  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
-  flex-shrink: 0;
-  gap: 16px;
+  gap: 8px;
 }
 
-.valuation-overlay-close-btn {
-  background: transparent;
-  border: 1px solid var(--retro-border, #9c927f);
-  border-radius: 4px;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
+.vm-title-wrap {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 16px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vm-symbol {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text, #201d18);
+}
+
+.vm-arch {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary, #696257);
+  background: var(--panel, #fffaf0);
+  border: 1px solid var(--border, #9c927f);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.vm-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--panel, #fffaf0);
+  border: 1px solid var(--border, #9c927f);
+  border-radius: 2px;
+}
+
+.vm-metric-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vm-label {
+  font-size: 0.68rem;
   font-weight: 700;
-  color: var(--retro-text, #201d18);
-  cursor: pointer;
-  transition: all 0.15s ease;
+  text-transform: uppercase;
+  color: var(--text-secondary, #696257);
+  letter-spacing: 0.03em;
 }
 
-.valuation-overlay-close-btn:hover {
-  background: var(--retro-hanko, #a63f30);
-  color: #ffffff;
-  border-color: var(--retro-hanko, #a63f30);
+.vm-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: var(--font-mono-num, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text, #201d18);
 }
 
-.valuation-overlay-body {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-  -webkit-overflow-scrolling: touch;
+.vm-val.highlight {
+  color: var(--accent, #a63f30);
 }
 
-/* Skeleton Loading */
-.valuation-skeleton-card {
-  pointer-events: none;
+.vm-val.pos {
+  color: var(--retro-green, #2f6b4d);
 }
 
-.skeleton-anim {
-  background: linear-gradient(
-    90deg,
-    var(--surface-soft, var(--retro-panel-subtle, #f4ecd9)) 25%,
-    color-mix(in srgb, var(--retro-gold, #7a551d) 12%, var(--panel, #fffaf0)) 50%,
-    var(--surface-soft, var(--retro-panel-subtle, #f4ecd9)) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeletonShimmer 1.5s infinite ease-in-out;
-  border-radius: 2px;
+.vm-val.neg {
+  color: var(--retro-red, #9f382d);
 }
 
-@keyframes skeletonShimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+.vm-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.skeleton-pill {
-  display: inline-block;
-  height: 20px;
-  width: 70px;
-  border-radius: 2px;
+.vm-quality-badge {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary, #696257);
 }
 
-.skeleton-line {
-  display: block;
-}
-
-/* Responsive Media Queries */
-@media (max-width: 900px) {
-  .valuation-method-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .valuation-multiples-ribbon {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 600px) {
+/* ==========================================================================
+   Responsive Breakpoints (< 720px Mobile Layout)
+   ========================================================================== */
+@media (max-width: 719px) {
   .valuation-page {
-    width: calc(100% - 20px);
-    padding-top: 20px;
+    width: 100%;
+    padding: 12px 10px 80px;
   }
+
   .valuation-header {
     flex-direction: column;
     gap: 12px;
+    margin-bottom: 16px;
   }
+
+  .valuation-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .valuation-header p {
+    font-size: 0.85rem;
+  }
+
   .valuation-header button {
     width: 100%;
   }
-  .valuation-card {
-    padding: 16px 14px;
+
+  .valuation-methodology {
+    padding: 12px 14px;
+    margin-bottom: 16px;
   }
+
   .valuation-method-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
+
+  .valuation-overview-table-wrapper {
+    padding: 12px 10px;
+    margin-bottom: 16px;
+  }
+
+  /* Switch from desktop table to mobile card list */
+  .valuation-overview-desktop {
+    display: none !important;
+  }
+
+  .valuation-overview-mobile-list {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Detail Card Mobile Layout */
+  .valuation-detail-section {
+    margin-top: 16px;
+  }
+
+  .valuation-card {
+    padding: 14px 12px;
+    border-radius: 4px;
+  }
+
+  .valuation-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .valuation-symbol-row {
+    gap: 6px 8px;
+  }
+
+  .valuation-symbol-row h2 {
+    font-size: 1.35rem;
+  }
+
   .valuation-price-hero {
     grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 12px 0;
   }
+
+  .price-box {
+    padding: 10px 12px;
+  }
+
+  .price-value {
+    font-size: 1.15rem;
+  }
+
+  .valuation-multiples-ribbon {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .metric-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px;
+  }
+
+  .chip-label {
+    font-size: 0.68rem;
+  }
+
+  .chip-value {
+    font-size: 0.92rem;
+  }
+
+  .valuation-analyst-opinion {
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+
   .valuation-pillars-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 12px 0 16px;
   }
+
+  .pillar-card {
+    padding: 10px 12px;
+  }
+
   .valuation-calculation-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
+
   .valuation-scenarios {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
+
   .valuation-card-footer {
     flex-direction: column;
     align-items: flex-start;

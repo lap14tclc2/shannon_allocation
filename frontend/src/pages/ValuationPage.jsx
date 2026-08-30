@@ -289,7 +289,8 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
         <h3 className="valuation-overview-title">Bảng Tổng quan Định giá Danh mục ({validRows.length} mã)</h3>
         <span className="valuation-overview-hint">💡 Nhấp vào mã hoặc dòng để cuộn xem chi tiết bên dưới</span>
       </div>
-      <div className="valuation-overview-scroll">
+      {/* Desktop Table View (>= 720px) */}
+      <div className="valuation-overview-desktop valuation-overview-scroll">
         <table className="valuation-overview-table">
           <thead>
             <tr>
@@ -373,6 +374,66 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Overview Card List (< 720px) */}
+      <div className="valuation-overview-mobile-list">
+        {paginatedRows.map(({ sym, rep }) => {
+          const base = rep.scenarios?.BASE || {};
+          const mos = base.margin_of_safety_pct;
+          const archName = archetypeLabel(rep.archetype_profile?.archetype);
+          const isVerified = rep.model_status === 'MODEL_VERIFIED';
+          const iv = isVerified ? base.intrinsic_value_per_share : null;
+          const pubMos = isVerified ? mos : null;
+          const isSelected = selectedSymbol === sym;
+          const quality = rep.quality_scorecard || {};
+
+          return (
+            <article
+              key={sym}
+              className={`valuation-mobile-card ${isSelected ? 'is-selected' : ''}`}
+              onClick={() => onSelectSymbol?.(sym)}
+            >
+              <div className="vm-card-top">
+                <div className="vm-title-wrap">
+                  <span className="vm-symbol">{sym}</span>
+                  <span className="vm-arch">{archName}</span>
+                </div>
+                <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
+              </div>
+
+              <div className="vm-metrics-grid">
+                <div className="vm-metric-box">
+                  <span className="vm-label">Thị giá</span>
+                  <span className="vm-val">{money(rep.current_market_price, locale)}</span>
+                </div>
+                <div className="vm-metric-box vm-box-iv">
+                  <span className="vm-label">Giá trị Thực</span>
+                  <span className="vm-val highlight">{iv != null && Number.isFinite(Number(iv)) ? money(iv, locale) : 'N/A'}</span>
+                </div>
+                <div className="vm-metric-box vm-box-mos">
+                  <span className="vm-label">Biên An toàn</span>
+                  <span className={`vm-val ${pubMos > 0 ? 'pos' : pubMos < 0 ? 'neg' : ''}`}>
+                    {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="vm-card-bottom">
+                <span className="vm-quality-badge">
+                  {quality.total_score != null ? `Điểm: ${quality.total_score}/100` : ''}
+                </span>
+                <button
+                  type="button"
+                  className={`btn-small ${isSelected ? 'btn-active-detail' : 'btn-view-detail'}`}
+                  onClick={(e) => { e.stopPropagation(); onSelectSymbol?.(sym); }}
+                >
+                  {isSelected ? '● Đang xem bên dưới ↓' : 'Xem chi tiết định giá ↓'}
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
       {totalPages > 1 && (
