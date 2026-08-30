@@ -260,6 +260,11 @@ export default function ScreenerPage() {
                         <span className={`exchange-badge badge-${item.exchange.toLowerCase()}`}>
                           {item.exchange}
                         </span>
+                        {item.current_price != null && (
+                          <span className="card-price-badge" style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--retro-text, #2a251d)', background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px' }}>
+                            {Math.round(item.current_price).toLocaleString('vi-VN')} ₫
+                          </span>
+                        )}
                       </div>
                       <div className={`score-badge ${tierClass}`}>
                         <div className="score-number">{item.total_score}</div>

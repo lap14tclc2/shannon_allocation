@@ -68,6 +68,18 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                 except (ValueError, TypeError):
                     continue
 
+            price_map = {}
+            try:
+                price_rows = db.execute(
+                    """SELECT symbol, close FROM (
+                           SELECT symbol, close, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trading_date DESC) as rn
+                           FROM market_prices
+                       ) sub WHERE rn = 1"""
+                ).fetchall()
+                price_map = {str(r["symbol"]).upper().strip(): float(r["close"]) for r in price_rows if r.get("close")}
+            except Exception:
+                price_map = {}
+
         scored_items: List[Dict[str, Any]] = []
         for sym, (exch, name, ind) in secs.items():
             hist = by_sym.get(sym)
@@ -134,6 +146,7 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     "exchange": exch,
                     "company_name": name,
                     "industry": ind,
+                    "current_price": price_map.get(sym),
                     "total_score": scorecard.total_score,
                     "tier": scorecard.tier.value,
                     "tier_vi": _get_vietnamese_tier_label(scorecard.tier.value),

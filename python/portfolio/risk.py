@@ -225,7 +225,9 @@ def _symbol_metrics(
             worst_date = str(recent.idxmin())
             worst_return = float(recent.min())
 
+        price_val = float(row.get("price") or 0) if row.get("price") else None
         metrics[symbol] = {
+            "current_price": price_val,
             "equity_weight": (value / total_value) if total_value > 0 else None,
             "risk_contribution": risk_contrib.get(symbol),
             "volatility_63": vol63,

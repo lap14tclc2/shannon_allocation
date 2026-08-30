@@ -97,7 +97,7 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
         <div className="v-hero-card">
           <span className="v-hero-label">THỊ GIÁ HIỆN TẠI</span>
           <span className="v-hero-value">{money(report.current_market_price, locale)}</span>
-          <span className="v-hero-sub">Thị giá sàn giao dịch</span>
+          <span className="v-hero-sub">Thị giá sàn (VNDirect)</span>
         </div>
 
         <div className={`v-hero-card v-hero-intrinsic ${publicMos > 0 ? 'is-undervalued' : publicMos < 0 ? 'is-overvalued' : ''}`}>

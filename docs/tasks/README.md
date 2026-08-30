@@ -45,5 +45,6 @@
 | [TASK-20260830-066](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-066-finance-data-filter-valuation-overlay.md) | Open Valuation Detail Overlay Modal from Filter / Screener page instead of navigating | completed | high | 2026-08-30 |
 | [TASK-20260830-067](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-067-valuation-overlay-modal-design-ux.md) | Redesign Valuation Overlay Modal for Aesthetic Polish & Laws of UX Responsiveness | completed | high | 2026-08-30 |
 | [TASK-20260830-068](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-068-hide-empty-sections-and-remove-operations-page.md) | Hide Empty UI Sections & Remove Operations Page | completed | high | 2026-08-30 |
-| [TASK-20260830-069](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-069-update-guide-page-content.md) | Update Guide Page with Complete Features and Navigation | in-progress | high | 2026-08-30 |
+| [TASK-20260830-069](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-069-update-guide-page-content.md) | Update Guide Page with Complete Features and Navigation | completed | high | 2026-08-30 |
+| [TASK-20260830-070](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-070-add-current-price-from-vndirect.md) | Add Current Market Price from VNDirect to Stock Cards & Risk / Valuation Views | completed | high | 2026-08-30 |
 

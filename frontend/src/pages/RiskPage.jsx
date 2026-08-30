@@ -355,7 +355,17 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
             : null;
           return <article className={`risk-symbol-card risk-tone-${tone[1]}`} key={symbol}>
             <div className="risk-symbol-head">
-              <div><strong>{symbol}</strong><span>{Number(metric.return_observations || 0)} phiên dữ liệu</span></div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <strong>{symbol}</strong>
+                  {metric.current_price != null && (
+                    <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--retro-text, #2a251d)', background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px' }}>
+                      {money(metric.current_price, locale)}
+                    </span>
+                  )}
+                </div>
+                <span>{Number(metric.return_observations || 0)} phiên dữ liệu</span>
+              </div>
               <StatusPill tone={tone[1]}>{tone[0]}</StatusPill>
             </div>
             <div className="risk-symbol-keyline">
