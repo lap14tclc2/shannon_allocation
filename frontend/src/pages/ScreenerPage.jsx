@@ -11,14 +11,22 @@ const EXCHANGE_OPTIONS = [
   { id: 'UPCOM', label: 'UPCOM' },
 ];
 
+const MOS_OPTIONS = [
+  { id: 'buffett_qualified', label: '🛡️ Đạt chuẩn Buffett (MOS ≥ 25%)' },
+  { id: 'positive', label: '📈 Biên An Toàn Dương (MOS > 0%)' },
+  { id: 'undervalued', label: '💎 Định giá Dưới Giá trị thực' },
+  { id: 'all', label: '🌐 Tất cả cổ phiếu' },
+];
+
 const SCORE_OPTIONS = [
+  { id: 0, label: 'Tất cả điểm số' },
   { id: 80, label: '≥ 80 Điểm (Hảo hạng)' },
   { id: 70, label: '≥ 70 Điểm (Đầu tư)' },
   { id: 60, label: '≥ 60 Điểm (Theo dõi)' },
-  { id: 0, label: 'Tất cả điểm số' },
 ];
 
 const SORT_OPTIONS = [
+  { id: 'mos', label: 'Biên An Toàn MOS (Cao → Thấp)' },
   { id: 'score', label: 'Điểm chất lượng (Cao → Thấp)' },
   { id: 'roe', label: 'ROE 5 năm (Cao → Thấp)' },
   { id: 'moat', label: 'Hào kinh tế Moat (Cao → Thấp)' },
@@ -31,11 +39,12 @@ export default function ScreenerPage() {
   const [error, setError] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
 
-  // Filters state
-  const [minScore, setMinScore] = useState(80);
+  // Filters state - Default to Buffett Margin of Safety
+  const [mosFilter, setMosFilter] = useState('buffett_qualified');
+  const [minScore, setMinScore] = useState(0);
   const [exchange, setExchange] = useState('ALL');
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('score');
+  const [sortBy, setSortBy] = useState('mos');
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +53,7 @@ export default function ScreenerPage() {
       setError(null);
       try {
         const params = new URLSearchParams();
+        if (mosFilter) params.set('mos_filter', mosFilter);
         if (minScore > 0) params.set('min_score', String(minScore));
         if (exchange && exchange !== 'ALL') params.set('exchange', exchange);
         if (search.trim()) params.set('search', search.trim());
@@ -71,7 +81,7 @@ export default function ScreenerPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [minScore, exchange, search, sortBy]);
+  }, [mosFilter, minScore, exchange, search, sortBy]);
 
   const items = data?.items || [];
   const totalScreened = data?.total_screened || 0;
@@ -85,11 +95,12 @@ export default function ScreenerPage() {
     return counts;
   }, [items]);
 
-  const getTierClass = (score) => {
-    if (score >= 80) return 'tier-exceptional';
-    if (score >= 70) return 'tier-investable';
-    if (score >= 60) return 'tier-watch';
-    return 'tier-low';
+  const getTierClass = (item) => {
+    if (item.is_buffett_qualified) return 'tier-exceptional';
+    if (item.is_positive_mos) return 'tier-investable';
+    if (item.total_score >= 80) return 'tier-exceptional';
+    if (item.total_score >= 70) return 'tier-investable';
+    return 'tier-watch';
   };
 
   return (
@@ -101,18 +112,18 @@ export default function ScreenerPage() {
         <section className="screener-hero">
           <div className="screener-hero-badge">
             <span className="sparkle-icon">✦</span>
-            <span>BUFFETT – MUNGER 100-POINT ENGINE</span>
+            <span>BUFFETT RULE #1: NEVER LOSE MONEY</span>
           </div>
-          <h1 className="screener-title">Bộ Lọc Doanh Nghiệp Chất Lượng Cao</h1>
+          <h1 className="screener-title">Bộ Lọc Cổ Phiếu Theo Biên An Toàn Buffett</h1>
           <p className="screener-subtitle">
-            Sàng lọc <strong>{universeSize} mã</strong> toàn thị trường Việt Nam dựa trên 7 trụ cột: Độ dự đoán, Hào kinh tế (Moat), ROE chu kỳ, Sức mạnh tài chính & Hiệu quả phân bổ vốn.
+            Sàng lọc toàn diện <strong>{universeSize} doanh nghiệp</strong> trên sàn chứng khoán Việt Nam: Ưu tiên mã có <strong>Thị giá thấp hơn Giá trị Thực</strong> và đạt <strong>Biên An Toàn (Margin of Safety)</strong> bảo vệ vốn theo nguyên tắc đầu tư giá trị cốt lõi.
           </p>
 
           {/* Quick Stats Pill */}
           <div className="screener-stats-strip">
             <div className="stat-pill highlight">
               <span className="stat-num">{totalScreened}</span>
-              <span className="stat-label">doanh nghiệp thỏa điều kiện</span>
+              <span className="stat-label">mã đạt chuẩn biên an toàn</span>
             </div>
             <div className="stat-pill">
               <span className="stat-dot dot-hose" />
@@ -171,6 +182,25 @@ export default function ScreenerPage() {
           </div>
 
           <div className="toolbar-filter-row">
+            {/* Buffett Margin of Safety Filter Tabs */}
+            <div className="filter-group" style={{ flex: '1 1 100%' }}>
+              <span className="filter-group-label" style={{ color: 'var(--accent)', fontWeight: '700' }}>
+                🛡️ Tiêu chuẩn Biên An Toàn (Buffett MOS):
+              </span>
+              <div className="segmented-pills">
+                {MOS_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`segment-btn ${mosFilter === opt.id ? 'active' : ''}`}
+                    onClick={() => setMosFilter(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Exchange Filter Tabs */}
             <div className="filter-group">
               <span className="filter-group-label">Sàn giao dịch:</span>
@@ -188,7 +218,7 @@ export default function ScreenerPage() {
               </div>
             </div>
 
-            {/* Score Filter Tabs */}
+            {/* Quality Score Filter Tabs */}
             <div className="filter-group">
               <span className="filter-group-label">Điểm Chất lượng:</span>
               <div className="segmented-pills">
@@ -207,37 +237,50 @@ export default function ScreenerPage() {
           </div>
         </section>
 
-        {/* Results Grid */}
+        {/* Screener Results Area */}
         <section className="screener-results-section">
           {loading && (
-            <div className="screener-loading-state">
-              <div className="spa-loading-spinner" />
-              <p>Đang sàng lọc dữ liệu từ 1.523 mã chứng khoán...</p>
+            <div className="screener-loading-grid">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="screener-card skeleton-card">
+                  <div className="skeleton-line" style={{ width: '40%', height: '24px' }} />
+                  <div className="skeleton-line" style={{ width: '70%', height: '16px', marginTop: '12px' }} />
+                  <div className="skeleton-line" style={{ width: '100%', height: '80px', marginTop: '16px' }} />
+                </div>
+              ))}
             </div>
           )}
 
-          {error && (
-            <div className="screener-error-state">
-              <p className="error-title">⚠️ Đã xảy ra lỗi</p>
-              <p className="error-desc">{error}</p>
+          {!loading && error && (
+            <div className="screener-error-box">
+              <h3>Đã xảy ra lỗi khi tải bộ lọc</h3>
+              <p>{error}</p>
+              <button
+                type="button"
+                className="btn-retry"
+                onClick={() => setMosFilter('buffett_qualified')}
+              >
+                Tải lại danh sách
+              </button>
             </div>
           )}
 
           {!loading && !error && items.length === 0 && (
-            <div className="screener-empty-state">
-              <div className="empty-icon">🔎</div>
-              <h3>Không tìm thấy doanh nghiệp phù hợp</h3>
-              <p>Thử điều chỉnh từ khóa tìm kiếm hoặc hạ ngưỡng điểm lọc.</p>
+            <div className="screener-empty-box">
+              <span className="empty-icon">📂</span>
+              <h3>Không tìm thấy cổ phiếu thỏa mãn tiêu chí</h3>
+              <p>Thử điều chỉnh tiêu chuẩn Biên An Toàn hoặc xóa từ khóa tìm kiếm.</p>
               <button
                 type="button"
                 className="reset-filters-btn"
                 onClick={() => {
                   setSearch('');
-                  setMinScore(80);
+                  setMosFilter('all');
+                  setMinScore(0);
                   setExchange('ALL');
                 }}
               >
-                Đặt lại bộ lọc mặc định
+                Xem toàn bộ cổ phiếu trên sàn
               </button>
             </div>
           )}
@@ -245,7 +288,9 @@ export default function ScreenerPage() {
           {!loading && !error && items.length > 0 && (
             <div className="screener-grid">
               {items.map((item) => {
-                const tierClass = getTierClass(item.total_score);
+                const tierClass = getTierClass(item);
+                const hasMos = item.margin_of_safety != null;
+                const isPosMos = item.is_positive_mos;
                 return (
                   <div
                     key={item.symbol}
@@ -266,9 +311,15 @@ export default function ScreenerPage() {
                           </span>
                         )}
                       </div>
+
+                      {/* Prominent Margin of Safety Badge */}
                       <div className={`score-badge ${tierClass}`}>
-                        <div className="score-number">{item.total_score}</div>
-                        <div className="score-label">/100 · {item.tier_vi}</div>
+                        <div className="score-number" style={{ color: isPosMos ? 'var(--retro-green, #2f6b4d)' : 'inherit' }}>
+                          {hasMos ? (item.margin_of_safety > 0 ? `+${item.margin_of_safety}%` : `${item.margin_of_safety}%`) : `${item.total_score}/100`}
+                        </div>
+                        <div className="score-label">
+                          {hasMos ? (item.is_buffett_qualified ? '🛡️ ĐẠT CHUẨN BUFFETT' : item.valuation_status_vi) : item.tier_vi}
+                        </div>
                       </div>
                     </div>
 
@@ -277,11 +328,11 @@ export default function ScreenerPage() {
                       <h3 className="card-company-name" title={item.company_name}>
                         {item.company_name}
                       </h3>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', flexWrap: 'wrap', gap: '4px' }}>
                         <span className="card-industry">{item.industry}</span>
-                        {item.current_price != null && (
-                          <span style={{ fontSize: '0.82rem', color: 'var(--muted, var(--text-secondary))' }}>
-                            Thị giá: <strong style={{ color: 'var(--text)' }}>{Math.round(item.current_price).toLocaleString('vi-VN')} ₫</strong>
+                        {item.intrinsic_value != null && (
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                            Giá trị Thực: <strong style={{ color: 'var(--accent)' }}>{Math.round(item.intrinsic_value).toLocaleString('vi-VN')} ₫</strong>
                           </span>
                         )}
                       </div>
@@ -290,7 +341,13 @@ export default function ScreenerPage() {
                     {/* Key Metrics Strip */}
                     <div className="card-metrics-grid">
                       <div className="metric-box">
-                        <span className="metric-title">Sinh lời Vốn (ROE 5Y)</span>
+                        <span className="metric-title">Biên an toàn (MOS)</span>
+                        <span className={`metric-value ${isPosMos ? 'highlight-green' : ''}`}>
+                          {hasMos ? `${item.margin_of_safety > 0 ? '+' : ''}${item.margin_of_safety}%` : '—'}
+                        </span>
+                      </div>
+                      <div className="metric-box">
+                        <span className="metric-title">Sinh lời Vốn (ROE)</span>
                         <span className="metric-value highlight-green">
                           {item.avg_roe_5y !== null ? `${item.avg_roe_5y}%` : '—'}
                         </span>
@@ -300,12 +357,8 @@ export default function ScreenerPage() {
                         <span className="metric-value">{item.moat_score}/20</span>
                       </div>
                       <div className="metric-box">
-                        <span className="metric-title">Chất lượng Tiền</span>
-                        <span className="metric-value">{item.cash_quality_score}/10</span>
-                      </div>
-                      <div className="metric-box">
-                        <span className="metric-title">Phân bổ Vốn</span>
-                        <span className="metric-value">{item.capital_allocation_score}/15</span>
+                        <span className="metric-title">Điểm Chất lượng</span>
+                        <span className="metric-value">{item.total_score}/100</span>
                       </div>
                     </div>
 

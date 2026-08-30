@@ -44,10 +44,27 @@ def test_screener_api_endpoint(monkeypatch):
     from app import main
     monkeypatch.setattr(main, "require_portfolio_user", lambda session: type("User", (), {"username": "admin", "role": "ADMIN"})())
 
-    res = portfolio_screener_endpoint(min_score=80, exchange="HOSE", search="", sort_by="score")
+    res = portfolio_screener_endpoint(mos_filter="all", min_score=80, exchange="HOSE", search="", sort_by="score")
     assert res["ok"] is True
     assert "items" in res
     assert isinstance(res["items"], list)
     for item in res["items"]:
         assert item["total_score"] >= 80
         assert item["exchange"] == "HOSE"
+
+
+def test_screener_buffett_margin_of_safety():
+    # Test Buffett qualified filter (MOS >= required MOS)
+    res_buffett = get_screener_results(mos_filter="buffett_qualified", sort_by="mos")
+    assert res_buffett["ok"] is True
+    assert len(res_buffett["items"]) > 0
+    for item in res_buffett["items"]:
+        assert item["is_buffett_qualified"] is True
+        assert item["margin_of_safety"] >= item.get("required_mos", 25.0)
+
+    # Test Positive MOS filter
+    res_pos = get_screener_results(mos_filter="positive", sort_by="mos")
+    assert res_pos["ok"] is True
+    for item in res_pos["items"]:
+        assert item["is_positive_mos"] is True
+        assert item["margin_of_safety"] > 0

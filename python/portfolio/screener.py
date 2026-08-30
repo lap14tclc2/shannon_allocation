@@ -1,4 +1,4 @@
-"""High-Quality Stock Screener Engine based on Buffett-Munger 100-point Quality Score."""
+"""High-Quality Stock Screener Engine based on Buffett-Munger Margin of Safety & Quality Score."""
 from __future__ import annotations
 
 import time
@@ -28,8 +28,20 @@ def _get_vietnamese_tier_label(tier_val: str) -> str:
     return mapping.get(tier_val, tier_val)
 
 
+def _get_vietnamese_valuation_status(status_val: str) -> str:
+    mapping = {
+        "DEEP_VALUE": "Biên an toàn rất cao",
+        "UNDERVALUED": "Định giá Hấp dẫn",
+        "ATTRACTIVE": "Định giá Hấp dẫn",
+        "FAIR_VALUE": "Định giá Hợp lý",
+        "OVERVALUED": "Định giá Cao",
+        "DISTRESSED": "Cần theo dõi",
+    }
+    return mapping.get(status_val, "Đang theo dõi")
+
+
 def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Compute and cache Quality Scores across the entire active universe."""
+    """Compute and cache Quality Scores and Buffett Margin of Safety across the active universe."""
     global _SCORED_UNIVERSE_CACHE, _LAST_COMPUTE_TIME
 
     now = time.time()
@@ -150,12 +162,85 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     latest_cfo=latest_cfo,
                     true_dilution_5y_pct=0.0,
                 )
+
+                # Buffett Intrinsic Value & Margin of Safety calculation
+                latest_items = hist[years[-1]]
+                np_latest = latest_items.get("IS.PROFIT.NET")
+                eq_latest = latest_items.get("BS.EQUITY.TOTAL")
+                cfo_latest = latest_items.get("CF.OPERATING.NET") or (np_latest * 0.9 if np_latest else 0)
+                capex_latest = latest_items.get("CF.CAPEX") or (cfo_latest * 0.3)
+                debt_latest = latest_items.get("BS.DEBT.TOTAL") or 0
+                cash_latest = latest_items.get("BS.ASSETS.CASH_AND_EQUIVALENTS") or 0
+                shares = latest_items.get("IS.SHARES.OUTSTANDING") or latest_items.get("BS.SHARES.OUTSTANDING")
+
+                intrinsic_value = None
+                mos = None
+                req_mos = max(20.0, min(40.0, round(30.0 - (scorecard.total_score - 50) * 0.2, 1)))
+
+                if np_latest and np_latest > 0:
+                    if not shares or shares <= 0:
+                        if eq_latest and eq_latest > 0:
+                            shares = (eq_latest * 1e9) / 20000.0  # estimate ~20k bvps
+                        else:
+                            shares = 1.0
+
+                    is_bank = any(t in f"{ind} {name}".lower() for t in ("bank", "ngân hàng"))
+
+                    if is_bank and eq_latest and eq_latest > 0:
+                        roe_curr = np_latest / eq_latest
+                        bvps = (eq_latest * 1e9) / shares
+                        r, g = 0.11, 0.035
+                        p_b_fair = 1.0 + max(0.0, roe_curr - r) / (r - g)
+                        p_b_fair = min(3.0, max(0.7, p_b_fair))
+                        intrinsic_value = round(bvps * p_b_fair)
+                    else:
+                        oe = max(0.0, cfo_latest - capex_latest * 0.5) * 1e9
+                        if oe <= 0:
+                            oe = np_latest * 0.85 * 1e9
+                        pv_factor = 7.72  # 10-year discount factor at 11% r, 5% g
+                        tv_factor = 7.45  # Terminal value factor at 11% r, 3.5% g
+                        ev = oe * (pv_factor + tv_factor)
+                        net_cash_val = (cash_latest - debt_latest) * 1e9
+                        equity_val = max(eq_latest * 1e9 if eq_latest else 0, ev + net_cash_val)
+                        intrinsic_value = round(equity_val / shares) if shares > 0 else 0
+
+                curr_price = price_map.get(sym)
+                if curr_price and intrinsic_value and intrinsic_value > 0:
+                    mos = round(((intrinsic_value - curr_price) / intrinsic_value) * 100.0, 1)
+
+                is_qualified = mos is not None and mos >= req_mos
+                is_positive = mos is not None and mos > 0
+
+                val_status = "DISTRESSED"
+                if mos is not None:
+                    if mos >= 40.0:
+                        val_status = "DEEP_VALUE"
+                    elif mos >= req_mos:
+                        val_status = "UNDERVALUED"
+                    elif mos >= 0.0:
+                        val_status = "FAIR_VALUE"
+                    else:
+                        val_status = "OVERVALUED"
+
+                # Multiples
+                pe_val = round(curr_price / (np_latest * 1e9 / shares), 1) if (curr_price and np_latest and shares and np_latest > 0) else None
+                pb_val = round(curr_price / ((eq_latest * 1e9) / shares), 2) if (curr_price and eq_latest and shares and eq_latest > 0) else None
+
                 scored_items.append({
                     "symbol": sym,
                     "exchange": exch,
                     "company_name": name,
                     "industry": ind,
-                    "current_price": price_map.get(sym),
+                    "current_price": curr_price,
+                    "intrinsic_value": intrinsic_value,
+                    "margin_of_safety": mos,
+                    "required_mos": req_mos,
+                    "valuation_status": val_status,
+                    "valuation_status_vi": _get_vietnamese_valuation_status(val_status),
+                    "is_buffett_qualified": is_qualified,
+                    "is_positive_mos": is_positive,
+                    "pe": pe_val,
+                    "pb": pb_val,
                     "total_score": scorecard.total_score,
                     "tier": scorecard.tier.value,
                     "tier_vi": _get_vietnamese_tier_label(scorecard.tier.value),
@@ -180,26 +265,35 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
 
 
 def get_screener_results(
-    min_score: int = 80,
+    mos_filter: Optional[str] = None,
+    min_score: Optional[int] = None,
     exchange: Optional[str] = None,
     search: Optional[str] = None,
-    sort_by: str = "score",
+    sort_by: str = "mos",
     limit: int = 200,
 ) -> Dict[str, Any]:
-    """Filter and sort scored universe according to user parameters."""
+    """Filter and sort universe according to Buffett Margin of Safety and user parameters."""
     universe = compute_all_screener_scores()
     filtered = universe
 
-    # 1. Filter by min_score
+    # 1. Filter by Buffett Margin of Safety (Rule #1: Never lose money)
+    if mos_filter == "buffett_qualified":
+        filtered = [item for item in filtered if item.get("is_buffett_qualified")]
+    elif mos_filter == "positive":
+        filtered = [item for item in filtered if item.get("is_positive_mos")]
+    elif mos_filter == "undervalued":
+        filtered = [item for item in filtered if item.get("valuation_status") in ("DEEP_VALUE", "UNDERVALUED", "FAIR_VALUE")]
+
+    # 2. Filter by min_score if specified
     if min_score is not None and min_score > 0:
         filtered = [item for item in filtered if item["total_score"] >= min_score]
 
-    # 2. Filter by exchange
+    # 3. Filter by exchange
     if exchange and exchange.upper() not in ("ALL", "TẤT CẢ", "*", ""):
         target_exch = exchange.upper().strip()
         filtered = [item for item in filtered if item["exchange"] == target_exch]
 
-    # 3. Search query
+    # 4. Search query
     if search and search.strip():
         q = search.strip().lower()
         filtered = [
@@ -209,15 +303,39 @@ def get_screener_results(
             or q in item["industry"].lower()
         ]
 
-    # 4. Sorting
-    if sort_by == "roe":
-        filtered = sorted(filtered, key=lambda x: (x["avg_roe_5y"] is not None, x["avg_roe_5y"] or 0), reverse=True)
+    # 5. Sorting
+    if sort_by == "mos":
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x["margin_of_safety"] is not None, x["margin_of_safety"] or -999, x["total_score"]),
+            reverse=True,
+        )
+    elif sort_by == "score":
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x["total_score"], x["margin_of_safety"] or -999),
+            reverse=True,
+        )
+    elif sort_by == "roe":
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x["avg_roe_5y"] is not None, x["avg_roe_5y"] or 0),
+            reverse=True,
+        )
+    elif sort_by == "moat":
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x["moat_score"], x["total_score"]),
+            reverse=True,
+        )
     elif sort_by == "symbol":
         filtered = sorted(filtered, key=lambda x: x["symbol"])
-    elif sort_by == "moat":
-        filtered = sorted(filtered, key=lambda x: (x["moat_score"], x["total_score"]), reverse=True)
-    else:  # default: score
-        filtered = sorted(filtered, key=lambda x: (x["total_score"], x["avg_roe_5y"] or 0), reverse=True)
+    else:  # default: mos
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x["margin_of_safety"] is not None, x["margin_of_safety"] or -999, x["total_score"]),
+            reverse=True,
+        )
 
     total_screened = len(filtered)
     results = filtered[:limit]
@@ -253,6 +371,10 @@ def get_screener_results(
                 for it in results:
                     if it["symbol"] == sym:
                         it["current_price"] = close_val
+                        if it.get("intrinsic_value") and it["intrinsic_value"] > 0:
+                            it["margin_of_safety"] = round(((it["intrinsic_value"] - close_val) / it["intrinsic_value"]) * 100.0, 1)
+                            it["is_positive_mos"] = it["margin_of_safety"] > 0
+                            it["is_buffett_qualified"] = it["margin_of_safety"] >= it.get("required_mos", 25.0)
                 if rows:
                     saved_rows.extend(rows)
 
@@ -274,6 +396,7 @@ def get_screener_results(
         "total_screened": total_screened,
         "universe_size": len(universe),
         "filters": {
+            "mos_filter": mos_filter,
             "min_score": min_score,
             "exchange": exchange or "ALL",
             "search": search or "",
