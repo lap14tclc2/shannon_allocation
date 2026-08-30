@@ -180,6 +180,15 @@
       ]
     },
     {
+      "source": "/screener",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
       "source": "/dividends",
       "headers": [
         {
