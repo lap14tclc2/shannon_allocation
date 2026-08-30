@@ -1001,7 +1001,7 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                 # For commercial banks / financial institutions, fixed asset depreciation is minimal / included in operating expenses
                 value = 0.0
 
-        if value is None and document_type == "FINANCIAL_STATEMENTS" and code == "IS.SHARES.OUTSTANDING":
+        if value is None and document_type in ("FINANCIAL_STATEMENTS", "BALANCE_SHEET") and code == "IS.SHARES.OUTSTANDING":
             # In Vietnam accounting standard, charter capital is recorded at 10,000 VND par value per share.
             # TCBS reports 'capital' in billion VND (e.g. 17,035 tỷ VND = 1,703.5 million shares = 1.7035e9 shares).
             cap_val = next((_value(row, "capital") for row in rows if _value(row, "capital") is not None), None)
@@ -1026,9 +1026,13 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
                     observed_at=excluded.observed_at""",
                 (
                     symbol,
-                    "BALANCE_SHEET"
-                    if document_type == "FINANCIAL_STATEMENTS"
-                    else document_type,
+                    "INCOME_STATEMENT"
+                    if code.startswith("IS.")
+                    else (
+                        "BALANCE_SHEET"
+                        if document_type in ("FINANCIAL_STATEMENTS", "BALANCE_SHEET")
+                        else document_type
+                    ),
                     code,
                     value,
                     period_type,
@@ -1862,11 +1866,11 @@ def import_tcbs_crawled_directory(
         )
         return {
             "symbol": sym,
-            "imported": sym_imported,
-            "failed": sym_failed,
-            "unavailable": sym_unavailable,
-            "skipped": sym_skipped,
-            "is_success": sym_failed == 0,
+            "imported": symbol_imported,
+            "failed": symbol_failed,
+            "unavailable": symbol_unavailable,
+            "skipped": symbol_skipped,
+            "is_success": symbol_failed == 0,
         }
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3029,4 +3033,43 @@ def sync_universe() -> dict[str, Any]:
             f"failed after {elapsed:.1f}s: {type(exc).__name__}: {exc}"
         )
         return {"ok": False, "code": "UNIVERSE_SYNC_FAILED", "message": str(exc)[:500]}
+
+
+def search_securities_lookup(q: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    initialize_finance_schema()
+    search = str(q or "").strip().upper()
+    limit = min(100, max(1, int(limit)))
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        if search:
+            prefix = search + "%"
+            like = "%" + search + "%"
+            cur = db.execute(
+                """
+                SELECT symbol, exchange, company_name, industry
+                FROM securities
+                WHERE is_active = 1
+                  AND (symbol LIKE ? OR UPPER(company_name) LIKE ? OR UPPER(industry) LIKE ?)
+                ORDER BY
+                    CASE WHEN symbol = ? THEN 1
+                         WHEN symbol LIKE ? THEN 2
+                         ELSE 3 END,
+                    symbol ASC
+                LIMIT ?
+                """,
+                (like, like, like, search, prefix, limit),
+            )
+        else:
+            cur = db.execute(
+                """
+                SELECT symbol, exchange, company_name, industry
+                FROM securities
+                WHERE is_active = 1
+                ORDER BY symbol ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
 

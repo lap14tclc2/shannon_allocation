@@ -13,6 +13,7 @@ from .corrections import (
     append_delete,
     append_edit,
     audit_log,
+    clear_request_memo,
     effective_event,
     effective_events,
     ensure_schema,
@@ -196,6 +197,7 @@ class CorrectablePortfolioService(PortfolioService):
         )
         latest_snapshot = self.store.latest_snapshot()
         eid = self.store.append_event(stored)
+        clear_request_memo()
         history = None
         if latest_snapshot and event.event_date <= latest_snapshot["snapshot_date"]:
             self.book.mark_restatement(event.event_date, f"Historical transaction #{eid} was added after NAV snapshots existed.", correction_event_id=eid)
@@ -566,6 +568,7 @@ class CorrectablePortfolioService(PortfolioService):
         history = None
         latest_snapshot = self.store.latest_snapshot()
         earliest = min(event.event_date for event in prepared["events"])
+        clear_request_memo()
         if latest_snapshot and earliest <= latest_snapshot["snapshot_date"]:
             self.book.mark_restatement(
                 earliest,
@@ -627,6 +630,7 @@ class CorrectablePortfolioService(PortfolioService):
         self._validate_ledger([e for e in effective_events(self.store) if int(e.id or 0) != int(event_id)] + [replacement])
         affected_from = min(current.event_date, replacement.event_date)
         correction_id = append_edit(self.store, int(event_id), replacement, reason=reason, created_by=created_by)
+        clear_request_memo()
         self._mark_restatement_if_needed(affected_from, f"EDIT transaction #{event_id}: {reason}", int(event_id))
         history = self._refresh_derived_history()
         self._log(
@@ -667,6 +671,7 @@ class CorrectablePortfolioService(PortfolioService):
             reason=reason,
             created_by=created_by,
         )
+        clear_request_memo()
         self._mark_restatement_if_needed(
             current.event_date,
             f"SOFT_DELETE transaction #{event_id}: {reason}",

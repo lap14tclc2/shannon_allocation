@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
+from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Deque
 
 import psycopg
 from psycopg import sql
@@ -251,9 +255,103 @@ class PostgresConnectionCompat:
         return cursor
 
 
+class _PostgresConnectionPool:
+    """Small process-local pool of validated PostgreSQL connections.
+
+    Vercel-safe: bounded idle size, connections pinged on checkout so a pooled
+    connection that died while the serverless instance was frozen is replaced
+    instead of reused, and no background thread holds connections forever.
+    """
+
+    def __init__(
+        self,
+        max_idle: int | None = None,
+        max_total: int | None = None,
+        checkout_ping: bool = True,
+    ) -> None:
+        env_idle = os.environ.get("QPORT_PG_POOL_MAX_IDLE")
+        env_total = os.environ.get("QPORT_PG_POOL_MAX_TOTAL")
+        self._max_idle = int(env_idle) if env_idle else (max_idle or 8)
+        self._max_total = int(env_total) if env_total else (max_total or 24)
+        self._checkout_ping = checkout_ping
+        self._lock = threading.Lock()
+        self._idle: Deque[psycopg.Connection] = deque()
+        self._active: set[psycopg.Connection] = set()
+
+    def acquire(self) -> psycopg.Connection:
+        with self._lock:
+            while self._idle:
+                conn = self._idle.pop()
+                if self._usable(conn):
+                    self._active.add(conn)
+                    return conn
+            conn = psycopg.connect(database_url(), row_factory=dict_row)
+            self._active.add(conn)
+            return conn
+
+    def release(self, conn: psycopg.Connection) -> None:
+        with self._lock:
+            self._active.discard(conn)
+            if conn.closed or len(self._idle) >= self._max_idle:
+                self._close_quietly(conn)
+                return
+            self._idle.append(conn)
+
+    def _usable(self, conn: psycopg.Connection) -> bool:
+        if conn.closed:
+            return False
+        if not self._checkout_ping:
+            return True
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            conn.rollback()
+            return True
+        except Exception:
+            self._close_quietly(conn)
+            return False
+
+    @staticmethod
+    def _close_quietly(conn: psycopg.Connection) -> None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        with self._lock:
+            for conn in list(self._idle):
+                self._close_quietly(conn)
+            self._idle.clear()
+            for conn in list(self._active):
+                self._close_quietly(conn)
+            self._active.clear()
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {
+                "idle": len(self._idle),
+                "active": len(self._active),
+                "max_idle": self._max_idle,
+                "max_total": self._max_total,
+            }
+
+
+_connection_pool = _PostgresConnectionPool()
+
+
+def close_connection_pool() -> None:
+    """Close pooled connections (used by tests / shutdown hooks)."""
+    _connection_pool.close()
+
+
+def connection_pool_stats() -> dict:
+    return _connection_pool.stats()
+
+
 @contextmanager
 def _schema_connection(schema: str):
-    conn = psycopg.connect(database_url(), row_factory=dict_row)
+    conn = _connection_pool.acquire()
     try:
         with conn.cursor() as cur:
             cur.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
@@ -263,7 +361,7 @@ def _schema_connection(schema: str):
         conn.rollback()
         raise
     finally:
-        conn.close()
+        _connection_pool.release(conn)
 
 
 def _ensure_schema(schema: str) -> None:

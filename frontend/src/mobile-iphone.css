@@ -677,6 +677,81 @@
     border-radius: 12px;
   }
 
+  /* ---------- Valuation mobile surface ---------- */
+  .valuation-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .valuation-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 14px 12px;
+    box-sizing: border-box;
+  }
+
+  .valuation-card-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .valuation-symbol-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    width: 100%;
+  }
+
+  .valuation-sector-tag {
+    font-size: 11px;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+
+  .valuation-pill {
+    align-self: flex-start;
+    font-size: 12px;
+    padding: 4px 10px;
+    white-space: normal;
+  }
+
+  .valuation-price-hero {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .valuation-multiples-ribbon {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .metric-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 10px;
+    min-width: 0;
+  }
+
+  .chip-label {
+    font-size: 10.5px;
+    line-height: 1.2;
+  }
+
+  .chip-value {
+    font-size: 13.5px;
+    line-height: 1.2;
+  }
+
   /* ---------- Sign-in and admin mobile surfaces ---------- */
   .auth-shell {
     min-height: 100dvh;
@@ -711,6 +786,30 @@
   .admin-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
+  }
+
+  /* ---------- Dividend Mobile Surfaces (Homepage & Dividend Page) ---------- */
+  .dividend-card,
+  .investor-dividend-card,
+  .dividend-tree-card {
+    padding: 12px !important;
+    border-radius: 12px;
+    overflow-x: hidden;
+  }
+
+  .investor-dividend-card .section-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .investor-dividend-card .section-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
   }
 
   :focus-visible {

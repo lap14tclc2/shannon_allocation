@@ -8,6 +8,34 @@ from fastapi.responses import FileResponse, JSONResponse
 _FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 _INDEX_FILE = _FRONTEND_DIR / "index.html"
 
+_MEDIA_TYPES = {
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+def _file_response(path: Path):
+    media_type = _MEDIA_TYPES.get(path.suffix.lower())
+    if media_type is None:
+        media_type = "application/octet-stream"
+    return FileResponse(path, media_type=media_type)
+
 _startup_error: BaseException | None = None
 try:
     from app.main import app  # type: ignore
@@ -29,7 +57,7 @@ except BaseException as exc:  # keep the function alive to expose a safe diagnos
                 },
             )
         if _INDEX_FILE.is_file():
-            return FileResponse(_INDEX_FILE)
+            return _file_response(_INDEX_FILE)
         return JSONResponse(
             status_code=503,
             content={"ok": False, "code": "APP_STARTUP_FAILED"},
@@ -53,9 +81,9 @@ if _startup_error is None:
             requested = _INDEX_FILE
 
         if requested.is_file():
-            return FileResponse(requested)
+            return _file_response(requested)
         if _INDEX_FILE.is_file():
-            return FileResponse(_INDEX_FILE)
+            return _file_response(_INDEX_FILE)
         return JSONResponse(
             status_code=503,
             content={

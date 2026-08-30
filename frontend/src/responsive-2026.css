@@ -1,0 +1,213 @@
+/* QPort Responsive Design 2026 pass (UXPin best-practices layer).
+   Loaded last, after the theme stylesheets, so it is purely additive.
+
+   Implements the 2026 responsive-design standard from
+   https://www.uxpin.com/studio/blog/best-practices-examples-of-excellent-responsive-design/
+    1. Component-level responsiveness via CSS Container Queries (@container).
+    2. Fluid typography with clamp() so type scales instead of jumping.
+    3. Flexible media + CLS guards (img/video max-width, aspect-ratio charts).
+    4. Content-based breakpoints (360 / 480 / 720 / 1024 / 1280).
+    5. Touch-target safety net (>=44px) for small inline controls.
+
+   The <720px iPhone shell (mobile-iphone.css) and >=720px desktop terminal
+   identity are preserved. This layer only adds behavior QPort did not have. */
+
+/* ---------------------------------------------------------------------------
+   1. Component-level responsiveness via container queries.
+   Card-component surfaces become inline-size query containers so their inner
+   grids/cards reflow by the space the component actually gets, not the viewport.
+--------------------------------------------------------------------------- */
+.fund-manager-review-card,
+.guide-page,
+.guide-start-grid,
+.guide-page-grid,
+.guide-status-grid,
+.guide-faq-grid,
+.guide-two-column,
+.valuation-card,
+.portfolio-assessment-card,
+.dividend-card,
+.investor-dividend-card,
+.metric-grid,
+.overview-metrics,
+.form-grid,
+.reference-grid,
+.dashboard-grid,
+.health-grid {
+  container-type: inline-size;
+}
+
+/* Narrow component: metric cards become a single column, keep values readable. */
+@container (max-width: 340px) {
+  .metric-card {
+    min-height: 68px;
+    padding: 10px 11px;
+  }
+
+  .metric-value {
+    font-size: clamp(15px, 4.2vw, 18px);
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Guide steps: two-column on wide components, single column when squeezed. */
+@container (min-width: 640px) {
+  .guide-start-grid,
+  .guide-page-grid,
+  .guide-status-grid,
+  .guide-faq-grid,
+  .guide-two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Fund-manager lenses: 3-across only when the review card has room. */
+@container (min-width: 900px) {
+  .fm-manager-lenses {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Valuation pillars & multiples adapt to the valuation card width. */
+@container (min-width: 720px) {
+  .valuation-pillars-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .valuation-scenarios {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 420px) {
+  .valuation-multiples-ribbon {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .metric-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 9px 11px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   2. Fluid typography with clamp().
+   Headings and body copy scale smoothly between a floor and a ceiling instead
+   of snapping at breakpoints. Desktop sizes are preserved (max is the ceiling).
+--------------------------------------------------------------------------- */
+.section-head h2,
+.card > h2,
+.valuation-card h2,
+.portfolio-assessment-card h2,
+.guide-page-card h3,
+.guide-step-card h3,
+.guide-faq-grid h3 {
+  font-size: clamp(15px, 1.2vw + 0.75rem, 17px);
+}
+
+.section-head h3,
+.card > h3,
+.fm-manager-lenses h3,
+.pillar-card h3 {
+  font-size: clamp(13px, 0.8vw + 0.65rem, 15px);
+}
+
+.guide-step-card p,
+.guide-page-card p,
+.guide-faq-grid p,
+.fm-manager-lenses p,
+.valuation-card p,
+.portfolio-assessment-card p {
+  font-size: clamp(12.5px, 0.5vw + 0.72rem, 13.5px);
+}
+
+/* ---------------------------------------------------------------------------
+   3. Flexible media + CLS guards.
+   No raster <img>/<video> exist in QPort today, but the safety net is the
+   correct 2026 baseline and prevents any future media from overflowing.
+--------------------------------------------------------------------------- */
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Reserve chart vertical space to prevent layout shift (CLS) before data draws. */
+.interactive-equity-chart,
+.equity-chart,
+.chart {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Content-based breakpoints: 360 / 480 / 720 / 1024 / 1280.
+   Existing mobile-iphone.css owns <720px layout; these only smooth gaps the
+   prior pass left between fixed-size controls.
+--------------------------------------------------------------------------- */
+
+/* Very small phones: reduce page padding so content is not squeezed. */
+@media (max-width: 360px) {
+  .page {
+    padding-inline: 10px;
+  }
+
+  .metric-grid,
+  .overview-metrics {
+    gap: 6px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   5. Touch-target safety net (>=44px, Apple HIG / Google Material).
+   Small inline controls that are not .btn-* still get a reliable tap area on
+   touch devices. Visible size is unchanged; the hit area is padded out.
+--------------------------------------------------------------------------- */
+@media (max-width: 719px) {
+  .text-link,
+  .fm-pill,
+  .status-pill,
+  .metric-chip,
+  .pillar-card,
+  .guide-step-number,
+  details > summary,
+  .disclosure-card > summary,
+  .dividend-symbol-node > summary {
+    min-height: 44px;
+  }
+
+  .fm-pill,
+  .status-pill,
+  .metric-chip {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Ensure adjacent touch targets are spaced far enough apart to avoid
+     accidentally tapping the wrong element. */
+  .hero-actions,
+  .button-row,
+  .row-actions,
+  .section-head {
+    row-gap: 8px;
+    column-gap: 8px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion: keep the existing preference honored for the new layer.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

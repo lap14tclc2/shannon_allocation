@@ -456,7 +456,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._page("admin", user) if path == "/admin" else self._redirect("/admin")
         if path in {"", "/", "/login"}:
             return self._page("portfolio", user)
-        routes = {f"/{p}":p for p in ("transactions","performance","risk","snapshots","operations","logs","settings","guide","admin")}
+        routes = {f"/{p}":p for p in ("portfolios","transactions","performance","risk","valuation","screener","dividends","snapshots","logs","settings","guide","admin")}
         return self._page(routes[path], user) if path in routes else self._json(404, {"error":"Not found."})
 
     do_HEAD = do_GET

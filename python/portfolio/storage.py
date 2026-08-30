@@ -313,11 +313,22 @@ class PortfolioStore:
         return dict(row) if row else None
 
     def latest_prices(self, symbols: Iterable[str], on_or_before: str | None = None) -> dict[str, dict]:
-        out = {}
-        for symbol in symbols:
-            row = self.latest_price(symbol, on_or_before)
-            if row:
-                out[str(symbol).upper()] = row
+        symbol_list = [str(s).upper().strip() for s in symbols if str(s).strip()]
+        if not symbol_list:
+            return {}
+        placeholders = ", ".join(["?"] * len(symbol_list))
+        sql = f"SELECT * FROM market_prices WHERE symbol IN ({placeholders})"
+        args: list[object] = list(symbol_list)
+        if on_or_before:
+            sql += " AND trading_date <= ?"
+            args.append(on_or_before)
+        # One batched query instead of one connection + query per symbol.
+        sql += " ORDER BY trading_date DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, args).fetchall()
+        out: dict[str, dict] = {}
+        for row in rows:
+            out.setdefault(str(row["symbol"]).upper(), dict(row))
         return out
 
     def price_history(self, symbol: str, limit: int = 252, end: str | None = None) -> list[dict]:
@@ -331,6 +342,28 @@ class PortfolioStore:
         with self.connect() as db:
             rows = db.execute(sql, args).fetchall()
         return [dict(r) for r in reversed(rows)]
+
+    def price_histories(self, symbols: Iterable[str], limit: int = 252, end: str | None = None) -> dict[str, list[dict]]:
+        """Batch price history load for many symbols with one query."""
+        symbol_list = [str(s).upper().strip() for s in symbols if str(s).strip()]
+        if not symbol_list:
+            return {}
+        placeholders = ", ".join(["?"] * len(symbol_list))
+        sql = f"SELECT * FROM market_prices WHERE symbol IN ({placeholders})"
+        args: list[object] = list(symbol_list)
+        if end:
+            sql += " AND trading_date <= ?"
+            args.append(end)
+        sql += " ORDER BY trading_date DESC LIMIT ?"
+        args.append(int(limit))
+        with self.connect() as db:
+            rows = db.execute(sql, args).fetchall()
+        out: dict[str, list[dict]] = {s: [] for s in symbol_list}
+        for row in rows:
+            out[str(row["symbol"]).upper()].append(dict(row))
+        for symbol in symbol_list:
+            out[symbol].reverse()
+        return out
 
     def market_price_count(self, symbol: str) -> int:
         with self.connect() as db:
@@ -442,7 +475,24 @@ class PortfolioStore:
         sql += " ORDER BY snapshot_date DESC LIMIT ?"
         with self.connect() as db:
             rows = db.execute(sql, (int(limit),)).fetchall()
-            return [self._snapshot_from_row(db, r) for r in rows]
+            if not rows:
+                return []
+            ids = [int(r["id"]) for r in rows]
+            placeholders = ", ".join(["?"] * len(ids))
+            pos_rows = db.execute(
+                f"SELECT * FROM snapshot_positions WHERE snapshot_id IN ({placeholders}) ORDER BY market_value DESC",
+                ids,
+            ).fetchall()
+        positions_by_snapshot: dict[int, list[dict]] = {}
+        for p in pos_rows:
+            positions_by_snapshot.setdefault(int(p["snapshot_id"]), []).append(dict(p))
+        out = []
+        for row in rows:
+            snapshot = dict(row)
+            snapshot["positions"] = positions_by_snapshot.get(int(row["id"]), [])
+            snapshot["official"] = bool(snapshot.get("official"))
+            out.append(snapshot)
+        return out
 
     def set_reference_weights(self, weights: dict[str, float]) -> None:
         total = sum(float(v) for v in weights.values())

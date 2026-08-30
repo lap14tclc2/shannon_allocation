@@ -22,9 +22,9 @@ const LINKS = [
 
 const NAVIGATION_LINKS = [
   ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : 'Rủi ro và mức độ tập trung']),
+  ['/screener', 'screener', 'Bộ lọc', 'Bộ lọc & Soi định giá cổ phiếu'],
   ['/dividends', 'dividends', 'Cổ tức', 'Sự kiện và khoản thực nhận'],
   ['/snapshots', 'snapshots', 'Nhật ký NAV', 'Các mốc dữ liệu chính thức'],
-  ['/operations', 'operations', 'Vận hành', 'Đồng bộ và chất lượng dữ liệu'],
   ['/guide', 'guide', 'Hướng dẫn', 'Cách sử dụng QPort'],
 ];
 

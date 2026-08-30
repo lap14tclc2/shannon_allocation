@@ -45,15 +45,15 @@
       "destination": "/"
     },
     {
+      "source": "/screener",
+      "destination": "/"
+    },
+    {
       "source": "/dividends",
       "destination": "/"
     },
     {
       "source": "/snapshots",
-      "destination": "/"
-    },
-    {
-      "source": "/operations",
       "destination": "/"
     },
     {

@@ -23,6 +23,11 @@ from portfolio.accounting import derive_state  # noqa: E402
 from portfolio.auth import AuthError, SESSION_DAYS  # noqa: E402
 from portfolio.automated_service import AutomatedPortfolioService  # noqa: E402
 from portfolio.corrections import effective_events  # noqa: E402
+from portfolio.corrections import (
+    begin_request_memo,
+    clear_request_memo,
+    end_request_memo,
+)  # noqa: E402
 from portfolio.dividend_store import SqliteDividendService  # noqa: E402
 from portfolio.dividends import DividendLookupError  # noqa: E402
 from portfolio.postgres import (  # noqa: E402
@@ -50,6 +55,10 @@ app = FastAPI(
 _auth_store: PostgresAuthStore | None = None
 _services: dict[tuple[int, int], AutomatedPortfolioService] = {}
 _dividend_services: dict[tuple[int, int], SqliteDividendService] = {}
+# Bound the long-lived per-portfolio service caches so a long-running local
+# process cannot grow without limit. Vercel instances are short-lived anyway,
+# but the cap protects local dev and any persistent worker.
+MAX_CACHED_SERVICES = 128
 _requested_portfolio_id: ContextVar[int | None] = ContextVar(
     "qport_requested_portfolio_id",
     default=None,
@@ -94,6 +103,7 @@ async def bind_portfolio_scope(request: Request, call_next):
         "environment": "vercel" if os.environ.get("VERCEL") else "local",
     }, ensure_ascii=False), flush=True)
     token = _requested_portfolio_id.set(requested)
+    _, memo_token = begin_request_memo()
     try:
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -113,6 +123,7 @@ async def bind_portfolio_scope(request: Request, call_next):
         }, ensure_ascii=False), flush=True)
         raise
     finally:
+        end_request_memo(memo_token)
         _requested_portfolio_id.reset(token)
 
 
@@ -210,6 +221,18 @@ def public_portfolio(row: dict) -> dict:
     }
 
 
+def _cache_service(key: tuple[int, int], svc: AutomatedPortfolioService) -> AutomatedPortfolioService:
+    if len(_services) >= MAX_CACHED_SERVICES:
+        # Evict one arbitrary (oldest-inserted) entry to bound memory. The next
+        # request recreates it cheaply; services are stateless across requests.
+        try:
+            _services.pop(next(iter(_services)))
+        except StopIteration:
+            pass
+    _services[key] = svc
+    return svc
+
+
 def portfolio(user: dict) -> AutomatedPortfolioService:
     user_id = int(user["id"])
     selected = active_portfolio(user)
@@ -219,7 +242,7 @@ def portfolio(user: dict) -> AutomatedPortfolioService:
         svc = AutomatedPortfolioService(
             store=PostgresPortfolioStore(user_id, selected["schema_name"])
         )
-        _services[key] = svc
+        _cache_service(key, svc)
     return svc
 
 
@@ -230,6 +253,11 @@ def dividends(user: dict) -> SqliteDividendService:
     service = _dividend_services.get(key)
     if service is None:
         service = SqliteDividendService(portfolio(user).store, stop_on_first_data=False)
+        if len(_dividend_services) >= MAX_CACHED_SERVICES:
+            try:
+                _dividend_services.pop(next(iter(_dividend_services)))
+            except StopIteration:
+                pass
         _dividend_services[key] = service
     return service
 
@@ -635,7 +663,13 @@ def portfolio_snapshots(qport_session: str | None = Cookie(default=None)):
 
 @app.get("/api/portfolio/market")
 def portfolio_market(qport_session: str | None = Cookie(default=None)):
-    return portfolio(require_portfolio_user(qport_session)).dashboard().get("market_data") or {}
+    svc = portfolio(require_portfolio_user(qport_session))
+    # Market metadata only needs current positions + prices, not the full
+    # dashboard pipeline (risk, performance, snapshots, suggestions).
+    state = derive_state(effective_events(svc.store))
+    symbols = sorted(state.positions)
+    prices = svc.store.latest_prices(symbols)
+    return svc._market_metadata(symbols, prices)
 
 
 @app.get("/api/portfolio/preferences")
@@ -850,6 +884,27 @@ def portfolio_latest_dividend(
     }
 
 
+@app.get("/api/portfolio/screener")
+def portfolio_screener_endpoint(
+    min_score: int = 80,
+    exchange: str | None = None,
+    search: str | None = None,
+    sort_by: str = "score",
+    limit: int = 200,
+    qport_session: str | None = Cookie(default=None),
+):
+    """Screen universe by Buffett-Munger Quality Score (Score >= 80, exchange, search)."""
+    require_portfolio_user(qport_session)
+    from portfolio.screener import get_screener_results
+    return get_screener_results(
+        min_score=min_score,
+        exchange=exchange,
+        search=search,
+        sort_by=sort_by,
+        limit=limit,
+    )
+
+
 @app.get("/api/portfolio/valuation/{symbol}")
 def portfolio_symbol_valuation(
     symbol: str,
@@ -1020,6 +1075,7 @@ def portfolio_symbol_valuation(
     add_fact("BS.LIABILITIES.LONG_TERM_BORROWINGS", StatementType.BALANCE_SHEET, long_debt, PeriodType.INSTANT)
     add_fact("BS.ASSETS.CASH_AND_EQUIVALENTS", StatementType.BALANCE_SHEET, cash, PeriodType.INSTANT)
     add_fact("BS.ASSETS.SHORT_TERM_INVESTMENTS", StatementType.BALANCE_SHEET, short_investments, PeriodType.INSTANT)
+    add_fact("BS.EQUITY.TOTAL", StatementType.BALANCE_SHEET, equity, PeriodType.INSTANT)
     add_fact("CF.OPERATING.DEPRECIATION", StatementType.CASH_FLOW, depreciation, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
     add_fact("CF.CAPEX", StatementType.CASH_FLOW, capex, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
     add_fact("CF.OPERATING.NET", StatementType.CASH_FLOW, operating_cash, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
@@ -1056,7 +1112,38 @@ def portfolio_symbol_valuation(
         ).fetchall()
         by_year: dict[int, dict[str, Decimal]] = {}
         for r in hist_rows:
-            by_year.setdefault(int(r["fiscal_year"]), {})[str(r["line_item_code"])] = Decimal(str(r["value"]))
+            y_int = int(r["fiscal_year"])
+            code_str = str(r["line_item_code"])
+            val_dec = Decimal(str(r["value"]))
+            by_year.setdefault(y_int, {})[code_str] = val_dec
+            
+            # Pass historical facts to ValuationEngine for multi-year cycle normalization
+            if y_int != fiscal_year:
+                st_type = StatementType.INCOME_STATEMENT if code_str.startswith("IS.") else (StatementType.BALANCE_SHEET if code_str.startswith("BS.") else StatementType.CASH_FLOW)
+                fact_val = val_dec if code_str == "IS.SHARES.OUTSTANDING" or abs(val_dec) >= Decimal("1000000000") else val_dec * Decimal("1000000000")
+                facts.append(CanonicalFact(
+                    canonical_fact_id=f"db-{ticker.lower()}-{code_str.lower().replace('.', '-')}-{y_int}",
+                    identity=FactIdentityKey(
+                        security_id=f"sec-{ticker.lower()}",
+                        statement_type=st_type,
+                        period_end=f"{y_int}-12-31",
+                        period_type=PeriodType.FY,
+                        fiscal_year=y_int,
+                        fiscal_quarter=None,
+                        consolidation_scope=ConsolidationScope.CONSOLIDATED,
+                        line_item_code=code_str,
+                        currency="VND",
+                    ),
+                    value=fact_val,
+                    quality_status=QualityStatus.SINGLE_SOURCE,
+                    decision_id=f"db-{ticker.lower()}-{y_int}",
+                    winning_candidate_id=f"finance-db-{ticker.lower()}-{code_str.lower()}-{y_int}",
+                    candidate_ids=[],
+                    observed_at=fetched_at,
+                    valid_from=fetched_at,
+                    reason=f"Validated Finance DB historical fact {y_int}",
+                ))
+
 
         for y in sorted(by_year.keys()):
             items = by_year[y]
@@ -1105,10 +1192,36 @@ def portfolio_symbol_valuation(
         if span > 0:
             cagr_5y = round(((v_end / v_start) ** (1.0 / span) - 1.0) * 100, 1)
 
-    # 1. Earnings Quality: Average 5Y Cash Conversion
+    # 1. Earnings Quality: Average 5Y Cash Conversion (non-bank) or ROE persistence (bank)
+    # Audit P1-7: CFO/net-income cash conversion is meaningless for banks.
     recent_conversions = [h["cash_conversion_ratio"] for h in financial_history[-5:] if h.get("cash_conversion_ratio") is not None]
     avg_cash_conversion_5y = round(sum(recent_conversions) / len(recent_conversions), 1) if recent_conversions else None
     latest_conversion = financial_history[-1].get("cash_conversion_ratio") if financial_history else None
+
+    recent_roes = [h["roe"] for h in financial_history[-5:] if h.get("roe") is not None]
+    avg_roe_5y = round(sum(recent_roes) / len(recent_roes), 1) if recent_roes else None
+
+    if is_bank:
+        earnings_quality = {
+            "latest_cash_conversion": None,
+            "avg_cash_conversion_5y": None,
+            "avg_roe_5y": avg_roe_5y,
+            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 15) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 12) else "WATCH"),
+            "diagnosis": (
+                f"Chất lượng thu nhập ngân hàng dựa trên tỷ suất Sinh lời trên Vốn bền vững "
+                f"({avg_roe_5y}% trung bình 5 năm) vượt chi phí vốn cổ phần. "
+                f"Không dùng chỉ số dòng tiền kinh doanh cho ngân hàng."
+                if avg_roe_5y and avg_roe_5y >= 15 else
+                "Tỷ suất Sinh lời trên Vốn của ngân hàng cần theo dõi so với chi phí vốn cổ phần."
+            ),
+        }
+    else:
+        earnings_quality = {
+            "latest_cash_conversion": latest_conversion,
+            "avg_cash_conversion_5y": avg_cash_conversion_5y,
+            "status": "EXCELLENT" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else ("GOOD" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 70) else "WATCH"),
+            "diagnosis": "Dòng tiền kinh doanh dồi dào, lợi nhuận chuyển hóa thành tiền mặt cao." if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else "Lợi nhuận có độ trễ hoặc thâm dụng vốn lưu động.",
+        }
 
     # 2. Financial Fortress: Debt Payback Period (Non-bank) or Capital Adequacy / Net Cash
     latest_hist = financial_history[-1] if financial_history else {}
@@ -1122,9 +1235,6 @@ def portfolio_symbol_valuation(
     fortress_diag = "Cơ cấu tài chính ngân hàng chuẩn mực (Huy động tiền gửi kinh doanh)." if is_bank else ("Pháo đài tiền mặt ròng dồi dào (Không có áp lực nợ)." if net_debt_calc == 0 else (f"Khả năng hoàn trả nợ ròng nhanh ({debt_payback_years} năm)." if debt_payback_years < 3.0 else f"Cần theo dõi đòn bẩy nợ ({debt_payback_years} năm hoàn nợ)."))
 
     # 3. Capital Allocation: 5Y Average ROE & Share Dilution
-    recent_roes = [h["roe"] for h in financial_history[-5:] if h.get("roe") is not None]
-    avg_roe_5y = round(sum(recent_roes) / len(recent_roes), 1) if recent_roes else None
-
     shares_series = [(h["fiscal_year"], h["shares_outstanding"]) for h in financial_history if h.get("shares_outstanding") is not None]
     share_dilution_5y = None
     true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được duy trì tốt."
@@ -1155,12 +1265,7 @@ def portfolio_symbol_valuation(
                 true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
 
     value_investor_pillars = {
-        "earnings_quality": {
-            "latest_cash_conversion": latest_conversion,
-            "avg_cash_conversion_5y": avg_cash_conversion_5y,
-            "status": "EXCELLENT" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else ("GOOD" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 70) else "WATCH"),
-            "diagnosis": "Dòng tiền kinh doanh dồi dào, lợi nhuận chuyển hóa thành tiền mặt cao." if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else "Lợi nhuận có độ trễ hoặc thâm dụng vốn lưu động.",
-        },
+        "earnings_quality": earnings_quality,
         "financial_fortress": {
             "net_debt_vnd": net_debt_calc,
             "debt_payback_years": debt_payback_years,
@@ -1175,29 +1280,37 @@ def portfolio_symbol_valuation(
         },
     }
 
-    report = ValuationEngine.evaluate(
-        symbol=ticker,
-        facts=facts,
-        current_market_price=current_price,
-        shares_outstanding=shares,
-        diluted_shares_estimate=shares,
-        fiscal_year=fiscal_year,
-        fiscal_quarter=fiscal_quarter,
-        entity_type=entity_type,
-        fundamentals={
-            "sector": sector,
-            "eps": eps,
-            "bvps": bvps,
-            "pe": pe,
-            "pb": pb,
-            "roe": percent(roe),
-            "dividend_yield": percent(dividend_yield),
-            "source": snapshot.get("provider"),
-            "as_of": fetched_at,
-        },
-        financial_history=financial_history,
-        value_investor_pillars=value_investor_pillars,
-    )
+    try:
+        report = ValuationEngine.evaluate(
+            symbol=ticker,
+            facts=facts,
+            current_market_price=current_price,
+            shares_outstanding=shares,
+            diluted_shares_estimate=shares,
+            fiscal_year=fiscal_year,
+            fiscal_quarter=fiscal_quarter,
+            entity_type=entity_type,
+            fundamentals={
+                "sector": sector,
+                "eps": eps,
+                "bvps": bvps,
+                "pe": pe,
+                "pb": pb,
+                "roe": percent(roe),
+                "dividend_yield": percent(dividend_yield),
+                "source": snapshot.get("provider"),
+                "as_of": fetched_at,
+            },
+            financial_history=financial_history,
+            value_investor_pillars=value_investor_pillars,
+        )
+    except ValueError as err:
+        return JSONResponse(status_code=422, content={
+            "ok": False,
+            "code": "VALUATION_EVALUATION_ERROR",
+            "error": str(err),
+            "symbol": ticker,
+        })
     response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
         "symbol": ticker,
@@ -1351,6 +1464,17 @@ def portfolio_sync(
         return {**sync_result, "dashboard": dashboard}
     except Exception as exc:
         return _service_failure(svc, request.method, request.url.path, exc)
+
+
+@app.get("/api/portfolio/securities/lookup")
+def portfolio_securities_lookup(
+    q: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    qport_session: str | None = Cookie(default=None),
+):
+    require_portfolio_user(qport_session)
+    from portfolio.finance_catalog import search_securities_lookup
+    return {"ok": True, "results": search_securities_lookup(q, limit)}
 
 
 @app.post("/api/portfolio/reference-weights")

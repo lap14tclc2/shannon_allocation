@@ -7,6 +7,10 @@ import PortfolioPage from './pages/PortfolioPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
 import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
+import PortfoliosPage from './pages/PortfoliosPage.jsx';
+import ValuationPage from './pages/ValuationPage.jsx';
+import ScreenerPage from './pages/ScreenerPage.jsx';
+import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
@@ -28,7 +32,10 @@ import './holding-info-row.css';
 import './accessibility-polish.css';
 import './appearance-controls.css';
 import './risk-readable.css';
+import './valuation-page.css';
+import './screener-page.css';
 import './guide-friendly.css';
+import './dividend-history.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 import './design-system-v1.css';
@@ -48,11 +55,15 @@ const PAGES = {
   auth: AuthPage,
   admin: AdminPage,
   portfolio: PortfolioPage,
+  portfolios: PortfoliosPage,
   transactions: TransactionsPage,
   performance: PerformancePage,
   risk: RiskPage,
+  valuation: ValuationPage,
+  screener: ScreenerPage,
+  dividends: DividendHistoryPage,
   snapshots: SnapshotsPage,
-  operations: OperationsPage,
+  operations: PortfolioPage,
   logs: LogsPage,
   settings: SettingsPage,
   guide: GuidePage,

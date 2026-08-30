@@ -1,0 +1,583 @@
+Tôi đã audit bản mới nhất, export lúc **07:41 UTC ngày 29/08/2026**, vẫn đủ **68 mã**. 
+
+Bản này tiến bộ rõ rệt. Tôi nâng **full-market readiness lên khoảng 8.6/10**, architecture khoảng **9.3–9.5/10**. Điểm quan trọng nhất là P0 về cash-flow basis đã được sửa đúng; engine cũng đã chủ động block nhiều ngành khi chưa có model đặc thù thay vì tạo valuation giả.
+
+## 1. P0 cash-flow basis: ✅ PASS
+
+Đây là sửa quan trọng nhất.
+
+DGC giờ ghi rõ:
+
+```text
+cashflow_basis          = NET_INCOME_OWNER_EARNINGS
+discount_rate_basis     = COST_OF_EQUITY
+result_type             = EQUITY_VALUE
+debt_adjustment_policy  = NO_NET_DEBT_ADJUSTMENT
+```
+
+và `equity_value` không còn bị trừ net debt lần thứ hai. 
+
+Tôi parse toàn bộ scenario trong 68 reports và thấy mapping nhất quán:
+
+```text
+NET_INCOME_OWNER_EARNINGS
+→ COST_OF_EQUITY
+→ EQUITY_VALUE
+→ NO_NET_DEBT_ADJUSTMENT
+
+FCFF
+→ WACC
+→ ENTERPRISE_VALUE
+→ SUBTRACT_NET_DEBT
+
+RESIDUAL_INCOME
+→ COST_OF_EQUITY
+→ EQUITY_VALUE
+→ NO_NET_DEBT_ADJUSTMENT
+```
+
+Phía FCFF cũng đúng. ACV hiện dùng:
+
+```text
+FCFF
+WACC
+ENTERPRISE_VALUE
+SUBTRACT_NET_DEBT
+```
+
+
+
+**Về arithmetic, lỗi double-count debt trước đây coi như đã đóng.**
+
+Một cleanup nhỏ còn lại: với OE-equity DCF, field vẫn tên `enterprise_value` dù `result_type=EQUITY_VALUE` và nó bằng chính equity value. Nên đổi field thành `present_value` hoặc `equity_cashflow_value` để consumer khác không hiểu nhầm.
+
+---
+
+## 2. Strict normalization gate: ✅ cải thiện lớn
+
+DGC bây giờ không còn `MODEL_VERIFIED`.
+
+Engine tự nhận:
+
+```text
+SPECIALTY_CHEMICAL
+HIGH_CYCLICALITY
+COMMODITY_EXPOSED
+
+normalization_years = 1
+LATEST_FY
+
+→ MODEL_INCOMPLETE
+```
+
+và confidence xuống LOW. 
+
+Đây chính xác là behavior cần có.
+
+HPG, HSG, DCM, BSR, PLX, VHC, FMC... cũng đang bị gate tương tự trong overview. 
+
+### HT1 cũng đã sửa đúng
+
+Trước đây 3 năm vẫn được coi VERIFIED. Bây giờ:
+
+```text
+normalization_years = 3
+MID_CYCLE_MEDIAN
+
+required >= 7Y
+→ MODEL_PARTIAL
+```
+
+
+
+Đây là một improvement rất tốt.
+
+---
+
+# 3. Nhưng true 7–10Y normalization vẫn chưa được implement
+
+Guardrail đã đúng, nhưng engine vẫn chưa làm được bước tiếp theo.
+
+DGC có 10-year ledger nhưng valuation bridge vẫn:
+
+```text
+normalization_years = 1
+LATEST_FY
+```
+
+
+
+HT1 mới 3 năm. 
+
+Tức là:
+
+```text
+Detection/Gating: ✅
+Actual full-cycle engine: ❌
+```
+
+Đây giờ không còn là correctness bug nghiêm trọng vì hệ thống đã block valuation, nhưng vẫn là **model-coverage blocker**.
+
+Mục tiêu tiếp theo:
+
+```text
+7–10Y revenue
+7–10Y operating margin
+7–10Y NOPAT/OE
+utilization/cycle proxy
+commodity price regime
+maintenance capex
+working capital
+
+→ normalized mid-cycle economics
+```
+
+---
+
+# 4. Mining: ✅ classifier/gate, ❌ model chưa implement
+
+KSV giờ được nhận đúng:
+
+```text
+MINING_RESOURCE
+
+recommended_model = RESERVE_NAV
+actual_model      = NORMALIZED_OWNER_EARNINGS_DCF
+
+→ MODEL_INCOMPLETE
+```
+
+Engine còn tự giải thích rằng model thực thi không khớp Reserve NAV. 
+
+Đây là behavior đúng.
+
+MSR cũng bị block trong overview. 
+
+Bước tiếp theo phải implement thật:
+
+```text
+Reserve / Resource NAV
+
+reserve tonnes
+grade
+recovery rate
+production schedule
+mine life
+commodity price scenarios
+cash cost / unit
+development capex
+sustaining capex
+royalty
+tax
+ownership
+```
+
+Cho đến lúc đó:
+
+```text
+KSV/MSR MODEL_INCOMPLETE
+```
+
+là verdict đúng hơn bất kỳ target price nào.
+
+---
+
+# 5. Shipping: ✅ VOS classifier đã được sửa
+
+Đây là bug vòng trước và giờ đã fix.
+
+VOS hiện:
+
+```text
+SHIPPING
++ cyclical warning
+
+recommended = FLEET_NAV
+actual      = NORMALIZED_OWNER_EARNINGS_DCF
+
+→ MODEL_INCOMPLETE
+```
+
+
+
+HAH cũng `MODEL_INCOMPLETE`. 
+
+Good.
+
+Bây giờ cần implement:
+
+```text
+Fleet NAV
+
+vessels[]
+  type
+  DWT/TEU
+  build_year
+  estimated_market_value
+  debt attached
+
++ charter economics
++ fleet age
++ drydock capex
++ normalized freight rate
+```
+
+Sau đó secondary:
+
+```text
+MID_CYCLE_EARNINGS
+```
+
+---
+
+# 6. Airline: ✅ strict gate đã hoạt động
+
+VJC hiện:
+
+```text
+AIRLINE
+
+recommended = AIRLINE_EBITDAR
+actual      = NORMALIZED_OWNER_EARNINGS_DCF
+
+→ MODEL_INCOMPLETE
+```
+
+
+
+HVN cũng đã chuyển thành `MODEL_INCOMPLETE` trong overview. 
+
+Đây là sửa đúng.
+
+Primary implementation tiếp theo:
+
+$$
+AdjustedEV =
+Equity + NetDebt + CapitalizedLeases
+$$
+
+rồi normalized:
+
+```text
+EBITDAR
+RASK
+CASK ex-fuel
+fuel cost
+load factor
+fleet utilization
+lease expense
+maintenance reserve
+FX exposure
+```
+
+Không nên unblock VJC/HVN chỉ vì có đủ 10 năm BCTC; phải có airline economics.
+
+---
+
+# 7. Model-status distribution tốt hơn rất nhiều
+
+Tôi parse 68 valuation reports hiện tại:
+
+```text
+MODEL_VERIFIED     45
+MODEL_INCOMPLETE   21
+MODEL_PARTIAL       1
+MODEL_UNVALUABLE    1
+```
+
+Đây thực chất **tốt hơn** việc có 60+ VERIFIED.
+
+Nó cho thấy hệ thống đang áp nguyên tắc:
+
+> Không biết thì nói không biết.
+
+Các mã model-specific còn thiếu như KSV/MSR, HAH/VOS, VJC/HVN, VHM/NLG, IDC/KBC, PVD/PVS, DGC/HPG... đều đã xuất hiện dưới dạng `MODEL_INCOMPLETE` thay vì target price đáng tin giả tạo. Overview thể hiện khá rõ sự thay đổi này. 
+
+---
+
+# 8. Một vấn đề semantic vẫn còn: `MODEL_INCOMPLETE` nhưng vẫn giữ Base IV
+
+Ví dụ DGC:
+
+```text
+model_status = MODEL_INCOMPLETE
+```
+
+nhưng object vẫn chứa:
+
+```text
+base_iv = 69,454
+margin_of_safety = 38.1%
+```
+
+
+
+Tôi đồng ý giữ **fallback calculation để audit/debug**, nhưng không nên để consumer nhầm đó là valuation hợp lệ.
+
+Nên schema:
+
+```text
+primary_valuation:
+    status = MODEL_INCOMPLETE
+    base_iv = null
+
+fallback_valuation:
+    model = NORMALIZED_OWNER_EARNINGS_DCF
+    base_iv = 69,454
+    usage = DIAGNOSTIC_ONLY
+```
+
+Tương tự:
+
+```text
+KSV
+VOS
+VJC
+VHM
+IDC
+...
+```
+
+### Invariant
+
+```text
+if model_status != MODEL_VERIFIED:
+    public_base_iv = null
+    public_mos = null
+```
+
+Fallback IV chỉ xuất trong audit/debug.
+
+---
+
+# 9. Narrative còn gọi LATEST_FY là “bình quân chu kỳ”
+
+DGC có:
+
+```text
+normalization_years = 1
+LATEST_FY
+```
+
+và formula_description nói đúng rằng chưa đủ lịch sử.
+
+Nhưng `earnings_quality_diagnosis` vẫn viết:
+
+> “Lợi nhuận Thực ... bình quân chu kỳ”
+
+
+
+Đây giờ nên sửa dứt điểm bằng enum-driven text:
+
+```text
+LATEST_FY
+→ Lợi nhuận Thực năm hiện tại
+
+MULTI_YEAR_NORMALIZED
+→ Lợi nhuận Thực chuẩn hóa
+
+FULL_CYCLE_NORMALIZED
+→ Lợi nhuận Thực giữa chu kỳ
+```
+
+Không generate wording bằng model/archetype name.
+
+---
+
+# 10. Maintenance CapEx proxy vẫn còn confidence quá cao
+
+DGC:
+
+```text
+MIN_DEPRECIATION_CAPEX_PROXY
+maintenance_capex_confidence = MEDIUM
+```
+
+
+
+Tôi vẫn giữ recommendation:
+
+```text
+D&A / min(D&A, CapEx) proxy → LOW
+```
+
+MEDIUM chỉ khi:
+
+```text
+multi-year maintenance pattern
+asset replacement schedule
+capacity maintenance data
+management disclosure
+```
+
+Đây không còn P0 nhưng ảnh hưởng confidence calibration.
+
+---
+
+# 11. Power / water / infrastructure vẫn cần tách archetype
+
+Phần này chưa giải quyết hoàn toàn.
+
+Hiện nhiều doanh nghiệp vẫn nằm chung dưới:
+
+```text
+CONCESSION_INFRASTRUCTURE
+```
+
+trong khi economics khác nhau rất lớn:
+
+```text
+PPC / NT2 → THERMAL_POWER
+VSH / CHP → HYDROPOWER
+BWE / TDM → WATER_UTILITY
+HHV / CII → BOT_CONCESSION
+GEG       → RENEWABLE_POWER
+```
+
+PC1 đã bắt đầu được tách, nhưng coverage chưa đồng nhất.
+
+Đây là **P1**, không còn blocker kiến trúc.
+
+---
+
+# 12. ACV: model family đúng nhưng VERIFIED vẫn hơi mạnh
+
+ACV giờ:
+
+```text
+AIRPORT_INFRASTRUCTURE
+REGULATED
+CONCESSION
+STATE_INFLUENCED
+
+→ CONCESSION_DCF
+```
+
+và FCFF/WACC mechanics đúng. 
+
+Nhưng model đang dùng:
+
+```text
+15-year finite life
+TV = 0
+```
+
+Export chưa thể hiện ngay trong valuation block bằng chứng model-specific cho việc **15 năm** là remaining economic/concession life.
+
+Tôi sẽ yêu cầu:
+
+```text
+concession_end_date
+remaining_years
+source_fact_id
+traffic assumptions
+regulated fee assumptions
+airport capex schedule
+```
+
+Nếu 15 năm chỉ là default config:
+
+```text
+MODEL_ESTIMATED
+```
+
+hợp lý hơn VERIFIED.
+
+---
+
+# 13. Overview vẫn là lỗi UX rõ nhất
+
+Dù engine bên trong đã trưởng thành hơn rất nhiều, bảng đầu vẫn:
+
+```text
+Intrinsic Value Base = -
+Margin of Safety = -
+
+Bear DCF
+Bull DCF
+```
+
+
+
+Đặc biệt `Bear DCF/Bull DCF` giờ càng sai vì có:
+
+```text
+RIM
+SOTP
+RNAV
+Reserve NAV
+Fleet NAV
+EBITDAR
+Concession DCF
+```
+
+Nên đổi thành:
+
+| Ticker | Archetype | Model | Status | Price | Bear IV | Base IV | Bull IV | MOS | Required MOS | Confidence |
+| ------ | --------- | ----- | ------ | ----: | ------: | ------: | ------: | --: | -----------: | ---------- |
+
+Và với `MODEL_INCOMPLETE`:
+
+```text
+Base IV = N/A
+MOS     = N/A
+```
+
+không expose fallback number như valuation chính.
+
+---
+
+## Đánh giá sau vòng này
+
+| Hạng mục                             | Status     |
+| ------------------------------------ | ---------- |
+| Cash-flow basis consistency          | **✅ PASS** |
+| Debt double-count prevention         | **✅ PASS** |
+| Negative-IV verdict                  | **✅ PASS** |
+| Generic classifier fallback          | **✅ PASS** |
+| Strict model mismatch gate           | **✅ PASS** |
+| Cyclical insufficient-history gate   | **✅ PASS** |
+| HT1 3Y partial detection             | **✅ PASS** |
+| Mining classification                | **✅ PASS** |
+| Shipping classification              | **✅ PASS** |
+| Airline classification               | **✅ PASS** |
+| Actual 7–10Y normalization           | **❌**      |
+| Reserve NAV                          | **❌**      |
+| Fleet NAV                            | **❌**      |
+| Airline EBITDAR model                | **❌**      |
+| Power/water archetype split          | **⚠**      |
+| Public/fallback valuation separation | **⚠**      |
+| Maintenance CapEx confidence         | **⚠**      |
+| Overview                             | **❌**      |
+
+### AC tôi sẽ chốt cho vòng tiếp theo
+
+```text
+P0
+□ Implement actual 7–10Y normalization engine
+□ Implement Reserve/Resource NAV
+□ Implement Fleet NAV
+□ Implement Airline EBITDAR model
+
+□ model_status != VERIFIED
+   → public IV = null
+   → public MOS = null
+   → fallback valuation = diagnostic only
+
+
+P1
+□ Split thermal / hydro / renewable / water / BOT
+□ ACV concession duration must be sourced
+□ proxy maintenance capex → LOW confidence
+□ rename enterprise_value for equity-cashflow DCF
+□ RIM uses equity-specific field names only
+
+
+P2
+□ Fix normalization narrative
+□ Populate overview
+□ Bear/Bull DCF → Bear/Base/Bull IV
+□ Show archetype + model + status
+```
+
+Bản này đã giải quyết **P0 nguy hiểm nhất về valuation arithmetic**. Từ đây phần khó còn lại chủ yếu là **mở rộng model coverage thực sự**, chứ không còn là sửa nền tảng định giá bị sai. Nếu 7–10Y normalization + Mining NAV + Fleet NAV + Airline EBITDAR được implement tốt, tôi sẽ xem core engine đủ cơ sở để vượt **9/10**.

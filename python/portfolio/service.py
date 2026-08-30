@@ -132,7 +132,7 @@ class PortfolioService:
         return rows, equity
 
     def _histories(self, symbols: list[str], end: str | None = None, limit: int = 10000) -> dict[str, list[dict]]:
-        histories = {s: self.store.price_history(s, limit=limit, end=end) for s in symbols}
+        histories = self.store.price_histories(symbols, limit=limit, end=end) if symbols else {}
         if not symbols:
             return histories
         try:

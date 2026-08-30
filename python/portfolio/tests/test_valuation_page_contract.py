@@ -12,8 +12,11 @@ def test_risk_page_does_not_render_valuation_section():
 
 def test_valuation_page_explains_models_and_database_source():
     page = (ROOT / "frontend" / "src" / "pages" / "ValuationPage.jsx").read_text(encoding="utf-8")
-    assert "Owner Earnings" in page
-    assert "Ba kịch bản DCF" in page
-    assert "Reverse DCF" in page
-    assert "Finance Data" in page
+    # Pure-Vietnamese narrative (task 043): no raw English model jargon exposed.
+    assert "Owner Earnings" not in page
+    assert "Reverse DCF" not in page
+    # Vietnamese explanations of the valuation models are present.
+    assert "Lợi nhuận Thực" in page
+    assert "Kịch bản" in page
+    assert "Chiết khấu" in page
     assert "fallback" not in page.lower()

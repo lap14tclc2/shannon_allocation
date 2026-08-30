@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
 import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
 import { getLatestDividend, getPortfolioOperations, syncPortfolio } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
@@ -104,6 +105,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
   const [brokerLotsError, setBrokerLotsError] = useState('');
   const [dividendLoading, setDividendLoading] = useState(false);
   const [dividendRows, setDividendRows] = useState([]);
+  const [detailSymbol, setDetailSymbol] = useState(null);
 
   const portfolio = dashboard.portfolio || {};
   const positions = portfolio.positions || [];
@@ -341,7 +343,15 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
                             <span className="muted">{p.price_date || '-'} · {p.price_source || '-'}</span>
                           </span>
                         </button>
-                        <button className="holding-info-button" type="button" aria-label={`${symbol}: ${infoTitle}`} aria-disabled="true" title={infoTitle} onClick={event => event.preventDefault()}>i</button>
+                        <button
+                          className="holding-info-button"
+                          type="button"
+                          aria-label={`${symbol}: Soi giá chi tiết`}
+                          title={`Soi giá chi tiết & định giá toàn diện ${symbol}`}
+                          onClick={() => setDetailSymbol(symbol)}
+                        >
+                          i
+                        </button>
                       </div>
                     </td>
                     <td className="num">{shares(p.shares)}</td>
@@ -503,6 +513,14 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
           </div>
         )}
       </section>
+
+      {detailSymbol && (
+        <ValuationDetailOverlay
+          symbol={detailSymbol}
+          locale={locale}
+          onClose={() => setDetailSymbol(null)}
+        />
+      )}
     </div>
   );
 }
