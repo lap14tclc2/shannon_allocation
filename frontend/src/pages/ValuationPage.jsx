@@ -52,7 +52,6 @@ function MethodologyGuide() {
 }
 
 function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
-  const [expanded, setExpanded] = useState(false);
   if (error) return <article id={`valuation-${symbol}`} className="valuation-card valuation-card-error">
     <div className="valuation-card-header">
       <div><h2>{symbol}</h2><span className="valuation-badge-error">Lỗi dữ liệu</span></div>
@@ -66,15 +65,18 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
   if (!report) return null;
   const multiples = report.valuation_multiples || {};
   const base = report.scenarios?.BASE || {};
+  const bear = report.scenarios?.BEAR || {};
+  const bull = report.scenarios?.BULL || {};
+  const bridge = report.owner_earnings_bridge || {};
   const assessment = report.assessment || {};
   const quality = report.quality_scorecard || {};
+  const arch = report.archetype_profile || {};
+  const mosAnalysis = report.margin_of_safety_analysis || {};
+  const scenarios = ['BEAR', 'BASE', 'BULL'];
   const freshness = report.data_freshness || {};
   const mos = base.margin_of_safety_pct;
-  const isVerifiedModel = report.model_status === 'MODEL_VERIFIED';
-  const publicBaseIV = isVerifiedModel ? base.intrinsic_value_per_share : null;
-  const publicMos = isVerifiedModel ? mos : null;
 
-  return <article id={`valuation-${symbol}`} className={`valuation-card ${expanded ? 'valuation-card-expanded' : 'valuation-card-collapsed'}`}>
+  return <article id={`valuation-${symbol}`} className="valuation-card">
     <div className="valuation-card-header">
       <div className="valuation-title-group">
         <div className="valuation-symbol-row">
@@ -98,33 +100,175 @@ function ValuationCard({ symbol, report, error, locale, onOpenDetail }) {
       </div>
     </div>
 
-    {/* Compact verdict summary */}
-    <button
-      type="button"
-      className={`valuation-summary-toggle ${expanded ? 'valuation-summary-open' : ''}`}
-      onClick={() => setExpanded(prev => !prev)}
-      aria-expanded={expanded}
-      aria-controls={`valuation-body-${symbol}`}
-    >
-      <span className="valuation-summary-price">
-        <i>Giá</i><b>{money(report.current_market_price, locale)}</b>
-      </span>
-      <span className="valuation-summary-price valuation-summary-iv">
-        <i>Giá trị Thực cơ sở</i>
-        <b>{publicBaseIV != null && Number.isFinite(Number(publicBaseIV)) ? money(publicBaseIV, locale) : 'N/A'}</b>
-      </span>
-      <span className="valuation-summary-mos">
-        <i>Biên An Toàn</i>
-        <b className={publicMos > 0 ? 'pos' : publicMos < 0 ? 'neg' : ''}>
-          {publicMos != null && Number.isFinite(Number(publicMos)) ? `${publicMos > 0 ? '+' : ''}${Number(publicMos).toFixed(1)}%` : 'N/A'}
-        </b>
-      </span>
-      <span className="valuation-summary-chevron">{expanded ? '▾' : '▸'}</span>
-    </button>
-
-    <div id={`valuation-body-${symbol}`} className={`valuation-card-body ${expanded ? 'valuation-card-body-open' : ''}`}>
-      {expanded && <ValuationReportBody symbol={symbol} report={report} locale={locale} />}
+    {/* Primary Price & Valuation Row */}
+    <div className="valuation-price-hero">
+      <div className="price-box">
+        <span className="price-label">Thị giá hiện tại (VNDirect)</span>
+        <span className="price-value">{money(report.current_market_price, locale)}</span>
+      </div>
+      <div className="price-box price-box-intrinsic">
+        <span className="price-label">Giá trị Thực cơ sở</span>
+        <span className="price-value highlight">{money(base.intrinsic_value_per_share, locale)}</span>
+      </div>
+      <div className="price-box price-box-mos">
+        <span className="price-label">Biên An Toàn Thực tế</span>
+        <span className={`price-value ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
+          {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
+        </span>
+        {mosAnalysis.required_mos_pct != null && (
+          <small style={{ fontSize: '0.72rem', color: 'var(--retro-muted, #696257)', marginTop: '2px', display: 'block' }}>
+            Yêu cầu tối thiểu: ≥ {mosAnalysis.required_mos_pct}%
+          </small>
+        )}
+      </div>
     </div>
+
+    {/* Multiples ribbon */}
+    <div className="valuation-multiples-ribbon">
+      <div className="metric-chip" title="P/E: Giá trên Lợi nhuận mỗi cổ phần">
+        <span className="chip-label">P/E (Giá/LNST)</span>
+        <span className="chip-value">{displayNumber(multiples.pe, ' lần')}</span>
+      </div>
+      <div className="metric-chip" title="P/B: Giá trên Giá trị sổ sách mỗi cổ phần">
+        <span className="chip-label">P/B (Giá/Sổ sách)</span>
+        <span className="chip-value">{displayNumber(multiples.pb, ' lần', 2)}</span>
+      </div>
+      <div className="metric-chip" title="EPS: Lợi nhuận sau thuế tạo ra trên mỗi cổ phần">
+        <span className="chip-label">Lợi nhuận/CP (EPS)</span>
+        <span className="chip-value">{multiples.eps == null ? '—' : `${formatMoney(multiples.eps, false, locale)} ₫`}</span>
+      </div>
+      <div className="metric-chip" title="ROE: Tỷ suất sinh lời trên Vốn chủ sở hữu">
+        <span className="chip-label">Sinh lời Vốn (ROE)</span>
+        <span className="chip-value">{displayNumber(multiples.roe, '%')}</span>
+      </div>
+    </div>
+
+    {/* Expert Financial Analysis Narrative */}
+    <div className="valuation-analyst-opinion">
+      <div className="opinion-header">
+        <span className="opinion-badge">Nhận định Chuyên sâu theo Chuẩn Buffett–Munger</span>
+      </div>
+      <p className="opinion-verdict">{assessment.valuation_verdict}</p>
+      {assessment.financial_resilience_diagnosis && (
+        <div className="opinion-subtext">
+          <small><strong>Cấu trúc vốn & Sức khỏe tài chính:</strong> {assessment.financial_resilience_diagnosis}</small>
+        </div>
+      )}
+    </div>
+
+    {/* Value Investor Health Pillars (Miller's Law - 3 Focused Cards) */}
+    {report.value_investor_pillars && (
+      <div className="valuation-pillars-grid">
+        <div className={`pillar-card pillar-${report.value_investor_pillars.earnings_quality?.status?.toLowerCase() || 'watch'}`}>
+          <div className="pillar-header">
+            <span className="pillar-title">1. Chất lượng Tiền mặt</span>
+            <span className="pillar-badge">
+              {report.value_investor_pillars.earnings_quality?.status === 'EXCEPTIONAL' ? 'Xuất sắc' : report.value_investor_pillars.earnings_quality?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
+            </span>
+          </div>
+          <div className="pillar-metric">
+            <span className="pillar-val">{report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y}%` : '—'}</span>
+            <span className="pillar-sub">Tỷ lệ đổi LNST ra Tiền mặt (5 năm)</span>
+          </div>
+          <p className="pillar-desc">{report.value_investor_pillars.earnings_quality?.diagnosis}</p>
+        </div>
+
+        <div className={`pillar-card pillar-${report.value_investor_pillars.financial_fortress?.status?.toLowerCase() || 'strong'}`}>
+          <div className="pillar-header">
+            <span className="pillar-title">2. Pháo đài Tài chính</span>
+            <span className="pillar-badge">
+              {report.value_investor_pillars.financial_fortress?.status === 'STRONG' ? 'Rất Vững' : report.value_investor_pillars.financial_fortress?.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
+            </span>
+          </div>
+          <div className="pillar-metric">
+            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm (Tiền mặt ròng)' : `${report.value_investor_pillars.financial_fortress?.debt_payback_years} năm`}</span>
+            <span className="pillar-sub">Thời gian trả hết Nợ bằng Dòng tiền</span>
+          </div>
+          <p className="pillar-desc">{report.value_investor_pillars.financial_fortress?.diagnosis}</p>
+        </div>
+
+        <div className={`pillar-card pillar-${report.value_investor_pillars.capital_allocation?.status?.toLowerCase() || 'good'}`}>
+          <div className="pillar-header">
+            <span className="pillar-title">3. Hiệu quả Phân bổ Vốn</span>
+            <span className="pillar-badge">
+              {report.value_investor_pillars.capital_allocation?.status === 'EXCELLENT' ? 'Xuất sắc' : report.value_investor_pillars.capital_allocation?.status === 'GOOD' ? 'Tốt' : 'Cần chú ý'}
+            </span>
+          </div>
+          <div className="pillar-metric">
+            <span className="pillar-val">{report.value_investor_pillars.capital_allocation?.avg_roe_5y != null ? `${report.value_investor_pillars.capital_allocation.avg_roe_5y}%` : '—'}</span>
+            <span className="pillar-sub">Sinh lời ROE 5 năm · Pha loãng: {report.value_investor_pillars.capital_allocation?.share_dilution_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.share_dilution_5y_pct}%` : '0%'}</span>
+          </div>
+          <p className="pillar-desc">{report.value_investor_pillars.capital_allocation?.diagnosis}</p>
+        </div>
+      </div>
+    )}
+
+    {/* Collapsed Technical Details (for advanced inspection) */}
+    <details className="valuation-technical-details">
+      <summary className="technical-summary">
+        <span>Chi tiết Tính toán & Bảng Ma trận Độ nhạy Định giá</span>
+      </summary>
+      <div className="technical-content">
+        {report.sotp_sensitivity_matrix?.grid_values_per_share?.length > 0 && (
+          <div className="tech-section">
+            <h4>Bảng Độ nhạy Định giá theo Tỷ lệ Chiết khấu (r) và Tăng trưởng Dài hạn (g)</h4>
+            <div className="sensitivity-matrix-container">
+              <table className="sensitivity-matrix-table">
+                <thead>
+                  <tr>
+                    <th>Tăng trưởng (g) \ Chiết khấu (r)</th>
+                    {report.sotp_sensitivity_matrix.discount_rates.map(r => (
+                      <th key={r}>{Number(r) * 100}%</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.sotp_sensitivity_matrix.terminal_growth_rates.map((g, rowIdx) => (
+                    <tr key={g}>
+                      <td><strong>{Number(g) * 100}%</strong></td>
+                      {report.sotp_sensitivity_matrix.grid_values_per_share[rowIdx]?.map((cellVal, colIdx) => (
+                        <td key={colIdx}>
+                          {cellVal > 0 ? `${Math.round(cellVal).toLocaleString('vi-VN')} ₫` : '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {bridge && bridge.net_profit != null && (
+          <div className="tech-section">
+            <h4>Bóc tách Lợi nhuận Thực của Chủ Doanh nghiệp (Owner Earnings)</h4>
+            <dl className="valuation-calculation-grid">
+              <div><dt>Lợi nhuận sau thuế</dt><dd>{money(bridge.net_profit, locale)}</dd></div>
+              <div><dt>Khấu hao tài sản</dt><dd>{money(bridge.depreciation_amortization, locale)}</dd></div>
+              <div><dt>Đầu tư duy trì nhà xưởng</dt><dd>{money(bridge.maintenance_capex, locale)}</dd></div>
+              <div><dt>Lợi nhuận Thực tạo ra</dt><dd>{money(bridge.owner_earnings, locale)}</dd></div>
+            </dl>
+          </div>
+        )}
+
+        <div className="tech-section">
+          <h4>Ba Kịch bản Định giá Chi tiết</h4>
+          <div className="valuation-scenarios">
+            {scenarios.map(name => {
+              const scenario = report.scenarios?.[name] || {};
+              const labelVn = name === 'BEAR' ? 'Thận trọng (Bear)' : name === 'BASE' ? 'Cơ sở (Base)' : 'Lạc quan (Bull)';
+              return <div key={name} className={`scenario-card scenario-${name.toLowerCase()}`}>
+                <div className="scenario-head">
+                  <b>{labelVn}</b>
+                  <span>{money(scenario.intrinsic_value_per_share, locale)}</span>
+                </div>
+                <small>Tăng trưởng dự phóng: {displayNumber(Number(scenario.growth_stage1_rate || 0) * 100, '%')} · Tỷ lệ chiết khấu: {displayNumber(Number(scenario.discount_rate || 0) * 100, '%')}</small>
+              </div>;
+            })}
+          </div>
+        </div>
+      </div>
+    </details>
 
     <footer className="valuation-card-footer">
       <span>Nguồn dữ liệu: Báo cáo Tài chính Kiểm toán ({freshness.provider || multiples.source || 'Sàn chứng khoán'}) · Kỳ BCTC {report.fiscal_period_latest || 'Năm 2025'}</span>
