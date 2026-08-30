@@ -17,6 +17,7 @@ const LINKS = [
   ['/transactions', 'transactions', 'Giao dịch'],
   ['/performance', 'performance', 'Hiệu quả'],
   ['/valuation', 'valuation', 'Định giá'],
+  ['/screener', 'screener', 'Bộ lọc'],
   ['/risk', 'risk', 'Phân tích'],
 ];
 
@@ -55,6 +56,7 @@ function NavIcon({ name, size = 18 }) {
   if (name === 'transactions') return <svg {...common}><path d="M7 4v15" /><path d="m3.5 7.5 3.5-3.5 3.5 3.5" /><path d="M17 20V5" /><path d="m13.5 16.5 3.5 3.5 3.5-3.5" /></svg>;
   if (name === 'performance') return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
   if (name === 'valuation') return <svg {...common}><path d="M5 3h14v18H5z" /><path d="M8 8h8M8 12h5M8 16h8" /></svg>;
+  if (name === 'screener') return <svg {...common}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>;
   if (name === 'risk') return <svg {...common}><path d="M12 3 19 6v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6Z" /><path d="M9 12h6" /></svg>;
   if (name === 'portfolio-stack') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8M8 13h5" /></svg>;
   if (name === 'chevron') return <svg {...common}><path d="m8 10 4 4 4-4" /></svg>;
@@ -305,6 +307,7 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
         <div className="mobile-sheet-title"><span className="header-user-avatar">{userInitial}</span><div><strong>@{currentUser?.username || 'user'}</strong><small>Không gian QPort cá nhân</small></div></div>
         {!adminMode && <PortfolioList mobile />}
         {!adminMode && <div className="header-sheet-links">
+          <a href="/screener">Bộ lọc cổ phiếu <span>→</span></a>
           <a href="/dividends">Cổ tức <span>→</span></a>
           <a href="/guide">Hướng dẫn <span>→</span></a>
           <a href="/settings">Cài đặt <span>→</span></a>

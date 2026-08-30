@@ -73,8 +73,8 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
   const mosAnalysis = report.margin_of_safety_analysis || {};
   const mos = base.margin_of_safety_pct;
   const isVerifiedModel = report.model_status === 'MODEL_VERIFIED';
-  const publicBaseIV = isVerifiedModel ? base.intrinsic_value_per_share : null;
-  const publicMos = isVerifiedModel ? mos : null;
+  const publicBaseIV = base.intrinsic_value_per_share != null ? base.intrinsic_value_per_share : null;
+  const publicMos = mos != null ? mos : (publicBaseIV && report.current_market_price ? ((publicBaseIV - report.current_market_price) / publicBaseIV * 100) : null);
 
   const hasMultiples = multiples.pe != null || multiples.pb != null || multiples.eps != null || multiples.roe != null;
   const hasScenarios = bear.intrinsic_value_per_share != null && bull.intrinsic_value_per_share != null && base.intrinsic_value_per_share != null;
@@ -106,7 +106,7 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
             {publicBaseIV != null && Number.isFinite(Number(publicBaseIV)) ? money(publicBaseIV, locale) : 'N/A'}
           </span>
           <span className="v-hero-sub">
-            {isVerifiedModel ? 'Mô hình Buffett-Munger chuẩn hóa' : 'Đang tham chiếu (chờ xác thực)'}
+            {isVerifiedModel ? 'Mô hình Buffett-Munger chuẩn hóa' : 'Ước tính theo BCTC mới nhất'}
           </span>
         </div>
 
@@ -1043,28 +1043,63 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           .v-overlay-backdrop {
             padding: 0;
             align-items: flex-end;
+            background: rgba(0, 0, 0, 0.7);
           }
           .v-overlay-modal {
-            max-height: 94vh;
-            border-radius: 14px 14px 0 0;
+            width: 100%;
+            max-width: 100%;
+            max-height: 92vh;
+            border-radius: 16px 16px 0 0;
             border-bottom: none;
+            border-left: none;
+            border-right: none;
+            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+          }
+          .v-modal-grabber {
+            width: 38px;
+            height: 4px;
+            background: var(--retro-border, #9c927f);
+            border-radius: 2px;
+            margin: 8px auto 2px;
+            opacity: 0.6;
           }
           .v-overlay-header {
-            padding: 12px 16px;
+            padding: 10px 14px;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+          .v-header-title-row {
+            gap: 6px;
+            flex-wrap: wrap;
           }
           .v-header-ticker { font-size: 1.3rem; }
-          .v-overlay-body { padding: 14px; }
-          .v-hero-grid { grid-template-columns: 1fr; gap: 10px; }
-          .v-multiples-grid { grid-template-columns: repeat(2, 1fr); }
-          .v-narrative-meta-grid { grid-template-columns: 1fr; gap: 8px; }
+          .v-tag { font-size: 0.72rem; padding: 2px 6px; }
+          .v-header-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+          .v-close-btn {
+            min-width: 44px;
+            min-height: 44px;
+            font-size: 1.2rem;
+          }
+          .v-overlay-body { padding: 12px; }
+          .v-hero-grid { grid-template-columns: 1fr; gap: 8px; }
+          .v-hero-card { padding: 12px 14px; }
+          .v-hero-value { font-size: 1.35rem; }
+          .v-multiples-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+          .v-metric-card { padding: 8px 10px; }
+          .v-narrative-card { padding: 12px; }
+          .v-narrative-meta-grid { grid-template-columns: 1fr; gap: 6px; }
           .v-scenario-track { flex-direction: column; gap: 6px; }
           .v-scenario-arrow { display: none; }
-          .v-pillars-grid { grid-template-columns: 1fr; }
-          .v-bridge-grid { grid-template-columns: repeat(2, 1fr); }
+          .v-pillars-grid { grid-template-columns: 1fr; gap: 8px; }
+          .v-bridge-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
         }
       `}</style>
 
       <div className="v-overlay-modal" onClick={e => e.stopPropagation()}>
+        <div className="v-modal-grabber" aria-hidden="true" />
         {/* Sleek Top Header Bar */}
         <header className="v-overlay-header">
           <div className="v-header-left">
