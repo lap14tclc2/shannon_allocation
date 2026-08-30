@@ -353,14 +353,14 @@
 }
 
 /* ==========================================================================
-   Expert Analyst Opinion Box
+   Expert Analyst Opinion Box & Executive Dashboard
    ========================================================================== */
 .valuation-analyst-opinion {
-  background: color-mix(in srgb, var(--retro-gold, #7a551d) 9%, var(--panel, #fffaf0));
-  border: 1.5px solid color-mix(in srgb, var(--retro-gold, #7a551d) 40%, var(--border, #9c927f));
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 7%, var(--panel, #fffaf0));
+  border: 1.5px solid color-mix(in srgb, var(--retro-gold, #7a551d) 35%, var(--border, #9c927f));
   border-left: 5px solid var(--retro-gold, #7a551d);
-  border-radius: 6px;
-  padding: 18px 22px;
+  border-radius: 8px;
+  padding: 16px 20px;
   margin-bottom: 20px;
   box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.1));
 }
@@ -368,8 +368,16 @@
 .opinion-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.opinion-badge-wrap {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
 }
 
 .opinion-seal {
@@ -380,27 +388,109 @@
   font-size: 0.82rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--retro-gold, #7a551d);
 }
 
-.opinion-verdict {
-  margin: 0;
-  font-size: 0.96rem;
-  line-height: 1.65;
-  color: var(--text, var(--retro-ink, #201d18));
-  font-weight: 500;
+.opinion-status-pill {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--surface-soft, #f4ecd9);
+  border: 1px solid var(--border, #9c927f);
+  color: var(--text, #201d18);
+  white-space: nowrap;
+}
+
+.opinion-status-pill.pos {
+  background: color-mix(in srgb, var(--retro-green, #2f6b4d) 16%, var(--panel, #fffaf0));
+  color: var(--retro-green, #2f6b4d);
+  border-color: var(--retro-green, #2f6b4d);
+}
+
+.opinion-status-pill.neg {
+  background: color-mix(in srgb, var(--retro-red, #9f382d) 16%, var(--panel, #fffaf0));
+  color: var(--retro-red, #9f382d);
+  border-color: var(--retro-red, #9f382d);
+}
+
+.opinion-executive-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.opinion-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--panel, #fffaf0);
+  border: 1px solid color-mix(in srgb, var(--retro-gold, #7a551d) 25%, var(--border, #9c927f));
+  border-radius: 6px;
+}
+
+.opinion-stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary, #696257);
+  letter-spacing: 0.03em;
+}
+
+.opinion-stat-val {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text, #201d18);
+  font-family: var(--font-mono-num, monospace);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.opinion-stat-val.highlight {
+  color: var(--accent, #a63f30);
+}
+
+.opinion-stat-val.pos {
+  color: var(--retro-green, #2f6b4d);
+}
+
+.opinion-stat-val.neg {
+  color: var(--retro-red, #9f382d);
+}
+
+.opinion-stat-sub {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #696257);
+  line-height: 1.25;
 }
 
 .opinion-subtext {
-  margin-top: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 10px 14px;
   background: var(--panel, #fffaf0);
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--retro-gold, #7a551d) 25%, var(--border, #9c927f));
-  color: var(--text-secondary, var(--retro-muted, #696257));
-  font-size: 0.86rem;
-  line-height: 1.55;
+}
+
+.opinion-subtext-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
+.opinion-subtext-body {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #696257);
+}
+
+.opinion-subtext-body strong {
+  color: var(--text, #201d18);
 }
 
 /* ==========================================================================
@@ -1158,8 +1248,13 @@
   }
 
   .valuation-analyst-opinion {
-    padding: 14px 16px;
+    padding: 14px 14px;
     margin-bottom: 16px;
+  }
+
+  .opinion-executive-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .valuation-pillars-grid {

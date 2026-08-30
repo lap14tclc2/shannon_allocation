@@ -148,16 +148,72 @@ function ValuationCard({ symbol, report, error, locale }) {
       </div>
     </div>
 
-    {/* Expert Financial Analysis Narrative */}
+    {/* Expert Financial Analysis Executive Dashboard */}
     <div className="valuation-analyst-opinion">
       <div className="opinion-header">
-        <span className="opinion-seal">📜</span>
-        <span className="opinion-badge">Nhận định Chuyên sâu theo Chuẩn Buffett–Munger</span>
+        <div className="opinion-badge-wrap">
+          <span className="opinion-seal">📜</span>
+          <span className="opinion-badge">Nhận định Chuyên sâu theo Chuẩn Buffett–Munger</span>
+        </div>
+        <span className={`opinion-status-pill ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
+          {assessment.valuation_status === 'DEEP_VALUE' ? 'Biên an toàn rất cao'
+            : assessment.valuation_status === 'UNDERVALUED' ? 'Định giá Hấp dẫn'
+            : assessment.valuation_status === 'FAIR_VALUE' ? 'Định giá Hợp lý'
+            : assessment.valuation_status === 'OVERVALUED' ? 'Định giá Cao'
+            : 'Cần theo dõi'}
+        </span>
       </div>
-      <p className="opinion-verdict">{assessment.valuation_verdict}</p>
+
+      {/* 4-Stat Executive Summary Strip */}
+      <div className="opinion-executive-grid">
+        <div className="opinion-stat-item">
+          <span className="opinion-stat-label">Bản chất Doanh nghiệp</span>
+          <span className="opinion-stat-val">
+            {archetypeLabel(report.archetype_profile?.archetype)}
+          </span>
+          <span className="opinion-stat-sub">
+            Mô hình: {valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}
+          </span>
+        </div>
+
+        <div className="opinion-stat-item">
+          <span className="opinion-stat-label">Dải Định giá (Bear – Bull)</span>
+          <span className="opinion-stat-val highlight">
+            {bear.intrinsic_value_per_share != null ? money(bear.intrinsic_value_per_share, locale) : '—'} – {bull.intrinsic_value_per_share != null ? money(bull.intrinsic_value_per_share, locale) : '—'}
+          </span>
+          <span className="opinion-stat-sub">
+            Cơ sở: <strong>{money(base.intrinsic_value_per_share, locale)}</strong>
+          </span>
+        </div>
+
+        <div className="opinion-stat-item">
+          <span className="opinion-stat-label">Biên An toàn Thực tế</span>
+          <span className={`opinion-stat-val ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
+            {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
+          </span>
+          <span className="opinion-stat-sub">
+            Yêu cầu tối thiểu: ≥ {mosAnalysis.required_mos_pct || 25}%
+          </span>
+        </div>
+
+        <div className="opinion-stat-item">
+          <span className="opinion-stat-label">Chất lượng Doanh nghiệp</span>
+          <span className="opinion-stat-val">
+            {quality.total_score != null ? `${quality.total_score}/100` : '—'}
+          </span>
+          <span className="opinion-stat-sub">
+            Hạng: <strong>{quality.tier === 'EXCEPTIONAL' ? 'Xuất sắc' : quality.tier === 'HIGH_QUALITY' ? 'Chất lượng cao' : quality.tier === 'INVESTABLE' ? 'Đạt chuẩn' : 'Cần theo dõi'}</strong>
+          </span>
+        </div>
+      </div>
+
+      {/* Strategic / Structural Financial Insight */}
       {assessment.financial_resilience_diagnosis && (
         <div className="opinion-subtext">
-          <strong>Cấu trúc vốn & Sức khỏe tài chính:</strong> {assessment.financial_resilience_diagnosis}
+          <span className="opinion-subtext-icon">💡</span>
+          <div className="opinion-subtext-body">
+            <strong>Cấu trúc Vốn & Đặc thù Kinh tế:</strong> {assessment.financial_resilience_diagnosis}
+          </div>
         </div>
       )}
     </div>
