@@ -886,7 +886,8 @@ def portfolio_latest_dividend(
 
 @app.get("/api/portfolio/screener")
 def portfolio_screener_endpoint(
-    mos_filter: str = "buffett_qualified",
+    mos_filter: str | None = "buffett_qualified",
+    min_liquidity: float | None = 10.0,
     min_score: int | None = None,
     exchange: str | None = None,
     search: str | None = None,
@@ -894,11 +895,12 @@ def portfolio_screener_endpoint(
     limit: int = 200,
     qport_session: str | None = Cookie(default=None),
 ):
-    """Screen universe by Buffett Margin of Safety and Quality."""
+    """Screen universe by Buffett Margin of Safety, Liquidity, and Quality."""
     require_portfolio_user(qport_session)
     from portfolio.screener import get_screener_results
     return get_screener_results(
         mos_filter=mos_filter,
+        min_liquidity=min_liquidity,
         min_score=min_score,
         exchange=exchange,
         search=search,

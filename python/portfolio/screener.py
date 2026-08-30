@@ -10,6 +10,7 @@ from .finance_catalog import _schema_connection, FINANCE_SCHEMA
 from .value_engine.quality_scorer import QualityScorer, QualityTier
 from .value_engine.archetypes import ArchetypeClassifier
 from .value_engine.vi_labels import quality_tier_vi
+from .market_data import canonical_vnd_price
 
 _CACHE_LOCK = threading.Lock()
 _SCORED_UNIVERSE_CACHE: List[Dict[str, Any]] = []
@@ -81,16 +82,24 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     continue
 
             price_map = {}
+            turnover_map = {}
+            volume_map = {}
             try:
                 db.execute(
                     """CREATE TABLE IF NOT EXISTS market_prices (
                            symbol TEXT,
                            trading_date TEXT,
                            close DOUBLE PRECISION,
+                           volume DOUBLE PRECISION,
                            source TEXT,
                            PRIMARY KEY (symbol, trading_date)
                        )"""
                 )
+                try:
+                    db.execute("ALTER TABLE market_prices ADD COLUMN IF NOT EXISTS volume DOUBLE PRECISION")
+                except Exception:
+                    pass
+
                 price_rows = db.execute(
                     """SELECT symbol, close FROM (
                            SELECT symbol, close, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trading_date DESC) as rn
@@ -98,6 +107,21 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                        ) sub WHERE rn = 1"""
                 ).fetchall()
                 price_map = {str(r["symbol"]).upper().strip(): float(r["close"]) for r in price_rows if r.get("close")}
+
+                liq_rows = db.execute(
+                    """SELECT symbol,
+                              AVG(CASE WHEN close < 1000 THEN close * 1000 ELSE close END * COALESCE(volume, 0)) / 1e9 as avg_turnover_billion,
+                              AVG(COALESCE(volume, 0)) as avg_vol
+                       FROM (
+                           SELECT symbol, close, volume, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trading_date DESC) as rn
+                           FROM market_prices
+                       ) sub WHERE rn <= 20
+                       GROUP BY symbol"""
+                ).fetchall()
+                for r in liq_rows:
+                    sym_key = str(r["symbol"]).upper().strip()
+                    turnover_map[sym_key] = round(float(r["avg_turnover_billion"] or 0), 2)
+                    volume_map[sym_key] = int(r["avg_vol"] or 0)
             except Exception:
                 price_map = {}
 
@@ -239,6 +263,8 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     "valuation_status_vi": _get_vietnamese_valuation_status(val_status),
                     "is_buffett_qualified": is_qualified,
                     "is_positive_mos": is_positive,
+                    "avg_turnover_20d_billion": turnover_map.get(sym, 0.0),
+                    "avg_volume_20d": volume_map.get(sym, 0),
                     "pe": pe_val,
                     "pb": pb_val,
                     "total_score": scorecard.total_score,
@@ -265,14 +291,15 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
 
 
 def get_screener_results(
-    mos_filter: Optional[str] = None,
+    mos_filter: Optional[str] = "buffett_qualified",
+    min_liquidity: Optional[float] = 10.0,
     min_score: Optional[int] = None,
     exchange: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "mos",
     limit: int = 200,
 ) -> Dict[str, Any]:
-    """Filter and sort universe according to Buffett Margin of Safety and user parameters."""
+    """Filter and sort universe according to Buffett Margin of Safety, Liquidity, and user parameters."""
     universe = compute_all_screener_scores()
     filtered = universe
 
@@ -284,16 +311,77 @@ def get_screener_results(
     elif mos_filter == "undervalued":
         filtered = [item for item in filtered if item.get("valuation_status") in ("DEEP_VALUE", "UNDERVALUED", "FAIR_VALUE")]
 
-    # 2. Filter by min_score if specified
+    # 2. Fetch latest prices & 20-day liquidity for candidate items missing recent liquidity
+    candidate_symbols = [it["symbol"] for it in filtered if it.get("avg_turnover_20d_billion", 0) == 0][:60]
+    if candidate_symbols:
+        import concurrent.futures
+        from datetime import date, timedelta
+        from .market_data import VndirectProvider, frame_to_price_rows
+
+        provider = VndirectProvider()
+        today = date.today().isoformat()
+        start = (date.today() - timedelta(days=45)).isoformat()
+
+        def _fetch(sym):
+            try:
+                df = provider.daily_history(sym, start, today)
+                if not df.empty:
+                    df["price_vnd"] = [canonical_vnd_price(c, "vndirect") for c in df["close"]]
+                    df["turnover_vnd"] = df["volume"] * df["price_vnd"]
+                    t_20d = float(df["turnover_vnd"].tail(20).mean() / 1e9)
+                    v_20d = int(df["volume"].tail(20).mean())
+                    latest_close = float(df["price_vnd"].iloc[-1])
+                    rows = frame_to_price_rows(sym, df, source="vndirect")
+                    return sym, latest_close, t_20d, v_20d, rows
+            except Exception:
+                pass
+            return sym, None, 0.0, 0, []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            fetched = list(ex.map(_fetch, candidate_symbols))
+
+        saved_rows = []
+        for sym, close_val, t_20d, v_20d, rows in fetched:
+            for it in filtered:
+                if it["symbol"] == sym:
+                    it["avg_turnover_20d_billion"] = round(t_20d, 2)
+                    it["avg_volume_20d"] = v_20d
+                    if close_val:
+                        it["current_price"] = close_val
+                        if it.get("intrinsic_value") and it["intrinsic_value"] > 0:
+                            it["margin_of_safety"] = round(((it["intrinsic_value"] - close_val) / it["intrinsic_value"]) * 100.0, 1)
+                            it["is_positive_mos"] = it["margin_of_safety"] > 0
+                            it["is_buffett_qualified"] = it["margin_of_safety"] >= it.get("required_mos", 25.0)
+            if rows:
+                saved_rows.extend(rows)
+
+        if saved_rows:
+            try:
+                with _schema_connection(FINANCE_SCHEMA) as db:
+                    for r in saved_rows:
+                        db.execute(
+                            """INSERT INTO market_prices (symbol, trading_date, close, volume, source)
+                               VALUES (?, ?, ?, ?, ?)
+                               ON CONFLICT (symbol, trading_date) DO UPDATE SET close = EXCLUDED.close, volume = EXCLUDED.volume""",
+                            [r["symbol"], r["trading_date"], r["close"], r.get("volume"), r["source"]]
+                        )
+            except Exception:
+                pass
+
+    # 3. Filter by Liquidity (min_liquidity in billion VND/day)
+    if min_liquidity is not None and min_liquidity > 0:
+        filtered = [item for item in filtered if (item.get("avg_turnover_20d_billion") or 0) >= min_liquidity]
+
+    # 4. Filter by min_score if specified
     if min_score is not None and min_score > 0:
         filtered = [item for item in filtered if item["total_score"] >= min_score]
 
-    # 3. Filter by exchange
+    # 5. Filter by exchange
     if exchange and exchange.upper() not in ("ALL", "TẤT CẢ", "*", ""):
         target_exch = exchange.upper().strip()
         filtered = [item for item in filtered if item["exchange"] == target_exch]
 
-    # 4. Search query
+    # 6. Search query
     if search and search.strip():
         q = search.strip().lower()
         filtered = [
@@ -303,11 +391,17 @@ def get_screener_results(
             or q in item["industry"].lower()
         ]
 
-    # 5. Sorting
+    # 7. Sorting
     if sort_by == "mos":
         filtered = sorted(
             filtered,
             key=lambda x: (x["margin_of_safety"] is not None, x["margin_of_safety"] or -999, x["total_score"]),
+            reverse=True,
+        )
+    elif sort_by == "liquidity":
+        filtered = sorted(
+            filtered,
+            key=lambda x: (x.get("avg_turnover_20d_billion") or 0, x["margin_of_safety"] or -999),
             reverse=True,
         )
     elif sort_by == "score":
@@ -340,63 +434,13 @@ def get_screener_results(
     total_screened = len(filtered)
     results = filtered[:limit]
 
-    # Fetch missing prices for displayed results via VNDirect in parallel
-    missing_symbols = [it["symbol"] for it in results if it.get("current_price") is None]
-    if missing_symbols:
-        import concurrent.futures
-        from datetime import date, timedelta
-        from .market_data import VndirectProvider, frame_to_price_rows
-
-        provider = VndirectProvider()
-        today = date.today().isoformat()
-        start = (date.today() - timedelta(days=15)).isoformat()
-
-        def _fetch(sym):
-            try:
-                df = provider.daily_history(sym, start, today)
-                if not df.empty:
-                    rows = frame_to_price_rows(sym, df, source="vndirect")
-                    if rows:
-                        return sym, float(rows[-1]["close"]), rows
-            except Exception:
-                pass
-            return sym, None, []
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-            fetched = list(ex.map(_fetch, missing_symbols[:50]))
-
-        saved_rows = []
-        for sym, close_val, rows in fetched:
-            if close_val:
-                for it in results:
-                    if it["symbol"] == sym:
-                        it["current_price"] = close_val
-                        if it.get("intrinsic_value") and it["intrinsic_value"] > 0:
-                            it["margin_of_safety"] = round(((it["intrinsic_value"] - close_val) / it["intrinsic_value"]) * 100.0, 1)
-                            it["is_positive_mos"] = it["margin_of_safety"] > 0
-                            it["is_buffett_qualified"] = it["margin_of_safety"] >= it.get("required_mos", 25.0)
-                if rows:
-                    saved_rows.extend(rows)
-
-        if saved_rows:
-            try:
-                with _schema_connection(FINANCE_SCHEMA) as db:
-                    for r in saved_rows:
-                        db.execute(
-                            """INSERT INTO market_prices (symbol, trading_date, close, source)
-                               VALUES (?, ?, ?, ?)
-                               ON CONFLICT (symbol, trading_date) DO UPDATE SET close = EXCLUDED.close""",
-                            [r["symbol"], r["trading_date"], r["close"], r["source"]]
-                        )
-            except Exception:
-                pass
-
     return {
         "ok": True,
         "total_screened": total_screened,
         "universe_size": len(universe),
         "filters": {
             "mos_filter": mos_filter,
+            "min_liquidity": min_liquidity,
             "min_score": min_score,
             "exchange": exchange or "ALL",
             "search": search or "",

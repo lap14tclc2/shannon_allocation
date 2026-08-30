@@ -18,6 +18,13 @@ const MOS_OPTIONS = [
   { id: 'all', label: '🌐 Tất cả cổ phiếu' },
 ];
 
+const LIQUIDITY_OPTIONS = [
+  { id: 10, label: '⚡ ≥ 10 Tỷ / ngày (Loại cổ phiếu kém thanh khoản)' },
+  { id: 5, label: '💧 ≥ 5 Tỷ / ngày' },
+  { id: 1, label: '🌱 ≥ 1 Tỷ / ngày' },
+  { id: 0, label: '🌐 Tất cả thanh khoản' },
+];
+
 const SCORE_OPTIONS = [
   { id: 0, label: 'Tất cả điểm số' },
   { id: 80, label: '≥ 80 Điểm (Hảo hạng)' },
@@ -27,6 +34,7 @@ const SCORE_OPTIONS = [
 
 const SORT_OPTIONS = [
   { id: 'mos', label: 'Biên An Toàn MOS (Cao → Thấp)' },
+  { id: 'liquidity', label: 'Thanh khoản GTGD (Cao → Thấp)' },
   { id: 'score', label: 'Điểm chất lượng (Cao → Thấp)' },
   { id: 'roe', label: 'ROE 5 năm (Cao → Thấp)' },
   { id: 'moat', label: 'Hào kinh tế Moat (Cao → Thấp)' },
@@ -39,8 +47,9 @@ export default function ScreenerPage() {
   const [error, setError] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
 
-  // Filters state - Default to Buffett Margin of Safety
+  // Filters state - Default to Buffett Margin of Safety & >= 10B/day Liquidity
   const [mosFilter, setMosFilter] = useState('buffett_qualified');
+  const [minLiquidity, setMinLiquidity] = useState(10);
   const [minScore, setMinScore] = useState(0);
   const [exchange, setExchange] = useState('ALL');
   const [search, setSearch] = useState('');
@@ -54,6 +63,7 @@ export default function ScreenerPage() {
       try {
         const params = new URLSearchParams();
         if (mosFilter) params.set('mos_filter', mosFilter);
+        if (minLiquidity > 0) params.set('min_liquidity', String(minLiquidity));
         if (minScore > 0) params.set('min_score', String(minScore));
         if (exchange && exchange !== 'ALL') params.set('exchange', exchange);
         if (search.trim()) params.set('search', search.trim());
@@ -81,7 +91,7 @@ export default function ScreenerPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [mosFilter, minScore, exchange, search, sortBy]);
+  }, [mosFilter, minLiquidity, minScore, exchange, search, sortBy]);
 
   const items = data?.items || [];
   const totalScreened = data?.total_screened || 0;
@@ -194,6 +204,25 @@ export default function ScreenerPage() {
                     type="button"
                     className={`segment-btn ${mosFilter === opt.id ? 'active' : ''}`}
                     onClick={() => setMosFilter(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Liquidity 20-Day Turnover Filter Tabs */}
+            <div className="filter-group" style={{ flex: '1 1 100%' }}>
+              <span className="filter-group-label" style={{ color: 'var(--retro-indigo, #2b4c7e)', fontWeight: '700' }}>
+                ⚡ Thanh khoản GTGD Trung bình (20 phiên):
+              </span>
+              <div className="segmented-pills">
+                {LIQUIDITY_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`segment-btn ${minLiquidity === opt.id ? 'active' : ''}`}
+                    onClick={() => setMinLiquidity(opt.id)}
                   >
                     {opt.label}
                   </button>
@@ -347,14 +376,16 @@ export default function ScreenerPage() {
                         </span>
                       </div>
                       <div className="metric-box">
+                        <span className="metric-title">Thanh khoản 20D</span>
+                        <span className="metric-value highlight-roe">
+                          {item.avg_turnover_20d_billion != null && item.avg_turnover_20d_billion > 0 ? `${item.avg_turnover_20d_billion.toFixed(1)} tỷ/ngày` : '—'}
+                        </span>
+                      </div>
+                      <div className="metric-box">
                         <span className="metric-title">Sinh lời Vốn (ROE)</span>
                         <span className="metric-value highlight-green">
                           {item.avg_roe_5y !== null ? `${item.avg_roe_5y}%` : '—'}
                         </span>
-                      </div>
-                      <div className="metric-box">
-                        <span className="metric-title">Hào kinh tế (Moat)</span>
-                        <span className="metric-value">{item.moat_score}/20</span>
                       </div>
                       <div className="metric-box">
                         <span className="metric-title">Điểm Chất lượng</span>

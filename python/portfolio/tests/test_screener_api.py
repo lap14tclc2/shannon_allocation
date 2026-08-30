@@ -11,7 +11,7 @@ from app.main import portfolio_screener_endpoint
 
 def test_screener_engine_scoring_and_filtering():
     # 1. Test score calculation & filtering (>= 80 points)
-    res_80 = get_screener_results(min_score=80, exchange="ALL", search="", sort_by="score")
+    res_80 = get_screener_results(mos_filter="all", min_liquidity=0, min_score=80, exchange="ALL", search="", sort_by="score")
     assert res_80["ok"] is True
     assert "items" in res_80
     assert res_80["filters"]["min_score"] == 80
@@ -21,19 +21,19 @@ def test_screener_engine_scoring_and_filtering():
         assert len(item["symbol"]) >= 3
 
     # 2. Test exchange filter
-    res_hose = get_screener_results(min_score=80, exchange="HOSE", search="", sort_by="score")
+    res_hose = get_screener_results(mos_filter="all", min_liquidity=0, min_score=80, exchange="HOSE", search="", sort_by="score")
     assert res_hose["ok"] is True
     for item in res_hose["items"]:
         assert item["exchange"] == "HOSE"
 
     # 3. Test search query
-    res_search = get_screener_results(min_score=60, exchange="ALL", search="VNM", sort_by="score")
+    res_search = get_screener_results(mos_filter="all", min_liquidity=0, min_score=60, exchange="ALL", search="VNM", sort_by="score")
     assert res_search["ok"] is True
     symbols = [it["symbol"] for it in res_search["items"]]
     assert "VNM" in symbols
 
     # 4. Test sort by ROE
-    res_roe = get_screener_results(min_score=70, exchange="ALL", sort_by="roe")
+    res_roe = get_screener_results(mos_filter="all", min_liquidity=0, min_score=70, exchange="ALL", sort_by="roe")
     assert res_roe["ok"] is True
     items_roe = [it["avg_roe_5y"] for it in res_roe["items"] if it["avg_roe_5y"] is not None]
     if len(items_roe) >= 2:
@@ -44,7 +44,7 @@ def test_screener_api_endpoint(monkeypatch):
     from app import main
     monkeypatch.setattr(main, "require_portfolio_user", lambda session: type("User", (), {"username": "admin", "role": "ADMIN"})())
 
-    res = portfolio_screener_endpoint(mos_filter="all", min_score=80, exchange="HOSE", search="", sort_by="score")
+    res = portfolio_screener_endpoint(mos_filter="all", min_liquidity=0, min_score=80, exchange="HOSE", search="", sort_by="score")
     assert res["ok"] is True
     assert "items" in res
     assert isinstance(res["items"], list)
@@ -53,16 +53,22 @@ def test_screener_api_endpoint(monkeypatch):
         assert item["exchange"] == "HOSE"
 
 
-def test_screener_buffett_margin_of_safety():
-    # Test Buffett qualified filter (MOS >= required MOS)
-    res_buffett = get_screener_results(mos_filter="buffett_qualified", sort_by="mos")
+def test_screener_buffett_margin_of_safety_and_liquidity():
+    # 1. Test Buffett qualified filter (MOS >= required MOS)
+    res_buffett = get_screener_results(mos_filter="buffett_qualified", min_liquidity=0, sort_by="mos")
     assert res_buffett["ok"] is True
     assert len(res_buffett["items"]) > 0
     for item in res_buffett["items"]:
         assert item["is_buffett_qualified"] is True
         assert item["margin_of_safety"] >= item.get("required_mos", 25.0)
 
-    # Test Positive MOS filter
+    # 2. Test Liquidity filter (>= 10B/day)
+    res_liq = get_screener_results(mos_filter="all", min_liquidity=10.0, sort_by="liquidity")
+    assert res_liq["ok"] is True
+    for item in res_liq["items"]:
+        assert (item.get("avg_turnover_20d_billion") or 0) >= 10.0
+
+    # 3. Test Positive MOS filter
     res_pos = get_screener_results(mos_filter="positive", sort_by="mos")
     assert res_pos["ok"] is True
     for item in res_pos["items"]:
