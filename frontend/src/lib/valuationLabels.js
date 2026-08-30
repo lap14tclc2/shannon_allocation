@@ -138,6 +138,7 @@ export const MODEL_STATUS_LABELS = {
   MODEL_VERIFIED: 'Mô hình Chuẩn xác thực',
   MODEL_INCOMPLETE: 'Thiếu dữ liệu mô hình đặc thù',
   MODEL_PARTIAL: 'Bằng chứng chu kỳ một phần (PARTIAL)',
+  MODEL_ESTIMATED: 'Mô hình Ước tính (giả định chưa có nguồn)',
   MODEL_PENDING: 'Đang hoàn thiện mô hình',
   FALLBACK_MODEL: 'Mô hình tham chiếu',
   FALLBACK_MODEL_ONLY: 'Mô hình Định giá Tham chiếu',
@@ -167,21 +168,4 @@ export function valuationModelLabel(code) {
 
 export function modelStatusLabel(code) {
   return MODEL_STATUS_LABELS[code] || code || 'Mô hình Chuẩn xác thực';
-}
-
-// P0 audit (2026-08-29): the public (presentation) valuation surface is gated on
-// MODEL_VERIFIED. Reports whose model is incomplete/partial/fallback must render
-// IV/MOS as null (shown as "—"), never leak the diagnostic DCF to the UI.
-export function publicValuation(report = {}) {
-  const verified = report.model_status === 'MODEL_VERIFIED';
-  if (!verified) {
-    return { base: null, bear: null, bull: null, mos: null, verified: false };
-  }
-  return {
-    base: report.public_base_iv ?? null,
-    bear: report.public_bear_iv ?? null,
-    bull: report.public_bull_iv ?? null,
-    mos: report.public_mos ?? null,
-    verified: true,
-  };
 }

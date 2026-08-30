@@ -828,22 +828,6 @@ def portfolio_logs(qport_session: str | None = Cookie(default=None)):
     return admin_logs(qport_session=qport_session)
 
 
-@app.get("/api/portfolio/activity/trace")
-def portfolio_activity_trace(
-    from_id: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, ge=1, le=200),
-    qport_session: str | None = Cookie(default=None),
-):
-    """Admin-only audit trace from a broken-chain offset (review P0).
-
-    Read-only: surfaces event_id, event_type, occurred_at, source,
-    idempotency_key, previous_hash and current_hash so a corruption at e.g.
-    ``first_bad_id=73`` can be inspected before repair.
-    """
-    require_admin(qport_session)
-    return portfolio(require_portfolio_user(qport_session)).activity_chain_trace(from_id=from_id, limit=limit)
-
-
 @app.get("/api/portfolio/dividends/health")
 def portfolio_dividend_health(qport_session: str | None = Cookie(default=None)):
     return dividends(require_portfolio_user(qport_session)).health()
@@ -856,6 +840,7 @@ def portfolio_latest_dividend(
     qport_session: str | None = Cookie(default=None),
 ):
     user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
     ticker = str(symbol or "").upper().strip()
     canonical_events = get_canonical_dividend_events(ticker)
     if canonical_events:
@@ -876,10 +861,13 @@ def portfolio_latest_dividend(
             "source_counts": {"qport_finance": len(events)},
             "errors": [],
         }
-        # P0 audit (2026-08-29): GET endpoints are strictly read-only. A pure
-        # database read must never append to the activity log, otherwise every
-        # AI export (which audits every holding) appends one DIVIDEND_HISTORY_LOOKUP
-        # per symbol and breaks export idempotency (observable +69 activity rows).
+        svc._log(
+            "USER", user["username"], "CORPORATE_ACTION", "DIVIDEND_HISTORY_LOOKUP",
+            f"Loaded canonical dividend history for {ticker}.",
+            entity_type="SECURITY", entity_id=ticker,
+            details={"event_count": len(events), "data_origin": "DATABASE_CANONICAL"},
+            status="SUCCESS",
+        )
         return result
     # Normal user routes are database-only in every runtime. When a stock has no
     # recorded dividend events in DB, return 200 with found=false and empty events.
@@ -922,7 +910,6 @@ def portfolio_symbol_valuation(
     symbol: str,
     qport_session: str | None = Cookie(default=None),
 ):
-
     """Build a valuation from validated Finance DB facts only."""
     import re
     from dataclasses import asdict
@@ -1248,98 +1235,34 @@ def portfolio_symbol_valuation(
     fortress_diag = "Cơ cấu tài chính ngân hàng chuẩn mực (Huy động tiền gửi kinh doanh)." if is_bank else ("Pháo đài tiền mặt ròng dồi dào (Không có áp lực nợ)." if net_debt_calc == 0 else (f"Khả năng hoàn trả nợ ròng nhanh ({debt_payback_years} năm)." if debt_payback_years < 3.0 else f"Cần theo dõi đòn bẩy nợ ({debt_payback_years} năm hoàn nợ)."))
 
     # 3. Capital Allocation: 5Y Average ROE & Share Dilution
-    # P0 audit (2026-08-29): a share-count increase is NOT economic dilution. The
-    # classifier separates NON_ECONOMIC_SHARE_CHANGE (stock dividend, bonus shares,
-    # stock split) from ECONOMIC_DILUTION (ESOP/rights issue with value transfer,
-    # new capital raising, convertibles, share-funded acquisition). Only the latter
-    # may feed EXCESSIVE_DILUTION.
     shares_series = [(h["fiscal_year"], h["shares_outstanding"]) for h in financial_history if h.get("shares_outstanding") is not None]
     share_dilution_5y = None
-    dilution_breakdown = None
     true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được duy trì tốt."
     if len(shares_series) >= 5 and shares_series[-5][1] and shares_series[-1][1] and shares_series[-5][1] > 0:
         s_old = shares_series[-5][1]
         s_new = shares_series[-1][1]
-        from portfolio.value_engine.dilution import classify_share_change
-        non_economic_events: list[dict] = []
-        economic_events: list[dict] = []
-        window_start = f"{shares_series[-5][0]}-01-01"
         with _schema_connection(FINANCE_SCHEMA) as db:
             stock_div_rows = db.execute(
-                """SELECT stock_ratio, effective_event_date FROM dividend_canonical
-                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND'
+                """SELECT stock_ratio FROM dividend_canonical 
+                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND' 
                    AND effective_event_date >= ?""",
-                (ticker, window_start),
+                (ticker, f"{shares_series[-5][0]}-01-01")
             ).fetchall()
+            cumulative_stock_div = 1.0
             for r in stock_div_rows:
-                non_economic_events.append({"action_type": "STOCK_DIVIDEND", "stock_ratio": r["stock_ratio"], "effective_event_date": r["effective_event_date"]})
-        # Bonus shares / splits / rights are captured by the corporate-action store.
-        try:
-            ca_rows = []
-            with svc.store.connect() as db:
-                ca_rows = [
-                    dict(r)
-                    for r in db.execute(
-                        """SELECT action_type, stock_ratio, record_date, raw_json FROM corporate_actions
-                           WHERE symbol = ? AND record_date >= ?""",
-                        (ticker, window_start),
-                    ).fetchall()
-                ]
-        except Exception:
-            ca_rows = []
-        for r in ca_rows:
-            atype = str(r.get("action_type") or "").upper()
-            raw = {}
-            try:
-                raw = json.loads(r.get("raw_json") or "{}")
-            except Exception:
-                raw = {}
-            if atype in ("STOCK_DIVIDEND", "BONUS_SHARE", "SPLIT"):
-                non_economic_events.append({"action_type": atype, "stock_ratio": r.get("stock_ratio"), "effective_event_date": r.get("record_date")})
-            elif atype in ("RIGHTS_ISSUE", "STOCK_ISSUE", "ESOP", "CONVERTIBLE"):
-                economic_events.append({
-                    "action_type": atype,
-                    "stock_ratio": r.get("stock_ratio"),
-                    "shares_issued": raw.get("shares_issued") or raw.get("issued_shares"),
-                    "issue_price": raw.get("issue_price") or raw.get("subscription_price"),
-                    "fair_value": raw.get("fair_value") or raw.get("market_price") or raw.get("reference_price"),
-                    "effective_event_date": r.get("record_date"),
-                })
+                if r["stock_ratio"]:
+                    cumulative_stock_div *= (1.0 + float(r["stock_ratio"]))
+            
+            expected_shares_from_bonus = s_old * cumulative_stock_div
+            economic_dilution_pct = max(0.0, ((s_new - expected_shares_from_bonus) / s_old) * 100)
+            share_dilution_5y = round(economic_dilution_pct, 1)
 
-        dilution_breakdown = classify_share_change(
-            shares_old=float(s_old),
-            shares_new=float(s_new),
-            non_economic_events=non_economic_events,
-            economic_events=economic_events,
-        )
-        economic_dilution_pct = dilution_breakdown["economic_dilution_pct"] or 0.0
-        non_economic_pct = dilution_breakdown["non_economic_share_change_pct"] or 0.0
-        share_dilution_5y = round(economic_dilution_pct, 1)
-
-        if dilution_breakdown["classification"] in ("NON_ECONOMIC_SHARE_CHANGE", "NO_MATERIAL_CHANGE") and economic_dilution_pct < 5.0:
-            true_dilution_diag = f"Số lượng CP tăng chủ yếu do chia thưởng/cổ tức cổ phiếu/tách (phi kinh tế {non_economic_pct:.1f}%), không gây pha loãng kinh tế thực cho cổ đông."
-        elif dilution_breakdown["classification"] == "UNEXPLAINED_SHARE_CHANGE":
-            true_dilution_diag = f"Phần CP tăng chưa được giải thích bởi các sự kiện cổ phiếu phi kinh tế ({share_dilution_5y}%): CẦN sự kiện ESOP/quyền mua/phát hành để kết luận pha loãng kinh tế; chưa đủ bằng chứng để hard-reject."
-        elif dilution_breakdown["classification"] == "EXCESSIVE_DILUTION":
-            true_dilution_diag = f"Pha loãng kinh tế thực quá mức ({share_dilution_5y}% trong 5 năm): phát hành thêm/ESOP/quyền mua chuyển giá trị khỏi cổ đông hiện hữu."
-        elif economic_dilution_pct >= 5.0:
-            true_dilution_diag = f"Có phát hành thêm/ESOP gây pha loãng kinh tế thực ({share_dilution_5y}% trong 5 năm)."
-        else:
-            true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
-
-    confirmed_dilution_pct = (dilution_breakdown or {}).get("confirmed_economic_dilution_pct")
-    # P0 audit (2026-08-29): never let `None < 5` (unexplained dilution) raise a
-    # TypeError in the status expression. Split the variable and group explicitly.
-    if (
-        avg_roe_5y is not None
-        and avg_roe_5y >= 18
-        and (confirmed_dilution_pct is None or confirmed_dilution_pct < 5)
-    ):
-        capital_alloc_status = "EXCELLENT"
-    elif avg_roe_5y is not None and avg_roe_5y >= 13:
-        capital_alloc_status = "GOOD"
-    else:
-        capital_alloc_status = "WATCH"
+            if cumulative_stock_div > 1.05 and economic_dilution_pct < 5.0:
+                true_dilution_diag = f"Số lượng CP tăng chủ yếu do chia thưởng/cổ tức cổ phiếu ({(cumulative_stock_div-1)*100:.0f}%), không gây pha loãng kinh tế thực cho cổ đông."
+            elif economic_dilution_pct >= 10.0:
+                true_dilution_diag = f"Có phát hành thêm/ESOP gây pha loãng kinh tế thực ({share_dilution_5y}% trong 5 năm)."
+            else:
+                true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
 
     value_investor_pillars = {
         "earnings_quality": earnings_quality,
@@ -1351,24 +1274,8 @@ def portfolio_symbol_valuation(
         },
         "capital_allocation": {
             "avg_roe_5y": avg_roe_5y,
-            # P1 audit (2026-08-29): split dilution so an unexplained residual is
-            # never presented or scored as proven economic dilution. Only a
-            # classification with actual economic events may populate the confirmed
-            # field; the unexplained residual is surfaced separately.
-            # P2: `share_dilution_5y_pct` is deprecated (was the raw residual). Use
-            # the explicit fields below; kept as confirmed for legacy consumers.
-            "share_dilution_5y_pct": confirmed_dilution_pct,
-            "economic_dilution_5y_pct": confirmed_dilution_pct,
-            "confirmed_economic_dilution_5y_pct": confirmed_dilution_pct,
-            "confirmed_economic_dilution_pct": confirmed_dilution_pct,
-            "unexplained_share_change_5y_pct": (dilution_breakdown or {}).get("unexplained_share_change_pct"),
-            "unexplained_share_change_pct": (dilution_breakdown or {}).get("unexplained_share_change_pct"),
-            "non_economic_share_change_5y_pct": (dilution_breakdown or {}).get("non_economic_share_change_pct"),
-            "raw_share_change_5y_pct": (dilution_breakdown or {}).get("raw_share_change_pct"),
-            "raw_share_change_pct": (dilution_breakdown or {}).get("raw_share_change_pct"),
-            "dilution_classification": (dilution_breakdown or {}).get("classification"),
-            "dilution_breakdown": dilution_breakdown,
-            "status": capital_alloc_status,
+            "share_dilution_5y_pct": share_dilution_5y,
+            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (share_dilution_5y is None or share_dilution_5y < 5)) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
             "diagnosis": true_dilution_diag,
         },
     }
@@ -1404,26 +1311,12 @@ def portfolio_symbol_valuation(
             "error": str(err),
             "symbol": ticker,
         })
-    report_payload = asdict(report)
-    # P0 audit (2026-08-29): the public/machine-readable contract hides the
-    # diagnostic fallback DCF when the model is not verified. Scenario IVs, the
-    # top-level base_iv/mos and EPV are the diagnostic surface; the public_*
-    # fields carry the verified values and are null otherwise.
-    if report_payload.get("model_status") != "MODEL_VERIFIED":
-        for scenario in report_payload.get("scenarios", {}).values():
-            scenario["intrinsic_value_per_share"] = None
-            scenario["margin_of_safety_pct"] = None
-        report_payload["base_iv"] = None
-        report_payload["margin_of_safety_pct"] = None
-        if report_payload.get("epv_result"):
-            report_payload["epv_result"]["epv_per_share"] = None
-            report_payload["epv_result"]["epv_equity_value"] = None
     response = JSONResponse(status_code=200, content=jsonable_encoder({
         "ok": True,
         "symbol": ticker,
         "valuation_snapshot": snapshot,
         "report": {
-            **report_payload,
+            **asdict(report),
             "financial_history_10y": financial_history,
             "cagr_5y_net_profit": cagr_5y,
             "value_investor_pillars": value_investor_pillars,

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
 import { crawlAdminFinanceData, crawlAdminFinanceUniverse, getAdminFinanceAudit, getAdminFinanceData, queueAdminFinanceCrawl, retryAdminFinanceData } from '../lib/api.js';
 
 const PAGE_SIZE = 50;
@@ -78,6 +79,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
   const [auditBySymbol, setAuditBySymbol] = useState({});
   const [auditLoading, setAuditLoading] = useState('');
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  const [selectedValuationSymbol, setSelectedValuationSymbol] = useState(null);
 
   async function refresh({ silent = false, isCancelled = () => false } = {}) {
     if (!silent) setLoading(true);
@@ -272,7 +274,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
       <section className="card finance-data-card">
         <div className="table-scroll">
           <table className="ranking finance-data-table">
-            <thead><tr><th>Mã</th><th>Sàn</th><th>Tên công ty</th><th>Nhóm ngành</th><th>Trạng thái</th><th className="num">Chi tiết</th></tr></thead>
+            <thead><tr><th>Mã</th><th>Sàn</th><th>Tên công ty</th><th>Nhóm ngành</th><th>Trạng thái</th><th className="num">Thao tác</th></tr></thead>
             <tbody>
               {loading ? <tr><td colSpan="6">Đang tải danh sách mã…</td></tr> : items.length === 0 ? <tr><td colSpan="6">Chưa có danh sách mã. Hãy chạy external finance worker để đồng bộ universe.</td></tr> : items.map(item => {
                 const documentSummary = summarizeDocuments(item.documents || []);
@@ -285,14 +287,69 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                 const isOpen = expanded === item.symbol;
                 return <React.Fragment key={item.symbol}>
                   <tr className={isOpen ? 'is-expanded' : ''}>
-                    <td><b>{item.symbol}</b></td><td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td><td>{item.company_name || 'Chưa có dữ liệu'}</td><td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-link-symbol"
+                        onClick={() => setSelectedValuationSymbol(item.symbol)}
+                        title={`Soi giá chi tiết ${item.symbol}`}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          font: 'inherit',
+                          fontWeight: 'bold',
+                          color: 'var(--retro-indigo, #2b4c7e)',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        {item.symbol}
+                      </button>
+                    </td>
+                    <td>{item.exchange && item.exchange !== 'UNKNOWN' ? item.exchange : 'Chưa xác định'}</td>
+                    <td>{item.company_name || 'Chưa có dữ liệu'}</td>
+                    <td>{item.industry && item.industry !== 'UNKNOWN' ? item.industry : 'Chưa có dữ liệu'}</td>
                     <td><span className={`status-pill ${crawlMeta.className}`}>{crawlMeta.label} · {success}/{totalDocuments} file{failed ? ` · ${failed} lỗi` : ''}{unavailable ? ` · ${unavailable} kỳ không có dữ liệu` : ''}</span></td>
-                    <td className="num"><button className="btn-secondary btn-small" type="button" onClick={() => toggleExpanded(item.symbol)}>{isOpen ? 'Thu gọn' : 'Mở rộng'}</button></td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-secondary btn-small" type="button" onClick={() => toggleExpanded(item.symbol)}>
+                        {isOpen ? 'Thu gọn' : 'Mở rộng'}
+                      </button>
+                      <button
+                        className="btn-primary btn-small"
+                        type="button"
+                        onClick={() => setSelectedValuationSymbol(item.symbol)}
+                        style={{ marginLeft: '6px' }}
+                        title={`Soi giá chi tiết và định giá toàn diện ${item.symbol}`}
+                      >
+                        Soi giá ↗
+                      </button>
+                    </td>
                   </tr>
                   {isOpen && <tr><td colSpan="6"><div className="finance-document-list">
-                    <div className="section-head"><strong>File đã crawl: {item.symbol}</strong><button className="btn-primary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>Crawl lại</button></div>
+                    <div className="section-head">
+                      <strong>File đã crawl: {item.symbol}</strong>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button className="btn-primary btn-small" type="button" onClick={() => setSelectedValuationSymbol(item.symbol)} title={`Soi giá chi tiết ${item.symbol}`}>
+                          Soi giá chi tiết ↗
+                        </button>
+                        <button className="btn-secondary btn-small" type="button" onClick={() => crawl(item.symbol)} disabled={Boolean(busySymbol) || !runtime.can_crawl}>
+                          Crawl lại
+                        </button>
+                      </div>
+                    </div>
                     <section className="finance-document-group valuation-readiness">
-                      <h4>Valuation readiness</h4>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <h4 style={{ margin: 0 }}>Valuation readiness</h4>
+                        <button
+                          className="btn-primary btn-small"
+                          type="button"
+                          onClick={() => setSelectedValuationSymbol(item.symbol)}
+                          title={`Soi giá chi tiết ${item.symbol}`}
+                        >
+                          Soi giá chi tiết ↗
+                        </button>
+                      </div>
                       {auditLoading === item.symbol ? <p className="muted">Đang audit canonical facts…</p> : (() => {
                         const audit = auditBySymbol[item.symbol];
                         if (!audit) return <p className="muted">Chưa có kết quả audit.</p>;
@@ -307,7 +364,7 @@ export default function FinanceDataPage({ locale = 'vi' }) {
                         </>;
                       })()}
                     </section>
-                                        {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
+                    {(item.documents || []).length === 0 ? <p className="muted">Chưa có file trong database.</p> : DOCUMENT_GROUPS.map(group => {
                       const docs = (item.documents || []).filter(doc => doc.document_type === group.key);
                       return <section className="finance-document-group" key={group.key}>
                         <h4>{group.label} <span className={`status-pill ${STATUS_META[summarizeDocuments(docs).key].className}`}>{STATUS_META[summarizeDocuments(docs).key].label} · {summarizeDocuments(docs).success}/{summarizeDocuments(docs).total}</span></h4>
@@ -322,6 +379,15 @@ export default function FinanceDataPage({ locale = 'vi' }) {
         </div>
         <footer className="pagination-controls"><button className="btn-secondary" type="button" disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)}>Trước</button><span>Trang {page + 1} / {pageCount}</span><button className="btn-secondary" type="button" disabled={page + 1 >= pageCount || loading} onClick={() => setPage(value => value + 1)}>Sau</button></footer>
       </section>
+
+      {selectedValuationSymbol && (
+        <ValuationDetailOverlay
+          symbol={selectedValuationSymbol}
+          locale={locale}
+          onClose={() => setSelectedValuationSymbol(null)}
+        />
+      )}
     </div>
   );
 }
+

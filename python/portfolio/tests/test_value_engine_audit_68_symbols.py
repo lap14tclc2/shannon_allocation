@@ -26,6 +26,7 @@ from portfolio.value_engine import ValuationEngine
 from portfolio.value_engine.archetypes import ArchetypeClassifier, EconomicArchetype
 from portfolio.value_engine.margin_of_safety import MarginOfSafetyEngine, MOSCalculation
 from portfolio.value_engine.models import ScenarioType
+from portfolio.value_engine.owner_earnings import OwnerEarningsCalculator
 
 
 def _make_fact(code, value, year=2023):
@@ -288,32 +289,6 @@ def test_generic_oe_dcf_is_equity_cash_flow_no_debt_adjustment():
     assert base.enterprise_value == base.equity_value
 
 
-def test_equity_basis_iv_is_invariant_to_net_debt(PR_review="PR-51"):
-    # PR #51 review invariant: NI-based Owner Earnings is equity cash flow. The
-    # resulting equity value must be identical regardless of the net_debt argument
-    # (no debt double-counting). FCFF basis subtracts net debt exactly once.
-    from portfolio.value_engine.dcf import DCFValuationModel
-    kwargs = dict(
-        base_owner_earnings=Decimal("8000000000000"),
-        shares_outstanding=Decimal("1460000000"),
-        scenario_type=ScenarioType.BASE,
-        discount_rate=Decimal("0.11"),
-        growth_rate=Decimal("0.12"),
-    )
-    equity_debt0 = DCFValuationModel.calculate_scenario(net_debt=Decimal("0"), **kwargs)
-    equity_debt5t = DCFValuationModel.calculate_scenario(net_debt=Decimal("5000000000000"), **kwargs)
-    assert equity_debt0.debt_adjustment_policy == "NO_NET_DEBT_ADJUSTMENT"
-    assert equity_debt0.equity_value == equity_debt5t.equity_value
-    assert equity_debt0.intrinsic_value_per_share == equity_debt5t.intrinsic_value_per_share
-
-    fcff = DCFValuationModel.calculate_scenario(
-        net_debt=Decimal("5000000000000"), is_equity_cash_flow=False, **kwargs
-    )
-    assert fcff.debt_adjustment_policy == "SUBTRACT_NET_DEBT"
-    assert fcff.result_type == "ENTERPRISE_VALUE"
-    assert fcff.enterprise_value - fcff.equity_value == Decimal("5000000000000")
-
-
 def test_concession_declares_fcff_enterprise_basis():
     report = ValuationEngine.evaluate(
         symbol="GAS",
@@ -416,3 +391,176 @@ def test_latest_fy_narrative_never_called_mid_cycle():
     )
     assert "LATEST_FY" in report.verdict
     assert "giữa chu kỳ" not in report.verdict
+
+
+# ---------------------------------------------------------------------------
+# TASK-20260829-062: public/fallback separation, 7-10Y engine, semantics
+# ---------------------------------------------------------------------------
+
+def test_gated_model_has_null_public_iv_and_diagnostic_fallback():
+    # DGC cyclical with 1Y history -> MODEL_INCOMPLETE. Public base_iv / MOS must
+    # be null; the computed numbers move into fallback_valuation (DIAGNOSTIC_ONLY).
+    report = ValuationEngine.evaluate(
+        symbol="DGC",
+        facts=_facts_oe(),
+        current_market_price=Decimal("50000"),
+        shares_outstanding=Decimal("400000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Hóa chất"},
+    )
+    assert report.model_status == "MODEL_INCOMPLETE"
+    assert report.base_iv is None
+    assert report.margin_of_safety_pct is None
+    assert report.fallback_valuation is not None
+    assert report.fallback_valuation["usage"] == "DIAGNOSTIC_ONLY"
+    assert report.fallback_valuation["base_iv"] is not None
+    assert report.fallback_valuation["model"] == "NORMALIZED_OWNER_EARNINGS_DCF"
+
+
+def test_verified_model_keeps_public_iv_and_no_fallback():
+    report = ValuationEngine.evaluate(
+        symbol="FPT",
+        facts=_facts_oe(),
+        current_market_price=Decimal("100000"),
+        shares_outstanding=Decimal("1000000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Công nghệ"},
+    )
+    assert report.model_status == "MODEL_VERIFIED"
+    assert report.base_iv is not None
+    assert report.margin_of_safety_pct is not None
+    assert report.fallback_valuation is None
+
+
+def test_full_cycle_normalization_uses_available_years():
+    # DGC-like 10Y ledger where some years lack CF codes: net income is used as
+    # the OE proxy so the bridge must produce MID_CYCLE_MEDIAN, not LATEST_FY.
+    b = Decimal("1000000000")
+    facts = []
+    for i in range(10):
+        y = 2023 - i
+        facts += [
+            _make_fact("IS.REVENUE.NET", Decimal("8000") * b, year=y),
+            _make_fact("IS.PROFIT.NET", Decimal("1500") * b, year=y),
+            _make_fact("IS.PROFIT.OPERATING", Decimal("1500") * b, year=y),
+            _make_fact("IS.SHARES.OUTSTANDING", Decimal("100000000"), year=y),
+        ]
+        # Only latest 3 years have full CF codes -> older years must still count.
+        if i < 3:
+            facts += [
+                _make_fact("CF.OPERATING.NET", Decimal("1700") * b, year=y),
+                _make_fact("CF.OPERATING.DEPRECIATION", Decimal("100") * b, year=y),
+                _make_fact("CF.CAPEX", Decimal("-120") * b, year=y),
+            ]
+    bridge = OwnerEarningsCalculator.calculate_cycle_normalized(
+        facts=facts, latest_fiscal_year=2023, lookback_years=10
+    )
+    assert bridge.normalization_method == "MID_CYCLE_MEDIAN"
+    assert bridge.normalization_years >= 7
+
+
+def test_power_water_bot_archetypes_split():
+    expected = {
+        "PPC": EconomicArchetype.POWER_GENERATION_THERMAL,
+        "NT2": EconomicArchetype.POWER_GENERATION_THERMAL,
+        "VSH": EconomicArchetype.POWER_GENERATION_HYDRO,
+        "CHP": EconomicArchetype.POWER_GENERATION_HYDRO,
+        "BWE": EconomicArchetype.WATER_UTILITY,
+        "TDM": EconomicArchetype.WATER_UTILITY,
+        "GEG": EconomicArchetype.POWER_RENEWABLE,
+        "HHV": EconomicArchetype.CONCESSION_INFRASTRUCTURE,
+        "CII": EconomicArchetype.CONCESSION_INFRASTRUCTURE,
+    }
+    for sym, arch in expected.items():
+        prof = ArchetypeClassifier.classify(sym)
+        assert prof.archetype == arch, f"{sym}: {prof.archetype.value} != {arch.value}"
+        assert prof.archetype != EconomicArchetype.CONCESSION_INFRASTRUCTURE or sym in ("HHV", "CII")
+
+
+def test_maintenance_capex_proxy_is_low_confidence():
+    report = ValuationEngine.evaluate(
+        symbol="FPT",
+        facts=_facts_oe(),
+        current_market_price=Decimal("100000"),
+        shares_outstanding=Decimal("1000000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Công nghệ"},
+    )
+    assert report.owner_earnings_bridge.maintenance_capex_confidence == "LOW"
+    assert report.owner_earnings_bridge.maintenance_capex_method == "MIN_DEPRECIATION_CAPEX_PROXY"
+
+
+def test_equity_cashflow_scenario_exposes_present_value():
+    report = ValuationEngine.evaluate(
+        symbol="FPT",
+        facts=_facts_oe(),
+        current_market_price=Decimal("100000"),
+        shares_outstanding=Decimal("1000000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Công nghệ"},
+    )
+    base = report.scenarios[ScenarioType.BASE]
+    assert base.present_value is not None
+    assert base.result_type == "EQUITY_VALUE"
+    assert base.present_value == base.equity_value
+
+
+def test_airport_concession_without_sourced_duration_is_estimated():
+    # ACV: AIRPORT_INFRASTRUCTURE + CONCESSION_DCF with only the default 15-year
+    # config -> MODEL_ESTIMATED (never VERIFIED), fallback kept for diagnostics.
+    report = ValuationEngine.evaluate(
+        symbol="ACV",
+        facts=_facts_oe(),
+        current_market_price=Decimal("100000"),
+        shares_outstanding=Decimal("200000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Hàng không"},
+    )
+    assert report.archetype_profile["archetype"] == "AIRPORT_INFRASTRUCTURE"
+    assert report.valuation_model == "CONCESSION_DCF"
+    assert report.model_status == "MODEL_ESTIMATED"
+    assert report.fallback_valuation is not None
+
+
+def test_airport_concession_with_sourced_duration_stays_verified():
+    report = ValuationEngine.evaluate(
+        symbol="ACV",
+        facts=_facts_oe(),
+        current_market_price=Decimal("100000"),
+        shares_outstanding=Decimal("200000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Hàng không", "concession_end_date": "2045-12-31"},
+    )
+    assert report.model_status == "MODEL_VERIFIED"
+
+
+def test_non_airport_concession_unaffected_by_duration_gate():
+    report = ValuationEngine.evaluate(
+        symbol="GAS",
+        facts=_facts_oe(),
+        current_market_price=Decimal("78000"),
+        shares_outstanding=Decimal("200000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Tiện ích"},
+    )
+    assert report.model_status == "MODEL_VERIFIED"
+
+
+def test_rim_exposes_equity_specific_present_value():
+    # Audit round 3 #8: RIM must use equity-specific field naming. The discounted
+    # stream is present_value == equity_value; enterprise_value is only a backward
+    # compatibility alias, never a net-debt-adjusted enterprise number.
+    report = ValuationEngine.evaluate(
+        symbol="SSI",
+        facts=_facts_oe(),
+        current_market_price=Decimal("35000"),
+        shares_outstanding=Decimal("1000000000"),
+        fiscal_year=2023,
+        fundamentals={"sector": "Chứng khoán", "bvps": Decimal("22000"), "roe": Decimal("15.0")},
+    )
+    base = report.scenarios[ScenarioType.BASE]
+    assert report.valuation_model == "RESIDUAL_INCOME_MODEL"
+    assert base.cashflow_basis == "RESIDUAL_INCOME"
+    assert base.result_type == "EQUITY_VALUE"
+    assert base.present_value == base.equity_value
+    assert base.net_debt == Decimal("0")

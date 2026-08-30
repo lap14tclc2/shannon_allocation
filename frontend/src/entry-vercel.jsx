@@ -19,6 +19,7 @@ import OperationsPage from './pages/OperationsPage.jsx';
 import LogsPage from './pages/LogsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
+import ScreenerPage from './pages/ScreenerPage.jsx';
 import { applyStoredTheme } from './lib/appearance.js';
 import { NAVIGATION_EVENT, navigate } from './lib/navigation.js';
 import {
@@ -72,7 +73,7 @@ const ROUTES = {
   '/screener': ScreenerPage,
   '/dividends': DividendHistoryPage,
   '/snapshots': SnapshotsPage,
-  '/operations': OperationsPage,
+  '/operations': PortfolioPage,
   '/logs': LogsPage,
   '/settings': SettingsPage,
   '/guide': GuidePage,

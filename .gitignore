@@ -21,3 +21,9 @@ Thumbs.db
 # Editors
 .idea/
 .vscode/
+
+# Scratch & Temporary DBs
+scratch/
+*.sqlite
+*.sqlite3
+*.log

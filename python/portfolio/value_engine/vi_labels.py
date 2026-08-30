@@ -23,6 +23,7 @@ VAL_VERDICT_VI: Dict[str, str] = {
     "DATA_INSUFFICIENT": "Chưa đủ Dữ liệu BCTC",
     "MODEL_PENDING": "Đang hoàn thiện Mô hình",
     "MODEL_INCOMPLETE": "Thiếu dữ liệu mô hình đặc thù",
+    "MODEL_ESTIMATED": "Mô hình Ước tính (giả định chưa có nguồn)",
     "CLASSIFICATION_CONFLICT": "Xung đột Phân loại ngành",
     "AVOID_SOLVENCY": "Thận trọng Khả năng Thanh toán",
     "ARCHETYPE_UNSUPPORTED": "Chưa xác định Mô hình Định giá",

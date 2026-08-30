@@ -80,9 +80,6 @@ class QualityScorer:
         net_debt_vnd: float,
         latest_cfo: float,
         true_dilution_5y_pct: Optional[float],
-        dilution_classification: Optional[str] = None,
-        dilution_evidence: Optional[Dict[str, Any]] = None,
-        unexplained_share_change_pct: Optional[float] = None,
     ) -> QualityScorecard:
         hard_rejects: List[HardRejectReason] = []
 
@@ -342,39 +339,10 @@ class QualityScorer:
                 cap_pts = 5
             else:
                 cap_pts = 2
-                # P0 audit (2026-08-29): only proven economic dilution (events
-                # present) may hard-reject here; unexplained residual growth keeps
-                # the low score but is flagged for verification instead.
-                if dilution_classification in (None, "EXCESSIVE_DILUTION", "ECONOMIC_DILUTION"):
-                    hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
+                hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
 
-        # P0 audit (2026-08-29): EXCESSIVE_DILUTION requires event-level evidence.
-        # A residual share increase with NO economic events (ESOP/rights/placement/
-        # convertible/M&A) is UNEXPLAINED_SHARE_CHANGE, not proven dilution. It must
-        # not hard-reject; instead it is surfaced for verification.
-        is_excessive_dilution = (
-            true_dilution_5y_pct is not None
-            and true_dilution_5y_pct >= 20.0
-            and dilution_classification in (None, "EXCESSIVE_DILUTION", "ECONOMIC_DILUTION")
-        )
-        if is_excessive_dilution:
+        if true_dilution_5y_pct is not None and true_dilution_5y_pct >= 20.0:
             hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
-
-        # P0/P1 audit (2026-08-29): UNEXPLAINED share change is "unknown", never
-        # "verified no dilution". Do not hard-reject (missing evidence is not a
-        # proven dilution), but never award a clean 15/15 capital-allocation when a
-        # material share increase is unexplained. Cap the score instead.
-        if (
-            dilution_classification == "UNEXPLAINED_SHARE_CHANGE"
-            and (unexplained_share_change_pct is not None)
-            and float(unexplained_share_change_pct) >= 20.0
-        ):
-            cap_pts = min(cap_pts, 10)
-            cap_evidence["unexplained_share_change_pct"] = round(float(unexplained_share_change_pct), 1)
-            cap_evidence["capital_allocation_uncertainty"] = (
-                "UNEXPLAINED_SHARE_CHANGE: tăng số lượng CP chưa được giải thích bởi sự kiện cổ phiếu phi kinh tế; "
-                "điểm phân bổ vốn bị giới hạn <= 10/15 cho đến khi có event-level evidence."
-            )
 
         # 7. Governance (10 pts)
         gov_pts = 8  # Standard listed baseline

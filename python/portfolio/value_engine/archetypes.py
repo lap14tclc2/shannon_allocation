@@ -572,6 +572,15 @@ EXPLICIT_SYMBOL_ARCHETYPES: Dict[str, ArchetypeProfile] = {
     "HAG": ArchetypeProfile(EconomicArchetype.AGRICULTURE, [ArchetypeOverlay.HIGH_CYCLICALITY], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="HAGL Agrico - nông nghiệp"),
     "HHV": ArchetypeProfile(EconomicArchetype.CONCESSION_INFRASTRUCTURE, [ArchetypeOverlay.CONCESSION, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "CONCESSION_DCF", reason="Đèo Cả - hạ tầng giao thông BOT"),
     "HT1": ArchetypeProfile(EconomicArchetype.BUILDING_MATERIALS, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Xi măng Hà Tiên - vật liệu xây dựng chu kỳ"),
+    # 10. Power / water / BOT split (audit round 3) — separate economics, do not
+    #     lump thermal/hydro/water/renewable/BOT under one concession archetype.
+    "PPC": ArchetypeProfile(EconomicArchetype.POWER_GENERATION_THERMAL, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.REGULATED], 0.25, "CONCESSION_DCF", reason="Phả Lại - nhiệt điện than, PPA + fuel pass-through"),
+    "NT2": ArchetypeProfile(EconomicArchetype.POWER_GENERATION_THERMAL, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.REGULATED], 0.25, "CONCESSION_DCF", reason="Nhiệt điện Ninh Bình - nhiệt điện"),
+    "VSH": ArchetypeProfile(EconomicArchetype.POWER_GENERATION_HYDRO, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", reason="Thủy điện Vĩnh Sơn - Sông Hinh, hydrology 5-10Y"),
+    "CHP": ArchetypeProfile(EconomicArchetype.POWER_GENERATION_HYDRO, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", reason="Thủy điện Trị An - hydrology 5-10Y"),
+    "BWE": ArchetypeProfile(EconomicArchetype.WATER_UTILITY, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.20, "CONCESSION_DCF", reason="Biwase - cấp nước + môi trường, tariff & volume"),
+    "TDM": ArchetypeProfile(EconomicArchetype.WATER_UTILITY, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.20, "CONCESSION_DCF", reason="Thủ Dầu Một - cấp nước, tariff & volume"),
+    "GEG": ArchetypeProfile(EconomicArchetype.POWER_RENEWABLE, [ArchetypeOverlay.PROJECT_BASED, ArchetypeOverlay.REGULATED], 0.30, "CONCESSION_DCF", reason="Gia Lai Electricity - điện gió, PPA + capacity factor"),
     "KSV": ArchetypeProfile(EconomicArchetype.MINING_RESOURCE, [ArchetypeOverlay.COMMODITY_EXPOSED, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "RESERVE_NAV", reason="Khoáng sản TKV - khai khoáng, cần NAV trữ lượng"),
     "MSH": ArchetypeProfile(EconomicArchetype.EXPORT_MANUFACTURING, [ArchetypeOverlay.EXPORT_ORIENTED], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", reason="May Sông Hồng - gia công dệt may xuất khẩu"),
     "MSR": ArchetypeProfile(EconomicArchetype.MINING_RESOURCE, [ArchetypeOverlay.COMMODITY_EXPOSED, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "RESERVE_NAV", reason="Masan High-Tech Materials - vonfram, cần NAV trữ lượng"),

@@ -63,6 +63,7 @@ class ModelStatus(str, Enum):
     MODEL_VERIFIED = "MODEL_VERIFIED"
     MODEL_INCOMPLETE = "MODEL_INCOMPLETE"
     MODEL_PARTIAL = "MODEL_PARTIAL"
+    MODEL_ESTIMATED = "MODEL_ESTIMATED"
     MODEL_PENDING = "MODEL_PENDING"
     FALLBACK_MODEL = "FALLBACK_MODEL"
     FALLBACK_MODEL_ONLY = "FALLBACK_MODEL_ONLY"
@@ -129,6 +130,10 @@ class ValuationScenario:
     discount_rate_basis: str = "COST_OF_EQUITY"  # COST_OF_EQUITY | WACC
     result_type: str = "EQUITY_VALUE"  # EQUITY_VALUE | ENTERPRISE_VALUE
     debt_adjustment_policy: str = "NO_NET_DEBT_ADJUSTMENT"  # NO_NET_DEBT_ADJUSTMENT | SUBTRACT_NET_DEBT
+    # Present value of the discounted cash-flow stream (equity-cashflow DCFs).
+    # For equity-basis models this IS the equity value; enterprise_value is kept
+    # only for backward compatibility and equals equity_value there.
+    present_value: Optional[Decimal] = None
 
 
 @dataclass
@@ -191,16 +196,6 @@ class ValuationReport:
     growth_derivation: Optional[Dict[str, Any]] = None
     base_iv: Optional[Decimal] = None
     margin_of_safety_pct: Optional[Decimal] = None
-    # P0 audit (2026-08-29): public (presentation-facing) valuation surface.
-    # When model_status != MODEL_VERIFIED these are always null; the diagnostic
-    # values below remain available under ``diagnostic_fallback`` with
-    # usage=AUDIT_ONLY so no MODEL_INCOMPLETE report leaks a "verified-looking" IV.
-    public_bear_iv: Optional[Decimal] = None
-    public_base_iv: Optional[Decimal] = None
-    public_bull_iv: Optional[Decimal] = None
-    public_mos: Optional[Decimal] = None
-    public_epv: Optional[Decimal] = None
-    diagnostic_fallback: Optional[Dict[str, Any]] = None
     valuation_pill: Optional[str] = None
     verdict: Optional[str] = None
     sector_conflict_warning: Optional[str] = None
@@ -210,6 +205,9 @@ class ValuationReport:
     kcn_lease_parameters: Optional[Dict[str, Any]] = None
     holding_cash_quality: Optional[Dict[str, Any]] = None
     sotp_sensitivity_matrix: Optional[SensitivityMatrix] = None
+    # When model_status != MODEL_VERIFIED, public base_iv / margin_of_safety_pct
+    # are nulled and the computed numbers move here for audit/debug only.
+    fallback_valuation: Optional[Dict[str, Any]] = None
     source_fact_ids: List[str] = field(default_factory=list)
     engine_version: str = "1.0.0"
     computed_at: str = ""

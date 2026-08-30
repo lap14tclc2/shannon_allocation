@@ -107,4 +107,5 @@ class DCFValuationModel:
             discount_rate_basis=discount_rate_basis,
             result_type=result_type,
             debt_adjustment_policy=debt_adjustment_policy,
+            present_value=pv_stage1 + pv_terminal_val,
         )

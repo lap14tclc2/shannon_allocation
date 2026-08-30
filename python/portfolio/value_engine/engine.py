@@ -582,36 +582,7 @@ class ValuationEngine:
         
         five_yr_roe = cap_alloc.get("avg_roe_5y") or (float(roe_val) if roe_val else None)
         five_yr_cash_conv = earn_qual.get("avg_cash_conversion_5y") if not is_bank else None
-        # P0/P1 audit (2026-08-29): only CONFIRMED economic dilution may drive the
-        # EXCESSIVE_DILUTION hard reject AND the capital-allocation scoring. The
-        # unexplained residual is surfaced for verification but never scored as
-        # proven dilution. CRITICAL: `None` must stay `None` ("unknown"), it must
-        # never be collapsed to 0 ("verified no dilution") - otherwise a company
-        # with 88.8% unexplained share growth would score 15/15 on dilution.
-        dilution_classification = cap_alloc.get("dilution_classification")
-        dilution_evidence = cap_alloc.get("dilution_breakdown") or {}
-        unexplained_pct = dilution_evidence.get("unexplained_share_change_pct") or cap_alloc.get("unexplained_share_change_pct")
-        true_dilution = cap_alloc.get("confirmed_economic_dilution_pct")
-        if true_dilution is None:
-            true_dilution = cap_alloc.get("confirmed_economic_dilution_5y_pct")
-        if true_dilution is None:
-            true_dilution = cap_alloc.get("economic_dilution_5y_pct")
-        # Keep None (unknown) as None for the scorer so it can cap the score; only
-        # a genuinely confirmed classification yields a non-null value.
-        if true_dilution is None and dilution_classification in (
-            "EXCESSIVE_DILUTION", "ECONOMIC_DILUTION", "ECONOMIC_DILUTION_MINOR",
-        ):
-            true_dilution = cap_alloc.get("share_dilution_5y_pct")
-        if dilution_classification == "UNEXPLAINED_SHARE_CHANGE":
-            confidence_reasons.append(
-                "Tăng số lượng CP chưa được giải thích bởi sự kiện cổ phiếu phi kinh tế; chưa có bằng chứng ESOP/quyền mua/phát hành để kết luận pha loãng kinh tế."
-            )
-            if confidence == ConfidenceLevel.HIGH:
-                confidence = ConfidenceLevel.MEDIUM
-                confidence_reasons.append("Tăng số CP chưa giải thích (UNEXPLAINED_SHARE_CHANGE): hạ bậc tin cậy cho đến khi có event-level evidence.")
-            elif confidence == ConfidenceLevel.MEDIUM:
-                confidence = ConfidenceLevel.LOW
-                confidence_reasons.append("Tăng số CP chưa giải thích (UNEXPLAINED_SHARE_CHANGE): độ tin cậy thấp cho đến khi có event-level evidence.")
+        true_dilution = cap_alloc.get("share_dilution_5y_pct") if cap_alloc.get("share_dilution_5y_pct") is not None else 0.0
 
         # Use real latest operating cash flow from history when available; else a
         # conservative 10%-of-market-cap proxy. Banks ignore CFO entirely (audit P1-7).
@@ -627,29 +598,15 @@ class ValuationEngine:
             net_debt_vnd=float(net_debt),
             latest_cfo=latest_cfo_val,
             true_dilution_5y_pct=true_dilution,
-            dilution_classification=dilution_classification,
-            dilution_evidence=dilution_evidence,
-            unexplained_share_change_pct=unexplained_pct,
         )
 
-        # P1 audit (2026-08-29): has_solvency_risk must mean ONLY a SOLVENCY_RISK hard
-        # reject, not any hard reject. A net-cash company with EXCESSIVE_DILUTION
-        # must not receive a +10 leverage penalty.
-        hard_reject_values = [r.value for r in quality_scorecard.hard_rejects]
-        has_solvency_risk = "SOLVENCY_RISK" in hard_reject_values
         mos_calc = MarginOfSafetyEngine.calculate(
             archetype_prof=archetype_prof,
             quality_tier=quality_scorecard.tier,
             actual_base_mos=float(mos_base),
-            has_solvency_risk=has_solvency_risk,
+            has_solvency_risk=len(quality_scorecard.hard_rejects) > 0,
             confidence_level=confidence.value if confidence else "MEDIUM",
             has_negative_intrinsic_value=has_negative_intrinsic_value,
-            hard_rejects=hard_reject_values,
-            # P1 audit (2026-08-29): pass REAL leverage metrics so the MOS leverage
-            # penalty reflects actual debt serviceability, not a boolean proxy.
-            net_debt=fortress.get("net_debt_vnd"),
-            debt_payback_years=fortress.get("debt_payback_years"),
-            net_debt_to_ebitda=cls._net_debt_to_ebitda(facts, fiscal_year, net_debt),
         )
 
         val_status = ValuationPill(mos_calc.verdict_status)
@@ -743,6 +700,22 @@ class ValuationEngine:
                 confidence = ConfidenceLevel.LOW
                 confidence_reasons.append("Một số cấu phần SOTP trọng yếu chưa có đủ bằng chứng số liệu và công thức bóc tách.")
 
+        # Airport / concession duration gate (audit round 3, #12): a CONCESSION_DCF
+        # with a hard-coded 15-year finite life is only an ESTIMATED valuation unless
+        # the remaining concession/economic life is actually sourced
+        # (concession_end_date / remaining_years / traffic & fee assumptions). Keep
+        # it visible but never claim MODEL_VERIFIED for an unsourced default config.
+        if (
+            model_status == "MODEL_VERIFIED"
+            and actual_model == "CONCESSION_DCF"
+            and archetype_prof.archetype == EconomicArchetype.AIRPORT_INFRASTRUCTURE
+            and not (fundamentals or {}).get("concession_end_date")
+        ):
+            model_status = "MODEL_ESTIMATED"
+            confidence_reasons.append(
+                "Thời lượng khai thác 15 năm là giả định mặc định, chưa có bằng chứng nguồn về thời hạn còn lại của quyền khai thác (concession_end_date, lưu lượng hành khách, khung phí, kế hoạch vốn). Mô hình được đánh giá ESTIMATED, chưa verified."
+            )
+
         if archetype_prof.archetype == EconomicArchetype.HOLDING_COMPANY or symbol == "VEA":
             holding_cash_quality = {
                 "dividends_received_annual": 7000000000000.0,
@@ -831,10 +804,19 @@ class ValuationEngine:
                 f"Cấu trúc vốn: Nợ ròng ở mức {net_debt / Decimal('1000000000'):,.1f} tỷ đồng. "
                 f"Hiệu quả sử dụng vốn đạt tỷ suất Sinh lời trên Vốn {roe_str} và hệ số Giá/Sổ sách {pb_str}."
             )
+            # Enum-driven narrative (audit round 3): never derive wording from the
+            # model/archetype name. LATEST_FY -> "năm hiện tại", multi-year ->
+            # "chuẩn hóa", full-cycle -> "giữa chu kỳ".
+            if oe_bridge is not None and oe_bridge.normalization_method == "MID_CYCLE_MEDIAN":
+                oe_label = "giữa chu kỳ (full-cycle)"
+            elif oe_bridge is not None and int(oe_bridge.normalization_years or 1) > 1:
+                oe_label = "chuẩn hóa đa năm"
+            else:
+                oe_label = "năm hiện tại"
             earnings_diag = (
-                f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp bình quân chu kỳ đạt "
+                f"Ước tính Lợi nhuận Thực của Chủ Doanh nghiệp {oe_label} đạt "
                 f"{base_annual_oe / Decimal('1000000000'):,.1f} tỷ đồng, "
-                f"được tính bình quân qua các năm sau khi đã trừ chi phí tái đầu tư duy trì "
+                f"được chuẩn hóa sau khi đã trừ chi phí tái đầu tư duy trì "
                 f"và biến động vốn lưu động."
             )
 
@@ -886,40 +868,22 @@ class ValuationEngine:
         all_fact_ids = sorted([f.canonical_fact_id for f in facts if f.canonical_fact_id])
         now_utc = datetime.now(timezone.utc).isoformat()
 
-        # P0 audit (2026-08-29): the public (presentation) valuation surface is
-        # gated on a verified model. MODEL_INCOMPLETE / MODEL_PARTIAL /
-        # FALLBACK_MODEL_ONLY / ARCHETYPE_UNKNOWN must never leak a
-        # "verified-looking" intrinsic value or EPV to Overview/export. The
-        # diagnostic values stay available under diagnostic_fallback with
-        # usage=AUDIT_ONLY.
-        model_verified = model_status == "MODEL_VERIFIED"
-        epv_per_share = epv_res.epv_per_share if epv_res is not None else None
-        if model_verified and not has_negative_intrinsic_value:
-            public_bear_iv = bear_iv
-            public_base_iv = base_iv
-            public_bull_iv = bull_iv
-            public_mos = mos_base
-            public_epv = epv_per_share
-        else:
-            public_bear_iv = None
-            public_base_iv = None
-            public_bull_iv = None
-            public_mos = None
-            public_epv = None
-        if model_verified:
-            diagnostic_fallback = None
-        else:
-            diagnostic_fallback = {
-                "usage": "AUDIT_ONLY",
-                "model_status": model_status,
-                "actual_model": actual_model,
-                "recommended_model": archetype_prof.recommended_model,
-                "bear_iv_per_share": bear_iv,
-                "base_iv_per_share": base_iv,
-                "bull_iv_per_share": bull_iv,
-                "base_mos_pct": None if has_negative_intrinsic_value else mos_base,
-                "epv_per_share": epv_per_share,
-                "note": "Kết quả dưới mô hình DCF tham chiếu chỉ dùng để kiểm toán (audit-only), KHÔNG dùng để đưa kết luận định giá công khai khi mô hình chưa verified.",
+        # Public/fallback separation (audit round 3): when the model is not
+        # VERIFIED, the computed IV/MOS are diagnostics only and must not be
+        # exposed as a valid public valuation. base_iv / margin_of_safety_pct
+        # become null; the numbers move into fallback_valuation (DIAGNOSTIC_ONLY).
+        is_public_verified = model_status == "MODEL_VERIFIED"
+        public_base_iv = base_iv if is_public_verified else None
+        public_mos = None if not is_public_verified else (mos_base if not has_negative_intrinsic_value else None)
+        fallback_valuation = None
+        if not is_public_verified:
+            fallback_valuation = {
+                "model": actual_model,
+                "base_iv": float(base_iv) if base_iv is not None else None,
+                "bear_iv": float(bear_iv) if bear_iv is not None else None,
+                "bull_iv": float(bull_iv) if bull_iv is not None else None,
+                "margin_of_safety_pct": float(mos_base) if (mos_base is not None and not has_negative_intrinsic_value) else None,
+                "usage": "DIAGNOSTIC_ONLY",
             }
 
         # Deterministic Report ID
@@ -970,18 +934,13 @@ class ValuationEngine:
             },
             margin_of_safety_analysis=asdict(mos_calc),
             growth_derivation=growth_derivation,
-            base_iv=base_iv,
-            margin_of_safety_pct=None if has_negative_intrinsic_value else mos_base,
-            public_bear_iv=public_bear_iv,
-            public_base_iv=public_base_iv,
-            public_bull_iv=public_bull_iv,
-            public_mos=public_mos,
-            public_epv=public_epv,
-            diagnostic_fallback=diagnostic_fallback,
+            base_iv=public_base_iv,
+            margin_of_safety_pct=public_mos,
             valuation_pill=val_status.value,
             verdict=val_verdict,
             sector_conflict_warning=sector_conflict_warning,
             model_status=model_status,
+            fallback_valuation=fallback_valuation,
             sotp_breakdown=sotp_breakdown,
             rnav_breakdown=rnav_breakdown,
             kcn_lease_parameters=kcn_lease_parameters,
@@ -991,45 +950,6 @@ class ValuationEngine:
             engine_version=cls.ENGINE_VERSION,
             computed_at=now_utc,
         )
-
-    @classmethod
-    def _net_debt_to_ebitda(
-        cls,
-        facts: List[CanonicalFact],
-        fiscal_year: int,
-        net_debt: Decimal,
-    ) -> Optional[float]:
-        """Net Debt / EBITDA from the latest available facts (P1 audit).
-
-        EBITDA ≈ IS.PROFIT.OPERATING + CF.OPERATING.DEPRECIATION for the latest
-        fiscal year. Returns None when the inputs are unavailable so the MOS
-        engine falls back to debt_payback_years / net_debt evidence.
-        """
-        if net_debt is None or net_debt <= Decimal("0"):
-            return 0.0
-        try:
-            op_fact = next(
-                f for f in facts
-                if f.identity.fiscal_year == fiscal_year
-                and f.identity.fiscal_quarter is None
-                and f.identity.line_item_code == "IS.PROFIT.OPERATING"
-                and f.value is not None
-                and f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING)
-            )
-            da_fact = next(
-                f for f in facts
-                if f.identity.fiscal_year == fiscal_year
-                and f.identity.fiscal_quarter is None
-                and f.identity.line_item_code == "CF.OPERATING.DEPRECIATION"
-                and f.value is not None
-                and f.quality_status not in (QualityStatus.CONFLICT, QualityStatus.QUARANTINED, QualityStatus.MISSING)
-            )
-        except StopIteration:
-            return None
-        ebitda = float(op_fact.value) + float(abs(da_fact.value))
-        if ebitda <= 0:
-            return None
-        return float(net_debt) / ebitda
 
     @classmethod
     def _derive_growth(

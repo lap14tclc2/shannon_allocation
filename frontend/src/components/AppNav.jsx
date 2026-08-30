@@ -22,10 +22,9 @@ const LINKS = [
 
 const NAVIGATION_LINKS = [
   ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : 'Rủi ro và mức độ tập trung']),
-  ['/screener', 'screener', 'Bộ lọc', 'Sàng lọc DN chất lượng cao'],
+  ['/screener', 'screener', 'Bộ lọc', 'Bộ lọc & Soi định giá cổ phiếu'],
   ['/dividends', 'dividends', 'Cổ tức', 'Sự kiện và khoản thực nhận'],
   ['/snapshots', 'snapshots', 'Nhật ký NAV', 'Các mốc dữ liệu chính thức'],
-  ['/operations', 'operations', 'Vận hành', 'Đồng bộ và chất lượng dữ liệu'],
   ['/guide', 'guide', 'Hướng dẫn', 'Cách sử dụng QPort'],
 ];
 
@@ -56,9 +55,7 @@ function NavIcon({ name, size = 18 }) {
   if (name === 'transactions') return <svg {...common}><path d="M7 4v15" /><path d="m3.5 7.5 3.5-3.5 3.5 3.5" /><path d="M17 20V5" /><path d="m13.5 16.5 3.5 3.5 3.5-3.5" /></svg>;
   if (name === 'performance') return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
   if (name === 'valuation') return <svg {...common}><path d="M5 3h14v18H5z" /><path d="M8 8h8M8 12h5M8 16h8" /></svg>;
-  if (name === 'screener') return <svg {...common}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>;
   if (name === 'risk') return <svg {...common}><path d="M12 3 19 6v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6Z" /><path d="M9 12h6" /></svg>;
-
   if (name === 'portfolio-stack') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8M8 13h5" /></svg>;
   if (name === 'chevron') return <svg {...common}><path d="m8 10 4 4 4-4" /></svg>;
   if (name === 'settings') return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V20h-3v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.55-1H5v-3h.45A1.7 1.7 0 0 0 7 9.65a1.7 1.7 0 0 0-.34-1.88L6.6 7.7l2.12-2.12.06.06A1.7 1.7 0 0 0 10.66 6a1.7 1.7 0 0 0 1-1.55V4h3v.45a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.4 9.7a1.7 1.7 0 0 0 1.55 1H21v3h-.05A1.7 1.7 0 0 0 19.4 15Z" /></svg>;

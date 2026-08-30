@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { navigate } from '../lib/navigation.js';
+import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
+import '../valuation-page.css';
+import '../screener-page.css';
 
 const EXCHANGE_OPTIONS = [
   { id: 'ALL', label: 'Tất cả sàn' },
@@ -27,6 +29,7 @@ export default function ScreenerPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState(null);
 
   // Filters state
   const [minScore, setMinScore] = useState(80);
@@ -244,7 +247,12 @@ export default function ScreenerPage() {
               {items.map((item) => {
                 const tierClass = getTierClass(item.total_score);
                 return (
-                  <div key={item.symbol} className={`screener-card ${tierClass}`}>
+                  <div
+                    key={item.symbol}
+                    className={`screener-card ${tierClass}`}
+                    onClick={() => setSelectedSymbol(item.symbol)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     {/* Card Header */}
                     <div className="card-header">
                       <div className="card-symbol-block">
@@ -290,14 +298,15 @@ export default function ScreenerPage() {
                     </div>
 
                     {/* Action Button */}
-                    <div className="card-actions">
+                    <div className="card-actions" onClick={e => e.stopPropagation()}>
                       <button
                         type="button"
                         className="btn-deep-dive"
-                        onClick={() => navigate(`/valuation?symbol=${item.symbol}`)}
+                        onClick={() => setSelectedSymbol(item.symbol)}
+                        title={`Soi Định giá chi tiết ${item.symbol}`}
                       >
                         <span>Soi Định giá chi tiết</span>
-                        <span className="arrow-icon">→</span>
+                        <span className="arrow-icon">↗</span>
                       </button>
                     </div>
                   </div>
@@ -306,6 +315,14 @@ export default function ScreenerPage() {
             </div>
           )}
         </section>
+
+        {/* In-Place Valuation Detail Overlay (Modal) */}
+        {selectedSymbol && (
+          <ValuationDetailOverlay
+            symbol={selectedSymbol}
+            onClose={() => setSelectedSymbol(null)}
+          />
+        )}
       </main>
     </div>
   );

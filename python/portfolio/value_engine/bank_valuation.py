@@ -142,8 +142,9 @@ class BankValuationModel:
             projected_cash_flows=projected_excess_returns,
             terminal_value=terminal_val,
             # RIM produces EQUITY value directly (book value + PV excess ROE).
-            # enterprise_value is declared equal to equity value so no downstream
-            # consumer can mis-read a net-debt-adjusted enterprise number.
+            # Equity-specific naming: the discounted stream is presented as
+            # present_value / equity_value; enterprise_value is kept equal only
+            # for schema backward compatibility (audit round 3, #1/#8).
             enterprise_value=equity_val,
             net_debt=Decimal("0"),
             equity_value=equity_val,
@@ -152,6 +153,7 @@ class BankValuationModel:
             cashflow_basis="RESIDUAL_INCOME",
             discount_rate_basis="COST_OF_EQUITY",
             result_type="EQUITY_VALUE",
+            present_value=equity_val,
             debt_adjustment_policy="NO_NET_DEBT_ADJUSTMENT",
         )
 
