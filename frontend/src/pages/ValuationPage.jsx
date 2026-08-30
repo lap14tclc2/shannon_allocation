@@ -269,6 +269,19 @@ function ValuationCard({ symbol, report, error, locale }) {
   </article>;
 }
 
+function getPageNumbers(currentPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, '...', totalPages];
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+}
+
 function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, locale = 'vi', onSelectSymbol }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
@@ -437,48 +450,56 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
       </div>
 
       {totalPages > 1 && (
-        <div className="valuation-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: '8px' }}>
-          <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
-            Hiển thị <strong>{(safePage - 1) * pageSize + 1}</strong> – <strong>{Math.min(safePage * pageSize, validRows.length)}</strong> trên tổng số <strong>{validRows.length}</strong> mã cổ phiếu
+        <div className="valuation-pagination">
+          <span className="pagination-info">
+            Hiển thị <strong>{(safePage - 1) * pageSize + 1}</strong> – <strong>{Math.min(safePage * pageSize, validRows.length)}</strong> trên <strong>{validRows.length}</strong> mã
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+
+          <div className="pagination-controls">
             <button
               type="button"
-              className="btn-small"
+              className="pagination-btn pagination-prev"
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={safePage <= 1}
-              style={{ padding: '4px 10px', fontSize: '0.82rem', background: 'var(--surface-soft)', border: '1px solid var(--border)', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.5 : 1, color: 'var(--text)' }}
+              aria-label="Trang trước"
             >
-              ← Trang trước
+              ← Trước
             </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-              <button
-                key={page}
-                type="button"
-                className="btn-small"
-                onClick={() => setCurrentPage(page)}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: '0.82rem',
-                  fontWeight: safePage === page ? '700' : '500',
-                  background: safePage === page ? 'var(--accent)' : 'var(--surface-soft)',
-                  color: safePage === page ? '#ffffff' : 'var(--text)',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                  borderRadius: '2px',
-                }}
-              >
-                {page}
-              </button>
-            ))}
+
+            <div className="pagination-pages-desktop">
+              {getPageNumbers(safePage, totalPages).map((p, idx) => {
+                if (p === '...') {
+                  return <span key={`ellipsis-${idx}`} className="pagination-ellipsis">…</span>;
+                }
+                const pageNum = Number(p);
+                const isActive = safePage === pageNum;
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    className={`pagination-page-btn ${isActive ? 'is-active' : ''}`}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pagination-pages-mobile">
+              <span className="pagination-mobile-indicator">
+                Trang <strong>{safePage}</strong> / {totalPages}
+              </span>
+            </div>
+
             <button
               type="button"
-              className="btn-small"
+              className="pagination-btn pagination-next"
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
-              style={{ padding: '4px 10px', fontSize: '0.82rem', background: 'var(--surface-soft)', border: '1px solid var(--border)', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPages ? 0.5 : 1, color: 'var(--text)' }}
+              aria-label="Trang sau"
             >
-              Trang sau →
+              Sau →
             </button>
           </div>
         </div>
