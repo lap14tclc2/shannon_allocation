@@ -137,3 +137,11 @@ Khi kích hoạt các cờ sau, hệ thống lập tức khóa định giá và 
 | `WATCH` | Doanh nghiệp tốt nhưng giá chưa đủ rẻ hoặc cần thêm thời gian theo dõi chu kỳ. |
 | `AVOID_QUALITY` | Doanh nghiệp có vấn đề về chất lượng quản trị, đòn bẩy hoặc hiệu quả vốn yếu kém. |
 | `UNVALUABLE` | Nằm ngoài vòng tròn năng lực, dữ liệu không thể chuẩn hóa dòng tiền tin cậy. |
+
+---
+
+## VIII. Tài Liệu Kỹ Thuật Tham Chiếu (Technical References)
+
+* **Hướng dẫn chi tiết công thức & ví dụ 5 mã cổ phiếu (FPT, VNM, MWG, DGC, ACB):** [INTRINSIC_VALUE_FORMULAS.md](file:///c:/workspace/shannon_allocation/docs/specifications/INTRINSIC_VALUE_FORMULAS.md)
+* **Chuẩn hóa xác thực tài chính toàn thị trường (UFVS):** [feedback.txt](file:///c:/workspace/shannon_allocation/docs/feedback.txt)
+
