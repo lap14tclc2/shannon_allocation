@@ -55,4 +55,7 @@
 | [TASK-20260830-076](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-076-screener-filter-by-buffett-margin-of-safety.md) | Screener Filter & Sorting by Buffett Margin of Safety | completed | high | 2026-08-30 |
 | [TASK-20260830-077](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-077-valuation-overlay-mobile-full-height-polish.md) | Valuation Detail Overlay Full-Height & Spacing Polish | completed | high | 2026-08-30 |
 | [TASK-20260830-078](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-078-screener-liquidity-filter-10b.md) | Screener Liquidity Filter (>= 10 Billion VND / Day) | completed | high | 2026-08-30 |
+| [TASK-20260830-079](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-079-fix-mobile-valuation-overlay-layout-laws-of-ux.md) | Fix Mobile Valuation Overlay Layout (Laws of UX) | completed | high | 2026-08-30 |
+| [TASK-20260831-080](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-080-deduplicate-frontend-format-helpers.md) | Deduplicate frontend format helpers (money, pct, displayNumber) | completed | medium | 2026-08-31 |
+| [TASK-20260831-081](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-081-deduplicate-i18n-text-and-ui-helpers.md) | Deduplicate i18n text helpers, signedMoney, num, and MetricCard component | completed | medium | 2026-08-31 |
 

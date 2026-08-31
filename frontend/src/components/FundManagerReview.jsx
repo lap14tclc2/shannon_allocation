@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatMoney } from '../lib/format.js';
+import { money as moneyFn } from '../lib/format.js';
+import { chooseText } from '../i18n.js';
 
 function finite(value) {
   const n = Number(value);
@@ -18,11 +19,8 @@ function Pill({ tone = 'neutral', children }) {
 
 export default function FundManagerReview({ dashboard = {}, locale = 'en' }) {
   const [target, setTarget] = useState(null);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  const money = value => {
-    const n = finite(value);
-    return n == null ? '-' : `${formatMoney(n, false, locale)} VND`;
-  };
+  const text = (en, vi) => chooseText(locale, en, vi);
+  const money = value => moneyFn(value, locale, 'VND');
 
   const portfolio = dashboard.portfolio || {};
   const positions = portfolio.positions || [];

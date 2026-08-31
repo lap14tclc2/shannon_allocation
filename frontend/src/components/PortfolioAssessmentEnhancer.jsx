@@ -1,13 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
-
-function num(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : Number(value).toFixed(digits);
-}
+import { formatNumber as num, pct } from '../lib/format.js';
+import { chooseText } from '../i18n.js';
 
 function Progress({ value, label }) {
   const bounded = Math.max(0, Math.min(1, Number(value || 0)));
@@ -19,7 +13,7 @@ function Progress({ value, label }) {
 
 export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = 'en' }) {
   const [target, setTarget] = useState(null);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const risk = dashboard.risk || {};
   const perf = dashboard.performance_summary || {};
   const quality = risk.quality || {};

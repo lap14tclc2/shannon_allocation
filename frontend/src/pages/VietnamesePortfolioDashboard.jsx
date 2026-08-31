@@ -3,31 +3,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import DividendTree from '../components/DividendTree.jsx';
 import HoldingSourceTree from '../components/HoldingSourceTree.jsx';
-import { formatMoney } from '../lib/format.js';
+import { money, pct, signedMoney } from '../lib/format.js';
 import { deriveHoldingBooks } from '../lib/holdingBooks.js';
 import { getDividendHistories, listPortfolioTransactions } from '../lib/api.js';
 import { refreshDashboard, selectRefreshStatus } from '../lib/store.js';
-
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
-
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
-
-function signedMoney(value, locale = 'vi') {
-  if (value == null || !Number.isFinite(Number(value))) return '-';
-  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
-}
-
-function Metric({ label, value, note, tone = '' }) {
-  return <div className={`metric-card overview-metric ${tone}`}>
-    <div className="metric-label">{label}</div>
-    <div className="metric-value" data-sensitive="money">{value}</div>
-    {note && <div className="metric-note">{note}</div>}
-  </div>;
-}
+import { Metric } from '../components/MetricCard.jsx';
 
 function currentVietnamYear() {
   return Number(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric' }).format(new Date()));

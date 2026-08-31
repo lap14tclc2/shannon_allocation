@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { formatMoney } from '../lib/format.js';
+import { money as moneyFn, pct } from '../lib/format.js';
 import { syncPortfolio } from '../lib/api.js';
 import { useI18n } from '../i18n.js';
 
-function pct(v, digits = 2) { return v == null ? '-' : `${(Number(v) * 100).toFixed(digits)}%`; }
+
 
 export default function SnapshotsPage({ snapshots = [], locale = 'en' }) {
-  const { t, status } = useI18n(locale);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  const money = (v) => (v == null ? '-' : `${formatMoney(v, false, locale)} VND`);
+  const { t, status, text } = useI18n(locale);
+  const money = (v) => moneyFn(v, locale, 'VND');
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const official = snapshots.filter((s) => s.official).length;

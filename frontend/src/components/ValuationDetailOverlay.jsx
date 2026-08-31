@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getValuationReport } from '../lib/api.js';
-import { formatMoney } from '../lib/format.js';
+import { displayNumber, formatMoney, money } from '../lib/format.js';
 import {
   archetypeLabel,
   qualityTierLabel,
@@ -10,13 +10,7 @@ import {
   verdictPillClass,
 } from '../lib/valuationLabels.js';
 
-function displayNumber(value, suffix = '', digits = 1) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(digits)}${suffix}`;
-}
 
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${formatMoney(value, false, locale)} ₫`;
-}
 
 export function ValuationStatusPill({ status, marginOfSafety }) {
   const map = {
@@ -1040,24 +1034,30 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
         }
         @keyframes vShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-        /* Responsive Mobile Sheet (< 720px) - Full-Height Ergonomic Experience */
+        /* Responsive Mobile Sheet (< 720px) - Full-Height Ergonomic Experience
+           Laws of UX: Jakob (standard full-screen sheet), Fitts (44px close target),
+           Hick (decluttered header), Proximity (verdict grouped), Postel (wrap, never clip). */
         @media (max-width: 719px) {
           .v-overlay-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
             padding: 0;
             align-items: stretch;
             justify-content: stretch;
             background: rgba(0, 0, 0, 0.75);
-            position: fixed;
-            inset: 0;
-            z-index: 1000;
+            overscroll-behavior: contain;
           }
           .v-overlay-modal {
             position: fixed;
             inset: 0;
             width: 100vw;
             max-width: 100vw;
+            height: 100vh;
+            max-height: 100vh;
             height: 100dvh;
             max-height: 100dvh;
+            min-height: 0;
             border-radius: 0;
             border: none;
             box-shadow: none;
@@ -1068,80 +1068,97 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           .v-modal-grabber {
             display: none;
           }
+          /* Decluttered header: title block wraps, verdict gets its own row, close is pinned (Fitts) */
           .v-overlay-header {
-            padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+            position: relative;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: flex-start;
             gap: 8px;
+            padding: calc(10px + env(safe-area-inset-top, 0px)) 62px 10px 14px;
             border-bottom: 1.5px solid var(--retro-border, #9c927f);
             background: var(--surface-soft, #f4ecd9);
             flex-shrink: 0;
           }
           .v-header-left {
-            flex: 1;
+            flex: 1 1 100%;
             min-width: 0;
-            gap: 2px;
+            gap: 3px;
           }
           .v-header-title-row {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 6px;
-            flex-wrap: nowrap;
-            overflow-x: auto;
           }
           .v-header-ticker {
             font-size: 1.35rem;
             font-weight: 800;
-            line-height: 1;
+            line-height: 1.1;
             flex-shrink: 0;
           }
           .v-tag {
             font-size: 0.7rem;
             padding: 2px 6px;
             white-space: nowrap;
-            flex-shrink: 0;
           }
           .v-header-sub-row {
             font-size: 0.74rem;
-            white-space: nowrap;
+            white-space: normal;
           }
           .v-header-actions {
+            order: 2;
+            width: 100%;
             display: flex;
             align-items: center;
+            justify-content: flex-start;
             gap: 8px;
-            flex-shrink: 0;
           }
           .v-status-badge {
-            padding: 4px 8px;
-            font-size: 0.75rem;
+            padding: 5px 10px;
+            font-size: 0.78rem;
+            white-space: normal;
           }
           .v-close-btn {
-            min-width: 40px;
-            min-height: 40px;
-            width: 40px;
-            height: 40px;
+            position: absolute;
+            top: calc(10px + env(safe-area-inset-top, 0px));
+            right: 12px;
+            width: 44px;
+            min-width: 44px;
+            height: 44px;
+            min-height: 44px;
             font-size: 1.25rem;
-            border-radius: 8px;
+            border-radius: 10px;
           }
           .v-overlay-body {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
             padding: 14px 14px calc(36px + env(safe-area-inset-bottom, 0px));
             -webkit-overflow-scrolling: touch;
             overscroll-behavior: contain;
           }
+          /* Hero / cards: shrink-proof children, long VND values wrap instead of clipping (Postel) */
           .v-hero-grid {
             grid-template-columns: 1fr;
             gap: 8px;
             margin-bottom: 12px;
           }
+          .v-hero-card,
+          .v-metric-card,
+          .v-meta-item,
+          .v-pillar-card,
+          .v-bridge-item {
+            min-width: 0;
+          }
           .v-hero-card {
             padding: 12px 14px;
           }
           .v-hero-value {
-            font-size: 1.4rem;
-            white-space: nowrap;
+            font-size: clamp(1.15rem, 6.5vw, 1.4rem);
+            white-space: normal;
+            overflow-wrap: anywhere;
           }
           .v-multiples-grid {
             grid-template-columns: repeat(2, 1fr);
@@ -1150,6 +1167,11 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           }
           .v-metric-card {
             padding: 8px 10px;
+          }
+          .v-metric-value {
+            font-size: clamp(0.95rem, 5vw, 1.15rem);
+            white-space: normal;
+            overflow-wrap: anywhere;
           }
           .v-narrative-card {
             padding: 14px 12px;
@@ -1162,7 +1184,18 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
             padding: 10px 12px;
           }
           .v-meta-value {
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+          .v-scenario-header-row {
+            align-items: flex-start;
+            gap: 6px;
+          }
+          .v-scenario-base-num {
+            font-size: clamp(1.1rem, 6vw, 1.4rem);
+            white-space: normal;
+            overflow-wrap: anywhere;
+            text-align: right;
           }
           .v-scenario-track {
             display: flex;
@@ -1173,11 +1206,13 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
             flex-direction: row;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
             padding: 10px 14px;
           }
           .v-scenario-node .node-price {
             margin-top: 0;
-            white-space: nowrap;
+            white-space: normal;
+            text-align: right;
           }
           .v-scenario-arrow {
             display: none;

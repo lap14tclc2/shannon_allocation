@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { syncPortfolio } from '../lib/api.js';
+import { chooseText } from '../i18n.js';
 
 const LEASE_MS = 10 * 60 * 1000;
 
@@ -17,7 +18,7 @@ function initialSnapshot(dashboard, positions) {
 }
 
 export default function MarketHistoryIndicator({ dashboard = {}, locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const positions = dashboard?.portfolio?.positions || [];
   const initial = useMemo(() => initialSnapshot(dashboard, positions), [dashboard, positions]);
   const [target, setTarget] = useState(null);

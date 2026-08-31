@@ -6,20 +6,14 @@ import {
 } from '../components/ValuationDetailOverlay.jsx';
 import { getValuationReports } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
-import { formatMoney } from '../lib/format.js';
+import { displayNumber, formatMoney, money } from '../lib/format.js';
 import {
   archetypeLabel,
   modelStatusLabel,
   valuationModelLabel,
 } from '../lib/valuationLabels.js';
 
-function displayNumber(value, suffix = '', digits = 1) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(digits)}${suffix}`;
-}
 
-function money(value, locale) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${formatMoney(value, false, locale)} ₫`;
-}
 
 function MethodologyGuide() {
   return <details className="valuation-methodology" open={false}>

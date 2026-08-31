@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getStoredTheme, saveTheme } from '../lib/appearance.js';
+import { chooseText } from '../i18n.js';
 
 const THEMES = [
   {
@@ -20,7 +21,7 @@ const THEMES = [
 ];
 
 export default function AppearanceControls({ locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState(getStoredTheme);
   const [mounted, setMounted] = useState(false);

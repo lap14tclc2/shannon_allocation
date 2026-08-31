@@ -457,11 +457,16 @@ export function setLanguage(locale) {
   if (typeof window !== 'undefined') window.location.reload();
 }
 
+export function chooseText(locale, en, vi) {
+  return normalizeLocale(locale) === 'vi' ? vi : en;
+}
+
 export function useI18n(locale = 'en') {
   const lang = normalizeLocale(locale);
   return {
     locale: lang,
     t: (key, vars) => translate(lang, key, vars),
+    text: (en, vi) => (lang === 'vi' ? vi : en),
     status: (value) => statusLabel(lang, value),
     eventType: (value) => eventTypeLabel(lang, value),
     setLanguage,

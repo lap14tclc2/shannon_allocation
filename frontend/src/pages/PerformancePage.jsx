@@ -2,22 +2,9 @@ import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import EquityChart from '../components/EquityChart.jsx';
-import { formatMoney } from '../lib/format.js';
+import { money, pct, signedMoney } from '../lib/format.js';
 import { syncPortfolio } from '../lib/api.js';
 import { loadRoute } from '../lib/store.js';
-
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
-
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
-
-function signedMoney(value, locale = 'vi') {
-  if (value == null || !Number.isFinite(Number(value))) return '-';
-  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
-}
 
 export default function PerformancePage({ performance = {}, locale = 'vi' }) {
   const dispatch = useDispatch();

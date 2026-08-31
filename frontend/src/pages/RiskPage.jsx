@@ -1,24 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { listPortfolioSnapshots } from '../lib/api.js';
-import { formatMoney } from '../lib/format.js';
-
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
-
-function num(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : Number(value).toFixed(digits);
-}
-
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
-
-function signedMoney(value, locale = 'vi') {
-  if (value == null || !Number.isFinite(Number(value))) return '-';
-  return `${Number(value) >= 0 ? '+' : ''}${money(value, locale)}`;
-}
+import { formatNumber as num, money, pct, signedMoney } from '../lib/format.js';
 
 function StatusPill({ children, tone = 'neutral' }) {
   return <span className={`risk-level risk-level-${tone}`}>{children}</span>;

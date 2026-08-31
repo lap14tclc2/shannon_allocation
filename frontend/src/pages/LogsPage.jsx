@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { getActivityLog } from '../lib/api.js';
+import { chooseText } from '../i18n.js';
 
 const PAGE_SIZE = 50;
 
@@ -11,7 +12,7 @@ function statusClass(status) {
 }
 
 export default function LogsPage({ activity: initialActivity = {}, locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const [activity, setActivity] = useState(initialActivity || {});
   const [category, setCategory] = useState('ALL');
   const [actor, setActor] = useState('ALL');

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { getCurrentUser, listUsers, removeUser } from '../lib/api.js';
+import { chooseText } from '../i18n.js';
 
 export default function AdminPage({ locale = 'vi' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);

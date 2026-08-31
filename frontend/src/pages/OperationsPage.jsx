@@ -6,8 +6,9 @@ import {
   syncCorporateActions, updateSecurity, verifyCorporateAction,
 } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
-import { formatMoney, formatShares } from '../lib/format.js';
+import { formatShares, money as moneyFn } from '../lib/format.js';
 import { parseVndMoneyInput, validateBrokerAccount } from '../lib/validation.js';
+import { chooseText } from '../i18n.js';
 
 function parsePositions(text) {
   const out = {};
@@ -32,9 +33,8 @@ function lotsToText(lots, broker, account) {
 }
 
 export default function OperationsPage({ operations = {}, today = '', locale = 'en' }) {
-  const vi = locale === 'vi';
-  const text = (en, v) => vi ? v : en;
-  const money = (v) => v == null ? '-' : `${formatMoney(v, false, locale)} VND`;
+  const text = (en, vi) => chooseText(locale, en, vi);
+  const money = (v) => moneyFn(v, locale, 'VND');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [brokerCash, setBrokerCash] = useState('');
