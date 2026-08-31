@@ -705,13 +705,9 @@
     justify-content: space-between;
   }
 
-  .screener-select {
-    flex: 1;
-  }
-
-  .screener-export-btn {
-    justify-content: center;
-    width: 100%;
+  .screener-export-btn,
+  .screener-export-ai-btn {
+    display: none !important;
   }
 
   .toolbar-filter-row {
@@ -734,11 +730,44 @@
   }
 
   .card-header {
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-bottom: 6px;
   }
 
   .card-symbol-block {
+    display: flex;
+    align-items: center;
     flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .score-badge {
+    flex-shrink: 0;
+    text-align: right;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .score-badge .score-number {
+    font-size: 1.1rem;
+    line-height: 1.1;
+  }
+
+  .score-badge .score-label {
+    font-size: 0.65rem;
+    white-space: nowrap;
+  }
+
+  .card-company-block {
+    margin-top: 4px;
+  }
+
+  .card-company-name {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.35;
   }
 }

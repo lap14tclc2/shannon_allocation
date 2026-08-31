@@ -15,6 +15,20 @@ import {
 
 
 
+function formatGridMoney(val, locale = 'vi') {
+  if (val == null || !Number.isFinite(Number(val))) return '—';
+  const n = Number(val);
+  if (Math.abs(n) >= 1e12) {
+    const t = n / 1e12;
+    return `${t >= 100 ? t.toLocaleString('vi-VN', { maximumFractionDigits: 0 }) : t.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} nghìn tỷ ₫`;
+  }
+  if (Math.abs(n) >= 1e9) {
+    const b = n / 1e9;
+    return `${b >= 100 ? b.toLocaleString('vi-VN', { maximumFractionDigits: 0 }) : b.toLocaleString('vi-VN', { maximumFractionDigits: 0 })} tỷ ₫`;
+  }
+  return money(val, locale);
+}
+
 export function ValuationStatusPill({ status, marginOfSafety }) {
   const map = {
     HIGH_CONVICTION_VALUE: { label: 'Đầu tư Giá trị Tuyệt vời', cls: 'v-pill-deep-value', icon: '✦' },
@@ -292,13 +306,13 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                     <div><dt>Biên LNST chu kỳ trung vị</dt><dd>{displayNumber(Number(bridge.mid_cycle_margin) * 100, '%')}</dd></div>
                   )}
                   {bridge.mid_cycle_revenue != null && (
-                    <div><dt>Doanh thu trung vị</dt><dd>{money(bridge.mid_cycle_revenue, locale)}</dd></div>
+                    <div><dt>Doanh thu trung vị</dt><dd>{formatGridMoney(bridge.mid_cycle_revenue, locale)}</dd></div>
                   )}
                   {bridge.normalized_owner_earnings != null && (
-                    <div><dt>Lợi nhuận Thực chuẩn hóa</dt><dd>{money(bridge.normalized_owner_earnings, locale)}</dd></div>
+                    <div><dt>Lợi nhuận Thực chuẩn hóa</dt><dd>{formatGridMoney(bridge.normalized_owner_earnings, locale)}</dd></div>
                   )}
                   {bridge.current_owner_earnings != null && (
-                    <div><dt>Lợi nhuận Thực năm gần nhất</dt><dd>{money(bridge.current_owner_earnings, locale)}</dd></div>
+                    <div><dt>Lợi nhuận Thực năm gần nhất</dt><dd>{formatGridMoney(bridge.current_owner_earnings, locale)}</dd></div>
                   )}
                 </dl>
               )}
@@ -333,13 +347,13 @@ export function ValuationRationale({ report, locale = 'vi' }) {
               {(base.enterprise_value != null || base.terminal_value != null || base.terminal_value_contribution_pct != null || iv != null) && (
                 <dl className="valuation-calculation-grid">
                   {base.terminal_value != null && (
-                    <div><dt>Giá trị cuối (Terminal)</dt><dd>{money(base.terminal_value, locale)}</dd></div>
+                    <div><dt>Giá trị cuối (Terminal)</dt><dd>{formatGridMoney(base.terminal_value, locale)}</dd></div>
                   )}
                   {base.terminal_value_contribution_pct != null && (
                     <div><dt>Đóng góp Terminal</dt><dd>{displayNumber(base.terminal_value_contribution_pct, '%')}</dd></div>
                   )}
                   {base.enterprise_value != null && (
-                    <div><dt>Giá trị Doanh nghiệp (EV)</dt><dd>{money(base.enterprise_value, locale)}</dd></div>
+                    <div><dt>Giá trị Doanh nghiệp (EV)</dt><dd>{formatGridMoney(base.enterprise_value, locale)}</dd></div>
                   )}
                   {iv != null && (
                     <div><dt>Giá trị Thực cơ sở / CP</dt><dd className="highlight">{money(iv, locale)}</dd></div>
@@ -663,12 +677,12 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
         {hasScenarios && (
           <div className="v-scenarios-panel">
             <div className="v-scenario-header-row">
-              <span className="v-scenario-title">GIÁ TRỊ NỘI TẠI · KỊCH BẢN CƠ SỞ</span>
+              <span className="v-scenario-title">GIÁ TRỊ NỘI TẠI · 3 KỊCH BẢN</span>
               <span className="v-scenario-base-num" style={{ whiteSpace: 'nowrap' }}>{money(base.intrinsic_value_per_share, locale)}</span>
             </div>
             <div className="v-scenario-track">
               <div className="v-scenario-node node-bear">
-                <span className="node-tag">THẬN TRỌNG (BEAR)</span>
+                <span className="node-tag">THẬN TRỌNG</span>
                 <span className="node-price">{money(bear.intrinsic_value_per_share, locale)}</span>
               </div>
               <div className="v-scenario-arrow">⟶</div>
@@ -678,7 +692,7 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
               </div>
               <div className="v-scenario-arrow">⟶</div>
               <div className="v-scenario-node node-bull">
-                <span className="node-tag">LẠC QUAN (BULL)</span>
+                <span className="node-tag">LẠC QUAN</span>
                 <span className="node-price">{money(bull.intrinsic_value_per_share, locale)}</span>
               </div>
             </div>
@@ -1406,14 +1420,16 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           font-weight: 800;
           color: var(--retro-ink, #201d18);
           line-height: 1.25;
+          text-align: left !important;
         }
-        .v-meta-value.pos { color: #1e7e46; }
-        .v-meta-value.neg { color: #b03a2e; }
+        .v-meta-value.pos { color: #1e7e46 !important; text-align: left !important; }
+        .v-meta-value.neg { color: #b03a2e !important; text-align: left !important; }
         .v-meta-sub {
           font-size: 0.88rem;
           font-weight: 600;
           color: var(--retro-muted, #736b5e);
           line-height: 1.4;
+          text-align: left !important;
         }
         .v-confidence {
           display: inline-flex;
@@ -1956,41 +1972,108 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           }
           .v-narrative-meta-grid,
           .v-meta-grid {
-            grid-template-columns: 1fr;
-            gap: 8px;
-            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 12px 14px;
+          }
+          .v-meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            text-align: left;
+          }
+          .v-meta-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            color: var(--retro-indigo, #2b4c7e);
+            text-align: left;
           }
           .v-meta-value {
             white-space: normal;
             overflow-wrap: anywhere;
-            font-size: clamp(1.05rem, 5.5vw, 1.28rem);
+            font-size: clamp(1.1rem, 5.5vw, 1.28rem);
+            text-align: left !important;
+          }
+          .v-meta-value.pos {
+            color: #1e7e46 !important;
+            text-align: left !important;
+          }
+          .v-meta-value.neg {
+            color: #b03a2e !important;
+            text-align: left !important;
+          }
+          .v-meta-sub {
+            font-size: 0.82rem;
+            color: var(--retro-muted, #736b5e);
+            line-height: 1.35;
+            text-align: left !important;
           }
           .v-scenario-header-row {
-            align-items: flex-start;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
             gap: 6px;
+            margin-bottom: 8px;
+          }
+          .v-scenario-title {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
           }
           .v-scenario-base-num {
-            font-size: clamp(1.1rem, 6vw, 1.4rem);
-            white-space: normal;
-            overflow-wrap: anywhere;
+            font-size: 1.15rem;
+            font-weight: 800;
+            white-space: nowrap;
             text-align: right;
+            color: var(--retro-indigo, #2b4c7e);
           }
           .v-scenario-track {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+            align-items: stretch;
           }
           .v-scenario-node {
-            flex-direction: row;
-            justify-content: space-between;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
+            text-align: center;
+            gap: 3px;
+            padding: 8px 2px;
+            min-width: 0;
+            border-radius: 6px;
+            border: 1px solid var(--retro-border, #9c927f);
+            background: var(--surface-soft, #f4ecd9);
+          }
+          .v-scenario-node.is-active {
+            border-color: var(--retro-indigo, #2b4c7e);
+            background: color-mix(in srgb, var(--retro-indigo, #2b4c7e) 10%, var(--panel, #fffaf0));
+            box-shadow: 0 0 0 1px var(--retro-indigo, #2b4c7e);
+          }
+          .v-scenario-node .node-tag {
+            font-size: 0.60rem;
+            font-weight: 700;
+            color: var(--retro-muted, #696257);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            letter-spacing: 0.01em;
           }
           .v-scenario-node .node-price {
             margin-top: 0;
-            white-space: normal;
-            text-align: right;
+            font-size: clamp(0.78rem, 3.8vw, 0.88rem);
+            font-weight: 800;
+            font-family: var(--font-mono-num, monospace);
+            color: var(--text, #201d18);
+            white-space: nowrap;
+          }
+          .v-scenario-node.is-active .node-price {
+            color: var(--retro-indigo, #2b4c7e);
           }
           .v-scenario-arrow {
             display: none;
