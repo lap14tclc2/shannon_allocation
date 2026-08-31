@@ -320,7 +320,11 @@ def test_vea_holding_company_sotp_valuation():
     assert any("Honda" in c["component_name"] for c in vea_report.sotp_breakdown["components"])
     assert any("Toyota" in c["component_name"] for c in vea_report.sotp_breakdown["components"])
     assert any("Ford" in c["component_name"] for c in vea_report.sotp_breakdown["components"])
-    assert vea_report.base_iv > Decimal("0")
+    # Feedback 31/08: fixture thiếu lịch sử BCTC -> chất lượng thấp -> IV chỉ
+    # nằm trong diagnostic_fallback (audit-only), không public.
+    assert vea_report.diagnostic_fallback is not None
+    assert vea_report.diagnostic_fallback["base_iv_per_share"] is not None
+    assert vea_report.diagnostic_fallback["base_iv_per_share"] > 0
     # P1 Holding specifics: generic EPV and Reverse DCF suppressed
     assert vea_report.epv_result is None
     assert vea_report.reverse_dcf_result is None

@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from html import unescape
 from html.parser import HTMLParser
+import random
 import time
 import threading
 from datetime import date, datetime, timezone
@@ -1375,6 +1376,40 @@ def _tcbs_document_headers(*, require_token: bool = False) -> dict[str, str]:
         )
     return headers
 
+def _tcbs_fetch_json(url: str, *, timeout: float = 20, retries: int = 3) -> tuple[int, str]:
+    """Fetch TCBS with TLS impersonation (curl_cffi) + retry/backoff jitter.
+
+    TCBS WAF blocks plain ``urllib``/``requests`` by TLS fingerprint (JA3/JA4).
+    ``curl_cffi`` impersonate='chrome120' mimics a real Chrome handshake; the
+    Bearer token comes from ``TCBS_BEARER_TOKEN``. Falls back to ``_url_json``
+    if curl_cffi is not installed (won't pass the WAF).
+    """
+    headers = _tcbs_document_headers(require_token=True)
+    headers["Accept"] = "application/json, text/plain, */*"
+    try:
+        from curl_cffi import requests as cr
+    except ImportError:
+        return _url_json(url, headers=headers, timeout=timeout, retries=retries)
+    session = cr.Session(impersonate="chrome120")
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            resp = session.get(url, headers=headers, timeout=timeout)
+            if resp.status_code == 429:
+                last = resp
+                time.sleep(2.0 * attempt + random.uniform(0.5, 1.5))
+                continue
+            if resp.status_code == 403 and "Just a moment" in resp.text:
+                last = resp
+                time.sleep(2.0 * (attempt + 1) + random.uniform(0.5, 1.5))
+                continue
+            return resp.status_code, resp.text
+        except Exception as exc:  # pragma: no cover
+            last = exc
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"TCBS request failed after {retries + 1} attempts: {last}")
+
+
 def _tcbs_records(
     payload: str | None,
     document_type: str | None = None,
@@ -1518,7 +1553,7 @@ def _tcbs_document_url(symbol: str, document_type: str) -> str:
         raise ValueError(f"unsupported TCBS document type: {document_type}")
     return (
         f"{TCBS_FINANCE_BASE_URL}/{str(symbol).upper().strip()}/{endpoint}"
-        "?yearly=0&isAll=true"
+        "?yearly=1&isAll=true"
     )
 
 
@@ -1547,10 +1582,7 @@ def _fetch_tcbs_history(symbol: str, document_type: str) -> tuple[str, str]:
         symbol,
         f"fetch provider=tcbs document={document_type} history",
     )
-    status, payload = _url_json(
-        url,
-        headers=_tcbs_document_headers(require_token=True),
-    )
+    status, payload = _tcbs_fetch_json(url)
     if status < 200 or status >= 300:
         raise RuntimeError(f"HTTP {status}")
     records = _tcbs_records(payload, document_type)

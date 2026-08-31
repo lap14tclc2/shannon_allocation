@@ -203,6 +203,126 @@
   border-color: var(--accent, #a63f30);
 }
 
+.screener-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.65rem 1rem;
+  background: var(--accent, #a63f30);
+  border: 1px solid var(--accent, #a63f30);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.screener-export-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 6px rgba(166, 63, 48, 0.3);
+}
+
+.screener-export-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.screener-export-ai-btn {
+  background: var(--retro-indigo, #2b4c7e);
+  border-color: var(--retro-indigo, #2b4c7e);
+}
+
+.screener-export-ai-btn:hover:not(:disabled) {
+  box-shadow: 0 2px 6px rgba(43, 76, 126, 0.3);
+}
+
+/* 2 sections của kết quả bộ lọc (feedback 31/08) */
+.screener-section {
+  margin-bottom: 22px;
+}
+
+.screener-section-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1.5px solid var(--border, var(--retro-border, #9c927f));
+}
+
+.screener-section-head h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--retro-green, #2f6b4d);
+}
+
+.screener-section-head.missing h3 {
+  color: var(--retro-hanko, #a63f30);
+}
+
+.screener-section-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  background: var(--input, var(--panel-2, #f4ecd9));
+  border: 1px solid var(--border, #9c927f);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.screener-section-note {
+  flex-basis: 100%;
+  margin: 2px 0 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--retro-hanko, #a63f30);
+}
+
+/* Card thiếu dữ liệu định giá — khác biệt rõ + cảnh báo */
+.screener-card-missing-data {
+  border-style: dashed !important;
+  border-color: var(--retro-hanko, #a63f30) !important;
+  background: color-mix(in srgb, var(--retro-hanko, #a63f30) 3%, var(--panel, var(--retro-panel, #fffaf0))) !important;
+}
+
+.missing-data-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: var(--retro-hanko, #a63f30);
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin-bottom: 6px;
+}
+
+.missing-data-icon {
+  font-size: 0.82rem;
+}
+
+.missing-data-reason {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--retro-hanko, #a63f30);
+  background: color-mix(in srgb, var(--retro-hanko, #a63f30) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--retro-hanko, #a63f30) 26%, transparent);
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.missing-data-reason-label {
+  font-weight: 800;
+}
+
 .toolbar-filter-row {
   display: flex;
   flex-direction: column;
@@ -380,6 +500,26 @@
   gap: 0.25rem;
 }
 
+/* Cảnh báo định giá (feedback 31/08): cổ phiếu không đạt chuẩn Buffett/Munger */
+.valuation-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--retro-hanko, #a63f30) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--retro-hanko, #a63f30) 28%, transparent);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--retro-hanko, #a63f30);
+}
+
+.valuation-warning-icon {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+}
+
 .card-company-name {
   font-size: 0.95rem;
   font-weight: 700;
@@ -547,6 +687,11 @@
 
   .screener-select {
     flex: 1;
+  }
+
+  .screener-export-btn {
+    justify-content: center;
+    width: 100%;
   }
 
   .toolbar-filter-row {

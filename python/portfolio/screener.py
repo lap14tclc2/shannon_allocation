@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from .finance_catalog import _schema_connection, FINANCE_SCHEMA
 from .value_engine.quality_scorer import QualityScorer, QualityTier
-from .value_engine.archetypes import ArchetypeClassifier
-from .value_engine.vi_labels import quality_tier_vi
+from .value_engine.archetypes import ArchetypeClassifier, EconomicArchetype
+from .value_engine.vi_labels import quality_tier_vi, hard_reject_vi
 from .market_data import canonical_vnd_price
 
 _CACHE_LOCK = threading.Lock()
@@ -37,6 +37,12 @@ def _get_vietnamese_valuation_status(status_val: str) -> str:
         "FAIR_VALUE": "Định giá Hợp lý",
         "OVERVALUED": "Định giá Cao",
         "DISTRESSED": "Cần theo dõi",
+        "AVOID_QUALITY": "Tránh xa (Chất lượng thấp)",
+        "UNVALUABLE": "Ngoài vòng năng lực",
+        "MODEL_INCOMPLETE": "Thiếu dữ liệu mô hình đặc thù",
+        "MODEL_ESTIMATED": "Mô hình Ước tính (giả định chưa có nguồn)",
+        "ARCHETYPE_UNKNOWN": "Chưa xác định Mô hình Định giá",
+        "ARCHETYPE_UNSUPPORTED": "Chưa xác định Mô hình Định giá",
     }
     return mapping.get(status_val, "Đang theo dõi")
 
@@ -165,6 +171,23 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
 
             arch = ArchetypeClassifier.classify(sym, ind)
 
+            # Feedback 03:56: model coverage — mã có đủ dữ liệu để định giá chi tiết
+            # hay không (MODEL_INCOMPLETE / MODEL_ESTIMATED / ARCHETYPE_UNKNOWN), kèm
+            # lý do tiếng Việt để hiển thị trên card section "Thiếu dữ liệu".
+            recommended_model = arch.recommended_model
+            archetype_code = arch.archetype.value
+            model_status = "MODEL_VERIFIED"
+            valuation_gap = None
+            if arch.archetype == EconomicArchetype.ARCHETYPE_UNKNOWN:
+                model_status = "ARCHETYPE_UNKNOWN"
+                valuation_gap = "Chưa xác định được bản chất kinh tế / mô hình định giá (thiếu thông tin phân loại ngành)."
+            elif recommended_model in ("RESERVE_NAV", "FLEET_NAV", "AIRLINE_EBITDAR", "MID_CYCLE_FCFF", "RNAV", "SOTP", "LEASE_CASHFLOW_DCF"):
+                model_status = "MODEL_INCOMPLETE"
+                valuation_gap = "Thiếu dữ liệu mô hình đặc thù."
+            elif recommended_model == "CONCESSION_DCF" and arch.archetype == EconomicArchetype.AIRPORT_INFRASTRUCTURE:
+                model_status = "MODEL_ESTIMATED"
+                valuation_gap = "Mô hình Ước tính (giả định chưa có nguồn)."
+
             recent_roes = [h["roe"] for h in financial_history[-5:] if h.get("roe") is not None]
             avg_roe_5y = round(sum(recent_roes) / len(recent_roes), 1) if recent_roes else None
 
@@ -187,66 +210,103 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     true_dilution_5y_pct=0.0,
                 )
 
-                # Buffett Intrinsic Value & Margin of Safety calculation
-                latest_items = hist[years[-1]]
-                np_latest = latest_items.get("IS.PROFIT.NET")
-                eq_latest = latest_items.get("BS.EQUITY.TOTAL")
-                cfo_latest = latest_items.get("CF.OPERATING.NET") or (np_latest * 0.9 if np_latest else 0)
-                capex_latest = latest_items.get("CF.CAPEX") or (cfo_latest * 0.3)
-                debt_latest = latest_items.get("BS.DEBT.TOTAL") or 0
-                cash_latest = latest_items.get("BS.ASSETS.CASH_AND_EQUIVALENTS") or 0
-                shares = latest_items.get("IS.SHARES.OUTSTANDING") or latest_items.get("BS.SHARES.OUTSTANDING")
+                # Feedback 31/08: cổ phiếu không đạt chuẩn Buffett/Munger (hard
+                # reject) hoặc điểm chất lượng quá thấp (LOW_QUALITY) KHÔNG được
+                # tính MOS / Giá trị Thực. Thay vào đó đưa ra cảnh báo + nguyên nhân.
+                hard_reject_codes = [r.value for r in scorecard.hard_rejects]
+                quality_blocked = bool(hard_reject_codes) or scorecard.tier == QualityTier.LOW_QUALITY
+                valuation_warning = None
+                if quality_blocked:
+                    if hard_reject_codes:
+                        reasons_vi = "; ".join(hard_reject_vi(code) for code in hard_reject_codes)
+                        valuation_warning = (
+                            f"KHÔNG đạt tiêu chuẩn Buffett/Munger — {reasons_vi}. "
+                            f"Điểm Chất lượng {scorecard.total_score}/100. Không tính Biên An Toàn (MOS) / Giá trị Thực."
+                        )
+                    else:
+                        valuation_warning = (
+                            f"Điểm Chất lượng quá thấp ({scorecard.total_score}/100 — {quality_tier_vi('LOW_QUALITY')}): "
+                            f"không đạt tiêu chuẩn Buffett/Munger. Không tính Biên An Toàn (MOS) / Giá trị Thực; khuyến nghị tránh xa."
+                        )
 
                 intrinsic_value = None
                 mos = None
                 req_mos = max(20.0, min(40.0, round(30.0 - (scorecard.total_score - 50) * 0.2, 1)))
 
-                if np_latest and np_latest > 0:
-                    if not shares or shares <= 0:
-                        if eq_latest and eq_latest > 0:
-                            shares = (eq_latest * 1e9) / 20000.0  # estimate ~20k bvps
+                if not quality_blocked:
+                    # Buffett Intrinsic Value & Margin of Safety calculation
+                    latest_items = hist[years[-1]]
+                    np_latest = latest_items.get("IS.PROFIT.NET")
+                    eq_latest = latest_items.get("BS.EQUITY.TOTAL")
+                    cfo_latest = latest_items.get("CF.OPERATING.NET") or (np_latest * 0.9 if np_latest else 0)
+                    capex_latest = latest_items.get("CF.CAPEX") or (cfo_latest * 0.3)
+                    debt_latest = latest_items.get("BS.DEBT.TOTAL") or 0
+                    cash_latest = latest_items.get("BS.ASSETS.CASH_AND_EQUIVALENTS") or 0
+                    shares = latest_items.get("IS.SHARES.OUTSTANDING") or latest_items.get("BS.SHARES.OUTSTANDING")
+
+                    if np_latest and np_latest > 0:
+                        if not shares or shares <= 0:
+                            if eq_latest and eq_latest > 0:
+                                shares = (eq_latest * 1e9) / 20000.0  # estimate ~20k bvps
+                            else:
+                                shares = 1.0
+
+                        is_bank = any(t in f"{ind} {name}".lower() for t in ("bank", "ngân hàng"))
+
+                        if is_bank and eq_latest and eq_latest > 0:
+                            roe_curr = np_latest / eq_latest
+                            bvps = (eq_latest * 1e9) / shares
+                            r, g = 0.11, 0.035
+                            p_b_fair = 1.0 + max(0.0, roe_curr - r) / (r - g)
+                            p_b_fair = min(3.0, max(0.7, p_b_fair))
+                            intrinsic_value = round(bvps * p_b_fair)
                         else:
-                            shares = 1.0
-
-                    is_bank = any(t in f"{ind} {name}".lower() for t in ("bank", "ngân hàng"))
-
-                    if is_bank and eq_latest and eq_latest > 0:
-                        roe_curr = np_latest / eq_latest
-                        bvps = (eq_latest * 1e9) / shares
-                        r, g = 0.11, 0.035
-                        p_b_fair = 1.0 + max(0.0, roe_curr - r) / (r - g)
-                        p_b_fair = min(3.0, max(0.7, p_b_fair))
-                        intrinsic_value = round(bvps * p_b_fair)
-                    else:
-                        oe = max(0.0, cfo_latest - capex_latest * 0.5) * 1e9
-                        if oe <= 0:
-                            oe = np_latest * 0.85 * 1e9
-                        pv_factor = 7.72  # 10-year discount factor at 11% r, 5% g
-                        tv_factor = 7.45  # Terminal value factor at 11% r, 3.5% g
-                        ev = oe * (pv_factor + tv_factor)
-                        net_cash_val = (cash_latest - debt_latest) * 1e9
-                        equity_val = max(eq_latest * 1e9 if eq_latest else 0, ev + net_cash_val)
-                        intrinsic_value = round(equity_val / shares) if shares > 0 else 0
+                            oe = max(0.0, cfo_latest - capex_latest * 0.5) * 1e9
+                            if oe <= 0:
+                                oe = np_latest * 0.85 * 1e9
+                            pv_factor = 7.72  # 10-year discount factor at 11% r, 5% g
+                            tv_factor = 7.45  # Terminal value factor at 11% r, 3.5% g
+                            ev = oe * (pv_factor + tv_factor)
+                            net_cash_val = (cash_latest - debt_latest) * 1e9
+                            equity_val = max(eq_latest * 1e9 if eq_latest else 0, ev + net_cash_val)
+                            intrinsic_value = round(equity_val / shares) if shares > 0 else 0
 
                 curr_price = price_map.get(sym)
                 if curr_price and intrinsic_value and intrinsic_value > 0:
                     mos = round(((intrinsic_value - curr_price) / intrinsic_value) * 100.0, 1)
 
-                is_qualified = mos is not None and mos >= req_mos
-                is_positive = mos is not None and mos > 0
+                # user-test.md: screener KHÔNG dùng diagnostic fallback MOS làm MOS
+                # chính. Mã MODEL_INCOMPLETE / MODEL_ESTIMATED / ARCHETYPE_UNKNOWN
+                # chỉ có MOS THAM KHẢO (diagnostic), không dùng để xếp hạng.
+                is_verified_model = model_status == "MODEL_VERIFIED"
+                public_iv = intrinsic_value if is_verified_model else None
+                public_mos = mos if is_verified_model else None
+                diagnostic_iv = intrinsic_value if not is_verified_model else None
+                diagnostic_mos = mos if not is_verified_model else None
+
+                is_qualified = public_mos is not None and public_mos >= req_mos
+                is_positive = public_mos is not None and public_mos > 0
 
                 val_status = "DISTRESSED"
-                if mos is not None:
-                    if mos >= 40.0:
+                if quality_blocked:
+                    val_status = "AVOID_QUALITY"
+                elif not is_verified_model:
+                    val_status = model_status if model_status in ("MODEL_INCOMPLETE", "MODEL_ESTIMATED", "ARCHETYPE_UNKNOWN", "ARCHETYPE_UNSUPPORTED") else "DISTRESSED"
+                elif public_mos is not None:
+                    if public_mos >= 40.0:
                         val_status = "DEEP_VALUE"
-                    elif mos >= req_mos:
+                    elif public_mos >= req_mos:
                         val_status = "UNDERVALUED"
-                    elif mos >= 0.0:
+                    elif public_mos >= 0.0:
                         val_status = "FAIR_VALUE"
                     else:
                         val_status = "OVERVALUED"
 
                 # Multiples
+                latest_items = hist[years[-1]]
+                np_latest = latest_items.get("IS.PROFIT.NET")
+                eq_latest = latest_items.get("BS.EQUITY.TOTAL")
+                shares = latest_items.get("IS.SHARES.OUTSTANDING") or latest_items.get("BS.SHARES.OUTSTANDING")
                 pe_val = round(curr_price / (np_latest * 1e9 / shares), 1) if (curr_price and np_latest and shares and np_latest > 0) else None
                 pb_val = round(curr_price / ((eq_latest * 1e9) / shares), 2) if (curr_price and eq_latest and shares and eq_latest > 0) else None
 
@@ -256,11 +316,14 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     "company_name": name,
                     "industry": ind,
                     "current_price": curr_price,
-                    "intrinsic_value": intrinsic_value,
-                    "margin_of_safety": mos,
+                    "intrinsic_value": public_iv,
+                    "margin_of_safety": public_mos,
+                    "diagnostic_intrinsic_value": diagnostic_iv,
+                    "diagnostic_mos": diagnostic_mos,
                     "required_mos": req_mos,
                     "valuation_status": val_status,
                     "valuation_status_vi": _get_vietnamese_valuation_status(val_status),
+                    "valuation_warning": valuation_warning,
                     "is_buffett_qualified": is_qualified,
                     "is_positive_mos": is_positive,
                     "avg_turnover_20d_billion": turnover_map.get(sym, 0.0),
@@ -280,7 +343,9 @@ def compute_all_screener_scores(force_refresh: bool = False) -> List[Dict[str, A
                     "latest_year": years[-1],
                     "archetype": arch.archetype.value,
                     "recommended_model": arch.recommended_model,
-                    "hard_rejects": [r.value for r in scorecard.hard_rejects],
+                    "model_status": model_status,
+                    "valuation_gap": valuation_gap,
+                    "hard_rejects": hard_reject_codes,
                 })
             except Exception:
                 continue
@@ -352,6 +417,8 @@ def get_screener_results(
                             it["margin_of_safety"] = round(((it["intrinsic_value"] - close_val) / it["intrinsic_value"]) * 100.0, 1)
                             it["is_positive_mos"] = it["margin_of_safety"] > 0
                             it["is_buffett_qualified"] = it["margin_of_safety"] >= it.get("required_mos", 25.0)
+                        elif it.get("diagnostic_intrinsic_value") and it["diagnostic_intrinsic_value"] > 0:
+                            it["diagnostic_mos"] = round(((it["diagnostic_intrinsic_value"] - close_val) / it["diagnostic_intrinsic_value"]) * 100.0, 1)
             if rows:
                 saved_rows.extend(rows)
 

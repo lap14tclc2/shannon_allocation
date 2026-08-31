@@ -822,6 +822,69 @@ def admin_logs(
     }
 
 
+@app.post("/api/admin/activity/reanchor")
+def admin_activity_reanchor(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Re-anchor a broken activity chain (PREV_HASH_MISMATCH / historical break).
+
+    P0 audit (feedback 31/08): a BROKEN chain with PREV_HASH_MISMATCH is the
+    exact case ``reanchor_activity_chain`` is designed to migrate: it starts a
+    NEW verified segment anchored to the last known-good hash WITHOUT rewriting
+    history (legacy segment stays BROKEN_HISTORICAL, new appends VERIFIED_FROM_ANCHOR).
+
+    Body (all optional):
+      - user_id / portfolio_id: re-anchor a single portfolio. When omitted the
+        endpoint re-anchors every non-admin portfolio whose chain is BROKEN.
+      - reason / operator: migration metadata (defaults: "feedback-20260831").
+    """
+    require_admin(qport_session)
+    from portfolio.activity import reanchor_activity_chain, verify_activity_chain
+
+    user_id = body.get("user_id")
+    portfolio_id = body.get("portfolio_id")
+    operator = str(body.get("operator") or "admin-feedback-20260831")[:100]
+    reason = str(body.get("reason") or "re-anchor after PREV_HASH_MISMATCH")[:200]
+
+    targets: list[dict[str, Any]] = []
+    if user_id is not None:
+        user = admin_target_user(int(user_id))
+        if portfolio_id is not None:
+            selected = next((p for p in auth().list_portfolios(int(user["id"])) if int(p["id"]) == int(portfolio_id)), None)
+            if selected is None:
+                raise ApiError(404, "Portfolio not found.", "PORTFOLIO_NOT_FOUND", "portfolio_id")
+            targets.append({"store": PostgresPortfolioStore(int(user["id"]), selected["schema_name"]), "label": f"user {user['id']} / portfolio {selected['id']}"})
+        else:
+            for selected in auth().list_portfolios(int(user["id"])):
+                targets.append({"store": PostgresPortfolioStore(int(user["id"]), selected["schema_name"]), "label": f"user {user['id']} / portfolio {selected['id']}"})
+    else:
+        for user in auth().list_users():
+            if user.get("role") == "ADMIN":
+                continue
+            for selected in auth().list_portfolios(int(user["id"])):
+                targets.append({"store": PostgresPortfolioStore(int(user["id"]), selected["schema_name"]), "label": f"user {user['id']} / portfolio {selected['id']}"})
+
+    results: list[dict[str, Any]] = []
+    for target in targets:
+        store = target["store"]
+        integrity = verify_activity_chain(store)
+        if integrity["status"] not in ("BROKEN",):
+            results.append({"portfolio": target["label"], "reanchored": False, "status": integrity["status"], "records": integrity["records"]})
+            continue
+        result = reanchor_activity_chain(store, operator=operator, reason=reason)
+        results.append({
+            "portfolio": target["label"],
+            "reanchored": result.get("reanchored"),
+            "status": result.get("status"),
+            "records": result.get("records"),
+            "anchor_id": result.get("anchor_id"),
+            "genesis_anchor": result.get("genesis_anchor"),
+            "anchor": result.get("anchor"),
+        })
+    return {"ok": True, "operator": operator, "reason": reason, "results": results}
+
+
 @app.get("/api/portfolio/logs")
 def portfolio_logs(qport_session: str | None = Cookie(default=None)):
     # The legacy path is intentionally admin-only; normal users cannot inspect logs.
@@ -1197,7 +1260,9 @@ def portfolio_symbol_valuation(
             cagr_5y = round(((v_end / v_start) ** (1.0 / span) - 1.0) * 100, 1)
 
     # 1. Earnings Quality: Average 5Y Cash Conversion (non-bank) or ROE persistence (bank)
-    # Audit P1-7: CFO/net-income cash conversion is meaningless for banks.
+    # Audit P1-7 + feedback 31/08 (METRIC_APPLICABILITY_REGISTRY): CFO/net-income
+    # cash conversion and industrial debt-payback are meaningless for banks,
+    # securities and insurance companies -> expose as N/A, never a raw number.
     recent_conversions = [h["cash_conversion_ratio"] for h in financial_history[-5:] if h.get("cash_conversion_ratio") is not None]
     avg_cash_conversion_5y = round(sum(recent_conversions) / len(recent_conversions), 1) if recent_conversions else None
     latest_conversion = financial_history[-1].get("cash_conversion_ratio") if financial_history else None
@@ -1205,7 +1270,11 @@ def portfolio_symbol_valuation(
     recent_roes = [h["roe"] for h in financial_history[-5:] if h.get("roe") is not None]
     avg_roe_5y = round(sum(recent_roes) / len(recent_roes), 1) if recent_roes else None
 
-    if is_bank:
+    is_securities = any(token in f"{sector or ''} {company_type}".lower() for token in ("chứng khoán", "securities", "broker", "môi giới"))
+    is_insurance = any(token in f"{sector or ''} {company_type}".lower() for token in ("bảo hiểm", "insurance"))
+    is_financial = is_bank or is_securities or is_insurance
+
+    if is_financial:
         earnings_quality = {
             "latest_cash_conversion": None,
             "avg_cash_conversion_5y": None,
@@ -1215,8 +1284,9 @@ def portfolio_symbol_valuation(
                 f"Chất lượng thu nhập ngân hàng dựa trên tỷ suất Sinh lời trên Vốn bền vững "
                 f"({avg_roe_5y}% trung bình 5 năm) vượt chi phí vốn cổ phần. "
                 f"Không dùng chỉ số dòng tiền kinh doanh cho ngân hàng."
-                if avg_roe_5y and avg_roe_5y >= 15 else
-                "Tỷ suất Sinh lời trên Vốn của ngân hàng cần theo dõi so với chi phí vốn cổ phần."
+                if is_bank else
+                f"Chất lượng thu nhập tổ chức tài chính dựa trên tỷ suất Sinh lời trên Vốn "
+                f"({avg_roe_5y}% trung bình 5 năm); CFO conversion của doanh nghiệp sản xuất không áp dụng."
             ),
         }
     else:
@@ -1231,55 +1301,122 @@ def portfolio_symbol_valuation(
     latest_hist = financial_history[-1] if financial_history else {}
     latest_debt = latest_hist.get("total_debt") or 0
     latest_cash = latest_hist.get("cash_and_equivalents") or 0
-    net_debt_calc = 0.0 if is_bank else max(0.0, float(latest_debt - latest_cash))
+    net_debt_calc = 0.0 if is_financial else max(0.0, float(latest_debt - latest_cash))
     latest_cfo = latest_hist.get("operating_cash_flow") or 0
-    debt_payback_years = round(net_debt_calc / latest_cfo, 1) if (latest_cfo and latest_cfo > 0 and net_debt_calc > 0) else 0.0
+    if is_financial:
+        debt_payback_years = None
+    elif net_debt_calc > 0 and latest_cfo and latest_cfo > 0:
+        debt_payback_years = round(net_debt_calc / latest_cfo, 1)
+    else:
+        debt_payback_years = 0.0
+    # Feedback 03:56 (P1): `net_debt_to_ebitda` phải là ratio dimensionless.
+    # `net_debt_calc` đang ở VND; `operating_profit`/`depreciation` từ finance DB
+    # ở TỶ đồng (billion VND) -> phải scale EBITDA lên VND trước khi chia, nếu
+    # không sẽ ra số cực lớn (vd SCS 541Mx, FRT 9.1Bx). Kèm invariant 0 <= ratio < 100.
+    ebitda_est_billion = (float(operating_profit) if operating_profit is not None else 0.0) + (float(depreciation) if depreciation is not None else 0.0)
+    ebitda_est_vnd = ebitda_est_billion * 1e9 if ebitda_est_billion and ebitda_est_billion > 0 else 0.0
+    net_debt_to_ebitda = None
+    if not is_financial and net_debt_calc > 0 and ebitda_est_vnd > 0:
+        ratio = net_debt_calc / ebitda_est_vnd
+        if 0.0 <= ratio < 100.0:
+            net_debt_to_ebitda = round(ratio, 2)
 
-    fortress_status = "FORTRESS" if (is_bank or net_debt_calc == 0) else ("STRONG" if debt_payback_years < 3.0 else "MODERATE")
-    fortress_diag = "Cơ cấu tài chính ngân hàng chuẩn mực (Huy động tiền gửi kinh doanh)." if is_bank else ("Pháo đài tiền mặt ròng dồi dào (Không có áp lực nợ)." if net_debt_calc == 0 else (f"Khả năng hoàn trả nợ ròng nhanh ({debt_payback_years} năm)." if debt_payback_years < 3.0 else f"Cần theo dõi đòn bẩy nợ ({debt_payback_years} năm hoàn nợ)."))
+    fortress_status = "FORTRESS" if (is_financial or net_debt_calc == 0) else ("STRONG" if (debt_payback_years is not None and debt_payback_years < 3.0) else "MODERATE")
+    fortress_diag = "Cơ cấu tài chính tổ chức tài chính chuẩn mực (huy động vốn kinh doanh, không dùng debt-payback công nghiệp)." if is_financial else ("Pháo đài tiền mặt ròng dồi dào (Không có áp lực nợ)." if net_debt_calc == 0 else (f"Khả năng hoàn trả nợ ròng nhanh ({debt_payback_years} năm)." if (debt_payback_years is not None and debt_payback_years < 3.0) else f"Cần theo dõi đòn bẩy nợ ({debt_payback_years} năm hoàn nợ)."))
 
-    # 3. Capital Allocation: 5Y Average ROE & Share Dilution
+    # 3. Capital Allocation: 5Y Average ROE & Economic Dilution Classification
+    from portfolio.value_engine.dilution import classify_share_change
     shares_series = [(h["fiscal_year"], h["shares_outstanding"]) for h in financial_history if h.get("shares_outstanding") is not None]
     share_dilution_5y = None
+    dilution = None
     true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được duy trì tốt."
     if len(shares_series) >= 5 and shares_series[-5][1] and shares_series[-1][1] and shares_series[-5][1] > 0:
         s_old = shares_series[-5][1]
         s_new = shares_series[-1][1]
+        start_year = shares_series[-5][0]
         with _schema_connection(FINANCE_SCHEMA) as db:
             stock_div_rows = db.execute(
-                """SELECT stock_ratio FROM dividend_canonical 
-                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND' 
+                """SELECT stock_ratio FROM dividend_canonical
+                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND'
                    AND effective_event_date >= ?""",
-                (ticker, f"{shares_series[-5][0]}-01-01")
+                (ticker, f"{start_year}-01-01"),
             ).fetchall()
-            cumulative_stock_div = 1.0
-            for r in stock_div_rows:
-                if r["stock_ratio"]:
-                    cumulative_stock_div *= (1.0 + float(r["stock_ratio"]))
-            
-            expected_shares_from_bonus = s_old * cumulative_stock_div
-            economic_dilution_pct = max(0.0, ((s_new - expected_shares_from_bonus) / s_old) * 100)
-            share_dilution_5y = round(economic_dilution_pct, 1)
+        non_economic_events = [
+            {"action_type": "STOCK_DIVIDEND", "stock_ratio": float(r["stock_ratio"])}
+            for r in stock_div_rows
+            if r["stock_ratio"]
+        ]
+        # dividend_canonical only stores CASH/STOCK_DIVIDEND; capital-raising
+        # events (ESOP / rights / placement / convertible / M&A) are not ingested
+        # yet, so economic_events stays empty and any residual is reported as
+        # UNEXPLAINED_SHARE_CHANGE rather than proven dilution.
+        dilution = classify_share_change(
+            shares_old=s_old,
+            shares_new=s_new,
+            non_economic_events=non_economic_events,
+            economic_events=[],
+        )
+        share_dilution_5y = dilution["confirmed_economic_dilution_pct"]
+        classification = dilution["classification"]
+        if classification == "EXCESSIVE_DILUTION":
+            true_dilution_diag = f"Có phát hành thêm/ESOP gây pha loãng kinh tế thực ({dilution['confirmed_economic_dilution_pct']}% trong 5 năm)."
+        elif classification == "UNEXPLAINED_SHARE_CHANGE":
+            true_dilution_diag = (
+                f"Tăng vốn cổ phần không giải thích được ({dilution['unexplained_share_change_pct']}% trong 5 năm): "
+                f"số cổ phiếu tăng vượt các sự kiện cổ tức cổ phiếu/thưởng ({dilution['non_economic_share_change_pct']}%). "
+                f"Chưa có bằng chứng phát hành ESOP/quyền mua; cần xác minh."
+            )
+        elif dilution["non_economic_share_change_pct"] and dilution["non_economic_share_change_pct"] > 1.0:
+            true_dilution_diag = f"Số lượng CP tăng chủ yếu do cổ tức cổ phiếu/chia thưởng ({dilution['non_economic_share_change_pct']:.0f}%), không gây pha loãng kinh tế thực."
+        else:
+            true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
 
-            if cumulative_stock_div > 1.05 and economic_dilution_pct < 5.0:
-                true_dilution_diag = f"Số lượng CP tăng chủ yếu do chia thưởng/cổ tức cổ phiếu ({(cumulative_stock_div-1)*100:.0f}%), không gây pha loãng kinh tế thực cho cổ đông."
-            elif economic_dilution_pct >= 10.0:
-                true_dilution_diag = f"Có phát hành thêm/ESOP gây pha loãng kinh tế thực ({share_dilution_5y}% trong 5 năm)."
-            else:
-                true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được bảo toàn tốt."
+    # P1 audit (TASK-070): a material unexplained share change makes capital
+    # allocation UNCERTAIN (never GOOD/EXCELLENT) until event evidence exists.
+    cap_allocation_uncertain = bool(
+        dilution and dilution["classification"] == "UNEXPLAINED_SHARE_CHANGE"
+        and (dilution.get("unexplained_share_change_pct") or 0) >= 5.0
+    )
+    if cap_allocation_uncertain:
+        cap_status = "UNCERTAIN"
+    elif avg_roe_5y and avg_roe_5y >= 18 and (share_dilution_5y is None or share_dilution_5y < 5):
+        cap_status = "EXCELLENT"
+    elif avg_roe_5y and avg_roe_5y >= 13:
+        cap_status = "GOOD"
+    else:
+        cap_status = "WATCH"
+
+    # Chi tiết cấu trúc nợ / vốn chủ sở hữu (feedback 31/08): bổ sung nợ/VCSH,
+    # tổng nợ, tổng VCSH để hiển thị phân tích chi tiết trên UI.
+    latest_equity_vnd = float(latest_hist.get("equity") or 0)
+    total_debt_vnd = float(latest_hist.get("total_debt") or 0)
+    total_cash_vnd = float(latest_hist.get("cash_and_equivalents") or 0)
+    debt_to_equity_ratio = round(total_debt_vnd / latest_equity_vnd, 2) if latest_equity_vnd > 0 else None
 
     value_investor_pillars = {
         "earnings_quality": earnings_quality,
         "financial_fortress": {
             "net_debt_vnd": net_debt_calc,
+            "total_debt_vnd": total_debt_vnd,
+            "total_cash_vnd": total_cash_vnd,
+            "total_equity_vnd": latest_equity_vnd,
+            "debt_to_equity_ratio": debt_to_equity_ratio,
             "debt_payback_years": debt_payback_years,
+            "net_debt_to_ebitda": net_debt_to_ebitda,
             "status": fortress_status,
             "diagnosis": fortress_diag,
         },
         "capital_allocation": {
             "avg_roe_5y": avg_roe_5y,
             "share_dilution_5y_pct": share_dilution_5y,
-            "status": "EXCELLENT" if (avg_roe_5y and avg_roe_5y >= 18 and (share_dilution_5y is None or share_dilution_5y < 5)) else ("GOOD" if (avg_roe_5y and avg_roe_5y >= 13) else "WATCH"),
+            "economic_dilution_5y_pct": dilution["confirmed_economic_dilution_pct"] if dilution else None,
+            "confirmed_economic_dilution_5y_pct": dilution["confirmed_economic_dilution_pct"] if dilution else None,
+            "unexplained_share_change_5y_pct": dilution["unexplained_share_change_pct"] if dilution else None,
+            "non_economic_share_change_5y_pct": dilution["non_economic_share_change_pct"] if dilution else None,
+            "raw_share_change_5y_pct": dilution["raw_share_change_pct"] if dilution else None,
+            "dilution_classification": dilution["classification"] if dilution else None,
+            "dilution_breakdown": dilution or None,
+            "status": cap_status,
             "diagnosis": true_dilution_diag,
         },
     }

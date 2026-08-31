@@ -4,6 +4,7 @@ import { getValuationReport } from '../lib/api.js';
 import { displayNumber, formatMoney, money } from '../lib/format.js';
 import {
   archetypeLabel,
+  modelStatusLabel,
   qualityTierLabel,
   valuationModelLabel,
   verdictLabel,
@@ -67,11 +68,14 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
   const mosAnalysis = report.margin_of_safety_analysis || {};
   const mos = base.margin_of_safety_pct;
   const isVerifiedModel = report.model_status === 'MODEL_VERIFIED';
-  const publicBaseIV = base.intrinsic_value_per_share != null ? base.intrinsic_value_per_share : null;
-  const publicMos = mos != null ? mos : (publicBaseIV && report.current_market_price ? ((publicBaseIV - report.current_market_price) / publicBaseIV * 100) : null);
+  // Feedback 31/08: chỉ dùng IV/MOS đã được xác thực & đạt chuẩn Buffett (public
+  // gated). Cổ phiếu bị chặn (hard reject / điểm quá thấp) trả N/A kèm cảnh báo.
+  const publicBaseIV = report.public_base_iv ?? report.base_iv ?? null;
+  const publicMos = report.public_mos ?? report.margin_of_safety_pct ?? null;
+  const hasValuationWarning = Boolean(report.valuation_warning);
 
   const hasMultiples = multiples.pe != null || multiples.pb != null || multiples.eps != null || multiples.roe != null;
-  const hasScenarios = bear.intrinsic_value_per_share != null && bull.intrinsic_value_per_share != null && base.intrinsic_value_per_share != null;
+  const hasScenarios = publicBaseIV != null && bear.intrinsic_value_per_share != null && bull.intrinsic_value_per_share != null && base.intrinsic_value_per_share != null;
   const pillars = report.value_investor_pillars;
   const hasPillars = Boolean(
     pillars && (
@@ -83,6 +87,125 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
   const hasBridge = Boolean(bridge && bridge.net_profit != null);
   const hasMatrix = Boolean(report.sotp_sensitivity_matrix?.grid_values_per_share?.length > 0);
   const hasTechnical = hasBridge || hasMatrix;
+
+  // Feedback 31/08: chỉ hiển thị phần chi tiết định giá khi cổ phiếu ĐẠT chuẩn
+  // Buffett (model verified + không bị chặn chất lượng + có public IV hợp lệ).
+  // Mọi trường hợp khác (chất lượng quá thấp, hard reject, model chưa xác thực)
+  // -> KHÔNG hiển thị chi tiết, chỉ đưa ra cảnh báo + nguyên nhân.
+  const isQualified = isVerifiedModel
+    && !hasValuationWarning
+    && publicBaseIV != null
+    && Number(publicBaseIV) > 0;
+  if (!isQualified) {
+    const hardRejects = quality.hard_rejects || [];
+    const reportQuality = report.quality_scorecard || {};
+    const reason = report.valuation_warning || (
+      isVerifiedModel
+        ? 'Điểm chất lượng hoặc dữ liệu chưa đạt chuẩn Buffett/Munger; Giá trị Thực (IV) và Biên An Toàn (MOS) không được công bố.'
+        : `Mô hình định giá chưa được xác thực (${report.model_status || 'chưa verified'}): thiếu dữ liệu mô hình đặc thù nên chưa thể công bố định giá chi tiết.`
+    );
+    return (
+      <div className="v-report-content">
+        <div className="v-meta-grid">
+          <div className="v-meta-item">
+            <span className="v-meta-label">BẢN CHẤT DOANH NGHIỆP</span>
+            <span className="v-meta-value">{arch.archetype ? archetypeLabel(arch.archetype) : 'Doanh nghiệp niêm yết'}</span>
+            <span className="v-meta-sub">{valuationModelLabel(report.valuation_model || arch.recommended_model)}</span>
+          </div>
+          <div className="v-meta-item">
+            <span className="v-meta-label">CHẤT LƯỢNG DOANH NGHIỆP</span>
+            <span className="v-meta-value">{reportQuality.total_score != null ? `${reportQuality.total_score}/100` : '—'}</span>
+            <span className="v-meta-sub">{qualityTierLabel(reportQuality.tier)}</span>
+          </div>
+          <div className="v-meta-item">
+            <span className="v-meta-label">TRẠNG THÁI MÔ HÌNH</span>
+            <span className="v-meta-value">{report.model_status ? modelStatusLabel(report.model_status) : '—'}</span>
+            {report.confidence_level ? (
+              <span className={`v-meta-sub v-confidence conf-${String(report.confidence_level).toLowerCase()}`}>
+                Độ tin cậy: {report.confidence_level}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="v-warning-banner" role="alert">
+          <span className="v-warning-icon">⚠️</span>
+          <div className="v-warning-text">
+            <b>KHÔNG CÔNG BỐ GIÁ TRỊ THỰC (IV) & BIÊN AN TOÀN (MOS)</b>
+            <p>{reason}</p>
+          </div>
+        </div>
+
+        {/* Dữ liệu cần thiết để hoàn thiện mô hình (khi block do thiếu dữ liệu) */}
+        {!hasValuationWarning && Array.isArray(report.missing_data) && report.missing_data.length > 0 && (
+          <div className="v-missing-data">
+            <div className="v-missing-header">
+              <span className="v-missing-icon">📋</span>
+              <div className="v-missing-title-wrap">
+                <b>DỮ LIỆU CẦN THIẾT ĐỂ ĐỊNH GIÁ {symbol}</b>
+                <span className="v-missing-sub">
+                  Cần bổ sung các dữ liệu sau để hoàn thiện mô hình {valuationModelLabel(report.valuation_model || arch.recommended_model)}
+                </span>
+              </div>
+            </div>
+            <ul className="v-missing-list">
+              {report.missing_data.map(item => (
+                <li key={item}>
+                  <span className="v-missing-bullet">▸</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            {Array.isArray(report.confidence_reasons) && report.confidence_reasons.length > 0 && (
+              <details className="v-missing-reasons">
+                <summary>Chi tiết nguyên nhân từ engine</summary>
+                <ul>
+                  {report.confidence_reasons.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* Vẫn hiển thị hệ số định giá cơ bản (P/E, P/B, EPS, ROE) cho mã chất lượng thấp */}
+        {(multiples.pe != null || multiples.pb != null || multiples.eps != null || multiples.roe != null) && (
+          <div className="v-multiples-grid">
+            <div className="v-metric-card" title="P/E: Giá trên Lợi nhuận mỗi cổ phần">
+              <span className="v-metric-label">P/E (GIÁ/LNST)</span>
+              <span className="v-metric-value">{multiples.pe != null ? displayNumber(multiples.pe, ' lần') : '—'}</span>
+            </div>
+            <div className="v-metric-card" title="P/B: Giá trên Giá trị sổ sách mỗi cổ phần">
+              <span className="v-metric-label">P/B (GIÁ/SỔ SÁCH)</span>
+              <span className="v-metric-value">{multiples.pb != null ? displayNumber(multiples.pb, ' lần', 2) : '—'}</span>
+            </div>
+            <div className="v-metric-card" title="EPS: Lợi nhuận sau thuế tạo ra trên mỗi cổ phần">
+              <span className="v-metric-label">LỢI NHUẬN/CP (EPS)</span>
+              <span className="v-metric-value">{multiples.eps != null ? `${formatMoney(multiples.eps, false, locale)} ₫` : '—'}</span>
+            </div>
+            <div className="v-metric-card" title="ROE: Tỷ suất sinh lời trên Vốn chủ sở hữu">
+              <span className="v-metric-label">SINH LỜI VỐN (ROE)</span>
+              <span className="v-metric-value highlight-roe">{multiples.roe != null ? displayNumber(multiples.roe, '%') : '—'}</span>
+            </div>
+          </div>
+        )}
+
+        {hardRejects.length > 0 && (
+          <div className="v-hard-rejects">
+            <b>Lý do chặn định giá:</b>
+            <ul>
+              {hardRejects.map(reasonItem => <li key={reasonItem}>{reasonItem}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <div className="v-blocked-note">
+          QPort chỉ công bố phần định giá chi tiết (Giá trị Thực, Biên An Toàn, kịch bản Bear/Base/Bull,
+          Mô hình định giá, Ma trận độ nhạy) cho doanh nghiệp đạt chuẩn chất lượng Buffett/Munger.
+          Doanh nghiệp này chưa đạt chuẩn nên phần định giá chi tiết không được hiển thị.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="v-report-content">
@@ -114,6 +237,17 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           </span>
         </div>
       </div>
+
+      {/* Cảnh báo định giá (feedback 31/08): không đạt chuẩn Buffett/Munger */}
+      {hasValuationWarning && (
+        <div className="v-warning-banner" role="alert">
+          <span className="v-warning-icon">⚠️</span>
+          <div className="v-warning-text">
+            <b>KHÔNG CÔNG BỐ GIÁ TRỊ THỰC (IV) & BIÊN AN TOÀN (MOS)</b>
+            <p>{report.valuation_warning}</p>
+          </div>
+        </div>
+      )}
 
       {/* Multiples 4-Card Grid - Only show if data exists */}
       {hasMultiples && (
@@ -176,15 +310,15 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
               )}
             </div>
           )}
-          {mos != null && Number.isFinite(Number(mos)) && (
+          {publicMos != null && Number.isFinite(Number(publicMos)) && (
             <div className="v-meta-item">
               <span className="v-meta-label">BIÊN AN TOÀN THỰC TẾ</span>
-              <span className={`v-meta-value ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
-                {mos > 0 ? '+' : ''}{Number(mos).toFixed(1)}%
+              <span className={`v-meta-value ${publicMos > 0 ? 'pos' : publicMos < 0 ? 'neg' : ''}`}>
+                {publicMos > 0 ? '+' : ''}{Number(publicMos).toFixed(1)}%
               </span>
               {mosAnalysis.required_mos_pct != null && (
                 <span className="v-meta-sub">
-                  Yêu cầu ≥ {mosAnalysis.required_mos_pct}% · {mos >= mosAnalysis.required_mos_pct ? 'Đạt chuẩn' : 'Chưa đạt'}
+                  Yêu cầu ≥ {mosAnalysis.required_mos_pct}% · {publicMos >= mosAnalysis.required_mos_pct ? 'Đạt chuẩn' : 'Chưa đạt'}
                 </span>
               )}
             </div>
@@ -462,7 +596,7 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
   const assessment = report?.assessment || {};
   const quality = report?.quality_scorecard || {};
   const base = report?.scenarios?.BASE || {};
-  const mos = base.margin_of_safety_pct;
+  const mos = report?.public_mos ?? report?.margin_of_safety_pct ?? null;
 
   const overlayElement = (
     <div
@@ -749,27 +883,70 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           border-radius: 6px;
           padding: 12px 16px;
         }
+        .v-meta-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+          background: var(--surface-bg, #fbf7ee);
+          border: 1px solid var(--retro-border, #9c927f);
+          border-radius: 6px;
+          padding: 12px 16px;
+        }
         .v-meta-item {
           display: flex;
           flex-direction: column;
           gap: 2px;
         }
         .v-meta-label {
-          font-size: 0.68rem;
+          font-size: 0.78rem;
           font-weight: 800;
-          letter-spacing: 0.05em;
-          color: var(--retro-muted, #736b5e);
+          letter-spacing: 0.06em;
+          color: var(--retro-indigo, #2b4c7e);
+          text-transform: uppercase;
         }
         .v-meta-value {
-          font-size: 1.05rem;
-          font-weight: 700;
+          font-size: 1.28rem;
+          font-weight: 800;
           color: var(--retro-ink, #201d18);
+          line-height: 1.25;
         }
         .v-meta-value.pos { color: #1e7e46; }
         .v-meta-value.neg { color: #b03a2e; }
         .v-meta-sub {
-          font-size: 0.72rem;
+          font-size: 0.88rem;
+          font-weight: 600;
           color: var(--retro-muted, #736b5e);
+          line-height: 1.4;
+        }
+        .v-confidence {
+          display: inline-flex;
+          align-items: center;
+          margin-top: 4px;
+          padding: 3px 10px;
+          border-radius: 999px;
+          font-size: 0.8rem;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+        }
+        .v-confidence.conf-high {
+          color: #1e7e46;
+          background: rgba(30, 126, 70, 0.12);
+          border: 1px solid rgba(30, 126, 70, 0.4);
+        }
+        .v-confidence.conf-medium {
+          color: #b7791f;
+          background: rgba(183, 121, 31, 0.12);
+          border: 1px solid rgba(183, 121, 31, 0.4);
+        }
+        .v-confidence.conf-low {
+          color: #b03a2e;
+          background: rgba(176, 58, 46, 0.12);
+          border: 1px solid rgba(176, 58, 46, 0.45);
+          animation: vPulse 1.6s ease-in-out infinite;
+        }
+        @keyframes vPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(176, 58, 46, 0.3); }
+          50% { box-shadow: 0 0 0 5px rgba(176, 58, 46, 0); }
         }
 
         /* Scenario Track */
@@ -856,6 +1033,104 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           border: 1px solid #ffe082;
           padding: 10px 14px;
           border-radius: 6px;
+        }
+
+        .v-warning-banner {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          margin: 10px 0 12px 0;
+          padding: 12px 14px;
+          border-radius: 8px;
+          background: #fdecea;
+          border: 1.5px solid #d9534f;
+          color: #a63f30;
+        }
+        .v-warning-icon {
+          font-size: 1.1rem;
+          line-height: 1.3;
+        }
+        .v-warning-text b {
+          font-size: 0.78rem;
+          letter-spacing: 0.04em;
+        }
+        .v-warning-text p {
+          margin: 4px 0 0 0;
+          font-size: 0.85rem;
+          line-height: 1.5;
+        }
+
+        .v-missing-data {
+          margin: 0 0 12px 0;
+          padding: 14px 16px;
+          border-radius: 8px;
+          background: linear-gradient(180deg, #fdf8ee, #f7efdd);
+          border: 1.5px solid var(--retro-border, #9c927f);
+        }
+        .v-missing-header {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+        }
+        .v-missing-icon {
+          font-size: 1.2rem;
+          line-height: 1.3;
+        }
+        .v-missing-title-wrap {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .v-missing-title-wrap b {
+          font-size: 0.82rem;
+          letter-spacing: 0.03em;
+          color: var(--retro-indigo, #2b4c7e);
+        }
+        .v-missing-sub {
+          font-size: 0.76rem;
+          color: var(--retro-muted, #736b5e);
+        }
+        .v-missing-list {
+          margin: 10px 0 0 0;
+          padding: 0;
+          list-style: none;
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+        .v-missing-list li {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          font-size: 0.85rem;
+          line-height: 1.45;
+          color: var(--retro-ink, #201d18);
+          background: #fff;
+          border: 1px solid var(--retro-border, #d8d0bd);
+          border-radius: 6px;
+          padding: 8px 10px;
+        }
+        .v-missing-bullet {
+          color: var(--retro-indigo, #2b4c7e);
+          font-weight: 800;
+          line-height: 1.2;
+        }
+        .v-missing-reasons {
+          margin-top: 10px;
+          font-size: 0.78rem;
+          color: var(--retro-muted, #736b5e);
+        }
+        .v-missing-reasons summary {
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .v-missing-reasons ul {
+          margin: 6px 0 0 0;
+          padding-left: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          color: var(--retro-ink, #201d18);
         }
 
         /* Accordion */
@@ -1178,7 +1453,8 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
             margin-bottom: 12px;
             gap: 12px;
           }
-          .v-narrative-meta-grid {
+          .v-narrative-meta-grid,
+          .v-meta-grid {
             grid-template-columns: 1fr;
             gap: 8px;
             padding: 10px 12px;
@@ -1186,6 +1462,7 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           .v-meta-value {
             white-space: normal;
             overflow-wrap: anywhere;
+            font-size: clamp(1.05rem, 5.5vw, 1.28rem);
           }
           .v-scenario-header-row {
             align-items: flex-start;

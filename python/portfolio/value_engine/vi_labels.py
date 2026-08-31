@@ -84,6 +84,7 @@ ARCHETYPE_VI: Dict[str, str] = {
     "SHIPPING": "Vận tải biển",
     "AIRLINE": "Vận tải Hàng không",
     "AIRPORT_INFRASTRUCTURE": "Hạ tầng Cảng Hàng không",
+    "AIRPORT_SERVICES": "Dịch vụ Hàng không (Sân bay & Mặt đất)",
     "CONCESSION_INFRASTRUCTURE": "Hạ tầng Khai thác Hữu hạn (BOT/Concession)",
 
     # 8. Agriculture & Conglomerate
@@ -149,6 +150,15 @@ MOAT_VI: Dict[str, str] = {
     "NONE": "Không có hào kinh tế rõ nét",
 }
 
+HARD_REJECT_VI: Dict[str, str] = {
+    "CIRCLE_OF_COMPETENCE_FAIL": "Nằm ngoài vòng tròn năng lực (không thể đánh giá định giá đáng tin cậy)",
+    "DATA_INSUFFICIENT": "Thiếu dữ liệu BCTC lịch sử (dưới 3 năm hợp lệ)",
+    "ACCOUNTING_UNRELIABLE": "Số liệu kế toán không đáng tin cậy",
+    "SOLVENCY_RISK": "Nguy cơ mất khả năng thanh toán / giá trị nội tại âm",
+    "UNNORMALIZABLE_EARNINGS": "Lợi nhuận không thể chuẩn hóa được (Owner Earnings âm / biến động bất thường)",
+    "EXCESSIVE_DILUTION": "Pha loãng cổ phiếu quá mức (đã xác nhận bằng sự kiện phát hành)",
+}
+
 
 def verdict_vi(code: str) -> str:
     return VAL_VERDICT_VI.get(code, code)
@@ -172,3 +182,7 @@ def valuation_model_vi(code: str) -> str:
 
 def moat_vi(code: str) -> str:
     return MOAT_VI.get(code, code)
+
+
+def hard_reject_vi(code: str) -> str:
+    return HARD_REJECT_VI.get(code, code)

@@ -142,7 +142,12 @@ def classify_share_change(
     return {
         "raw_share_change_pct": round(raw_share_change_pct, 1),
         "non_economic_share_change_pct": round(non_economic_share_change_pct, 1),
-        "economic_dilution_pct": round(residual_pct, 1),
+        # Feedback 03:56 (P1): `economic_dilution_pct` KHÔNG được mang giá trị
+        # residual chưa xác nhận (94.8% unexplained). Rename residual ->
+        # `residual_share_change_pct`; `economic_dilution_pct` chỉ mang phần đã
+        # xác nhận (null khi UNEXPLAINED / NON_ECONOMIC).
+        "residual_share_change_pct": round(residual_pct, 1),
+        "economic_dilution_pct": round(confirmed_economic, 1) if confirmed_economic is not None else None,
         "confirmed_economic_dilution_pct": round(confirmed_economic, 1) if confirmed_economic is not None else None,
         "unexplained_share_change_pct": round(unexplained, 1) if unexplained is not None else None,
         "classification": classification,

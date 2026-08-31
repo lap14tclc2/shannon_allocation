@@ -58,4 +58,6 @@
 | [TASK-20260830-079](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260830-079-fix-mobile-valuation-overlay-layout-laws-of-ux.md) | Fix Mobile Valuation Overlay Layout (Laws of UX) | completed | high | 2026-08-30 |
 | [TASK-20260831-080](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-080-deduplicate-frontend-format-helpers.md) | Deduplicate frontend format helpers (money, pct, displayNumber) | completed | medium | 2026-08-31 |
 | [TASK-20260831-081](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-081-deduplicate-i18n-text-and-ui-helpers.md) | Deduplicate i18n text helpers, signedMoney, num, and MetricCard component | completed | medium | 2026-08-31 |
+| [TASK-20260831-082](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-082-feedback-20260831-verdict-dilution-chain.md) | Apply 31/08 Audit Feedback — Verdict Precedence, Dilution Classification, Chain Re-anchor | completed | high | 2026-08-31 |
+| [TASK-20260831-083](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-083-crawl-missing-financial-history.md) | Handle Crawl Missing Financial History (Full-cycle backfill 7–10Y) | in-progress | high | 2026-08-31 |
 

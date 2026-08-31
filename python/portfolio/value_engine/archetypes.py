@@ -66,6 +66,7 @@ class EconomicArchetype(str, Enum):
     SHIPPING = "SHIPPING"
     AIRLINE = "AIRLINE"
     AIRPORT_INFRASTRUCTURE = "AIRPORT_INFRASTRUCTURE"
+    AIRPORT_SERVICES = "AIRPORT_SERVICES"
     CONCESSION_INFRASTRUCTURE = "CONCESSION_INFRASTRUCTURE"
 
     # 8. Agriculture, Plantation & Conglomerates
@@ -95,6 +96,7 @@ class EconomicArchetype(str, Enum):
     TELECOM = "TELECOM_OPERATOR"
     COMMODITY_CYCLICAL = "COMMODITY_CHEMICAL"
     AVIATION = "AIRLINE"
+    AIRPORT_SERVICE = "AIRPORT_SERVICES"
 
 
 class ArchetypeOverlay(str, Enum):
@@ -421,6 +423,13 @@ ARCHETYPE_REGISTRY: Dict[EconomicArchetype, ArchetypeRegistryEntry] = {
         primary_model="CONCESSION_DCF",
         base_mos=0.25,
     ),
+    # Airport / aviation ground services (AST): a fee-for-service business, NOT a
+    # finite-life infrastructure concession -> normalized OE DCF, not CONCESSION_DCF.
+    EconomicArchetype.AIRPORT_SERVICES: ArchetypeRegistryEntry(
+        archetype=EconomicArchetype.AIRPORT_SERVICES,
+        primary_model="NORMALIZED_OWNER_EARNINGS_DCF",
+        base_mos=0.25,
+    ),
     EconomicArchetype.CONCESSION_INFRASTRUCTURE: ArchetypeRegistryEntry(
         archetype=EconomicArchetype.CONCESSION_INFRASTRUCTURE,
         primary_model="CONCESSION_DCF",
@@ -555,6 +564,7 @@ EXPLICIT_SYMBOL_ARCHETYPES: Dict[str, ArchetypeProfile] = {
 
     # 8. Ports, Logistics, Aviation & Pharma
     "GMD": ArchetypeProfile(EconomicArchetype.PORT_INFRASTRUCTURE, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", reason="Gemadept - Cảng biển & Logistics"),
+    "VSC": ArchetypeProfile(EconomicArchetype.PORT_INFRASTRUCTURE, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", reason="Container Việt Nam - Cảng biển & Logistics"),
     "HAH": ArchetypeProfile(EconomicArchetype.SHIPPING, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "FLEET_NAV", reason="Hải An - Vận tải biển"),
     "VOS": ArchetypeProfile(EconomicArchetype.SHIPPING, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "FLEET_NAV", reason="Vinaship - Vận tải biển"),
     "VJC": ArchetypeProfile(EconomicArchetype.AIRLINE, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.HIGH_LEVERAGE], 0.45, "AIRLINE_EBITDAR", reason="Vietjet Air - Hàng không chi phí thấp"),
@@ -564,12 +574,14 @@ EXPLICIT_SYMBOL_ARCHETYPES: Dict[str, ArchetypeProfile] = {
 
     # 9. Previously GENERIC_ENTERPRISE symbols (68-symbol audit set, task 058)
     "ACV": ArchetypeProfile(EconomicArchetype.AIRPORT_INFRASTRUCTURE, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION, ArchetypeOverlay.STATE_INFLUENCED], 0.25, "CONCESSION_DCF", reason="Tổng Công ty Cảng Hàng không Việt Nam - phí sân bay có quản lý nhà nước"),
+    "AST": ArchetypeProfile(EconomicArchetype.AIRPORT_SERVICES, [ArchetypeOverlay.STATE_INFLUENCED, ArchetypeOverlay.REGULATED], 0.25, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Dịch vụ Hàng không Tân Sơn Nhất - dịch vụ mặt đất sân bay (fee-for-service, không phải concession hữu hạn)"),
     "BCC": ArchetypeProfile(EconomicArchetype.BUILDING_MATERIALS, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Xi măng Bỉm Sơn - vật liệu xây dựng chu kỳ"),
     "BSR": ArchetypeProfile(EconomicArchetype.OIL_REFINING_DOWNSTREAM, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Lọc hóa dầu Dung Quất - nhà máy lọc dầu"),
     "CII": ArchetypeProfile(EconomicArchetype.CONCESSION_INFRASTRUCTURE, [ArchetypeOverlay.CONCESSION, ArchetypeOverlay.PROJECT_BASED], 0.30, "CONCESSION_DCF", reason="CII - đầu tư hạ tầng BOT giao thông & nước"),
     "CTD": ArchetypeProfile(EconomicArchetype.CONSTRUCTION_EPC, [ArchetypeOverlay.PROJECT_BASED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Coteccons - nhà thầu xây dựng"),
     "FCN": ArchetypeProfile(EconomicArchetype.CONSTRUCTION_EPC, [ArchetypeOverlay.PROJECT_BASED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Fecon - nhà thầu hạ tầng & năng lượng"),
     "HAG": ArchetypeProfile(EconomicArchetype.AGRICULTURE, [ArchetypeOverlay.HIGH_CYCLICALITY], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="HAGL Agrico - nông nghiệp"),
+    "BAF": ArchetypeProfile(EconomicArchetype.AGRICULTURE, [ArchetypeOverlay.HIGH_CYCLICALITY], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Nông nghiệp BAF - chăn nuôi heo & thức ăn chăn nuôi"),
     "HHV": ArchetypeProfile(EconomicArchetype.CONCESSION_INFRASTRUCTURE, [ArchetypeOverlay.CONCESSION, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "CONCESSION_DCF", reason="Đèo Cả - hạ tầng giao thông BOT"),
     "HT1": ArchetypeProfile(EconomicArchetype.BUILDING_MATERIALS, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", reason="Xi măng Hà Tiên - vật liệu xây dựng chu kỳ"),
     # 10. Power / water / BOT split (audit round 3) — separate economics, do not
@@ -623,6 +635,20 @@ class ArchetypeClassifier:
             return ArchetypeProfile(EconomicArchetype.BASIC_MATERIALS_METALS, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.40, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("phân bón", "fertilizer", "hóa chất", "chemical")):
             return ArchetypeProfile(EconomicArchetype.COMMODITY_CHEMICAL, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.40, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("khoáng sản", "khai khoáng", "quặng", "mining", "than đá")):
+            return ArchetypeProfile(EconomicArchetype.MINING_RESOURCE, [ArchetypeOverlay.COMMODITY_EXPOSED, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "RESERVE_NAV", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("xi măng", "vật liệu xây dựng", "gạch", "cement", "vật liệu xây", "bê tông")):
+            return ArchetypeProfile(EconomicArchetype.BUILDING_MATERIALS, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("nhựa", "plastic", "bao bì", "packaging", "cơ khí", "machinery", "sản xuất công nghiệp", "nhựa đường")):
+            return ArchetypeProfile(EconomicArchetype.INDUSTRIAL_MANUFACTURING, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("điện tử", "linh kiện", "bán dẫn", "electronic", "bảng mạch", "pcb")):
+            return ArchetypeProfile(EconomicArchetype.INDUSTRIAL_MANUFACTURING, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("dịch vụ dầu khí", "khoan", "drilling", "dầu khí kỹ thuật", "giàn khoan")):
+            return ArchetypeProfile(EconomicArchetype.OILFIELD_SERVICES, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "MID_CYCLE_FCFF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("xăng dầu", "lọc dầu", "petroleum", "nhà máy lọc", "phân phối xăng")):
+            return ArchetypeProfile(EconomicArchetype.OIL_REFINING_DOWNSTREAM, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.COMMODITY_EXPOSED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("dầu khí", "petro", "oil & gas", "thăm dò dầu", "dầu mỏ")):
+            return ArchetypeProfile(EconomicArchetype.OIL_GAS_UPSTREAM, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.35, "CONCESSION_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("khí", "gas infrastructure", "đường ống")):
             return ArchetypeProfile(EconomicArchetype.ENERGY_INFRASTRUCTURE, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("thủy điện", "hydropower")):
@@ -631,7 +657,7 @@ class ArchetypeClassifier:
             return ArchetypeProfile(EconomicArchetype.POWER_GENERATION_THERMAL, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.REGULATED], 0.25, "CONCESSION_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("điện gió", "điện mặt trời", "wind", "solar", "năng lượng tái tạo", "renewable")):
             return ArchetypeProfile(EconomicArchetype.POWER_RENEWABLE, [ArchetypeOverlay.PROJECT_BASED, ArchetypeOverlay.REGULATED], 0.30, "CONCESSION_DCF", raw_provider_sector=sector_text)
-        if any(w in combined for w in ("cấp nước", "nước sạch", "thoát nước", "water utility", "nước")):
+        if any(w in combined for w in ("cấp nước", "nước sạch", "thoát nước", "water utility")):
             return ArchetypeProfile(EconomicArchetype.WATER_UTILITY, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.20, "CONCESSION_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("điện", "tiện ích", "năng lượng", "power", "utility")):
             return ArchetypeProfile(EconomicArchetype.CONCESSION_INFRASTRUCTURE, [ArchetypeOverlay.REGULATED, ArchetypeOverlay.CONCESSION], 0.25, "CONCESSION_DCF", raw_provider_sector=sector_text)
@@ -639,6 +665,22 @@ class ArchetypeClassifier:
         # 4. Tech & Consumer
         if any(w in combined for w in ("công nghệ", "phần mềm", "it services", "software")):
             return ArchetypeProfile(EconomicArchetype.TECHNOLOGY_SERVICES, [ArchetypeOverlay.ASSET_LIGHT_COMPOUNDER], 0.20, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("xây dựng", "công trình", "nhà thầu", "construction", "xây lắp")):
+            return ArchetypeProfile(EconomicArchetype.CONSTRUCTION_EPC, [ArchetypeOverlay.PROJECT_BASED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("dệt may", "sợi", "vải", "textile", "da giày", "giày dép", "may mặc")):
+            return ArchetypeProfile(EconomicArchetype.EXPORT_MANUFACTURING, [ArchetypeOverlay.EXPORT_ORIENTED], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("ô tô", "xe máy", "oto", "automotive", "xe tải", "phụ tùng ô tô", "xe đạp")):
+            return ArchetypeProfile(EconomicArchetype.AUTOMOTIVE, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("giáo dục", "đào tạo", "education")):
+            return ArchetypeProfile(EconomicArchetype.EDUCATION_SERVICES, [], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("khách sạn", "du lịch", "nghỉ dưỡng", "hotel", "resort", "khu nghỉ")):
+            return ArchetypeProfile(EconomicArchetype.HOTEL_HOSPITALITY, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("chăn nuôi", "thức ăn chăn nuôi", "trồng trọt", "nông nghiệp", "agriculture", "giống vật nuôi")):
+            return ArchetypeProfile(EconomicArchetype.AGRICULTURE, [ArchetypeOverlay.HIGH_CYCLICALITY], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("truyền thông", "giải trí", "phim", "media", "quảng cáo", "nội dung")):
+            return ArchetypeProfile(EconomicArchetype.MEDIA_CONTENT, [], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("vàng", "trang sức", "nữ trang", "hàng tiêu dùng", "gia dụng", "đồ gia dụng")):
+            return ArchetypeProfile(EconomicArchetype.CONSUMER_DISCRETIONARY, [], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("thực phẩm", "đồ uống", "f&b", "sữa", "tiêu dùng", "consumer staples")):
             return ArchetypeProfile(EconomicArchetype.CONSUMER_STAPLES, [ArchetypeOverlay.ASSET_LIGHT_COMPOUNDER], 0.20, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
         if any(w in combined for w in ("bán lẻ", "retail")):
@@ -653,7 +695,7 @@ class ArchetypeClassifier:
             return ArchetypeProfile(EconomicArchetype.SHIPPING, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.CAPITAL_INTENSIVE], 0.40, "FLEET_NAV", raw_provider_sector=sector_text)
         if any(w in combined for w in ("hàng không", "airline", "aviation")):
             return ArchetypeProfile(EconomicArchetype.AIRLINE, [ArchetypeOverlay.CAPITAL_INTENSIVE, ArchetypeOverlay.HIGH_LEVERAGE], 0.45, "AIRLINE_EBITDAR", raw_provider_sector=sector_text)
-        if any(w in combined for w in ("logistics", "kho bãi")):
+        if any(w in combined for w in ("logistics", "kho bãi", "vận tải", "taxi", "vận chuyển", "container", "giao nhận")):
             return ArchetypeProfile(EconomicArchetype.LOGISTICS_SERVICES, [], 0.25, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
 
         # 6. Agriculture & Plantation

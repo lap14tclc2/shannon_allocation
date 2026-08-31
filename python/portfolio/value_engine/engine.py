@@ -36,6 +36,101 @@ class ValuationEngine:
 
     ENGINE_VERSION = "qport-value-engine@1.0.0"
 
+    # Dữ liệu đầu vào cần thiết cho từng mô hình định giá (feedback 31/08): dùng
+    # để liệt kê "cần bổ sung gì" cho các mã MODEL_INCOMPLETE / ARCHETYPE_UNSUPPORTED.
+    MODEL_REQUIRED_INPUTS_VI: Dict[str, List[str]] = {
+        "CONCESSION_DCF": [
+            "Thời hạn còn lại của quyền khai thác (concession_end_date / remaining_years)",
+            "Doanh thu / lưu lượng theo hợp đồng khai thác",
+            "Khung phí, giá bán và kế hoạch tăng giá",
+            "Kế hoạch vốn (CapEx) duy trì hạ tầng",
+        ],
+        "LEASE_CASHFLOW_DCF": [
+            "Diện tích đất thương phẩm cho thuê (KCN)",
+            "Giá thuê / đơn giá cho thuê đất từng khu",
+            "Tiến độ lấp đầy và danh sách khách thuê",
+            "Thời hạn tô nhượng còn lại của từng lô đất",
+        ],
+        "RNAV": [
+            "Quỹ đất và tình trạng pháp lý của từng dự án",
+            "Diện tích bán, ASP và cơ cấu sản phẩm",
+            "Chi phí xây dựng & lợi nhuận biên từng dự án",
+            "Presales và tiến độ thu tiền",
+        ],
+        "RESERVE_NAV": [
+            "Trữ lượng khoáng sản (Reserve / Resource) đã kiểm kê",
+            "Giá bán tài nguyên và chi phí khai thác",
+            "Thời gian khai thác & kế hoạch sản lượng",
+        ],
+        "FLEET_NAV": [
+            "Giá trị thị trường của đội tàu (giá tàu, tuổi tàu)",
+            "Khấu hao và giá trị còn lại của từng tàu",
+            "Hợp đồng vận chuyển & giá cước kỳ vọng",
+        ],
+        "AIRLINE_EBITDAR": [
+            "EBITDAR điều chỉnh thuê tàu bay (lease-adjusted)",
+            "Nghĩa vụ nợ thuê và chi phí thuê tàu",
+            "Hệ số tải, giá vé bình quân và kế hoạch đội bay",
+        ],
+        "RESIDUAL_INCOME_MODEL": [
+            "Giá trị sổ sách trên cổ phần (BVPS) hợp lệ",
+            "ROE chuẩn hóa và chi phí vốn cổ phần (CoE)",
+        ],
+        "SOTP": [
+            "Bóc tách giá trị từng mảng kinh doanh",
+            "Giá trị tài sản ròng / dòng tiền từng cấu phần",
+            "Hệ số chiết khấu holding / tập đoàn",
+        ],
+        "NORMALIZED_OWNER_EARNINGS_DCF": [
+            "LNST, dòng tiền kinh doanh, khấu hao, CapEx, nợ và tiền mặt (tối thiểu 3 năm)",
+            "7-10 năm dữ liệu BCTC nếu ngành hàng hóa chu kỳ (để chuẩn hóa mid-cycle)",
+        ],
+        "MID_CYCLE_FCFF": [
+            "Dòng tiền tự do (FCFF) qua một chu kỳ kinh doanh",
+            "7-10 năm dữ liệu BCTC để chuẩn hóa giữa chu kỳ",
+        ],
+    }
+
+    @classmethod
+    def _build_missing_data(
+        cls,
+        archetype_prof,
+        actual_model: str,
+        *,
+        full_cycle_years: int = 0,
+        normalization_method: str = "",
+        requires_full_cycle: bool = False,
+    ) -> List[str]:
+        """Liệt kê dữ liệu cần thiết để hoàn thiện mô hình định giá của cổ phiếu.
+
+        Ưu tiên mô hình CHUẨN (recommended) của ngành — ví dụ KSV cần RESERVE_NAV
+        chứ không phải DCF fallback đang thực thi. Khi block do full-cycle gate
+        (ngành hàng hóa chu kỳ thiếu 7–10 năm), trả message cụ thể theo số năm
+        hiện có thay vì liệt kê BCTC cơ bản mà doanh nghiệp ĐÃ có.
+        """
+        preferred = archetype_prof.recommended_model
+        if preferred in cls.MODEL_REQUIRED_INPUTS_VI:
+            base = list(cls.MODEL_REQUIRED_INPUTS_VI[preferred])
+        elif actual_model in cls.MODEL_REQUIRED_INPUTS_VI:
+            base = list(cls.MODEL_REQUIRED_INPUTS_VI[actual_model])
+        else:
+            base = [
+                f"Bộ dữ liệu BCTC chuẩn hóa cho mô hình {actual_model}",
+                "LNST, dòng tiền kinh doanh, khấu hao, CapEx, nợ và tiền mặt (tối thiểu 3 năm)",
+            ]
+
+        if requires_full_cycle and full_cycle_years < 7:
+            method = normalization_method or "LATEST_FY"
+            return [
+                (
+                    f"Lịch sử BCTC chưa đủ 7–10 năm để chuẩn hóa giữa chu kỳ (mid-cycle): "
+                    f"hiện có {full_cycle_years} năm (dùng {method}). Cần crawl BCTC các năm còn thiếu "
+                    f"để đạt chuẩn full-cycle."
+                ),
+                "Đủ 7–10 năm LNST, dòng tiền kinh doanh, khấu hao, CapEx, nợ và tiền mặt cho từng năm tài chính.",
+            ]
+        return base
+
     @classmethod
     def evaluate(
         cls,
@@ -582,7 +677,45 @@ class ValuationEngine:
         
         five_yr_roe = cap_alloc.get("avg_roe_5y") or (float(roe_val) if roe_val else None)
         five_yr_cash_conv = earn_qual.get("avg_cash_conversion_5y") if not is_bank else None
-        true_dilution = cap_alloc.get("share_dilution_5y_pct") if cap_alloc.get("share_dilution_5y_pct") is not None else 0.0
+        # P0 audit (2026-08-29 / TASK-068): dilution scoring uses CONFIRMED economic
+        # dilution (event-evidence), never the raw residual share change. A residual
+        # without economic events is UNEXPLAINED_SHARE_CHANGE -> no hard reject.
+        dilution_classification = str(cap_alloc.get("dilution_classification") or "").upper() or None
+        confirmed_dilution = cap_alloc.get("confirmed_economic_dilution_5y_pct")
+        if confirmed_dilution is None:
+            confirmed_dilution = cap_alloc.get("confirmed_economic_dilution_pct")
+        unexplained_dilution = cap_alloc.get("unexplained_share_change_5y_pct")
+        if unexplained_dilution is None:
+            unexplained_dilution = cap_alloc.get("unexplained_share_change_pct")
+        non_economic_change = cap_alloc.get("non_economic_share_change_5y_pct")
+        raw_share_change = cap_alloc.get("raw_share_change_5y_pct")
+        true_dilution = confirmed_dilution if confirmed_dilution is not None else (
+            cap_alloc.get("economic_dilution_5y_pct")
+            if cap_alloc.get("economic_dilution_5y_pct") is not None
+            else (cap_alloc.get("share_dilution_5y_pct") if cap_alloc.get("share_dilution_5y_pct") is not None else 0.0)
+        )
+        dilution_evidence = {
+            "classification": dilution_classification,
+            "confirmed_economic_dilution_pct": confirmed_dilution,
+            "unexplained_share_change_pct": unexplained_dilution,
+            "non_economic_share_change_pct": non_economic_change,
+            "raw_share_change_pct": raw_share_change,
+            "economic_events": cap_alloc.get("economic_events") or [],
+            "non_economic_events": cap_alloc.get("non_economic_events") or [],
+        }
+        if dilution_classification == "UNEXPLAINED_SHARE_CHANGE":
+            # Feedback 31/08 (P1): unexplained share change >= 20% là material ->
+            # cap top-level confidence <= LOW (không còn MEDIUM khi chỉ hạ từ HIGH).
+            unexplained_pct = float(unexplained_dilution) if unexplained_dilution is not None else 0.0
+            if unexplained_pct >= 20.0:
+                confidence = ConfidenceLevel.LOW
+            elif confidence == ConfidenceLevel.HIGH:
+                confidence = ConfidenceLevel.MEDIUM
+            confidence_reasons.append(
+                "UNEXPLAINED_SHARE_CHANGE: Số cổ phiếu tăng vượt các sự kiện cổ tức cổ phiếu/thưởng/tách gộp "
+                "nhưng chưa có bằng chứng sự kiện phát hành (ESOP/quyền mua/riêng lẻ/M&A). Không coi là pha loãng "
+                "đã xác nhận; hạ bậc tin cậy tới khi có bằng chứng."
+            )
 
         # Use real latest operating cash flow from history when available; else a
         # conservative 10%-of-market-cap proxy. Banks ignore CFO entirely (audit P1-7).
@@ -598,15 +731,23 @@ class ValuationEngine:
             net_debt_vnd=float(net_debt),
             latest_cfo=latest_cfo_val,
             true_dilution_5y_pct=true_dilution,
+            dilution_classification=dilution_classification,
+            dilution_evidence=dilution_evidence,
         )
 
+        hard_reject_codes = [r.value for r in quality_scorecard.hard_rejects]
+        has_solvency_risk = "SOLVENCY_RISK" in hard_reject_codes
         mos_calc = MarginOfSafetyEngine.calculate(
             archetype_prof=archetype_prof,
             quality_tier=quality_scorecard.tier,
             actual_base_mos=float(mos_base),
-            has_solvency_risk=len(quality_scorecard.hard_rejects) > 0,
+            has_solvency_risk=has_solvency_risk,
             confidence_level=confidence.value if confidence else "MEDIUM",
             has_negative_intrinsic_value=has_negative_intrinsic_value,
+            hard_rejects=hard_reject_codes,
+            net_debt=float(fortress.get("net_debt_vnd")) if fortress.get("net_debt_vnd") is not None else float(net_debt),
+            debt_payback_years=fortress.get("debt_payback_years"),
+            net_debt_to_ebitda=fortress.get("net_debt_to_ebitda"),
         )
 
         val_status = ValuationPill(mos_calc.verdict_status)
@@ -758,7 +899,11 @@ class ValuationEngine:
             # presented as mid-cycle. The model label reflects the real normalization.
             if archetype_prof.recommended_model == "NORMALIZED_OWNER_EARNINGS_DCF" and oe_bridge is not None:
                 if oe_bridge.normalization_method == "MID_CYCLE_MEDIAN":
-                    model_label = "Lợi nhuận Thực giữa chu kỳ (chuẩn hóa full-cycle)"
+                    # Feedback 31/08 (P1): 3 năm không phải full-cycle 7-10 năm.
+                    if int(oe_bridge.normalization_years or 0) >= 7:
+                        model_label = "Lợi nhuận Thực giữa chu kỳ (chuẩn hóa full-cycle 7–10 năm)"
+                    else:
+                        model_label = f"Ước tính giữa chu kỳ tạm thời ({oe_bridge.normalization_years} năm; chưa đạt chuẩn full-cycle 7–10 năm)"
                 elif int(oe_bridge.normalization_years or 1) > 1:
                     model_label = "Lợi nhuận Thực chuẩn hóa đa năm"
                 else:
@@ -805,10 +950,13 @@ class ValuationEngine:
                 f"Hiệu quả sử dụng vốn đạt tỷ suất Sinh lời trên Vốn {roe_str} và hệ số Giá/Sổ sách {pb_str}."
             )
             # Enum-driven narrative (audit round 3): never derive wording from the
-            # model/archetype name. LATEST_FY -> "năm hiện tại", multi-year ->
-            # "chuẩn hóa", full-cycle -> "giữa chu kỳ".
+            # model/archetype name. Feedback 31/08: MID_CYCLE_MEDIAN <7 năm chỉ là
+            # ước tính tạm thời, không phải full-cycle.
             if oe_bridge is not None and oe_bridge.normalization_method == "MID_CYCLE_MEDIAN":
-                oe_label = "giữa chu kỳ (full-cycle)"
+                if int(oe_bridge.normalization_years or 0) >= 7:
+                    oe_label = "giữa chu kỳ (full-cycle 7–10 năm)"
+                else:
+                    oe_label = f"giữa chu kỳ tạm thời ({oe_bridge.normalization_years} năm; chưa đạt chuẩn full-cycle 7–10 năm)"
             elif oe_bridge is not None and int(oe_bridge.normalization_years or 1) > 1:
                 oe_label = "chuẩn hóa đa năm"
             else:
@@ -872,10 +1020,45 @@ class ValuationEngine:
         # VERIFIED, the computed IV/MOS are diagnostics only and must not be
         # exposed as a valid public valuation. base_iv / margin_of_safety_pct
         # become null; the numbers move into fallback_valuation (DIAGNOSTIC_ONLY).
-        is_public_verified = model_status == "MODEL_VERIFIED"
+        # Feedback 31/08: cổ phiếu không đạt chuẩn Buffett/Munger (hard reject
+        # hoặc điểm chất lượng quá thấp) cũng KHÔNG công bố IV/MOS — thay vào đó
+        # đưa ra cảnh báo kèm nguyên nhân.
+        from .vi_labels import hard_reject_vi as _hr_vi
+        from .quality_scorer import QualityTier as _QualityTier
+        is_low_quality = quality_scorecard.tier == _QualityTier.LOW_QUALITY
+        quality_blocked = bool(hard_reject_codes) or is_low_quality
+        valuation_warning = None
+        if quality_blocked:
+            if hard_reject_codes:
+                reasons_vi = "; ".join(_hr_vi(code) for code in hard_reject_codes)
+                valuation_warning = (
+                    f"Cổ phiếu KHÔNG đạt tiêu chuẩn Buffett/Munger — {reasons_vi}. "
+                    f"Điểm Chất lượng {quality_scorecard.total_score}/100. Không công bố Giá trị Thực (IV) và Biên An Toàn (MOS) "
+                    f"vì mô hình định giá không đáng tin cậy cho doanh nghiệp này."
+                )
+            else:
+                valuation_warning = (
+                    f"Điểm Chất lượng Doanh nghiệp quá thấp ({quality_scorecard.total_score}/100 — {quality_tier_vi('LOW_QUALITY')}), "
+                    f"không đạt tiêu chuẩn Buffett/Munger. Không công bố Giá trị Thực (IV) và Biên An Toàn (MOS); "
+                    f"khuyến nghị tránh xa hoặc chỉ theo dõi, không nên thêm vào danh mục."
+                )
+        is_public_verified = model_status == "MODEL_VERIFIED" and not quality_blocked
+        missing_data: List[str] = []
+        if not is_public_verified:
+            missing_data = cls._build_missing_data(
+                archetype_prof,
+                actual_model,
+                full_cycle_years=full_cycle_years,
+                normalization_method=oe_bridge.normalization_method if oe_bridge is not None else "",
+                requires_full_cycle=requires_full_cycle,
+            )
         public_base_iv = base_iv if is_public_verified else None
+        public_bear_iv = bear_iv if is_public_verified else None
+        public_bull_iv = bull_iv if is_public_verified else None
         public_mos = None if not is_public_verified else (mos_base if not has_negative_intrinsic_value else None)
+        public_epv = (epv_res.epv_per_share if epv_res is not None else None) if is_public_verified else None
         fallback_valuation = None
+        diagnostic_fallback = None
         if not is_public_verified:
             fallback_valuation = {
                 "model": actual_model,
@@ -884,6 +1067,16 @@ class ValuationEngine:
                 "bull_iv": float(bull_iv) if bull_iv is not None else None,
                 "margin_of_safety_pct": float(mos_base) if (mos_base is not None and not has_negative_intrinsic_value) else None,
                 "usage": "DIAGNOSTIC_ONLY",
+            }
+            # Audit TASK-065: keep the computed numbers visible for audit but never
+            # as a valid public valuation.
+            diagnostic_fallback = {
+                "usage": "AUDIT_ONLY",
+                "model": actual_model,
+                "base_iv_per_share": float(base_iv) if base_iv is not None else None,
+                "bear_iv_per_share": float(bear_iv) if bear_iv is not None else None,
+                "bull_iv_per_share": float(bull_iv) if bull_iv is not None else None,
+                "margin_of_safety_pct": float(mos_base) if (mos_base is not None and not has_negative_intrinsic_value) else None,
             }
 
         # Deterministic Report ID
@@ -941,6 +1134,14 @@ class ValuationEngine:
             sector_conflict_warning=sector_conflict_warning,
             model_status=model_status,
             fallback_valuation=fallback_valuation,
+            public_base_iv=public_base_iv,
+            public_bear_iv=public_bear_iv,
+            public_bull_iv=public_bull_iv,
+            public_mos=public_mos,
+            public_epv=public_epv,
+            diagnostic_fallback=diagnostic_fallback,
+            valuation_warning=valuation_warning,
+            missing_data=missing_data,
             sotp_breakdown=sotp_breakdown,
             rnav_breakdown=rnav_breakdown,
             kcn_lease_parameters=kcn_lease_parameters,

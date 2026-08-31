@@ -134,6 +134,11 @@ class ValuationScenario:
     # For equity-basis models this IS the equity value; enterprise_value is kept
     # only for backward compatibility and equals equity_value there.
     present_value: Optional[Decimal] = None
+    # RIM-specific semantic fields (feedback 31/08): the discounted residual
+    # income stream and its terminal component, named semantically instead of
+    # overloading ``enterprise_value`` (which is kept only for legacy compat).
+    residual_income_pv: Optional[Decimal] = None
+    terminal_residual_income_pv: Optional[Decimal] = None
 
 
 @dataclass
@@ -208,6 +213,21 @@ class ValuationReport:
     # When model_status != MODEL_VERIFIED, public base_iv / margin_of_safety_pct
     # are nulled and the computed numbers move here for audit/debug only.
     fallback_valuation: Optional[Dict[str, Any]] = None
+    # Public surface (audit TASK-065/068): exposed IV/MOS only when the model is
+    # VERIFIED. Non-verified models keep the numbers in ``diagnostic_fallback``.
+    public_base_iv: Optional[Decimal] = None
+    public_bear_iv: Optional[Decimal] = None
+    public_bull_iv: Optional[Decimal] = None
+    public_mos: Optional[Decimal] = None
+    public_epv: Optional[Decimal] = None
+    diagnostic_fallback: Optional[Dict[str, Any]] = None
+    # Cảnh báo định giá (feedback 31/08): cổ phiếu không đạt chuẩn Buffett/Munger
+    # (hard reject hoặc điểm chất lượng quá thấp) KHÔNG công bố IV/MOS; lý do
+    # được nêu trong trường này và hiển thị nổi bật trên UI.
+    valuation_warning: Optional[str] = None
+    # Danh sách dữ liệu cần thiết để hoàn thiện mô hình định giá (tiếng Việt),
+    # dùng cho các mã MODEL_INCOMPLETE / ARCHETYPE_UNSUPPORTED / FALLBACK...
+    missing_data: List[str] = field(default_factory=list)
     source_fact_ids: List[str] = field(default_factory=list)
     engine_version: str = "1.0.0"
     computed_at: str = ""
