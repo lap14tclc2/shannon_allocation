@@ -42,7 +42,12 @@ Feedback 03:56: "7–10Y full-cycle normalization vẫn chưa có thật — 0 m
 - [x] Sửa `_tcbs_document_headers`: thêm `Accept`.
 - [x] Thêm `random` import cho backoff jitter.
 - [x] Xác minh curl_cffi vượt Cloudflare (từ 403 "Just a moment" → JSON API).
-- [ ] Có token hợp lệ (developer key / token mới) hoặc implement official-document PDF ingestion.
+- [x] Endpoint user-facing `POST /api/portfolio/valuation/{symbol}/crawl` (gọi `crawl_symbol` → TCBS) + helper `crawlValuationHistory` (api.js).
+- [x] UI: nút "⬇ Cập nhật dữ liệu TCBS" trên valuation overlay (header, chỉ khi report chưa MODEL_VERIFIED / có missing_data) và trên card section-2 screener.
+- [x] Popup nhập TCBS Bearer token (`TcbsTokenPrompt`) khi crawl 401/403 `TCBS_AUTH_REQUIRED` — kèm section chi tiết lỗi; token lưu per-user (`app_meta.tcbs_bearer_token`) và thread qua `crawl_symbol`/`_fetch_tcbs_history`.
+- [x] **Disable trên Vercel**: `_crawl_enabled()` (cần `QPORT_FINANCE_RUNTIME=local|worker` và không `VERCEL`); trả `crawl_enabled` trong response valuation+screener; frontend ẩn nút crawl trên Vercel; endpoint trả 403 `CRAWL_DISABLED_ON_VERCEL` nếu không enabled.
+- [x] **Dữ liệu crawl lưu vào DB**: `crawl_symbol` → `_save_document` (bảng `documents`) → `_canonicalize_document` → `canonical_facts` (finance DB) — valuation đọc từ DB.
+- [ ] Có token hợp lệ (developer key / token mới) trên server để crawl chạy được.
 - [ ] Chạy crawl_symbol cho DGC và các mã chu kỳ; verify `canonical_facts` đủ 7–10 năm.
 - [ ] Chạy valuation lại DGC → xác nhận full-cycle normalization.
 
@@ -78,3 +83,12 @@ test_vsdc.py: 6 passed; live SBT -> security_id 707, phân loại CASH/STOCK_DIV
 ## Result
 
 Hạ tầng crawl đã sẵn sàng (curl_cffi bypass Cloudflare + yearly=1 + headers đúng); chưa chạy được production vì thiếu credential hợp lệ. Bước kế tiếp: lấy developer API key TCBS hoặc token mới; nếu không có, implement official-document PDF parser (HNX/HOSE/SSC).
+
+## Addendum 7 — user-test.md: full-cycle evidence + historical anomaly detector
+
+Theo `docs/user-test.md` (audit DGC, MODEL_VERIFIED nhưng thiếu evidence full-cycle + anomaly FY2017):
+
+- **Expose full-cycle normalization evidence**: AI export (`screenerStockDetail`/`downloadSymbolAIExport`) xuất `normalization_method`, `normalization_years`, `cycle_window`, `current_owner_earnings`, `normalized_owner_earnings`, `mid_cycle_margin` từ `owner_earnings_bridge` — `MODEL_VERIFIED` của công ty chu kỳ phải chứng minh `normalization_years >= 7`.
+- **Historical anomaly detector**: `detect_financial_anomalies(financial_history)` (`engine.py`) flag revenue/LNST/CFO nhảy ≥ +100% hoặc ≤ -60% giữa các năm → `DATA_ANOMALY`/`SUSPICIOUS_CHANGE`; field `data_anomalies` trong `ValuationReport`; engine append reason cảnh báo.
+- **UI**: overlay hiển thị box "⚠️ BẤT THƯỜNG LỊCH SỬ BCTC" (blocked + qualified).
+- **Test**: `test_detect_financial_anomalies_flags_implausible_year_jumps` (2017 -76%, 2018 +873%) + clean-history; 57 pass.

@@ -1,344 +1,737 @@
-Tôi đã audit toàn bộ bản mới **03:56:39 UTC ngày 31/08/2026**, vẫn đủ **68 mã valuation**. 
+Đúng. Không nên thiết kế rule kiểu “DGC thế này, HPG thế kia”. Nên có **một chuẩn numeric-validation duy nhất cho toàn bộ universe**, sau đó model của từng archetype chỉ tiêu thụ kết quả chuẩn hóa đó.
 
-Bản này tiếp tục tốt hơn bản 03:28. Các issue về **uncertainty/report semantics** tôi nêu ở vòng trước gần như đã được sửa hết. Tôi đánh giá **valuation core ~9.2/10**, còn **production readiness toàn hệ thống ~8.9/10** vì activity chain vẫn chưa được xử lý và tôi tìm thấy một lỗi unit mới ở leverage evidence.
+Tôi đề nghị chốt một chuẩn gọi là:
 
-### Các fix vòng trước đã PASS
+# QPort Universal Financial Validation Standard — UFVS
 
-FRT giờ được trình bày đúng hoàn toàn theo hai lớp:
+Mọi mã đều đi qua cùng công thức:
 
 ```text
-Model Status = MODEL_VERIFIED
-Quality      = LOW_QUALITY
-Verdict      = AVOID_QUALITY
-
-Public IV/MOS = hidden
-Diagnostic valuation = AUDIT_ONLY
+Raw financial series
+        ↓
+1. Robust Change Detection
+        ↓
+2. Cross-Metric Coherence
+        ↓
+3. Persistence / Mean Reversion
+        ↓
+4. Universal Event Classification
+        ↓
+5. Materiality Test
+        ↓
+6. Normalization Policy
+        ↓
+7. Validation Confidence
+        ↓
+Canonical normalized data
+        ↓
+Sector/model valuation
 ```
 
-Overview thể hiện FRT `AVOID_QUALITY`, confidence đã xuống `LOW`, required MOS tăng lên 41%. 
+Điểm quan trọng: **không có bất kỳ ticker-specific rule nào**.
 
-Quan trọng hơn, detail section không còn nói sai rằng “model chưa verified”. Nó ghi đúng:
+---
 
-> Model VERIFIED nhưng không đạt chuẩn chất lượng → IV/MOS bị ẩn.
+## 1. Công thức phát hiện biến động chung
 
-
-
-Đây là fix đúng.
-
-Dilution uncertainty cũng tốt hơn. FRT hiện có:
+Không nên dùng đơn giản:
 
 ```text
-confirmed economic dilution = null
-unexplained share change     = 94.8%
-capital allocation score     = capped 10/15
-top-level confidence         = LOW
+YoY > 100% = anomaly
 ```
 
-và MOS có thêm confidence penalty 10%. 
+vì nó sẽ false-positive rất nhiều.
 
-Tôi kiểm **cả 20 mã** có unexplained share change ≥20%: tất cả đều đã bị hạ top-level confidence xuống `LOW`.
+Dùng **Symmetric Percentage Change**:
 
-Health table cũng đã sửa đúng semantic structure. ROE không còn bị gắn nhãn `UNCERTAIN`; bây giờ có cột riêng:
+$$
+\Delta_{t} =
+\frac{2(X_t-X_{t-1})}
+{|X_t|+|X_{t-1}|+\epsilon}
+$$
+
+Ưu điểm:
+
+* dùng được khi số rất nhỏ;
+* bounded từ khoảng `-2 → +2`;
+* ổn định hơn percentage change truyền thống;
+* giảm lỗi kiểu denominator gần zero.
+
+Sau đó tính robust anomaly score trên lịch sử của chính metric:
+
+$$
+Z_{t} =
+0.6745
+\frac{\Delta_t-\operatorname{median}(\Delta)}
+{\operatorname{MAD}(\Delta)+\epsilon}
+$$
+
+Trong đó:
 
 ```text
-5Y Avg ROE
-Capital Allocation
-Dilution
+MAD = median(|Δ - median(Δ)|)
+```
+
+Rule chung:
+
+```text
+|Z| < 2.5     NORMAL
+2.5–3.5       UNUSUAL
+3.5–5.0       STRONG_ANOMALY
+>5.0          EXTREME_ANOMALY
+```
+
+Như vậy DGC, HPG, bank, retail, shipping... đều dùng cùng một detector.
+
+---
+
+# 2. Không đánh giá một metric riêng lẻ
+
+Tạo một vector chung:
+
+```text
+Revenue
+Net Profit
+CFO
+FCF
+Assets
+Equity
+Debt
+Cash
+Shares
+```
+
+Metric nào không applicable thì:
+
+```text
+NOT_APPLICABLE
+```
+
+chứ không gán 0.
+
+Với mỗi năm `t`, tính:
+
+$$
+A_t =
+\frac{\sum_i w_i I(|Z_{i,t}|\ge Z_{threshold})}
+{\sum_i w_i}
+$$
+
+`A_t` = **Anomaly Breadth Score**.
+
+Nghĩa là bao nhiêu phần của doanh nghiệp cùng thay đổi.
+
+Ví dụ:
+
+```text
+Revenue       anomalous
+Profit        anomalous
+Equity        anomalous
+Debt          anomalous
+Shares        anomalous
+```
+
+→ `A_t` cao.
+
+Chỉ CFO anomalous:
+
+→ `A_t` thấp.
+
+---
+
+# 3. Cross-Metric Coherence Score
+
+Đây là công thức chung quan trọng nhất.
+
+Ta kiểm tra các metric lớn có cùng chiều và cùng mức độ hay không.
+
+Một dạng đơn giản:
+
+$$
+C_t =
+\frac{\sum_{i<j}w_{ij}
+\cdot DirectionMatch(i,j)
+\cdot MagnitudeSimilarity(i,j)}
+{\sum_{i<j}w_{ij}}
+$$
+
+Trong đó:
+
+```text
+DirectionMatch = 1 nếu cùng chiều
+                 0 nếu ngược chiều
+
+MagnitudeSimilarity =
+exp(-|Zi - Zj| / k)
+```
+
+Output:
+
+```text
+0.00 – 0.39   LOW
+0.40 – 0.69   MEDIUM
+0.70 – 1.00   HIGH
 ```
 
 Ví dụ:
 
 ```text
-FRT:
-ROE                13.0%
-Capital Allocation Không chắc
-Dilution           N/A · 94.8% unexplained
-
-SCS:
-ROE                45.0%
-Capital Allocation Không chắc
-Dilution           N/A · 76.3% unexplained
+Revenue +700%
+Profit  +500%
+Assets  +250%
+Equity  +200%
+Shares  +100%
 ```
 
- 
+có thể không cùng % nhưng **direction + scale đều coherent**.
 
-Đây là presentation đúng hơn rất nhiều.
+→ `C ≈ HIGH`
 
-### SCS: tôi chấp nhận `ATTRACTIVE + LOW confidence`
-
-SCS hiện:
+Trong khi:
 
 ```text
-Base IV       124,286
-MOS           +64.2%
-Required MOS   35%
-Confidence     LOW
-Verdict        ATTRACTIVE
+Revenue +800%
+Profit   +3%
+CFO      -5%
+Assets   +2%
 ```
 
-
-
-Trước đây tôi phản đối vì nó còn `MEDIUM confidence`. Hiện engine đã:
-
-* không gọi 76.3% unexplained là economic dilution;
-* cap capital allocation;
-* tăng required MOS thêm uncertainty penalty;
-* hạ confidence về LOW.
-
-Với cấu trúc đó, tôi **không còn coi `ATTRACTIVE` là bug**. Nó có nghĩa:
-
-> Valuation math hấp dẫn, nhưng độ tin cậy thấp vì corporate-action history chưa xác minh.
-
-Đây là distinction hợp lý.
+→ `C ≈ LOW`
 
 ---
 
-## HT1 narrative đã PASS
+# 4. Persistence Score — phân biệt regime thật và spike
 
-Bản này 3-year normalization được gọi đúng là:
+Không dùng ticker-specific rule.
+
+Với mọi metric quan trọng:
+
+$$
+Pre_i = median(X_{t-k},...,X_{t-1})
+$$
+
+$$
+Post_i = median(X_t,...,X_{t+k})
+$$
+
+Sau đó:
+
+$$
+Shift_i =
+\frac{|Post_i-Pre_i|}
+{|Pre_i|+\epsilon}
+$$
+
+Và:
+
+$$
+P_t =
+\frac{\sum_i w_i I(Shift_i > threshold)}
+{\sum_i w_i}
+$$
+
+Interpretation:
 
 ```text
-giữa chu kỳ tạm thời
-3 năm
-chưa đạt chuẩn full-cycle 7–10 năm
+P < 0.30   temporary
+0.30–0.60 mixed
+>0.60      persistent new regime
 ```
 
-Không còn gọi 3 năm là một full cycle hoàn chỉnh.
-
-Đồng thời HT1 vẫn:
+Đây là cách universal để nhận ra:
 
 ```text
-MODEL_PARTIAL
-public IV = null
+one-year spike
 ```
 
-nên strict normalization gate vẫn hoạt động đúng.
+khác với:
+
+```text
+new business scale
+```
 
 ---
 
-# Issue lớn còn lại: activity chain vẫn chưa được re-anchor
+# 5. Mean-Reversion Score
 
-Hiện database vẫn báo:
+Để phân biệt **cyclical extreme** với structural break.
 
-```text
-status           BROKEN
-records          1072
-first_bad_id     73
-failure          PREV_HASH_MISMATCH
-previous_good_id 72
-```
+Sau một anomaly ở `t`, tính khoảng cách của các năm sau với pre/post median.
 
+Ví dụ:
 
+$$
+M_t =
+1 -
+\frac{|X_{t+n}-PreMedian|}
+{|X_t-PreMedian|+\epsilon}
+$$
 
-Bản trước là 997 records, hiện 1072. Tôi vẫn **không kết luận export tự sinh 75 records**, vì có thể có activity thực giữa hai export.
-
-Nhưng điều chắc chắn:
-
-```text
-re-anchor chưa được execute trên DB này
-```
-
-Nếu endpoint/migration code đã tồn tại, bước còn lại là operation:
+Nếu sau peak:
 
 ```text
-legacy 1–72
-    VERIFIED
-
-legacy break at 73
-    BROKEN_HISTORICAL
-
-new anchor
-    VERIFIED_FROM_ANCHOR
+X_t     rất cao
+X_t+1   thấp hơn
+X_t+2   gần median
 ```
 
-Đây hiện là blocker auditability lớn nhất.
+→ mean reversion cao.
+
+Ta aggregate nhiều metric:
+
+```text
+Revenue
+Profit
+CFO
+margin
+```
+
+ra:
+
+```text
+MR_t ∈ [0,1]
+```
 
 ---
 
-# Tôi phát hiện một lỗi mới: `net_debt_to_ebitda` sai unit
+# 6. Một classifier chung cho mọi cổ phiếu
 
-FRT hiện ghi:
+Không hardcode symbol.
 
-```json
-"net_debt": 15705000000000,
-"debt_payback_years": 5.7,
-"net_debt_to_ebitda": 9152097902.1
-```
-
-
-
-`Net Debt / EBITDA` phải là **dimensionless ratio**, kiểu:
+Dùng các score:
 
 ```text
-0.5x
-2.0x
-5.7x
+Z = anomaly magnitude
+A = anomaly breadth
+C = cross-metric coherence
+P = persistence
+M = mean reversion
 ```
 
-không thể là:
+Sau đó áp cùng một decision table:
+
+| Điều kiện                                               | Classification               |
+| ------------------------------------------------------- | ---------------------------- |
+| Z thấp                                                  | NORMAL                       |
+| Z cao + A thấp + C thấp                                 | SUSPICIOUS_ISOLATED          |
+| Z cao + A cao + C cao + P cao                           | STRUCTURAL_REGIME_BREAK      |
+| Z cao + C cao + P thấp/medium + M cao                   | CYCLICAL_EXTREME             |
+| Profit anomaly cao, revenue/CFO thấp                    | EARNINGS_ONE_OFF_CANDIDATE   |
+| CFO anomaly cao, revenue/profit ổn                      | CASHFLOW_TIMING_CANDIDATE    |
+| Shares anomaly cao, operating metrics ổn                | SHARE_STRUCTURE_CHANGE       |
+| Scale jump cực lớn nhưng related metrics không xác nhận | UNIT_MAPPING_ERROR_CANDIDATE |
+| Không đủ evidence                                       | UNRESOLVED                   |
+
+Đây là **một chuẩn duy nhất cho 1.500 mã**.
+
+---
+
+# 7. Universal Regime Score
+
+Có thể formalize:
+
+$$
+R_t =
+A_t \times C_t \times P_t
+$$
+
+Ví dụ threshold:
 
 ```text
-9,152,097,902.1x
+R < 0.20        no regime evidence
+0.20–0.45       weak
+0.45–0.65       possible regime break
+>0.65           structural regime break
 ```
 
-Tôi parse toàn export và thấy pattern tương tự ở nhiều mã:
+Không cần biết doanh nghiệp là DGC hay VNM.
+
+---
+
+# 8. Universal Cycle Score
+
+$$
+CY_t =
+A_t \times C_t \times M_t \times (1-P_t)
+$$
+
+Tức:
 
 ```text
-SCS  ≈ 541,484,716
-DGC  ≈ 954,503,817
-FRT  ≈ 9,152,097,902
-CMG  ≈ 6,491,860,465
-VJC  ≈ 20,685,902,556
+large coherent change
++
+mean reversion
++
+không tạo permanent scale reset
 ```
 
-Pattern rất giống **unit mismatch ×1e9**:
+→ cyclical event.
+
+Nếu:
 
 ```text
-net_debt = VND
-EBITDA   = billion VND
+CY >= threshold
 ```
 
-rồi divide trực tiếp.
-
-Ví dụ SCS khoảng:
+thì:
 
 ```text
-541,484,716 / 1e9
-≈ 0.541x
+CYCLICAL_EXTREME
 ```
 
-là một ratio hợp lý.
+---
 
-### Cần canonicalize
+# 9. Universal bad-data score
+
+Thêm:
+
+$$
+D_t =
+Magnitude_t
+\times (1-C_t)
+\times (1-P_t)
+$$
+
+Ý nghĩa:
+
+> càng nhảy mạnh nhưng các metric khác không xác nhận và không tồn tại lâu → càng đáng nghi là lỗi data.
+
+Ví dụ:
+
+```text
+Revenue ×1000
+Profit unchanged
+Assets unchanged
+next year Revenue /1000
+```
+
+→ `D` cực cao.
+
+Classification:
+
+```text
+UNIT_MAPPING_ERROR_CANDIDATE
+```
+
+---
+
+# 10. Universal Materiality Formula
+
+Đây mới là thứ quyết định anomaly có cần block valuation hay không.
+
+Không dùng cảm tính.
+
+Chạy 2 valuation:
+
+```text
+IV_original
+
+IV_adjusted
+```
+
+Trong adjusted case:
+
+* suspicious metric được exclude/downweight;
+* regime được split;
+* one-off bị normalize;
+* cycle extreme vẫn được giữ.
+
+Tính:
+
+$$
+Materiality =
+\frac{|IV_{original}-IV_{adjusted}|}
+{\max(|IV_{original}|,\epsilon)}
+$$
+
+Threshold chung:
+
+```text
+< 5%       IMMATERIAL
+5–15%      LOW
+15–25%     MATERIAL
+>25%       CRITICAL
+```
+
+Đây là standard dùng cho tất cả mã.
+
+---
+
+# 11. Universal normalization policy
+
+Không phải model quyết định tùy tiện.
+
+Event classifier trả ra policy:
+
+| Event                   | Policy                     |
+| ----------------------- | -------------------------- |
+| NORMAL                  | INCLUDE                    |
+| CYCLICAL_EXTREME        | INCLUDE                    |
+| STRUCTURAL_REGIME_BREAK | SPLIT_REGIME               |
+| SHARE_STRUCTURE_CHANGE  | INCLUDE + PER_SHARE_ADJUST |
+| CASHFLOW_TIMING         | DOWNWEIGHT_CFO             |
+| EARNINGS_ONE_OFF        | DOWNWEIGHT_EARNINGS        |
+| SUSPICIOUS_ISOLATED     | EXCLUDE_METRIC_YEAR        |
+| UNIT_MAPPING_ERROR      | REJECT_FACT                |
+| UNRESOLVED_CRITICAL     | BLOCK_MODEL                |
+
+Như vậy normalization deterministic.
+
+---
+
+# 12. Comparable-window formula cũng phải chung
+
+Sau khi detect structural breaks:
+
+```text
+all FY
+ ↓
+find latest structural break
+ ↓
+latest comparable regime
+```
+
+Sau đó:
+
+$$
+ComparableYears =
+\{t \mid t > LatestMaterialStructuralBreak\}
+$$
+
+Không có structural break:
+
+```text
+ComparableYears = all available years
+```
+
+Không hardcode:
+
+```text
+DGC use 2018–2025
+```
+
+Engine tự derive.
+
+---
+
+# 13. Minimum-years không nên cùng một số cho mọi model
+
+Đây là chỗ duy nhất cần tách khỏi universal validation.
+
+**Validation standard vẫn chung**, nhưng valuation model có `required_history`.
+
+Ví dụ:
+
+```text
+NORMALIZED_OWNER_EARNINGS:
+minimum = 5
+preferred = 7–10
+
+CYCLICAL_MODEL:
+minimum = 7
+
+RIM bank:
+minimum normalized ROE history = 5
+
+latest-year asset model:
+different requirements
+```
+
+Tức architecture là:
+
+```text
+UNIVERSAL VALIDATION
+        ↓
+canonical normalized facts
+        ↓
+MODEL REQUIREMENT REGISTRY
+```
+
+Không phải:
+
+```text
+ticker-specific logic
+```
+
+---
+
+# 14. Universal Validation Confidence
+
+Tạo một score:
+
+$$
+V =
+0.20D_q
++0.20C
++0.15P_q
++0.15A_r
++0.15M_s
++0.15H_c
+$$
+
+Trong đó:
+
+```text
+Dq = data completeness / numeric integrity
+C  = cross-metric coherence
+Pq = persistence classification confidence
+Ar = anomaly resolution confidence
+Ms = materiality stability
+Hc = historical coverage
+```
+
+0–100.
+
+Suggested:
+
+```text
+90–100   HIGH
+75–89    MEDIUM
+60–74    LOW
+<60      UNVERIFIED
+```
+
+Quan trọng: đây là **validation confidence**, không phải Quality Score.
+
+---
+
+# 15. Universal publication gate
+
+Một công thức duy nhất:
 
 ```python
-net_debt_to_ebitda = (
-    net_debt_vnd / ebitda_vnd
+publish_iv_mos = (
+    model_status == MODEL_VERIFIED
+    and validation_confidence >= MIN_CONFIDENCE
+    and not critical_unresolved_issue
+    and not quality_hard_block
 )
 ```
 
-không:
+Không cần:
+
+```text
+if symbol == "DGC"
+if symbol == "HPG"
+if industry == ...
+```
+
+ngoài model requirement routing.
+
+---
+
+# 16. Chuẩn output chung cho tất cả mã
+
+Mỗi symbol phải có:
+
+```json
+{
+  "data_validation": {
+    "status": "VALID_WITH_CLASSIFIED_EVENTS",
+    "confidence": 88
+  },
+
+  "events": [
+    {
+      "year": 2022,
+      "classification": "CYCLICAL_EXTREME",
+      "anomaly_score": 5.8,
+      "breadth_score": 0.72,
+      "coherence_score": 0.91,
+      "persistence_score": 0.25,
+      "mean_reversion_score": 0.83,
+      "materiality": "MATERIAL",
+      "handling": "INCLUDE"
+    }
+  ],
+
+  "normalization": {
+    "comparable_regime_start": 2018,
+    "comparable_regime_end": 2025,
+    "included_years": [],
+    "excluded_years": [],
+    "method": "MID_CYCLE_MEDIAN"
+  },
+
+  "model_status": "MODEL_VERIFIED"
+}
+```
+
+Schema này dùng y hệt cho mọi mã.
+
+---
+
+# 17. Điều tôi sẽ bỏ khỏi code
+
+Không được có:
 
 ```python
-net_debt_vnd / ebitda_billion_vnd
+if symbol == "DGC":
+    ...
+
+if symbol == "HPG":
+    ...
+
+if industry == "chemical":
+    anomaly_threshold = ...
 ```
 
-Tôi xếp bug này **P1** vì leverage penalty hiện dường như vẫn đi theo debt-payback/normalized logic — SCS ratio payload rất lớn nhưng penalty vẫn 0. Tuy vậy machine evidence field đang sai và bất kỳ consumer nào dùng field này trực tiếp sẽ cho kết quả cực kỳ sai.
+Detector phải generic.
 
-Nên thêm invariant test:
+Chỉ cho phép model-specific requirement ở layer sau:
 
-```text
-0 <= ND/EBITDA < ~100
+```python
+MODEL_REQUIREMENTS = {
+    COMMERCIAL_BANK: ...,
+    SHIPPING: ...,
+    POWER: ...,
+    INDUSTRIAL_REAL_ESTATE: ...
+}
 ```
 
-với giá trị ngoài range phải fail validation.
+Đó là **valuation requirement**, không phải anomaly exception.
 
 ---
 
-# Một semantic field cũ vẫn nên cleanup
+# 18. Công thức tổng quát cuối cùng
 
-FRT top-level hiện đúng:
+Có thể cô đọng toàn bộ hệ thống thành:
 
-```text
-economic_dilution_5y_pct           = null
-confirmed_economic_dilution_5y_pct = null
-unexplained_share_change_5y_pct    = 94.8
-```
+$$
+Event_t =
+f(Z_t,A_t,C_t,P_t,M_t)
+$$
 
-nhưng nested `dilution_breakdown` vẫn có:
+và:
 
-```text
-economic_dilution_pct = 94.8
-confirmed_economic_dilution_pct = null
-unexplained_share_change_pct = 94.8
-```
+$$
+Handling_t =
+g(Event_t,Materiality_t)
+$$
 
+sau đó:
 
+$$
+NormalizedFacts =
+Normalize(RawFacts, Handling)
+$$
 
-Tên `economic_dilution_pct` ở đây vẫn nguy hiểm vì 94.8% **chưa được xác nhận là economic dilution**.
+và cuối cùng:
 
-Tôi sẽ rename:
+$$
+PublicValuation =
+Value(
+NormalizedFacts,
+ArchetypeModel
+)
+$$
 
-```text
-economic_dilution_pct
-↓
-residual_share_change_pct
-```
+chỉ khi:
 
-hoặc set `economic_dilution_pct = null`.
+$$
+ValidationGate = PASS
+$$
 
-Nếu không, một consumer cũ rất dễ lấy nhầm field này và tái tạo bug `UNEXPLAINED → EXCESSIVE_DILUTION`.
+Đó là kiến trúc tôi sẽ coi là **chuẩn chung đúng cho QPort**.
 
----
-
-# Specialized model coverage vẫn chưa tiến
-
-Model distribution vẫn:
-
-```text
-MODEL_VERIFIED     44
-MODEL_INCOMPLETE   21
-MODEL_ESTIMATED     1
-MODEL_PARTIAL       1
-MODEL_UNVALUABLE    1
-```
-
-Và 8 mismatch cũ vẫn còn:
-
-```text
-HAH / VOS → FLEET_NAV
-KSV / MSR → RESERVE_NAV
-VJC / HVN → AIRLINE_EBITDAR
-PVD / PVS → MID_CYCLE_FCFF
-```
-
-Điểm tốt là tất cả vẫn bị gate `MODEL_INCOMPLETE`, nên đây là **feature gap**, không còn là safety bug.
-
----
-
-# Full-cycle normalization vẫn là technical debt lớn nhất
-
-Toàn 68 mã hiện vẫn:
-
-```text
-59 × LATEST_FY / 1 year
-3  × MID_CYCLE_MEDIAN / 3 years
-6  × financial/non-OE models
-
-0 × actual 7–10Y full-cycle
-```
-
-Đây là phần tôi sẽ đầu tư tiếp nếu mục tiêu là nâng engine từ ~9/10 lên **9.5+/10**.
-
----
-
-## Chấm điểm bản 03:56
-
-| Thành phần               |       Điểm |
-| ------------------------ | ---------: |
-| Cash-flow basis          |  **10/10** |
-| Quality/verdict gate     |  **10/10** |
-| Public IV safety         |  **10/10** |
-| Dilution uncertainty     | **9.5/10** |
-| Health-table semantics   | **9.5/10** |
-| Archetype/model routing  |   **9/10** |
-| MOS mechanics            |   **9/10** |
-| Leverage evidence schema | **7.5/10** |
-| Activity integrity       |   **6/10** |
-| Full-cycle normalization |   **6/10** |
-| Specialized models       |   **7/10** |
-
-**Overall production readiness: ~8.9/10.**
-
-Thứ tự tôi sẽ sửa tiếp:
-
-1. **Fix `net_debt_to_ebitda` unit mismatch.**
-2. **Rename/remove nested `economic_dilution_pct` residual field.**
-3. **Thực hiện re-anchor DB → `VERIFIED_FROM_ANCHOR`.**
-4. Implement **7–10Y full-cycle normalization**.
-5. Implement **Reserve NAV**.
-6. Implement **Fleet NAV**.
-7. Implement **Airline EBITDAR**.
-8. Implement **Mid-cycle FCFF**.
-
-Sau ba việc đầu, tôi nghĩ generic engine và audit layer đã đủ ổn để ngừng “chữa guardrail” và chuyển hẳn sang **mở rộng model coverage**.
+DGC chỉ nên là **test fixture để chứng minh công thức hoạt động**, không bao giờ là một exception trong implementation.

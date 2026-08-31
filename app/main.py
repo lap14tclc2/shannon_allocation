@@ -282,6 +282,16 @@ def _secure_cookie() -> bool:
     return bool(os.environ.get("VERCEL") or os.environ.get("QPORT_COOKIE_SECURE") == "1")
 
 
+def _crawl_enabled() -> bool:
+    """Provider crawling (TCBS fetch) UI gating: show only off-Vercel (local/dev).
+
+    The stricter ``QPORT_FINANCE_RUNTIME`` gate is still enforced by
+    ``crawl_symbol``/``_validate_crawl_runtime`` at crawl time — this flag only
+    decides whether the crawl button is visible.
+    """
+    return not bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+
+
 def _set_session_cookie(response: JSONResponse, token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE,
@@ -455,6 +465,22 @@ def admin_finance_data_universe(qport_session: str | None = Cookie(default=None)
     if result.get("code") == "CRAWL_RUNTIME_INVALID":
         raise ApiError(503, result["message"], result["code"])
     return result
+
+@app.post("/api/admin/prices/backfill")
+def admin_prices_backfill(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Backfill market_prices cho toàn universe (mã có BCTC nhưng chưa có giá).
+
+    user-test.md §19: screener chỉ bao phủ mã có giá → cần giá để tính MOS.
+    Threaded fetch VNDirect/Vnstock; persist vào market_prices.
+    """
+    require_admin(qport_session)
+    from portfolio.finance_catalog import backfill_market_prices
+    limit = body.get("limit") or None
+    result = backfill_market_prices(limit=int(limit) if limit else None)
+    return {"ok": True, **result}
 
 @app.post("/api/admin/finance-data/crawl-all")
 def admin_finance_data_crawl_all(
@@ -961,7 +987,7 @@ def portfolio_screener_endpoint(
     """Screen universe by Buffett Margin of Safety, Liquidity, and Quality."""
     require_portfolio_user(qport_session)
     from portfolio.screener import get_screener_results
-    return get_screener_results(
+    result = get_screener_results(
         mos_filter=mos_filter,
         min_liquidity=min_liquidity,
         min_score=min_score,
@@ -970,6 +996,8 @@ def portfolio_screener_endpoint(
         sort_by=sort_by,
         limit=limit,
     )
+    result["crawl_enabled"] = _crawl_enabled()
+    return result
 
 
 @app.get("/api/portfolio/valuation/{symbol}")
@@ -1479,11 +1507,77 @@ def portfolio_symbol_valuation(
             "symbol_verified": True,
         },
         "informational_only": True,
+        "crawl_enabled": _crawl_enabled(),
     }))
     response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.get("/api/portfolio/crawl-status")
+def portfolio_crawl_status(qport_session: str | None = Cookie(default=None)):
+    """Whether TCBS crawling is available (local/worker) vs read-only (Vercel)."""
+    require_portfolio_user(qport_session)
+    return {"ok": True, "crawl_enabled": _crawl_enabled()}
+
+
+@app.post("/api/portfolio/valuation/{symbol}/crawl")
+def portfolio_symbol_valuation_crawl(
+    symbol: str,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Fetch/backfill the TCBS financial history for one symbol (7–10Y full-cycle).
+
+    Optional body ``{ "token": "Bearer ..." }`` persists the user's TCBS bearer
+    token (stored in the portfolio's app_meta) before crawling. On 401/403 the
+    endpoint returns ``TCBS_AUTH_REQUIRED`` so the UI can prompt for a token.
+    """
+    import re as _re
+    from portfolio.finance_catalog import crawl_symbol, TcbsAuthRequiredError
+
+    user = require_portfolio_user(qport_session)
+    ticker = str(symbol or "").upper().strip()
+    if not _re.fullmatch(r"[A-Z0-9]{3,10}", ticker):
+        raise ApiError(400, "Invalid stock symbol.", "INVALID_TICKER", "symbol")
+
+    if not _crawl_enabled():
+        raise ApiError(
+            403,
+            "Crawl dữ liệu TCBS chỉ khả dụng trên môi trường local/worker "
+            "(Vercel là database-read-only). Chạy bộ lọc/crawl ở local để cập nhật lịch sử BCTC.",
+            "CRAWL_DISABLED_ON_VERCEL",
+        )
+
+    svc = portfolio(user)
+    token = str(body.get("token") or "").strip()
+    if token:
+        # Persist the user's token for later crawls (stored in the portfolio DB).
+        svc.store.set_meta("tcbs_bearer_token", token)
+    else:
+        stored = svc.store.get_meta("tcbs_bearer_token")
+        if stored:
+            token = stored
+
+    if not token:
+        raise ApiError(
+            401,
+            "Cần TCBS Bearer token để crawl. Mở tcinvest.tcbs.com.vn → F12 → Network → "
+            "chọn request apiextaws → copy header Authorization (Bearer eyJ…).",
+            "TCBS_AUTH_REQUIRED",
+        )
+
+    try:
+        result = crawl_symbol(ticker, int(user["id"]), token=token, force_refresh=bool(body.get("force_refresh")))
+    except TcbsAuthRequiredError as exc:
+        raise ApiError(401, str(exc), "TCBS_AUTH_REQUIRED")
+    except Exception as exc:
+        raise ApiError(502, f"Crawl TCBS thất bại: {exc}", "CRAWL_FAILED")
+
+    if result.get("code") == "CRAWL_RUNTIME_INVALID":
+        raise ApiError(503, result["message"], result["code"])
+    return result
 
 
 # ---------------------------------------------------------------------------

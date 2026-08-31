@@ -228,6 +228,26 @@ class ValuationReport:
     # Danh sách dữ liệu cần thiết để hoàn thiện mô hình định giá (tiếng Việt),
     # dùng cho các mã MODEL_INCOMPLETE / ARCHETYPE_UNSUPPORTED / FALLBACK...
     missing_data: List[str] = field(default_factory=list)
+    # Cảnh báo dữ liệu lịch sử bất thường (user-test.md 31/08): revenue/LNST/CFO
+    # nhảy bất thường giữa các năm -> nghi mapping/source error, cần đối soát nguồn.
+    data_anomalies: List[Dict[str, Any]] = field(default_factory=list)
+    # feedback.txt — Numeric-Only Validation & Regime Engine:
+    # - numeric_confidence: độ tin cậy SỐ LIỆU (HIGH/MEDIUM/LOW) sau khi resolve anomaly.
+    # - cause_confidence: độ tin cậy về NGUYÊN NHÂN (TCBS-only -> luôn UNKNOWN).
+    # - regime_analysis: các regime phát hiện (structural break split) + latest comparable.
+    # - normalization_window: window thực dùng cho mid-cycle normalization.
+    # - data_status (user-test.md §5): VALID / VALID_WITH_CLASSIFIED_EVENTS /
+    #   SUSPICIOUS / CONFLICTED / INSUFFICIENT.
+    # - regime_status (user-test.md §35): SINGLE_REGIME | SPLIT_REGIME.
+    numeric_confidence: Optional[str] = None
+    cause_confidence: Optional[str] = None
+    data_status: Optional[str] = None
+    regime_status: Optional[str] = None
+    # feedback.txt §14 — UFVS validation confidence 0..100 + level.
+    validation_confidence: Optional[int] = None
+    validation_confidence_level: Optional[str] = None
+    regime_analysis: List[Dict[str, Any]] = field(default_factory=list)
+    normalization_window: Optional[Dict[str, Any]] = None
     source_fact_ids: List[str] = field(default_factory=list)
     engine_version: str = "1.0.0"
     computed_at: str = ""

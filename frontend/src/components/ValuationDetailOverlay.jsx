@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getValuationReport } from '../lib/api.js';
+import { getValuationReport, crawlValuationHistory, getCrawlStatus } from '../lib/api.js';
+import { downloadReportAIExport } from '../lib/aiExport.js';
+import TcbsTokenPrompt from './TcbsTokenPrompt.jsx';
 import { displayNumber, formatMoney, money } from '../lib/format.js';
 import {
   archetypeLabel,
@@ -36,6 +38,322 @@ export function ValuationStatusPill({ status, marginOfSafety }) {
   );
 }
 
+const METRIC_LABELS_VI = {
+  revenue: 'Doanh thu',
+  net_profit: 'LNST',
+  operating_cash_flow: 'CFO',
+  cfo: 'CFO',
+  fcf: 'FCF',
+  equity: 'Vốn CSH',
+  total_debt: 'Nợ vay',
+  debt: 'Nợ vay',
+  total_assets: 'Tổng TS',
+  assets: 'Tổng TS',
+  shares_outstanding: 'Số CP',
+  shares: 'Số CP',
+  gross_margin: 'Biên gộp',
+  operating_margin: 'Biên EBIT',
+  net_margin: 'Biên ròng',
+  roe: 'ROE',
+  roa: 'ROA',
+};
+
+function formatCompactFinancial(metricName, value, locale = 'vi') {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  const n = Number(value);
+  const key = String(metricName || '').toLowerCase();
+  const isShares = key.includes('shares') || key.includes('cp');
+  const isPercent = key.includes('margin') || key.includes('roe') || key.includes('roa');
+
+  if (isPercent) {
+    const p = Math.abs(n) <= 1 ? n * 100 : n;
+    return `${p.toFixed(1)}%`;
+  }
+  if (isShares) {
+    if (Math.abs(n) >= 1e6) return `${(n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}M CP`;
+    if (Math.abs(n) >= 1e3) return `${(n / 1e3).toLocaleString('vi-VN', { maximumFractionDigits: 0 })}K CP`;
+    return `${n.toLocaleString('vi-VN')} CP`;
+  }
+  if (Math.abs(n) >= 1e9) {
+    const b = n / 1e9;
+    const decimals = Math.abs(b) >= 100 ? 0 : 1;
+    return `${b.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: decimals })} tỷ`;
+  }
+  if (Math.abs(n) >= 1e6) {
+    return `${(n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} tr`;
+  }
+  return `${n.toLocaleString('vi-VN')} ₫`;
+}
+
+const HISTORICAL_CLASSIFICATION_VI = {
+  STRUCTURAL_REGIME_BREAK: { label: 'Thay đổi quy mô / Regime', cls: 'structural' },
+  CYCLICAL_EXTREME: { label: 'Biến động chu kỳ', cls: 'cycle' },
+  SHARE_STRUCTURE_CHANGE: { label: 'Thay đổi cơ cấu cổ phiếu', cls: 'share' },
+  CASHFLOW_TIMING_CANDIDATE: { label: 'Lệch timing dòng tiền', cls: 'timing' },
+  EARNINGS_ONE_OFF_CANDIDATE: { label: 'Lợi nhuận một lần (one-off)', cls: 'oneoff' },
+  SUSPICIOUS_ISOLATED: { label: 'Biến động đơn lẻ theo dõi', cls: 'watch' },
+  UNIT_MAPPING_ERROR_CANDIDATE: { label: 'Lỗi đơn vị / mapping', cls: 'blocking' },
+  UNRESOLVED_MATERIAL: { label: 'Dữ liệu chưa phân loại', cls: 'blocking' },
+};
+
+const DATA_STATUS_VI = {
+  VALID: 'Hợp lệ',
+  VALID_WITH_CLASSIFIED_EVENTS: 'Đã phân loại',
+  SUSPICIOUS: 'Nghi vấn',
+  CONFLICTED: 'Mâu thuẫn',
+  INSUFFICIENT: 'Thiếu dữ liệu',
+};
+
+function dataStatusLabel(status) {
+  return DATA_STATUS_VI[status] || status || '-';
+}
+
+// feedback.txt §UI: banner "BIẾN ĐỘNG LỊCH SỬ ĐÃ PHÂN LOẠI" thay cho banner đỏ
+// "BẤT THƯỜNG LỊCH SỬ — CẦN ĐỐI SOÁT NGUỒN". Chỉ đỏ khi UNRESOLVED_MATERIAL.
+// Thiết kế tinh giản dạng Bảng Nhật ký Dữ liệu (Financial Ledger).
+export function HistoricalResolutionsBlock({ report, locale = 'vi' }) {
+  const anomalies = Array.isArray(report?.data_anomalies) ? report.data_anomalies : [];
+  const window = report?.normalization_window;
+  const regimes = Array.isArray(report?.regime_analysis) ? report.regime_analysis : [];
+  if (!anomalies.length && !window && !regimes.length) return null;
+  const hasBlocking = anomalies.some(
+    a => ['UNRESOLVED_MATERIAL', 'UNIT_MAPPING_ERROR_CANDIDATE'].includes(a.resolution?.classification),
+  );
+
+  return (
+    <details
+      className={`v-anomaly-box v-anomaly-collapse ${hasBlocking ? 'v-anomaly-box-blocking' : ''} ${anomalies.length ? '' : 'v-anomaly-box-info'}`}
+      open={hasBlocking}
+      role={hasBlocking ? 'alert' : 'group'}
+    >
+      <summary className="v-anomaly-collapse-summary">
+        <div className="v-anomaly-header-row">
+          <div className="v-anomaly-title">
+            <span className="v-anomaly-icon">{hasBlocking ? '⛔' : '🧭'}</span>
+            <h3>{hasBlocking ? 'Dữ liệu chưa phân loại — Cản trở định giá' : 'Biến động lịch sử đã phân loại (Regime Engine)'}</h3>
+            <span className="v-collapse-hint">{anomalies.length} sự kiện · nhấp để mở/đóng</span>
+          </div>
+          {(report?.data_status || report?.regime_status) && (
+            <div className="v-anomaly-status-pills">
+              <span className="v-pill-chip">{dataStatusLabel(report?.data_status)}</span>
+              {report?.regime_status === 'SPLIT_REGIME' && <span className="v-pill-chip highlight">Tách Regime</span>}
+              {report?.validation_confidence != null && (
+                <span className="v-pill-chip">UFVS {report.validation_confidence}/100</span>
+              )}
+            </div>
+          )}
+        </div>
+        <span className="v-collapse-chevron" aria-hidden="true">▾</span>
+      </summary>
+
+      <div className="v-anomaly-body">
+        {!hasBlocking && (
+          <p className="v-anomaly-desc">
+            Các biến động lịch sử được phân loại tự động qua coherence đa chỉ tiêu, persistence và materiality. Dữ liệu đã phân loại an toàn cho chuẩn hóa chu kỳ.
+          </p>
+        )}
+
+        {anomalies.length > 0 && (
+          <div className="v-anomaly-table-wrap">
+            <table className="v-anomaly-table">
+              <thead>
+                <tr>
+                  <th className="th-year">Năm</th>
+                  <th className="th-type">Phân loại</th>
+                  <th className="th-metrics">Biến động chỉ tiêu tài chính</th>
+                  <th className="th-meta">Độ tin cậy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {anomalies.map((a, i) => {
+                  const cls = HISTORICAL_CLASSIFICATION_VI[a.resolution?.classification] || {
+                    label: a.resolution?.classification || 'Theo dõi',
+                    cls: 'watch',
+                  };
+                  const mat = a.materiality?.grade;
+                  return (
+                    <tr key={i} className={`v-anomaly-tr v-row-${cls.cls}`}>
+                      <td className="td-year">
+                        <span className="v-year-tag">{a.fiscal_year}</span>
+                      </td>
+                      <td className="td-type">
+                        <div className="v-type-group">
+                          <span className={`v-anomaly-tag ${cls.cls}`}>{cls.label}</span>
+                          {mat && mat !== 'IMMATERIAL' && mat !== 'UNKNOWN' && (
+                            <span className="v-anomaly-tag material">{`Tác động ${a.materiality.impact_pct ?? '-'}%`}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="td-metrics">
+                        <div className="v-metrics-inline">
+                          {(a.metrics || []).map((m, j) => {
+                            const chg = Number(m.change_pct || 0);
+                            const sign = chg > 0 ? '+' : '';
+                            const label = METRIC_LABELS_VI[m.metric] || m.metric;
+                            return (
+                              <span key={j} className="v-metric-badge">
+                                <span className="m-name">{label}:</span>{' '}
+                                <span className="m-val">{formatCompactFinancial(m.metric, m.previous, locale)} → {formatCompactFinancial(m.metric, m.current, locale)}</span>{' '}
+                                <span className={`m-chg ${chg >= 0 ? 'pos' : 'neg'}`}>({sign}{Math.abs(chg) >= 100 ? chg.toFixed(0) : chg.toFixed(1)}%)</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="td-meta">
+                        <div className="v-meta-info">
+                          <span className="v-meta-line">Tin cậy: <strong>{a.resolution?.confidence || '-'}</strong></span>
+                          <span className="v-meta-line muted">Coh: <strong>{a.resolution?.internal_coherence ?? '-'}</strong> · {a.resolution?.persistent ? 'Duy trì' : 'Tạm thời'}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(window || regimes.length > 0) && (
+          <div className="v-regime-footer">
+            {window && (
+              <div className="v-regime-bar">
+                <span className="v-regime-bar-title">🧭 Window chuẩn hóa (latest comparable regime):</span>
+                <span className="v-regime-bar-val">
+                  <strong>{window.start_year}–{window.end_year}</strong> ({window.used_years} năm dữ liệu)
+                </span>
+              </div>
+            )}
+            {regimes.length > 0 && (
+              <div className="v-regime-bar">
+                <span className="v-regime-bar-title">✂️ Phân tích Regime:</span>
+                <div className="v-regime-chips">
+                  {regimes.map((rg, i) => (
+                    <span key={i} className="v-regime-chip">
+                      {rg.label}: {rg.start_year}–{rg.end_year}
+                      {rg.structural_break_year ? ` (break @${rg.structural_break_year})` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// Section "Vì sao Giá trị Thực cơ sở như vậy" (expand/collapse) — dùng chung
+// cho trang Định giá và overlay trên trang Screener.
+export function ValuationRationale({ report, locale = 'vi' }) {
+  if (!report) return null;
+  const bridge = report.owner_earnings_bridge || {};
+  const growth = report.growth_derivation || {};
+  const base = report.scenarios?.BASE || {};
+  const win = report.normalization_window;
+
+  const normMethod = bridge.normalization_method === 'MID_CYCLE_MEDIAN'
+    ? 'Mid-Cycle Median (biên LNST trung vị × doanh thu trung vị)'
+    : bridge.normalization_method === 'LATEST_FY'
+      ? 'Năm tài chính mới nhất (LATEST_FY)'
+      : (bridge.normalization_method || '—');
+
+  const iv = base.intrinsic_value_per_share;
+
+  return (
+    <details className="valuation-rationale valuation-rationale-collapse" open={false}>
+      <summary className="valuation-rationale-summary">
+        <span className="rationale-summary-title">🧭 Vì sao Giá trị Thực cơ sở = {iv != null ? money(iv, locale) : '—'}?</span>
+        <span className="v-collapse-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div className="valuation-rationale-body">
+        <p className="valuation-rationale-lead">
+          Giá trị Thực cơ sở được tính bằng mô hình{' '}
+          <strong>{valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}</strong>{' '}
+          từ lợi nhuận đã chuẩn hóa, tăng trưởng dự phóng và chi phí vốn. Dưới đây là từng bước dẫn tới con số này.
+        </p>
+
+        <div className="rationale-grid">
+          {/* 1. Normalization */}
+          <div className="rationale-step">
+            <span className="rationale-num">01</span>
+            <div>
+              <b>Chuẩn hóa lợi nhuận — {normMethod}</b>
+              <p>
+                {win
+                  ? `Window chuẩn hóa (latest comparable regime): ${win.comparable_regime_start}–${win.comparable_regime_end} (dùng ${win.normalization_years ?? bridge.normalization_years ?? 0} năm). `
+                  : ''}
+                {bridge.formula_description || 'Lợi nhuận chu kỳ được chuẩn hóa để loại bỏ nhiễu đỉnh/đáy.'}
+              </p>
+              {(bridge.mid_cycle_margin != null || bridge.mid_cycle_revenue != null || bridge.normalized_owner_earnings != null) && (
+                <dl className="valuation-calculation-grid">
+                  {bridge.mid_cycle_margin != null && (
+                    <div><dt>Biên LNST chu kỳ trung vị</dt><dd>{displayNumber(Number(bridge.mid_cycle_margin) * 100, '%')}</dd></div>
+                  )}
+                  {bridge.mid_cycle_revenue != null && (
+                    <div><dt>Doanh thu trung vị</dt><dd>{money(bridge.mid_cycle_revenue, locale)}</dd></div>
+                  )}
+                  {bridge.normalized_owner_earnings != null && (
+                    <div><dt>Lợi nhuận Thực chuẩn hóa</dt><dd>{money(bridge.normalized_owner_earnings, locale)}</dd></div>
+                  )}
+                  {bridge.current_owner_earnings != null && (
+                    <div><dt>Lợi nhuận Thực năm gần nhất</dt><dd>{money(bridge.current_owner_earnings, locale)}</dd></div>
+                  )}
+                </dl>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Growth & cost of capital */}
+          <div className="rationale-step">
+            <span className="rationale-num">02</span>
+            <div>
+              <b>Giả định tăng trưởng & chi phí vốn</b>
+              <p>
+                Tăng trưởng bền vững dự phóng <strong>{growth.base_growth != null ? displayNumber(growth.base_growth, '%') : '—'}</strong>
+                {growth.historical_cagr_5y_pct != null ? ` (CAGR lợi nhuận 5 năm: ${growth.historical_cagr_5y_pct}%)` : ''}
+                {growth.incremental_roe_pct != null ? ` · iROE: ${growth.incremental_roe_pct}%` : ''}
+                {growth.retention_rate != null ? ` · Tỷ lệ giữ lại: ${displayNumber(growth.retention_rate * 100, '%')}` : ''}.{' '}
+                Chiết khấu (chi phí vốn cổ phần) <strong>{displayNumber(Number(base.discount_rate || 0) * 100, '%')}</strong>,{' '}
+                tăng trưởng dài hạn <strong>{displayNumber(Number(base.terminal_growth_rate || 0) * 100, '%')}</strong>.
+              </p>
+            </div>
+          </div>
+
+          {/* 3. Base scenario → IV/share */}
+          <div className="rationale-step">
+            <span className="rationale-num">03</span>
+            <div>
+              <b>Kịch bản Cơ sở (Base) → Giá trị Thực mỗi cổ phần</b>
+              <p>
+                Dòng tiền 5 năm dự phóng theo tăng trưởng cơ sở được chiết khấu, cộng Giá trị cuối (Terminal Value),{' '}
+                trừ nợ ròng để ra Giá trị Doanh nghiệp → Giá trị Vốn chủ sở hữu → chia cho số cổ phần lưu hành.
+              </p>
+              {(base.enterprise_value != null || base.terminal_value != null || base.terminal_value_contribution_pct != null || iv != null) && (
+                <dl className="valuation-calculation-grid">
+                  {base.terminal_value != null && (
+                    <div><dt>Giá trị cuối (Terminal)</dt><dd>{money(base.terminal_value, locale)}</dd></div>
+                  )}
+                  {base.terminal_value_contribution_pct != null && (
+                    <div><dt>Đóng góp Terminal</dt><dd>{displayNumber(base.terminal_value_contribution_pct, '%')}</dd></div>
+                  )}
+                  {base.enterprise_value != null && (
+                    <div><dt>Giá trị Doanh nghiệp (EV)</dt><dd>{money(base.enterprise_value, locale)}</dd></div>
+                  )}
+                  {iv != null && (
+                    <div><dt>Giá trị Thực cơ sở / CP</dt><dd className="highlight">{money(iv, locale)}</dd></div>
+                  )}
+                </dl>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export function ValuationSkeletonCard({ symbol }) {
   return (
     <div className="v-skeleton-wrapper" aria-busy="true">
@@ -55,7 +373,7 @@ export function ValuationSkeletonCard({ symbol }) {
   );
 }
 
-export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
+export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, crawling, crawlMessage, crawlEnabled }) {
   if (!report) return null;
   const multiples = report.valuation_multiples || {};
   const base = report.scenarios?.BASE || {};
@@ -167,6 +485,8 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           </div>
         )}
 
+        <HistoricalResolutionsBlock report={report} locale={locale} />
+
         {/* Vẫn hiển thị hệ số định giá cơ bản (P/E, P/B, EPS, ROE) cho mã chất lượng thấp */}
         {(multiples.pe != null || multiples.pb != null || multiples.eps != null || multiples.roe != null) && (
           <div className="v-multiples-grid">
@@ -203,6 +523,20 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           Mô hình định giá, Ma trận độ nhạy) cho doanh nghiệp đạt chuẩn chất lượng Buffett/Munger.
           Doanh nghiệp này chưa đạt chuẩn nên phần định giá chi tiết không được hiển thị.
         </div>
+
+        {crawlEnabled && onCrawl && (
+          <div className="v-crawl-panel">
+            <button className="v-crawl-btn v-crawl-btn-lg" type="button" onClick={onCrawl} disabled={crawling}>
+              {crawling ? '⏳ Đang cập nhật dữ liệu TCBS…' : '⬇ Cập nhật dữ liệu TCBS (7–10 năm lịch sử)'}
+            </button>
+            <p className="v-crawl-hint">
+              Crawl lịch sử BCTC từ TCBS để hoàn thiện mô hình định giá (full-cycle). Cần Bearer token TCBS trên local.
+            </p>
+            {crawlMessage && (
+              <div className={`v-crawl-message ${crawlMessage.ok ? 'ok' : 'err'}`} role="status">{crawlMessage.text}</div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -364,6 +698,8 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
             <p className="v-box-text">{report.sector_conflict_warning}</p>
           </div>
         )}
+
+        <HistoricalResolutionsBlock report={report} locale={locale} />
       </div>
 
       {/* Value Investor Health Pillars Accordion - Only if pillars exist */}
@@ -536,14 +872,78 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           </div>
         </details>
       )}
+
+      {/* Vì sao Giá trị Thực cơ sở như vậy (expand/collapse) */}
+      <ValuationRationale report={report} locale={locale} />
     </div>
   );
 }
 
-export default function ValuationDetailOverlay({ symbol, report: initialReport, error: initialError, locale = 'vi', onClose }) {
+export default function ValuationDetailOverlay({ symbol, report: initialReport, error: initialError, locale = 'vi', onClose, crawlEnabled }) {
   const [report, setReport] = useState(initialReport || null);
   const [error, setError] = useState(initialError || null);
   const [loading, setLoading] = useState(!initialReport && !initialError);
+  const [crawling, setCrawling] = useState(false);
+  const [crawlMessage, setCrawlMessage] = useState(null);
+  const [showTokenPrompt, setShowTokenPrompt] = useState(false);
+  const [crawlErrorDetail, setCrawlErrorDetail] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  // Mặc định hiện nút crawl; chỉ ẩn khi backend trả rõ crawl_enabled=false (Vercel).
+  const [crawlEnabledState, setCrawlEnabledState] = useState(crawlEnabled !== false);
+
+  const handleExport = async () => {
+    if (!symbol || !report || exporting) return;
+    setExporting(true);
+    try {
+      await downloadReportAIExport(symbol, report);
+    } catch (err) {
+      console.error('Symbol AI export failed:', symbol, err?.message || err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleCrawl = async () => {
+    if (!symbol || crawling) return;
+    setCrawling(true);
+    setCrawlMessage(null);
+    setCrawlErrorDetail(null);
+    try {
+      const res = await crawlValuationHistory(symbol);
+      if (res?.crawl_enabled !== undefined) setCrawlEnabledState(res.crawl_enabled);
+      if (res?.ok === false) {
+        setCrawlMessage({ ok: false, text: res?.error || 'Không thể crawl dữ liệu TCBS.' });
+      } else {
+        const successCount = res?.success_count != null ? Number(res.success_count) : (res?.imported_documents ?? res?.documents_processed ?? null);
+        const summary = res?.message || null;
+        if (successCount != null && successCount === 0) {
+          setCrawlMessage({ ok: false, text: summary || 'Crawl xong nhưng không nhập được kỳ nào — kiểm tra token TCBS / nguồn dữ liệu.' });
+        } else {
+          setCrawlMessage({ ok: true, text: summary || `Đã cập nhật ${successCount ?? ''} kỳ dữ liệu TCBS vào DB. Đang tải lại định giá…` });
+        }
+        const repRes = await getValuationReport(symbol);
+        const rep = repRes?.report || repRes;
+        if (repRes?.crawl_enabled !== undefined) setCrawlEnabledState(repRes.crawl_enabled);
+        if (repRes?.ok === false || !rep) {
+          setError({ code: repRes?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: repRes?.error || 'Không thể tải dữ liệu định giá.' });
+        } else {
+          setReport(rep);
+          setError(null);
+        }
+      }
+    } catch (err) {
+      if (err?.code === 'TCBS_AUTH_REQUIRED') {
+        setCrawlErrorDetail(err?.message || 'Yêu cầu Bearer token TCBS.');
+        setShowTokenPrompt(true);
+      } else if (err?.code === 'CRAWL_DISABLED_ON_VERCEL') {
+        setCrawlEnabledState(false);
+        setCrawlMessage({ ok: false, text: 'Crawl dữ liệu TCBS chỉ khả dụng trên local/worker (Vercel là database-read-only).' });
+      }
+      setCrawlMessage({ ok: false, text: err?.message || 'Crawl TCBS thất bại.' });
+    } finally {
+      setCrawling(false);
+    }
+  };
 
   useEffect(() => {
     function handleKeyDown(e) {
@@ -563,6 +963,10 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
       setReport(initialReport || null);
       setError(initialError || null);
       setLoading(false);
+      // Still learn crawl availability (local vs Vercel) even with an initial report.
+      getCrawlStatus().then(res => {
+        if (res?.crawl_enabled !== undefined) setCrawlEnabledState(res.crawl_enabled);
+      }).catch(() => {});
       return undefined;
     }
     let active = true;
@@ -571,6 +975,7 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
     getValuationReport(symbol)
       .then(res => {
         if (!active) return;
+        if (res?.crawl_enabled !== undefined) setCrawlEnabledState(res.crawl_enabled);
         const rep = res?.report || res;
         if (res?.ok === false || !rep) {
           setError({ code: res?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: res?.error || 'Không thể tải dữ liệu định giá.' });
@@ -743,6 +1148,98 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           background: #a63f30;
           color: #ffffff;
           border-color: #a63f30;
+        }
+
+        .v-crawl-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 6px;
+          background: var(--retro-indigo, #2b4c7e);
+          border: 1.5px solid var(--retro-indigo, #2b4c7e);
+          color: #ffffff;
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+        .v-crawl-btn:hover:not(:disabled) {
+          filter: brightness(1.1);
+          box-shadow: 0 2px 6px rgba(43, 76, 126, 0.3);
+        }
+        .v-crawl-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .v-ai-export-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 6px;
+          background: var(--retro-green, #2f6b4d);
+          border: 1.5px solid var(--retro-green, #2f6b4d);
+          color: #ffffff;
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+        .v-ai-export-btn:hover:not(:disabled) {
+          filter: brightness(1.1);
+          box-shadow: 0 2px 6px rgba(47, 107, 77, 0.3);
+        }
+        .v-ai-export-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .v-crawl-message {
+          font-size: 0.74rem;
+          line-height: 1.4;
+          max-width: 260px;
+        }
+        .v-crawl-message.ok { color: #1e7e46; }
+        .v-crawl-message.err { color: #b03a2e; }
+
+        .v-crawl-panel {
+          margin-top: 14px;
+          padding: 14px 16px;
+          border-radius: 8px;
+          background: linear-gradient(180deg, #f0f4fb, #e8eef8);
+          border: 1.5px solid var(--retro-indigo, #2b4c7e);
+        }
+        .v-crawl-btn-lg {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 18px;
+          font-size: 0.9rem;
+          font-weight: 800;
+          border-radius: 8px;
+          background: var(--retro-indigo, #2b4c7e);
+          border: 1.5px solid var(--retro-indigo, #2b4c7e);
+          color: #ffffff;
+          cursor: pointer;
+          width: 100%;
+          justify-content: center;
+        }
+        .v-crawl-btn-lg:hover:not(:disabled) {
+          filter: brightness(1.1);
+          box-shadow: 0 3px 8px rgba(43, 76, 126, 0.3);
+        }
+        .v-crawl-btn-lg:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .v-crawl-hint {
+          margin: 8px 0 0 0;
+          font-size: 0.78rem;
+          line-height: 1.5;
+          color: var(--retro-indigo, #2b4c7e);
         }
 
         .v-overlay-body {
@@ -1313,6 +1810,10 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
            Laws of UX: Jakob (standard full-screen sheet), Fitts (44px close target),
            Hick (decluttered header), Proximity (verdict grouped), Postel (wrap, never clip). */
         @media (max-width: 719px) {
+          /* Nút Xuất AI từng mã chỉ hiển thị trên desktop (>= 720px) */
+          .v-ai-export-btn {
+            display: none;
+          }
           .v-overlay-backdrop {
             position: fixed;
             inset: 0;
@@ -1531,6 +2032,33 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
               <ValuationStatusPill status={assessment.valuation_status} marginOfSafety={mos} />
             )}
             <button
+              className="v-ai-export-btn"
+              type="button"
+              onClick={handleExport}
+              disabled={exporting || !report}
+              title="Xuất báo cáo AI (định giá chi tiết + 10 năm tài chính) cho cổ phiếu này"
+            >
+              {exporting ? '⏳ Đang xuất…' : '🤖 Xuất AI'}
+            </button>
+            {(report && crawlEnabledState !== false && (report.valuation_warning || (Array.isArray(report.missing_data) && report.missing_data.length > 0) || report.model_status !== 'MODEL_VERIFIED')) && (
+              <>
+                <button
+                  className="v-crawl-btn"
+                  type="button"
+                  onClick={handleCrawl}
+                  disabled={crawling}
+                  title="Crawl lịch sử BCTC (7–10 năm) từ TCBS để hoàn thiện mô hình định giá (cần TCBS_BEARER_TOKEN trên server)"
+                >
+                  {crawling ? '⏳ Đang cập nhật…' : '⬇ Cập nhật dữ liệu TCBS'}
+                </button>
+                {crawlMessage && (
+                  <span className={`v-crawl-message ${crawlMessage.ok ? 'ok' : 'err'}`} role="status">
+                    {crawlMessage.text}
+                  </span>
+                )}
+              </>
+            )}
+            <button
               className="v-close-btn"
               type="button"
               onClick={onClose}
@@ -1552,7 +2080,15 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
           ) : loading || !report ? (
             <ValuationSkeletonCard symbol={symbol} />
           ) : (
-            <ValuationReportBody symbol={symbol} report={report} locale={locale} />
+            <ValuationReportBody
+              symbol={symbol}
+              report={report}
+              locale={locale}
+              onCrawl={handleCrawl}
+              crawling={crawling}
+              crawlMessage={crawlMessage}
+              crawlEnabled={crawlEnabledState !== false}
+            />
           )}
         </main>
       </div>
@@ -1560,7 +2096,30 @@ export default function ValuationDetailOverlay({ symbol, report: initialReport, 
   );
 
   if (typeof document !== 'undefined' && document.body) {
-    return createPortal(overlayElement, document.body);
+    return (
+      <>
+        {createPortal(overlayElement, document.body)}
+        {showTokenPrompt && (
+          <TcbsTokenPrompt
+            symbol={symbol}
+            errorDetail={crawlErrorDetail}
+            onClose={() => setShowTokenPrompt(false)}
+            onSuccess={() => {
+              setShowTokenPrompt(false);
+              setCrawlMessage({ ok: true, text: 'Token đã lưu. Đang tải lại định giá…' });
+              getValuationReport(symbol)
+                .then(res => {
+                  const rep = res?.report || res;
+                  if (res?.ok === false || !rep) {
+                    setError({ code: res?.code || 'VALUATION_SOURCE_UNAVAILABLE', message: res?.error || 'Không thể tải dữ liệu định giá.' });
+                  } else { setReport(rep); setError(null); }
+                })
+                .catch(err => setError({ code: err?.code, message: err?.message }));
+            }}
+          />
+        )}
+      </>
+    );
   }
   return overlayElement;
 }

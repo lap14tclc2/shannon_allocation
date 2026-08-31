@@ -216,6 +216,13 @@ export const getValuationReport = (symbol) => {
   return getJSON(`/api/portfolio/valuation/${ticker}`);
 };
 
+export const crawlValuationHistory = (symbol, token, forceRefresh = true) => {
+  const ticker = encodeURIComponent(String(symbol || '').toUpperCase());
+  return sendJSON(`/api/portfolio/valuation/${ticker}/crawl`, 'POST', { token: token || null, force_refresh: !!forceRefresh });
+};
+
+export const getCrawlStatus = () => getJSON('/api/portfolio/crawl-status');
+
 export async function getValuationReports(symbols) {
   const unique = [...new Set((symbols || []).map(symbol => String(symbol || '').toUpperCase()).filter(Boolean))];
   const reports = {};

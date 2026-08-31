@@ -229,7 +229,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
             {syncing ? t('portfolio.syncing') : text('Refresh portfolio', 'Cập nhật danh mục')}
           </button>
           <a className="btn-secondary" href="/transactions">{text('+ Add transaction', '+ Thêm giao dịch')}</a>
-          <button className="btn-ghost" type="button" onClick={exportAI} disabled={exporting}>
+          <button className="btn-ghost export-ai-btn" type="button" onClick={exportAI} disabled={exporting}>
             {exporting ? text('Exporting…', 'Đang xuất…') : text('Export for AI', 'Xuất cho AI')}
           </button>
         </div>

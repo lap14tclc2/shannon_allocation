@@ -27,6 +27,45 @@ from .owner_earnings import OwnerEarningsCalculator
 from .reverse_dcf import ReverseDCFModel
 from .sensitivity import SensitivityAnalyzer
 from .archetypes import ArchetypeClassifier, EconomicArchetype, ArchetypeOverlay
+from .validation import run_validation_gate
+
+
+def detect_financial_anomalies(financial_history: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Historical anomaly detector (user-test.md 31/08).
+
+    Flags implausible year-over-year swings in revenue / net profit / CFO that are
+    typical of a unit or line-item mapping error (e.g. DGC FY2017 revenue -76%
+    then +873%). Outputs rows to be surfaced as ``DATA_ANOMALY`` /
+    ``REQUIRES_SOURCE_RECONCILIATION`` before the year feeds the mid-cycle median.
+    """
+    rows = sorted(
+        (h for h in (financial_history or []) if h),
+        key=lambda r: int(r.get("fiscal_year") or 0),
+    )
+    anomalies: List[Dict[str, Any]] = []
+    for i in range(1, len(rows)):
+        prev, curr = rows[i - 1], rows[i]
+        year = int(curr.get("fiscal_year") or 0)
+        for metric, key in (
+            ("revenue", "revenue"),
+            ("net_profit", "net_profit"),
+            ("operating_cash_flow", "operating_cash_flow"),
+        ):
+            p = curr.get(key)
+            q = prev.get(key)
+            if not (p is not None and q is not None and p > 0 and q > 0):
+                continue
+            change = (float(p) - float(q)) / float(q)
+            if change >= 1.0 or change <= -0.6:
+                anomalies.append({
+                    "fiscal_year": year,
+                    "metric": metric,
+                    "previous": float(q),
+                    "current": float(p),
+                    "change_pct": round(change * 100.0, 1),
+                    "anomaly_type": "DATA_ANOMALY" if abs(change) >= 1.0 else "SUSPICIOUS_CHANGE",
+                })
+    return anomalies
 
 
 class ValuationEngine:
@@ -35,6 +74,9 @@ class ValuationEngine:
     """
 
     ENGINE_VERSION = "qport-value-engine@1.0.0"
+
+    # feedback.txt §15 — publication gate yêu cầu validation_confidence >= ngưỡng này.
+    MIN_VALIDATION_CONFIDENCE = 60
 
     # Dữ liệu đầu vào cần thiết cho từng mô hình định giá (feedback 31/08): dùng
     # để liệt kê "cần bổ sung gì" cho các mã MODEL_INCOMPLETE / ARCHETYPE_UNSUPPORTED.
@@ -132,6 +174,45 @@ class ValuationEngine:
         return base
 
     @classmethod
+    def _build_normalization_window(
+        cls,
+        included_years: Optional[List[int]],
+        financial_history: Optional[List[Dict[str, Any]]],
+        fiscal_year: int,
+        oe_bridge: Optional[OwnerEarningsBridge],
+    ) -> Optional[Dict[str, Any]]:
+        """user-test.md §27/§38-TestC — normalization evidence trace.
+
+        Expose: normalization_method, comparable_regime_start/end, included_years,
+        candidate_years, excluded_years, normalization_years.
+        """
+        if not included_years:
+            return None
+        inc_set = set(included_years)
+        candidate = sorted({
+            int(h["fiscal_year"])
+            for h in (financial_history or [])
+            if h.get("fiscal_year") is not None
+        })
+        excluded = sorted([y for y in candidate if y not in inc_set])
+        used = int(oe_bridge.normalization_years or 0) if oe_bridge is not None else 0
+        return {
+            "normalization_method": oe_bridge.normalization_method if oe_bridge is not None else None,
+            "comparable_regime_start": min(included_years),
+            "comparable_regime_end": max(included_years),
+            "included_years": included_years,
+            "candidate_years": candidate,
+            "excluded_years": excluded,
+            "normalization_years": used,
+            "regime_years": included_years,
+            "start_year": min(included_years),
+            "end_year": max(included_years),
+            "used_years": used,
+            "note": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
+            "reason": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
+        }
+
+    @classmethod
     def evaluate(
         cls,
         symbol: str,
@@ -227,6 +308,15 @@ class ValuationEngine:
         from .archetypes import ArchetypeClassifier as _Classifier
         archetype_prof = _Classifier.classify(symbol, sector_text=sector)
         rim_applicable = is_bank or archetype_prof.recommended_model == "RESIDUAL_INCOME_MODEL"
+
+        # feedback.txt — Numeric-Only Validation & Regime Engine: resolve toàn bộ
+        # anomaly lịch sử (Layer1..3 + materiality) và phát hiện structural regime
+        # break. included_years = các năm của latest comparable regime dùng cho
+        # mid-cycle normalization (KHÔNG trộn Regime A cũ với Regime B mới).
+        # Tổ chức tài chính (RIM) KHÔNG dùng CFO trong validation (CFO ngân hàng
+        # = dòng tiền huy động/cho vay, vô nghĩa) — tránh false UNRESOLVED_MATERIAL.
+        validation = run_validation_gate(financial_history, is_financial=rim_applicable)
+        included_years: Optional[List[int]] = validation.latest_regime_years
 
         if rim_applicable:
             net_debt = Decimal("0")
@@ -362,10 +452,13 @@ class ValuationEngine:
                 or (cyclical and commodity)
             )
             lookback_years = 10 if (cyclical or requires_full_cycle) else 5
+            # feedback.txt §6: normalization chỉ dùng latest comparable regime (bỏ
+            # Regime A cũ sau structural break). included_years=None khi không break.
             oe_bridge = OwnerEarningsCalculator.calculate_cycle_normalized(
                 facts=facts,
                 latest_fiscal_year=fiscal_year,
                 lookback_years=lookback_years,
+                included_years=set(included_years) if included_years else None,
             )
             base_annual_oe = oe_bridge.owner_earnings
             # OWNER_EARNINGS_NON_POSITIVE: Block valuation DCF calculation when Owner Earnings is non-positive
@@ -1043,6 +1136,19 @@ class ValuationEngine:
                     f"khuyến nghị tránh xa hoặc chỉ theo dõi, không nên thêm vào danh mục."
                 )
         is_public_verified = model_status == "MODEL_VERIFIED" and not quality_blocked
+        # feedback.txt §15 — publication gate: model VERIFIED + validation_confidence >=
+        # MIN_CONFIDENCE + no critical unresolved + no quality block.
+        validation_conf = validation.validation_confidence
+        if validation_conf is not None and validation_conf < cls.MIN_VALIDATION_CONFIDENCE:
+            is_public_verified = False
+            if model_status == "MODEL_VERIFIED":
+                model_status = "MODEL_PARTIAL"
+            if val_status not in (ValuationPill.MODEL_INCOMPLETE, ValuationPill.MODEL_UNVALUABLE):
+                val_status = ValuationPill.MODEL_INCOMPLETE
+            confidence_reasons.append(
+                f"Độ tin cậy validation (UFVS) thấp ({validation_conf}/100, cần ≥ {cls.MIN_VALIDATION_CONFIDENCE}); "
+                "không công bố Giá trị Thực."
+            )
         missing_data: List[str] = []
         if not is_public_verified:
             missing_data = cls._build_missing_data(
@@ -1051,6 +1157,36 @@ class ValuationEngine:
                 full_cycle_years=full_cycle_years,
                 normalization_method=oe_bridge.normalization_method if oe_bridge is not None else "",
                 requires_full_cycle=requires_full_cycle,
+            )
+        # feedback.txt §9/§14: UNRESOLVED_MATERIAL trong window normalization -> không
+        # công bố public IV (confidence LOW + MODEL_PARTIAL) cho tới khi đối soát nguồn.
+        unresolved_in_window = [
+            r for r in validation.resolutions
+            if r["resolution"]["classification"] == "UNRESOLVED_MATERIAL"
+            and (included_years is None or r["fiscal_year"] in set(included_years))
+        ]
+        if unresolved_in_window:
+            if model_status == "MODEL_VERIFIED":
+                model_status = "MODEL_PARTIAL"
+            val_status = ValuationPill.MODEL_INCOMPLETE
+            if confidence != ConfidenceLevel.LOW:
+                confidence = ConfidenceLevel.LOW
+            confidence_reasons.append(
+                "Phát hiện biến động số liệu chưa được phân loại (UNRESOLVED_MATERIAL) trong window chuẩn hóa "
+                f"(năm {unresolved_in_window[0]['fiscal_year']}); không công bố Giá trị Thực tới khi dữ liệu được đối soát."
+            )
+            is_public_verified = model_status == "MODEL_VERIFIED" and not quality_blocked
+        # feedback.txt — Regime Engine: data_anomalies mang schema resolution đã phân
+        # loại (STRUCTURAL_REGIME_BREAK / CYCLICAL_EXTREME / ...) kèm coherence,
+        # persistence, materiality. Không còn nhãn nhị phân DATA_ANOMALY đáng sợ.
+        data_anomalies = list(validation.resolutions)
+        if validation.numeric_confidence == "LOW":
+            confidence_reasons.append(
+                "Độ tin cậy số liệu (numeric_confidence) ở mức LOW: có anomaly chưa resolve ảnh hưởng tới định giá."
+            )
+        elif validation.numeric_confidence == "MEDIUM":
+            confidence_reasons.append(
+                "Độ tin cậy số liệu (numeric_confidence) ở mức MEDIUM: một số biến động lịch sử chưa được xác nhận chéo."
             )
         public_base_iv = base_iv if is_public_verified else None
         public_bear_iv = bear_iv if is_public_verified else None
@@ -1142,6 +1278,20 @@ class ValuationEngine:
             diagnostic_fallback=diagnostic_fallback,
             valuation_warning=valuation_warning,
             missing_data=missing_data,
+            data_anomalies=data_anomalies,
+            numeric_confidence=validation.numeric_confidence,
+            cause_confidence=validation.cause_confidence,
+            data_status=validation.data_status,
+            regime_status=validation.regime_status,
+            validation_confidence=validation.validation_confidence,
+            validation_confidence_level=validation.validation_confidence_level,
+            regime_analysis=validation.regimes,
+            normalization_window=(cls._build_normalization_window(
+                included_years=included_years,
+                financial_history=financial_history,
+                fiscal_year=fiscal_year,
+                oe_bridge=oe_bridge,
+            )),
             sotp_breakdown=sotp_breakdown,
             rnav_breakdown=rnav_breakdown,
             kcn_lease_parameters=kcn_lease_parameters,

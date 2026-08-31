@@ -3,6 +3,8 @@ import AppNav from '../components/AppNav.jsx';
 import {
   ValuationSkeletonCard,
   ValuationStatusPill,
+  HistoricalResolutionsBlock,
+  ValuationRationale,
 } from '../components/ValuationDetailOverlay.jsx';
 import { getValuationReports } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
@@ -166,6 +168,9 @@ function ValuationCard({ symbol, report, error, locale }) {
         Mô hình Định giá, Ma trận độ nhạy) cho doanh nghiệp đạt chuẩn chất lượng Buffett/Munger.
         Doanh nghiệp này chưa đạt chuẩn nên phần định giá chi tiết không được hiển thị.
       </div>
+
+      {/* feedback.txt — Regime Engine: phân loại lịch sử + window chuẩn hóa */}
+      <HistoricalResolutionsBlock report={report} locale={locale} />
     </article>;
   }
 
@@ -410,6 +415,10 @@ function ValuationCard({ symbol, report, error, locale }) {
       </div>
     )}
 
+    {/* feedback.txt — Numeric Validation & Regime Engine: biến động lịch sử đã
+        phân loại + Window chuẩn hóa (latest comparable regime / structural break) */}
+    <HistoricalResolutionsBlock report={report} locale={locale} />
+
     {/* Collapsed Technical Details (for advanced inspection) */}
     <details className="valuation-technical-details">
       <summary className="technical-summary">
@@ -479,6 +488,9 @@ function ValuationCard({ symbol, report, error, locale }) {
         </div>
       </div>
     </details>
+
+    {/* Vì sao Giá trị Thực cơ sở như vậy — dưới section chi tiết tính toán */}
+    <ValuationRationale report={report} locale={locale} />
 
     <footer className="valuation-card-footer">
       <span>Nguồn dữ liệu: Báo cáo Tài chính Kiểm toán ({freshness.provider || multiples.source || 'Sàn chứng khoán'}) · Kỳ BCTC {report.fiscal_period_latest || 'Năm 2025'}</span>
@@ -795,7 +807,7 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
           <p>Mô hình chiết khấu dòng tiền kết hợp lợi nhuận thực của chủ doanh nghiệp. Phân tích khách quan theo nguyên lý Giá trị cốt lõi.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button type="button" className="btn-primary" onClick={exportForAI} disabled={exporting || loading || !normalized.length}>
+          <button type="button" className="btn-primary export-ai-btn" onClick={exportForAI} disabled={exporting || loading || !normalized.length}>
             {exporting ? 'Đang xuất…' : '📥 Xuất báo cáo cho AI'}
           </button>
           <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>

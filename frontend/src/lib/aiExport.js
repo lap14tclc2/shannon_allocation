@@ -4,6 +4,7 @@ import {
   getPortfolioOperations,
   getPortfolioPerformance,
   getPortfolioRisk,
+  getValuationReport,
   getValuationReports,
   listPortfolioSnapshots,
   listPortfolioTransactionAudit,
@@ -412,6 +413,48 @@ function screenerStockDetail(symbol, item, rep) {
     if (Array.isArray(quality.hard_rejects) && quality.hard_rejects.length) {
       lines.push(`- Hard rejects: ${quality.hard_rejects.join(', ')}`);
     }
+    // Bằng chứng chuẩn hóa full-cycle (user-test.md 31/08): MODEL_VERIFIED của
+    // công ty chu kỳ phải chứng minh normalization_years >= 7 + cycle window.
+    const bridge = rep.owner_earnings_bridge || {};
+    if (bridge.normalization_method || bridge.normalization_years != null) {
+      const histYears = (Array.isArray(rep.financial_history_10y) && rep.financial_history_10y.length)
+        ? rep.financial_history_10y.map(h => h.fiscal_year).filter(Boolean)
+        : [];
+      const win = histYears.length ? `${histYears[0]}–${histYears[histYears.length - 1]}` : '-';
+      lines.push(`- **Bằng chứng chuẩn hóa full-cycle:**`);
+      lines.push(`  - normalization_method: ${bridge.normalization_method || '-'} | normalization_years: ${bridge.normalization_years ?? '-'} | cycle_window: ${win}`);
+      lines.push(`  - current_owner_earnings: ${money(bridge.current_owner_earnings)}`);
+      lines.push(`  - normalized_owner_earnings: ${money(bridge.normalized_owner_earnings ?? bridge.owner_earnings)}`);
+      if (bridge.mid_cycle_margin != null) {
+        lines.push(`  - mid_cycle_margin: ${num(bridge.mid_cycle_margin * 100, 1)}%`);
+      }
+    }
+    if (Array.isArray(rep.data_anomalies) && rep.data_anomalies.length) {
+      const hasBlocking = rep.data_anomalies.some(a => a.resolution?.classification === 'UNRESOLVED_MATERIAL');
+      lines.push(hasBlocking
+        ? `- **⛔ Dữ liệu chưa phân loại — ảnh hưởng định giá (UNRESOLVED_MATERIAL):**`
+        : `- **🧭 Biến động lịch sử đã phân loại (Regime Engine):**`);
+      rep.data_anomalies.forEach(a => {
+        const cls = a.resolution?.classification || a.detector_status || 'UNKNOWN';
+        const metricSummary = (a.metrics || [])
+          .map(m => `${m.metric} ${m.change_pct > 0 ? '+' : ''}${m.change_pct}%`)
+          .join(', ');
+        const conf = a.resolution?.confidence ? ` | độ tin cậy: ${a.resolution.confidence}` : '';
+        const mat = a.materiality?.grade && a.materiality.grade !== 'IMMATERIAL'
+          ? ` [tác động: ${a.materiality.grade}]` : '';
+        lines.push(`  - ${a.fiscal_year}: ${cls}${metricSummary ? ` (${metricSummary})` : ''}${conf}${mat}`);
+      });
+    }
+    if (rep.normalization_window) {
+      const w = rep.normalization_window;
+      lines.push(`- **Window chuẩn hóa (latest comparable regime):** ${w.start_year}–${w.end_year} (dùng ${w.used_years} năm). ${w.note || ''}`);
+    }
+    if (Array.isArray(rep.regime_analysis) && rep.regime_analysis.length > 1) {
+      lines.push(`- **Phân tích regime (structural break):**`);
+      rep.regime_analysis.forEach(rg => {
+        lines.push(`  - Regime ${rg.label}: ${rg.start_year}–${rg.end_year}${rg.structural_break_year ? ` (break @${rg.structural_break_year}, confidence ${rg.break_confidence})` : ''}`);
+      });
+    }
   } else {
     lines.push(`- (Chưa có báo cáo định giá chi tiết — dữ liệu từ screener)`);
     const refMos = item?.margin_of_safety != null ? item.margin_of_safety : item?.diagnostic_mos;
@@ -481,4 +524,84 @@ export async function downloadScreenerAIExport(items = []) {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
   return anchor.download;
+}
+
+/** Export one symbol's full valuation detail (overlay data) as markdown. */
+export async function downloadSymbolAIExport(item, rep = null) {
+  const symbol = String(item?.symbol || '').toUpperCase();
+  if (!symbol) return null;
+  if (rep == null) {
+    try {
+      const res = await getValuationReport(symbol);
+      rep = res?.report || res || null;
+    } catch (err) {
+      rep = null;
+    }
+  }
+  const generatedAt = new Date().toISOString();
+  const hist = Array.isArray(rep?.financial_history_10y) ? rep.financial_history_10y : [];
+  const histTable = hist.length
+    ? table(
+      ['Năm', 'Doanh thu (VND)', 'LNST (VND)', 'VCSH (VND)', 'ROE (%)', 'CFO (VND)', 'FCF (VND)', 'Chuyển hóa tiền (%)', 'Nợ (VND)', 'Tiền (VND)', 'SL CP'],
+      hist.map(h => [
+        h.fiscal_year,
+        money(h.revenue),
+        money(h.net_profit),
+        money(h.equity),
+        h.roe != null ? `${num(h.roe, 1)}%` : '-',
+        money(h.operating_cash_flow),
+        money(h.free_cash_flow),
+        h.cash_conversion_ratio != null ? `${num(h.cash_conversion_ratio, 1)}%` : '-',
+        money(h.total_debt),
+        money(h.cash_and_equivalents),
+        h.shares_outstanding != null ? num(h.shares_outstanding, 0) : '-',
+      ]),
+    )
+    : '_Không có dữ liệu tài chính 10 năm._';
+
+  const md = [
+    `# QPort — Định giá AI: ${symbol} (${generatedAt.slice(0, 10)})`,
+    ``,
+    `- Mã: ${symbol} · ${item?.company_name || '-'} · Sàn ${item?.exchange || '-'} · Ngành: ${item?.industry || '-'}`,
+    `- Thị giá: ${money(item?.current_price)} | MOS: ${item?.margin_of_safety != null ? `${(item.margin_of_safety > 0 ? '+' : '')}${num(item.margin_of_safety, 1)}%` : (item?.diagnostic_mos != null ? `${num(item.diagnostic_mos, 1)}% (tham khảo)` : 'N/A')}`,
+    `- Điểm chất lượng: ${item?.total_score ?? '-'}/100 (${item?.tier || '-'}) | Model status: ${item?.model_status || '-'} | Verdict: ${item?.valuation_status_vi || item?.valuation_status || '-'}`,
+    ``,
+    screenerStockDetail(symbol, item, rep),
+    ``,
+    `## Dữ liệu Tài chính 10 Năm — ${symbol}`,
+    ``,
+    histTable,
+    ``,
+    `---`,
+    `*Generated ${generatedAt} · QPort AI export cho ${symbol}*`,
+  ].join('\n');
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `qport-ai-${symbol}-${generatedAt.slice(0, 10)}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return anchor.download;
+}
+
+/** Export the currently-open valuation report (overlay) as markdown with 10Y financials. */
+export async function downloadReportAIExport(symbol, report) {
+  const q = report?.quality_scorecard || {};
+  const mos = report?.public_mos ?? report?.margin_of_safety_pct ?? null;
+  const item = {
+    symbol,
+    company_name: report?.valuation_multiples?.sector || '',
+    current_price: report?.current_market_price,
+    margin_of_safety: mos,
+    total_score: q.total_score,
+    tier: q.tier,
+    model_status: report?.model_status,
+    valuation_status: report?.valuation_pill,
+    valuation_status_vi: report?.valuation_pill,
+  };
+  return downloadSymbolAIExport(item, report);
 }

@@ -11,7 +11,7 @@ Policies:
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 from portfolio.financial_data.models import CanonicalFact, QualityStatus
 from .models import OwnerEarningsBridge
 
@@ -102,6 +102,7 @@ class OwnerEarningsCalculator:
         facts: List[CanonicalFact],
         latest_fiscal_year: int,
         lookback_years: int = 10,
+        included_years: Optional[Iterable[int]] = None,
     ) -> OwnerEarningsBridge:
         """
         Calculates true mid-cycle owner earnings for cyclical enterprises (HPG, DGC, etc.).
@@ -110,13 +111,21 @@ class OwnerEarningsCalculator:
           margin_t = OE_t / Revenue_t  for each fiscal year in the lookback window
           mid_cycle_OE = median(margin_t) * median(Revenue_t)
 
+        feedback.txt §6: khi có structural regime break, engine truyền
+        ``included_years`` = các năm của latest comparable regime (ví dụ DGC
+        2018–2025) để normalization KHÔNG trộn Regime A cũ với Regime B mới.
+        Năm thiếu dữ liệu trong window vẫn được bỏ qua như trước.
+
         This removes peak/trough commodity distortion without relying on a single
         favourable (or distressed) year. Requires >= 3 valid year-pairs; otherwise
         falls back to the latest fiscal year and labels it honestly as LATEST_FY
         (never misleadingly called "averaged").
         """
+        included = set(included_years) if included_years is not None else None
         per_year: List[Tuple[int, Decimal, Decimal, Decimal]] = []  # (year, revenue, margin, oe)
         for y in range(latest_fiscal_year - lookback_years + 1, latest_fiscal_year + 1):
+            if included is not None and y not in included:
+                continue
             try:
                 b = cls.calculate(facts, fiscal_year=y)
                 oe_val = b.owner_earnings

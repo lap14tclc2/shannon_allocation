@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
+import TcbsTokenPrompt from '../components/TcbsTokenPrompt.jsx';
+import { crawlValuationHistory } from '../lib/api.js';
 import { downloadScreenerAIExport } from '../lib/aiExport.js';
 import '../valuation-page.css';
 import '../screener-page.css';
@@ -56,6 +58,10 @@ export default function ScreenerPage() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('mos');
   const [exportingAI, setExportingAI] = useState(false);
+  const [crawlingSymbol, setCrawlingSymbol] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [tokenPromptSymbol, setTokenPromptSymbol] = useState(null);
+  const [tokenPromptError, setTokenPromptError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,11 +99,12 @@ export default function ScreenerPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [mosFilter, minLiquidity, minScore, exchange, search, sortBy]);
+  }, [mosFilter, minLiquidity, minScore, exchange, search, sortBy, refreshKey]);
 
   const items = data?.items || [];
   const totalScreened = data?.total_screened || 0;
   const universeSize = data?.universe_size || 1523;
+  const crawlEnabled = data?.crawl_enabled !== false;
 
   const exportScreenerCsv = () => {
     if (!items.length) return;
@@ -139,6 +146,27 @@ export default function ScreenerPage() {
       console.error('Screener AI export failed:', err);
     } finally {
       setExportingAI(false);
+    }
+  };
+
+  const handleCrawl = async (symbol) => {
+    if (!symbol || crawlingSymbol) return;
+    setCrawlingSymbol(symbol);
+try {
+        await crawlValuationHistory(symbol);
+      } catch (err) {
+        if (err?.code === 'TCBS_AUTH_REQUIRED') {
+          setTokenPromptError(err?.message || 'Yêu cầu Bearer token TCBS.');
+          setTokenPromptSymbol(symbol);
+        } else if (err?.code === 'CRAWL_DISABLED_ON_VERCEL') {
+          console.warn('Crawl disabled on Vercel:', err?.message);
+        } else {
+          console.error('Crawl TCBS failed:', symbol, err?.message || err);
+        }
+      } finally {
+      setCrawlingSymbol(null);
+      // Refetch screener so the refreshed model coverage is reflected.
+      setRefreshKey(k => k + 1);
     }
   };
 
@@ -272,6 +300,17 @@ export default function ScreenerPage() {
 
         {/* Action Button */}
         <div className="card-actions" onClick={e => e.stopPropagation()}>
+          {isMissingData && crawlEnabled && (
+            <button
+              type="button"
+              className="btn-deep-dive btn-crawl-tcbs"
+              onClick={() => handleCrawl(item.symbol)}
+              disabled={crawlingSymbol != null}
+              title="Crawl lịch sử BCTC (7–10 năm) từ TCBS để hoàn thiện mô hình định giá (cần TCBS_BEARER_TOKEN trên server)"
+            >
+              <span>{crawlingSymbol === item.symbol ? '⏳ Đang cập nhật…' : '⬇ Cập nhật dữ liệu TCBS'}</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn-deep-dive"
@@ -561,7 +600,18 @@ export default function ScreenerPage() {
         {selectedSymbol && (
           <ValuationDetailOverlay
             symbol={selectedSymbol}
+            crawlEnabled={crawlEnabled}
             onClose={() => setSelectedSymbol(null)}
+          />
+        )}
+
+        {/* TCBS Bearer token prompt on 401/403 crawl */}
+        {tokenPromptSymbol && (
+          <TcbsTokenPrompt
+            symbol={tokenPromptSymbol}
+            errorDetail={tokenPromptError}
+            onClose={() => { setTokenPromptSymbol(null); setTokenPromptError(null); }}
+            onSuccess={() => { setTokenPromptSymbol(null); setTokenPromptError(null); setRefreshKey(k => k + 1); }}
           />
         )}
       </main>

@@ -289,3 +289,38 @@ def test_valuation_engine_end_to_end_report_with_real_fixture():
         fiscal_quarter=2,
     )
 
+
+def test_detect_financial_anomalies_flags_implausible_year_jumps():
+    # user-test.md 31/08: DGC-like FY2017 revenue -76% then FY2018 +873% must be
+    # flagged as anomaly (unit/mapping error risk) before mid-cycle normalization.
+    from portfolio.value_engine.engine import detect_financial_anomalies
+    b = 1_000_000_000
+    hist = [
+        {"fiscal_year": 2016, "revenue": 2.622 * b, "net_profit": 320 * b, "operating_cash_flow": 280 * b},
+        {"fiscal_year": 2017, "revenue": 0.626 * b, "net_profit": 128 * b, "operating_cash_flow": 110 * b},
+        {"fiscal_year": 2018, "revenue": 6.09 * b, "net_profit": 873 * b, "operating_cash_flow": 800 * b},
+        {"fiscal_year": 2019, "revenue": 4.5 * b, "net_profit": 700 * b, "operating_cash_flow": 650 * b},
+    ]
+    anomalies = detect_financial_anomalies(hist)
+    by_year = {}
+    for a in anomalies:
+        by_year.setdefault(a["fiscal_year"], []).append((a["metric"], a["change_pct"], a["anomaly_type"]))
+    assert 2017 in by_year
+    assert 2018 in by_year
+    # FY2018 revenue +873% -> DATA_ANOMALY (>= 100%)
+    rev2018 = [t for t in by_year[2018] if t[0] == "revenue"][0]
+    assert rev2018[2] == "DATA_ANOMALY" and rev2018[1] > 500
+    # FY2017 revenue -76% -> SUSPICIOUS_CHANGE (<= -60%)
+    rev2017 = [t for t in by_year[2017] if t[0] == "revenue"][0]
+    assert rev2017[2] == "SUSPICIOUS_CHANGE" and rev2017[1] < -60
+
+
+def test_detect_financial_anomalies_clean_history_returns_empty():
+    from portfolio.value_engine.engine import detect_financial_anomalies
+    b = 1_000_000_000
+    hist = [
+        {"fiscal_year": y, "revenue": 5.0 * b, "net_profit": 800 * b, "operating_cash_flow": 700 * b}
+        for y in range(2016, 2026)
+    ]
+    assert detect_financial_anomalies(hist) == []
+
