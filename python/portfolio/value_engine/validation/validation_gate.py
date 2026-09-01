@@ -36,11 +36,12 @@ SHARES_CHANGE_MATERIAL = 0.3
 # feedback.txt §11 — normalization policy cho từng classification.
 USE_MATRIX = {
     "STRUCTURAL_REGIME_BREAK": "SPLIT_REGIME",
+    "STRUCTURAL_BREAK_CANDIDATE": "KEEP_WITH_WARNING",
     "CYCLICAL_EXTREME": "INCLUDE",
     "SHARE_STRUCTURE_CHANGE": "INCLUDE + PER_SHARE_ADJUST",
     "CASHFLOW_TIMING_CANDIDATE": "DOWNWEIGHT_CFO",
-    "EARNINGS_ONE_OFF_CANDIDATE": "DOWNWEIGHT_EARNINGS",
-    "SUSPICIOUS_ISOLATED": "EXCLUDE_METRIC_YEAR",
+    "EARNINGS_ONE_OFF_CANDIDATE": "EXCLUDE_EARNINGS_METRIC",
+    "SUSPICIOUS_ISOLATED": "KEEP_WITH_WARNING",
     "UNIT_MAPPING_ERROR_CANDIDATE": "REJECT_FACT",
     "UNRESOLVED_MATERIAL": "BLOCK_MODEL",
 }
@@ -105,6 +106,8 @@ def _classify_year(
     cycle_years: List[int],
     unit_error_year: bool,
     materiality: Dict[str, Any],
+    norm_input_years: Optional[Set[int]] = None,
+    regime_years_set: Optional[Set[int]] = None,
 ) -> Dict[str, Any]:
     """Phân loại một năm theo decision table UFVS (§6) + ghi đủ score Z/A/C/P/M/R/CY/D."""
     z_by_metric = z_table.get(year, {})
@@ -113,8 +116,7 @@ def _classify_year(
     z_anom = {m: float(info["z"]) for m, info in z_by_metric.items() if info["severity"] != "NORMAL"}
     z_max = max((abs(z) for z in z_all.values()), default=0.0)
     A = len(z_anom) / len(z_all) if z_all else 0.0
-    # Coherence C: dùng Z-capped (feedback §3 — magnitude similarity), cắt biên độ quá cao
-    # để metric extreme (equity Z~18) không át metric khác.
+    # Coherence C: dùng Z-capped (feedback §3 — magnitude similarity)
     capped_z = {m: (1.0 if z > 0 else -1.0) * min(abs(z), Z_UNUSUAL) for m, z in z_all.items()}
     C = pairwise_coherence(capped_z) if capped_z else 0.0
     P = persistence_score(rows, year)
@@ -137,13 +139,41 @@ def _classify_year(
     rule_score = round(1.0 - C, 3)
 
     anom_metrics = set(z_anom.keys())
-    # "Strong" anomaly: |Z| >= 3.5 (STRONG_ANOMALY+) — dùng cho các branch đặc thù
-    # (operating "ổn" = KHÔNG strong, tránh blip nhỏ trên baseline ổn định).
     strong_anom = {m for m, info in z_by_metric.items() if abs(float(info["z"])) >= Z_UNUSUAL}
     rev_anom = "revenue" in strong_anom
     profit_anom = "net_profit" in strong_anom
     cfo_anom = "operating_cash_flow" in strong_anom
     shares_anom = "shares_outstanding" in strong_anom
+
+    latest_row_year = max((int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")), default=year)
+    norm_set = norm_input_years if norm_input_years is not None else {latest_row_year}
+    regime_set = regime_years_set if regime_years_set is not None else norm_set
+
+    # Determine exact 5-level valuation relevance
+    if shares_anom:
+        val_relevance = "PER_SHARE_INPUT"
+    elif year == latest_row_year:
+        val_relevance = "VALUATION_INPUT"
+    elif year in norm_set:
+        val_relevance = "NORMALIZATION_INPUT"
+    elif year in regime_set:
+        val_relevance = "REGIME_INPUT"
+    else:
+        val_relevance = "HISTORICAL_CONTEXT"
+
+    # Materiality Provenance (AC-2):
+    if val_relevance in ("HISTORICAL_CONTEXT", "REGIME_INPUT", "NOT_USED", "QUALITY_ONLY"):
+        materiality = {
+            "method": "NOT_APPLICABLE",
+            "impact_pct": 0.0,
+            "grade": "IMMATERIAL",
+        }
+    elif materiality.get("method") is None:
+        materiality = {
+            "method": "NOT_COMPUTED" if materiality.get("impact_pct") is None else "COUNTERFACTUAL_MARGIN",
+            "impact_pct": materiality.get("impact_pct"),
+            "grade": materiality.get("grade", "UNKNOWN"),
+        }
 
     mat_score = round(float(materiality.get("impact_pct") or 0.0) / 100.0, 3)
     iso_score = round((1.0 - A) * (1.0 - C), 3)
@@ -153,7 +183,7 @@ def _classify_year(
         classification = "UNIT_MAPPING_ERROR_CANDIDATE"
         confidence = "LOW"
         include = False
-        block = True
+        block = False
         exclude_metric = list(anom_metrics or ["revenue"])
         rule_name = "LAYER1_UNIT_OR_SCALE_JUMP"
         rule_score = 1.0
@@ -188,6 +218,7 @@ def _classify_year(
     elif profit_anom and not rev_anom and not cfo_anom and A < 0.4:
         classification = "EARNINGS_ONE_OFF_CANDIDATE"
         include = False
+        block = False
         exclude_metric = ["net_profit"]
         rule_name = "ISOLATED_PROFIT_SPIKE_WITHOUT_REVENUE_CFO"
         rule_score = round(1.0 - A, 3)
@@ -208,21 +239,21 @@ def _classify_year(
         rule_name = "ISOLATED_CAPITAL_OR_SHARE_CHANGE"
         rule_score = round(1.0 - A, 3)
         rule_threshold = 0.40
-    # 7. Unresolved material: coherence thấp + materiality cao -> block model.
-    elif is_blocking(materiality.get("grade")) and mat_score >= 0.15 and C < ISOLATED_C_MAX and A < 0.5:
+    # 7. Unresolved material: coherence thấp + materiality cao OR Material anomaly on VALUATION_INPUT/PER_SHARE_INPUT
+    elif (is_blocking(materiality.get("grade")) and mat_score >= 0.15 and C < ISOLATED_C_MAX and A < 0.5) or (val_relevance in ("VALUATION_INPUT", "PER_SHARE_INPUT") and (is_blocking(materiality.get("grade")) or mat_score >= 0.15)):
         classification = "UNRESOLVED_MATERIAL"
         confidence = "LOW"
         include = False
         block = True
         rule_name = "MATERIAL_IMPACT_WITH_LOW_COHERENCE"
-        rule_score = mat_score
+        rule_score = max(mat_score, 0.15)
         rule_threshold = 0.15
     # 8. Bad data score cao: extreme jump + related không xác nhận.
     elif D >= BAD_DATA_D_MIN and A < 0.5:
         classification = "UNIT_MAPPING_ERROR_CANDIDATE"
         confidence = "LOW"
         include = False
-        block = True
+        block = False
         exclude_metric = list(anom_metrics)
         rule_name = "EXTREME_JUMP_WITH_ZERO_CONFIRMATION"
         rule_score = D
@@ -230,9 +261,9 @@ def _classify_year(
     # 9. Isolated: Z cao + A thấp + C thấp.
     elif A < ISOLATED_A_MAX and C < ISOLATED_C_MAX and iso_score >= 0.36:
         classification = "SUSPICIOUS_ISOLATED"
-        include = not bool(anom_metrics) or False  # exclude affected metric-year
-        if not include:
-            exclude_metric = list(anom_metrics)
+        include = True
+        block = False
+        exclude_metric = None
         confidence = "LOW" if not include else "MEDIUM"
         rule_name = "LOW_BREADTH_LOW_COHERENCE_ANOMALY"
         rule_score = iso_score
@@ -241,35 +272,29 @@ def _classify_year(
         classification = "SUSPICIOUS_ISOLATED"
         confidence = "LOW"
         include = True
+        block = False
+        exclude_metric = None
         rule_name = "FALLBACK_ISOLATED_ANOMALY"
         rule_score = iso_score
         rule_threshold = 0.0
 
-    # Determine exact valuation relevance
-    latest_row_year = max((int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")), default=year)
-    if year == latest_row_year:
-        val_relevance = "VALUATION_INPUT"
-    elif shares_anom:
-        val_relevance = "PER_SHARE_INPUT"
+    # Determine action and handling
+    if classification == "SUSPICIOUS_ISOLATED":
+        use_action = "EXCLUDE_METRIC_YEAR" if not include else "KEEP_WITH_WARNING"
+    elif classification == "EARNINGS_ONE_OFF_CANDIDATE":
+        use_action = "EXCLUDE_EARNINGS_METRIC"
+    elif classification == "UNIT_MAPPING_ERROR_CANDIDATE":
+        use_action = "REJECT_FACT"
+    elif classification == "UNRESOLVED_MATERIAL":
+        use_action = "BLOCK_MODEL"
+    elif classification == "STRUCTURAL_BREAK_CANDIDATE":
+        use_action = "KEEP_WITH_WARNING"
     else:
-        val_relevance = "NORMALIZATION_INPUT"
+        use_action = USE_MATRIX.get(classification, "KEEP_WITH_WARNING" if include else "EXCLUDE_METRIC_YEAR")
 
-    # Materiality Provenance (AC-2):
-    # - If val_relevance == "NOT_USED" or "QUALITY_ONLY": method = "NOT_APPLICABLE", impact_pct = 0.0, grade = "IMMATERIAL"
-    # - If materiality was computed via counterfactual margin: method = "COUNTERFACTUAL_MARGIN", impact_pct = float, grade = ...
-    # - If cannot be computed: method = "NOT_COMPUTED", impact_pct = None, grade = "UNKNOWN"
-    if val_relevance in ("NOT_USED", "QUALITY_ONLY"):
-        materiality = {
-            "method": "NOT_APPLICABLE",
-            "impact_pct": 0.0,
-            "grade": "IMMATERIAL",
-        }
-    elif materiality.get("method") is None:
-        materiality = {
-            "method": "NOT_COMPUTED" if materiality.get("impact_pct") is None else "COUNTERFACTUAL_MARGIN",
-            "impact_pct": materiality.get("impact_pct"),
-            "grade": materiality.get("grade", "UNKNOWN"),
-        }
+    fact_rejected = (not include) or (classification == "UNIT_MAPPING_ERROR_CANDIDATE")
+    model_blocked = block or (classification == "UNRESOLVED_MATERIAL")
+    model_recomputed = fact_rejected and not model_blocked
 
     return {
         "fiscal_year": year,
@@ -297,15 +322,15 @@ def _classify_year(
         },
         "valuation_handling": {
             "include": include,
-            "use": USE_MATRIX.get(classification, "INCLUDE"),
+            "use": use_action,
             "split_regime": split_regime,
             "exclude_metric": exclude_metric,
             "downweight_metric": downweight_metric,
             "adjust_per_share": adjust_per_share,
-            "block": block,
-            "fact_rejected": not include or block,
-            "model_blocked": block,
-            "model_recomputed": True if not include else False,
+            "block": model_blocked,
+            "fact_rejected": fact_rejected,
+            "model_blocked": model_blocked,
+            "model_recomputed": model_recomputed,
             "valuation_relevance": val_relevance,
         },
         "materiality": materiality,
@@ -345,6 +370,8 @@ def _confidence_level(v: int) -> str:
 def run_validation_gate(
     financial_history: Optional[List[Dict[str, Any]]],
     is_financial: bool = False,
+    normalization_input_years: Optional[Iterable[int]] = None,
+    latest_regime_years: Optional[Iterable[int]] = None,
 ) -> ValidationResult:
     """Chạy UFVS pipeline trên lịch sử tài chính (feedback.txt mới).
 
@@ -381,18 +408,29 @@ def run_validation_gate(
         year for year, metrics in z_table.items()
         if any(info["severity"] != "NORMAL" for info in metrics.values())
     })
-    unit_jump_years = sorted({a.fiscal_year for a in unit_jumps})
-    event_years = sorted(set(z_anomalous_years) | set(cycle_years) | set(break_years.keys()) | set(unit_jump_years))
+    unit_jump_years = {a.fiscal_year for a in unit_jumps}
+    candidate_event_years = sorted(set(z_anomalous_years) | set(cycle_years) | set(break_years.keys()) | set(unit_jump_years))
 
     latest = latest_comparable_regime(rows)
-    window_years = latest["years"] if latest else None
+    regime_years = latest["years"] if latest else [int(r["fiscal_year"]) for r in rows]
+    effective_regime_years = list(latest_regime_years) if latest_regime_years is not None else regime_years
+    norm_set = set(normalization_input_years) if normalization_input_years is not None else {max(regime_years, default=2025)}
+    regime_set = set(effective_regime_years)
 
     resolutions: List[Dict[str, Any]] = []
-    for year in event_years:
-        mat = assess_materiality(rows, year, window_years)
+    for y in candidate_event_years:
+        mat = assess_materiality(rows, y, window_years=effective_regime_years)
         resolutions.append(_classify_year(
-            year, by_year, rows, z_table, break_years, cycle_years,
-            unit_error_year=year in set(unit_jump_years), materiality=mat,
+            year=y,
+            by_year=by_year,
+            rows=rows,
+            z_table=z_table,
+            break_years=break_years,
+            cycle_years=cycle_years,
+            unit_error_year=y in unit_jump_years,
+            materiality=mat,
+            norm_input_years=norm_set,
+            regime_years_set=regime_set,
         ))
 
     unresolved_years = [

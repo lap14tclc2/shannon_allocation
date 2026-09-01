@@ -1167,6 +1167,20 @@ class ValuationEngine:
                 f"Độ tin cậy validation (UFVS) thấp ({validation_conf}/100, cần ≥ {cls.MIN_VALIDATION_CONFIDENCE}); "
                 "không công bố Giá trị Thực."
             )
+        norm_method = oe_bridge.normalization_method if oe_bridge is not None else "LATEST_FY"
+        if norm_method == "LATEST_FY":
+            norm_inputs = [fiscal_year]
+        else:
+            norm_inputs = (oe_bridge.normalization_input_years if oe_bridge and oe_bridge.normalization_input_years else list(included_years or [fiscal_year]))
+
+        # Re-resolve validations with exact normalization window inputs
+        validation = run_validation_gate(
+            financial_history,
+            is_financial=rim_applicable,
+            normalization_input_years=norm_inputs,
+            latest_regime_years=included_years,
+        )
+
         missing_data: List[str] = []
         if not is_public_verified:
             missing_data = cls._build_missing_data(
@@ -1180,8 +1194,14 @@ class ValuationEngine:
         # công bố public IV (confidence LOW + MODEL_PARTIAL) cho tới khi đối soát nguồn.
         unresolved_in_window = [
             r for r in validation.resolutions
-            if r["resolution"]["classification"] == "UNRESOLVED_MATERIAL"
-            and (included_years is None or r["fiscal_year"] in set(included_years))
+            if (
+                r["resolution"]["classification"] == "UNRESOLVED_MATERIAL"
+                or r.get("valuation_handling", {}).get("model_blocked") is True
+            )
+            and (
+                r.get("valuation_handling", {}).get("valuation_relevance") in ("VALUATION_INPUT", "PER_SHARE_INPUT")
+                or (norm_inputs is None or r["fiscal_year"] in set(norm_inputs))
+            )
         ]
         if unresolved_in_window:
             if model_status == "MODEL_VERIFIED":
@@ -1193,7 +1213,7 @@ class ValuationEngine:
                 "Phát hiện biến động số liệu chưa được phân loại (UNRESOLVED_MATERIAL) trong window chuẩn hóa "
                 f"(năm {unresolved_in_window[0]['fiscal_year']}); không công bố Giá trị Thực tới khi dữ liệu được đối soát."
             )
-            is_public_verified = model_status == "MODEL_VERIFIED" and not quality_blocked
+            is_public_verified = False
         # feedback.txt — Regime Engine: data_anomalies mang schema resolution đã phân
         # loại (STRUCTURAL_REGIME_BREAK / CYCLICAL_EXTREME / ...) kèm coherence,
         # persistence, materiality. Không còn nhãn nhị phân DATA_ANOMALY đáng sợ.
