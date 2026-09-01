@@ -302,6 +302,13 @@ export function ValuationRationale({ report, locale = 'vi' }) {
   const pvStage1 = base.pv_stage1 != null ? base.pv_stage1 : totalEquity * (1 - pvTerminalPct);
   const normOe = bridge.normalized_owner_earnings || bridge.current_owner_earnings || bridge.net_profit || 0;
 
+  const bvpsVal = report.valuation_multiples?.bvps != null
+    ? report.valuation_multiples.bvps
+    : (report.fundamentals?.bvps != null
+      ? report.fundamentals.bvps
+      : (latestHist.equity && sharesVal ? latestHist.equity / sharesVal : 0));
+  const targetPb = bvpsVal > 0 && iv ? (iv / bvpsVal).toFixed(2) : '—';
+
   return (
     <details className="valuation-rationale valuation-rationale-collapse" open={false}>
       <summary className="valuation-rationale-summary">
@@ -368,16 +375,31 @@ export function ValuationRationale({ report, locale = 'vi' }) {
             <div>
               <b>Kịch bản Cơ sở (Base) → Giá trị Thực mỗi cổ phần</b>
               <p>
-                Dòng tiền 5 năm dự phóng theo tăng trưởng cơ sở được chiết khấu, cộng Giá trị cuối (Terminal Value),{' '}
-                trừ nợ ròng để ra Giá trị Doanh nghiệp → Giá trị Vốn chủ sở hữu → chia cho số cổ phần lưu hành.
+                {report.valuation_model === 'CONCESSION_DCF'
+                  ? 'Đặc thù tài sản nhượng quyền hạ tầng Cảng biển có thời hạn tô nhượng hữu hạn: Toàn bộ dòng tiền được chiết khấu trong suốt vòng đời dự án, không giả định tồn tại vĩnh viễn (Terminal Value = 0).'
+                  : 'Dòng tiền 5 năm dự phóng theo tăng trưởng cơ sở được chiết khấu, cộng Giá trị cuối (Terminal Value), trừ nợ ròng để ra Giá trị Doanh nghiệp → Giá trị Vốn chủ sở hữu → chia cho số cổ phần lưu hành.'}
               </p>
               {(base.enterprise_value != null || base.terminal_value != null || base.terminal_value_contribution_pct != null || iv != null) && (
                 <dl className="valuation-calculation-grid">
                   {base.terminal_value != null && (
-                    <div><dt>Giá trị cuối (Terminal)</dt><dd>{formatGridMoney(base.terminal_value, locale)}</dd></div>
+                    <div>
+                      <dt>Giá trị cuối (Terminal)</dt>
+                      <dd>
+                        {report.valuation_model === 'CONCESSION_DCF' || base.terminal_value === 0
+                          ? '0 ₫ (Hạ tầng nhượng quyền hữu hạn)'
+                          : formatGridMoney(base.terminal_value, locale)}
+                      </dd>
+                    </div>
                   )}
                   {base.terminal_value_contribution_pct != null && (
-                    <div><dt>Đóng góp Terminal</dt><dd>{displayNumber(base.terminal_value_contribution_pct, '%')}</dd></div>
+                    <div>
+                      <dt>Đóng góp Terminal</dt>
+                      <dd>
+                        {report.valuation_model === 'CONCESSION_DCF' || base.terminal_value_contribution_pct === 0
+                          ? '0.0% (Không tính sau tô nhượng)'
+                          : displayNumber(base.terminal_value_contribution_pct, '%')}
+                      </dd>
+                    </div>
                   )}
                   {base.enterprise_value != null && (
                     <div><dt>Giá trị Doanh nghiệp (EV)</dt><dd>{formatGridMoney(base.enterprise_value, locale)}</dd></div>
@@ -509,13 +531,40 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                     </div>
                   </div>
 
+                  <div className="math-params-ledger">
+                    <div className="param-item">
+                      <span className="param-label">Giá trị sổ sách (BVPS)</span>
+                      <span className="param-val">{money(bvpsVal, locale)}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">ROE Trung vị</span>
+                      <span className="param-val">{report.valuation_multiples?.roe != null ? displayNumber(report.valuation_multiples.roe, '%') : (latestHist.roe != null ? displayNumber(latestHist.roe, '%') : '—')}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Chi phí vốn (r)</span>
+                      <span className="param-val">{displayNumber(Number(base.discount_rate || 0) * 100, '%')}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Tăng trưởng dài hạn (g)</span>
+                      <span className="param-val">{displayNumber(Number(base.terminal_growth_rate || 0) * 100, '%')}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Hệ số P/B Hợp lý (Target P/B)</span>
+                      <span className="param-val">{targetPb}x</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Số CP lưu hành (S)</span>
+                      <span className="param-val">{sharesVal ? `${(sharesVal / 1e6).toFixed(1)}M CP` : '—'}</span>
+                    </div>
+                  </div>
+
                   <div className="math-proof-ledger">
                     <div className="proof-row is-final-proof">
                       <div className="proof-badge is-final-badge">Thay số tính toán</div>
                       <div className="proof-calc">
-                        <span className="p-chunk">BVPS: <strong>{money(report.fundamentals?.bvps || 0, locale)}</strong></span>
+                        <span className="p-chunk">BVPS: <strong>{money(bvpsVal, locale)}</strong></span>
                         <span className="p-op">×</span>
-                        <span className="p-chunk">Hệ số P/B Hợp lý</span>
+                        <span className="p-chunk">Target P/B: <strong>{targetPb}x</strong></span>
                         <span className="p-op">=</span>
                         <span className="p-chunk is-final-result">
                           Giá trị Thực: <strong>{money(iv, locale)}</strong>
