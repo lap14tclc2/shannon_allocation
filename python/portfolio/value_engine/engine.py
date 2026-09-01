@@ -188,7 +188,11 @@ class ValuationEngine:
         """
         if not included_years:
             return None
-        norm_inputs = (oe_bridge.normalization_input_years if oe_bridge and oe_bridge.normalization_input_years else list(included_years))
+        norm_method = oe_bridge.normalization_method if oe_bridge is not None else "LATEST_FY"
+        if norm_method == "LATEST_FY":
+            norm_inputs = [fiscal_year]
+        else:
+            norm_inputs = (oe_bridge.normalization_input_years if oe_bridge and oe_bridge.normalization_input_years else list(included_years))
         inc_set = set(included_years)
         input_set = set(norm_inputs)
         candidate = sorted({
@@ -199,13 +203,18 @@ class ValuationEngine:
         excluded = [
             {
                 "year": y,
-                "reason": "PREVIOUS_REGIME" if y not in inc_set else "MISSING_OR_UNAVAILABLE_FINANCIALS",
+                "reason": "PREVIOUS_REGIME" if y not in inc_set else ("HISTORICAL_YEAR_NOT_USED" if norm_method == "LATEST_FY" else "MISSING_OR_UNAVAILABLE_FINANCIALS"),
             }
             for y in candidate if y not in input_set
         ]
-        used = len(norm_inputs) if norm_inputs else (int(oe_bridge.normalization_years or 0) if oe_bridge is not None else 0)
+        used = len(norm_inputs)
+        note_text = (
+            f"Dùng số liệu năm tài chính mới nhất ({fiscal_year}) theo mô hình LATEST_FY."
+            if norm_method == "LATEST_FY" else
+            "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization."
+        )
         return {
-            "normalization_method": oe_bridge.normalization_method if oe_bridge is not None else None,
+            "normalization_method": norm_method,
             "comparable_regime_start": min(included_years),
             "comparable_regime_end": max(included_years),
             "included_years": norm_inputs,
@@ -217,8 +226,8 @@ class ValuationEngine:
             "used_years": used,
             "start_year": min(included_years),
             "end_year": max(included_years),
-            "note": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
-            "reason": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
+            "note": note_text,
+            "reason": note_text,
         }
 
     @classmethod

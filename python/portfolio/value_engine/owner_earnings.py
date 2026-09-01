@@ -94,6 +94,7 @@ class OwnerEarningsCalculator:
             maintenance_capex_confidence=maint_conf,
             owner_earnings_confidence=oe_conf,
             maintenance_capex_method=maint_method,
+            normalization_input_years=[fiscal_year],
         )
 
     @classmethod
@@ -189,6 +190,7 @@ class OwnerEarningsCalculator:
                 maintenance_capex_confidence=latest_b.maintenance_capex_confidence,
                 owner_earnings_confidence=latest_b.owner_earnings_confidence,
                 maintenance_capex_method=latest_b.maintenance_capex_method,
+                normalization_input_years=[latest_fiscal_year],
             )
 
         revenues = [Decimal(str(p[1])) for p in per_year]
@@ -232,6 +234,7 @@ class OwnerEarningsCalculator:
                 maintenance_capex_confidence=latest_b.maintenance_capex_confidence,
                 owner_earnings_confidence=latest_b.owner_earnings_confidence,
                 maintenance_capex_method=latest_b.maintenance_capex_method,
+                normalization_input_years=[latest_fiscal_year],
             )
 
         desc = (
