@@ -27,6 +27,8 @@ VAL_VERDICT_VI: Dict[str, str] = {
     "CLASSIFICATION_CONFLICT": "Xung đột Phân loại ngành",
     "AVOID_SOLVENCY": "Thận trọng Khả năng Thanh toán",
     "ARCHETYPE_UNSUPPORTED": "Chưa xác định Mô hình Định giá",
+    "ARCHETYPE_UNKNOWN": "Chưa Phân Loại Ngành",
+    "MODEL_UNSUPPORTED": "Chưa Hỗ Trợ Mô Hình",
     "FALLBACK_MODEL_ONLY": "Mô hình Định giá Tham chiếu",
 }
 

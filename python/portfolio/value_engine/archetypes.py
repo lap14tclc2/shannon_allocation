@@ -704,9 +704,42 @@ class ArchetypeClassifier:
         if any(w in combined for w in ("thủy sản", "tôm", "cá tra", "seafood", "aquaculture")):
             return ArchetypeProfile(EconomicArchetype.AQUACULTURE_EXPORT, [ArchetypeOverlay.HIGH_CYCLICALITY, ArchetypeOverlay.EXPORT_ORIENTED], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
 
-        # Uncertain classification: prefer ARCHETYPE_UNKNOWN over a silent generic DCF +
-        # MODEL_VERIFIED (audit 68-symbol). GENERIC_ENTERPRISE is reserved for companies
-        # that are explicitly known to be generic (see EXPLICIT_SYMBOL_ARCHETYPES).
+        # 7. Standard Operating Businesses & Supporting Industries
+        if any(w in combined for w in ("bán buôn", "thương mại", "phân phối", "xuất nhập khẩu", "trading", "wholesale", "kinh doanh tổng hợp", "phân phối tổng hợp")):
+            return ArchetypeProfile(EconomicArchetype.GENERIC_ENTERPRISE, [], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("phụ trợ", "sx phụ trợ", "công nghiệp phụ trợ", "gia công", "chế tạo", "khuôn mẫu")):
+            return ArchetypeProfile(EconomicArchetype.INDUSTRIAL_MANUFACTURING, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("thiết bị điện", "thiết bị máy móc", "sx thiết bị", "máy móc", "thiết bị", "dụng cụ", "công cụ")):
+            return ArchetypeProfile(EconomicArchetype.INDUSTRIAL_MANUFACTURING, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("chăm sóc sức khỏe", "y tế", "bệnh viện", "phòng khám", "thiết bị y tế", "vật tư y tế")):
+            return ArchetypeProfile(EconomicArchetype.HEALTHCARE_SERVICES, [ArchetypeOverlay.ASSET_LIGHT_COMPOUNDER], 0.25, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("hàng gia dụng", "sx hàng gia dụng", "đồ dùng", "nội thất", "gỗ", "chế biến gỗ", "lâm sản")):
+            return ArchetypeProfile(EconomicArchetype.EXPORT_MANUFACTURING, [ArchetypeOverlay.EXPORT_ORIENTED], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("nông - lâm - ngư", "nông nghiệp", "lâm nghiệp", "giống cây", "hạt giống", "trồng trọt")):
+            return ArchetypeProfile(EconomicArchetype.AGRICULTURE, [ArchetypeOverlay.HIGH_CYCLICALITY], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("lưu trú", "ăn uống", "giải trí", "du lịch", "dịch vụ lưu trú", "nhà hàng")):
+            return ArchetypeProfile(EconomicArchetype.HOTEL_HOSPITALITY, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("tư vấn", "hỗ trợ", "dịch vụ tư vấn", "dịch vụ hỗ trợ", "dịch vụ doanh nghiệp")):
+            return ArchetypeProfile(EconomicArchetype.GENERIC_ENTERPRISE, [], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("sản phẩm cao su", "săm lốp", "cao su kỹ thuật")):
+            return ArchetypeProfile(EconomicArchetype.INDUSTRIAL_MANUFACTURING, [ArchetypeOverlay.CAPITAL_INTENSIVE], 0.30, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+        if any(w in combined for w in ("tài chính khác", "đầu tư tài chính", "investment")):
+            return ArchetypeProfile(EconomicArchetype.HOLDING_COMPANY, [], 0.35, "NORMALIZED_OWNER_EARNINGS_DCF", raw_provider_sector=sector_text)
+
+        # 8. Known Operating Company with sector text available -> GENERIC_ENTERPRISE (Standard Business)
+        clean_sector = sector_text.strip().upper() if sector_text else ""
+        if clean_sector and clean_sector not in ("UNKNOWN", "CHƯA PHÂN LOẠI", "NULL", ""):
+            return ArchetypeProfile(
+                EconomicArchetype.GENERIC_ENTERPRISE,
+                [],
+                0.30,
+                "NORMALIZED_OWNER_EARNINGS_DCF",
+                raw_provider_sector=sector_text,
+                classification_confidence="MEDIUM",
+                reason=f"Doanh nghiệp hoạt động sản xuất kinh doanh thông thường ({sector_text}), định giá theo chuẩn Normalized Owner Earnings DCF.",
+            )
+
+        # 9. Completely Unknown Sector / Missing Evidence -> ARCHETYPE_UNKNOWN
         return ArchetypeProfile(
             EconomicArchetype.ARCHETYPE_UNKNOWN,
             [],
@@ -714,5 +747,5 @@ class ArchetypeClassifier:
             "NORMALIZED_OWNER_EARNINGS_DCF",
             raw_provider_sector=sector_text,
             classification_confidence="LOW",
-            reason="Không đủ bằng chứng phân loại ngành nghề kinh doanh để chọn mô hình định giá đặc thù.",
+            reason="Không đủ thông tin ngành nghề kinh doanh để phân loại archetype.",
         )

@@ -66,4 +66,5 @@
 | [TASK-20260831-087](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-087-backfill-market-prices-full-universe.md) | Backfill market prices toàn universe — screener từ 334 → 1482 mã | completed | high | 2026-08-31 |
 | [TASK-20260831-088](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260831-088-ufvs-universal-financial-validation-standard.md) | UFVS — Universal Financial Validation Standard (audit theo feedback.txt mới) | completed | high | 2026-08-31 |
 | [TASK-20260901-089](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-089-valuation-step04-formula-quantitative-breakdown.md) | Valuation Narrative Minor Section 04 - Formula & Quantitative Breakdown | completed | high | 2026-09-01 |
+| [TASK-20260901-090](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-090-standardize-universe-taxonomy-and-generic-operating-archetype.md) | Standardize Universe Taxonomy & Generic Operating Business Router | completed | high | 2026-09-01 |
 
