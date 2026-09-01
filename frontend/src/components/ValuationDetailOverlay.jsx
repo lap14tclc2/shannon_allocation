@@ -392,7 +392,7 @@ export function ValuationRationale({ report, locale = 'vi' }) {
 
           {/* 4. Formulas & Quantitative Breakdown */}
           <div className="rationale-step rationale-step-formula">
-            <span className="rationale-num rationale-num-formula">04</span>
+            <span className="rationale-num">04</span>
             <div style={{ width: '100%' }}>
               <b>Mô hình Toán học & Chứng minh Số liệu Định lượng</b>
               <p>
@@ -459,12 +459,12 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                         <span className="p-op">+</span>
                         <span className="p-chunk">PV(Terminal) = <strong>{formatGridMoney(pvTerminal, locale)}</strong></span>
                         <span className="p-op">⟹</span>
-                        <span className="p-chunk highlight-blue">Tổng Hiện giá = <strong>{formatGridMoney(totalEquity, locale)}</strong></span>
+                        <span className="p-chunk highlight-accent">Tổng Hiện giá Vốn chủ = <strong>{formatGridMoney(totalEquity, locale)}</strong></span>
                       </div>
                     </div>
 
                     <div className="proof-row">
-                      <div className="proof-badge">Bước 2 · Cấu trúc Vốn & Tiền ròng</div>
+                      <div className="proof-badge">Bước 2 · Cấu trúc Vốn & Sức mạnh Pháo đài</div>
                       <div className="proof-calc">
                         <span className="p-chunk">Tiền mặt: <strong>{formatGridMoney(cashVal, locale)}</strong></span>
                         <span className="p-op">-</span>
@@ -472,6 +472,9 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                         <span className="p-op">⟹</span>
                         <span className="p-chunk">Tiền mặt ròng = <strong>{formatGridMoney(netCashVal, locale)}</strong></span>
                       </div>
+                      <p className="proof-note">
+                        💡 <em>Lưu ý chuẩn định giá Buffett–FCFE:</em> Lợi nhuận Thực (OE) bắt nguồn từ LNST (đã khấu trừ toàn bộ chi phí lãi vay cho chủ nợ). Do đó, dòng tiền chiết khấu theo Chi phí vốn Cổ phần (Cost of Equity) chính là <strong>Giá trị Vốn chủ sở hữu (Equity Value)</strong> trực tiếp của cổ đông. Không trừ lại nợ lần 2 để tránh phạt trùng nợ (double counting).
+                      </p>
                     </div>
 
                     <div className="proof-row is-final-proof">
