@@ -157,22 +157,31 @@ def _classify_year(
         rule_name = "LAYER1_UNIT_OR_SCALE_JUMP"
         rule_score = 1.0
         rule_threshold = 0.60
-    # 2. Structural regime break — A cao + C cao + P cao.
-    elif year in break_years or R >= 0.15:
+    # 2. Structural regime break — MUST be confirmed in break_years (AC-3: Regime Single Source)
+    elif year in break_years:
         classification = "STRUCTURAL_REGIME_BREAK"
-        confidence = break_years.get(year, {}).get("confidence", "HIGH") if year in break_years else "MEDIUM"
+        confidence = break_years[year].get("confidence", "HIGH")
         persistent = True
         split_regime = True
-        rule_name = "PERSISTENT_LEVEL_SHIFT_WITH_MULTI_METRIC_BREADTH"
-        rule_score = R
+        rule_name = "CONFIRMED_REGIME_LEVEL_SHIFT"
+        rule_score = max(R, 0.10)
         rule_threshold = 0.08
+    # 2b. Structural break candidate (level shift not splitting final regime)
+    elif R >= 0.15:
+        classification = "STRUCTURAL_BREAK_CANDIDATE"
+        confidence = "MEDIUM"
+        persistent = True
+        split_regime = False
+        rule_name = "PERSISTENT_LEVEL_SHIFT_CANDIDATE"
+        rule_score = R
+        rule_threshold = 0.15
     # 3. Cyclical extreme — spike + mean-reversion (giữ trong full-cycle).
     elif year in cycle_years or CY >= 0.10:
         classification = "CYCLICAL_EXTREME"
         confidence = "HIGH"
         include = True
         rule_name = "COHERENT_MULTI_METRIC_PEAK_WITH_FORWARD_REVERSION"
-        rule_score = CY
+        rule_score = max(CY, 0.10) if year in cycle_years else CY
         rule_threshold = 0.10
     # 4. EARNINGS_ONE_OFF: profit anomaly cao, revenue/CFO ổn.
     elif profit_anom and not rev_anom and not cfo_anom and A < 0.4:
@@ -197,7 +206,7 @@ def _classify_year(
         adjust_per_share = True
         rule_name = "ISOLATED_CAPITAL_OR_SHARE_CHANGE"
         rule_score = round(1.0 - A, 3)
-        rule_threshold = 0.60
+        rule_threshold = 0.40
     # 7. Unresolved material: coherence thấp + materiality cao -> block model.
     elif is_blocking(materiality.get("grade")) and C < ISOLATED_C_MAX and A < 0.5:
         classification = "UNRESOLVED_MATERIAL"
@@ -205,7 +214,8 @@ def _classify_year(
         include = False
         block = True
         rule_name = "MATERIAL_IMPACT_WITH_LOW_COHERENCE"
-        rule_score = round(materiality.get("impact_pct", 0) / 100.0, 3)
+        mat_imp = float(materiality.get("impact_pct") or 25.0) / 100.0
+        rule_score = round(max(mat_imp, 0.15), 3)
         rule_threshold = 0.15
     # 8. Bad data score cao: extreme jump + related không xác nhận.
     elif D >= BAD_DATA_D_MIN and A < 0.5:
@@ -227,6 +237,13 @@ def _classify_year(
         rule_name = "LOW_BREADTH_LOW_COHERENCE_ANOMALY"
         rule_score = round((1.0 - A) * (1.0 - C), 3)
         rule_threshold = 0.36
+    else:
+        classification = "SUSPICIOUS_ISOLATED"
+        confidence = "LOW"
+        include = True
+        rule_name = "FALLBACK_ISOLATED_ANOMALY"
+        rule_score = 0.50
+        rule_threshold = 0.50
 
     # Determine exact valuation relevance
     latest_row_year = max((int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")), default=year)
@@ -237,11 +254,21 @@ def _classify_year(
     else:
         val_relevance = "NORMALIZATION_INPUT"
 
-    # If event is in an unused year / rejected fact not in valuation path, mark IMMATERIAL
-    if materiality.get("grade") == "UNKNOWN":
+    # Materiality Provenance (AC-2):
+    # - If val_relevance == "NOT_USED" or "QUALITY_ONLY": method = "NOT_APPLICABLE", impact_pct = 0.0, grade = "IMMATERIAL"
+    # - If materiality was computed via counterfactual margin: method = "COUNTERFACTUAL_MARGIN", impact_pct = float, grade = ...
+    # - If cannot be computed: method = "NOT_COMPUTED", impact_pct = None, grade = "UNKNOWN"
+    if val_relevance in ("NOT_USED", "QUALITY_ONLY"):
         materiality = {
-            "impact_pct": 0.0 if val_relevance == "NOT_USED" else 5.0,
-            "grade": "IMMATERIAL" if val_relevance in ("NOT_USED", "QUALITY_ONLY") else "LOW",
+            "method": "NOT_APPLICABLE",
+            "impact_pct": 0.0,
+            "grade": "IMMATERIAL",
+        }
+    elif materiality.get("method") is None:
+        materiality = {
+            "method": "NOT_COMPUTED" if materiality.get("impact_pct") is None else "COUNTERFACTUAL_MARGIN",
+            "impact_pct": materiality.get("impact_pct"),
+            "grade": materiality.get("grade", "UNKNOWN"),
         }
 
     return {

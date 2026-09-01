@@ -54,11 +54,11 @@ def assess_materiality(
         rows = [r for r in rows if int(r["fiscal_year"]) in set(window_years)]
     margins = _margin(rows)
     if len(margins) < 3:
-        return {"impact_pct": None, "grade": "UNKNOWN"}
+        return {"method": "NOT_COMPUTED", "impact_pct": None, "grade": "UNKNOWN"}
     base_median = median(margins)
     without = [m for r, m in zip(rows, margins) if int(r["fiscal_year"]) != anomalous_year]
     if not without or base_median is None or base_median == 0:
-        return {"impact_pct": None, "grade": "UNKNOWN"}
+        return {"method": "NOT_COMPUTED", "impact_pct": None, "grade": "UNKNOWN"}
     alt_median = median(without)
     impact = abs((alt_median - base_median) / base_median)
     if impact < IMMATERIAL_CAP:
@@ -69,7 +69,11 @@ def assess_materiality(
         grade = "MATERIAL"
     else:
         grade = "CRITICAL"
-    return {"impact_pct": round(impact * 100.0, 1), "grade": grade}
+    return {
+        "method": "COUNTERFACTUAL_MARGIN",
+        "impact_pct": round(impact * 100.0, 1),
+        "grade": grade,
+    }
 
 
 def is_blocking(grade: Optional[str]) -> bool:
