@@ -201,15 +201,25 @@ def validate_rows(data: dict[str, list[dict[str, Any]]]) -> None:
 
 
 def _upsert_table(cur, table: str, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
     columns = TABLE_COLUMNS[table]
     quoted = ", ".join(f'"{column}"' for column in columns)
-    placeholders = ", ".join(["%s"] * len(columns))
     key = '"symbol"' if table == "securities" else '"canonical_id"' if table == "dividend_canonical" else '"id"'
     updates = ", ".join(f'"{column}"=EXCLUDED."{column}"' for column in columns if column not in {"id", "symbol", "canonical_id"})
-    sql = f'''INSERT INTO "{SCHEMA}"."{table}" ({quoted}) VALUES ({placeholders})
-              ON CONFLICT ({key}) DO UPDATE SET {updates}'''
-    for row in rows:
-        cur.execute(sql, tuple(row.get(column) for column in columns))
+    
+    batch_size = 2000
+    for i in range(0, len(rows), batch_size):
+        chunk = rows[i:i + batch_size]
+        val_placeholders = []
+        params = []
+        for row in chunk:
+            val_placeholders.append("(" + ", ".join(["%s"] * len(columns)) + ")")
+            params.extend(None if (table == "documents" and column == "payload") else row.get(column) for column in columns)
+        
+        sql = f'''INSERT INTO "{SCHEMA}"."{table}" ({quoted}) VALUES {", ".join(val_placeholders)}
+                  ON CONFLICT ({key}) DO UPDATE SET {updates}'''
+        cur.execute(sql, params)
 
 
 def _reset_sequences(cur) -> None:
