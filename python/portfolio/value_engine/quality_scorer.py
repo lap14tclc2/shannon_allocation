@@ -80,6 +80,8 @@ class QualityScorer:
         net_debt_vnd: float,
         latest_cfo: float,
         true_dilution_5y_pct: Optional[float],
+        dilution_classification: Optional[str] = None,
+        dilution_evidence: Optional[Dict[str, Any]] = None,
     ) -> QualityScorecard:
         hard_rejects: List[HardRejectReason] = []
 
@@ -272,6 +274,20 @@ class QualityScorer:
                 cash_pts = 2
 
         # 6. Capital Allocation (15 pts) -- Robust iROIC & Reinvestment Efficiency
+        # P0 audit (2026-08-29 / TASK-068): only CONFIRMED economic dilution may feed
+        # EXCESSIVE_DILUTION. A raw residual share increase without actual ESOP/rights/
+        # placement/convertible/M&A events is UNEXPLAINED_SHARE_CHANGE and must NOT
+        # hard-reject nor score as proven dilution.
+        classification = str(dilution_classification or "").upper()
+        confirmed_pct = None
+        if isinstance(dilution_evidence, dict):
+            confirmed_pct = dilution_evidence.get("confirmed_economic_dilution_pct")
+        is_unexplained = classification == "UNEXPLAINED_SHARE_CHANGE"
+        is_non_economic = classification == "NON_ECONOMIC_SHARE_CHANGE"
+        is_confirmed_dilution = classification == "EXCESSIVE_DILUTION" or (
+            classification in ("ECONOMIC_DILUTION", "ECONOMIC_DILUTION_MINOR")
+            and confirmed_pct is not None and float(confirmed_pct) >= 20.0
+        )
         cap_pts = 8
         cap_evidence: Dict[str, Any] = {}
         if len(financial_history_10y) >= 4:
@@ -307,6 +323,8 @@ class QualityScorer:
                 "incremental_return_years": incr_stat["n"],
                 "avg_roe_5y": five_year_avg_roe,
                 "economic_dilution_5y_pct": true_dilution_5y_pct,
+                "dilution_classification": classification or None,
+                "confirmed_economic_dilution_pct": confirmed_pct,
             }
             if incr_med is not None:
                 # Rule P0-5: Capital allocation can NEVER score 15/15 if cumulative iROIC is materially negative (< -5%)
@@ -329,7 +347,7 @@ class QualityScorer:
                     cap_pts = 7
                 else:
                     cap_pts = 4
-        elif true_dilution_5y_pct is not None:
+        elif true_dilution_5y_pct is not None and not is_unexplained and not is_non_economic:
             # fallback when history depth insufficient
             if true_dilution_5y_pct < 2.0:
                 cap_pts = 12
@@ -339,10 +357,24 @@ class QualityScorer:
                 cap_pts = 5
             else:
                 cap_pts = 2
-                hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
+                if is_confirmed_dilution:
+                    hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
 
-        if true_dilution_5y_pct is not None and true_dilution_5y_pct >= 20.0:
+        if is_confirmed_dilution:
             hard_rejects.append(HardRejectReason.EXCESSIVE_DILUTION)
+
+        # P0/P1 audit (TASK-070): a material UNEXPLAINED share change must cap the
+        # capital-allocation score (never 15/15) until event evidence is provided.
+        if is_unexplained:
+            cap_pts = min(cap_pts, 10)
+            cap_evidence["unexplained_share_change_uncertain"] = (
+                "Tăng vốn cổ phần không giải thích được (UNEXPLAINED_SHARE_CHANGE): điểm phân bổ vốn "
+                "giới hạn 10/15 cho tới khi có bằng chứng sự kiện phát hành (ESOP/quyền mua/riêng lẻ/M&A)."
+            )
+            if isinstance(dilution_evidence, dict):
+                unexplained = dilution_evidence.get("unexplained_share_change_pct")
+                if unexplained is not None:
+                    cap_evidence["unexplained_share_change_pct"] = unexplained
 
         # 7. Governance (10 pts)
         gov_pts = 8  # Standard listed baseline

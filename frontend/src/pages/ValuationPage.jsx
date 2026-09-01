@@ -3,24 +3,18 @@ import AppNav from '../components/AppNav.jsx';
 import {
   ValuationSkeletonCard,
   ValuationStatusPill,
+  HistoricalResolutionsBlock,
+  ValuationRationale,
 } from '../components/ValuationDetailOverlay.jsx';
-import IntrinsicValueExplanation from '../components/IntrinsicValueExplanation.jsx';
 import { getValuationReports } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
-import { formatMoney } from '../lib/format.js';
+import { displayNumber, formatMoney, money } from '../lib/format.js';
 import {
   archetypeLabel,
-  modelStatusLabel,
   valuationModelLabel,
 } from '../lib/valuationLabels.js';
 
-function displayNumber(value, suffix = '', digits = 1) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(digits)}${suffix}`;
-}
 
-function money(value, locale) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : `${formatMoney(value, false, locale)} ₫`;
-}
 
 function MethodologyGuide() {
   return <details className="valuation-methodology" open={false}>
@@ -73,6 +67,112 @@ function ValuationCard({ symbol, report, error, locale }) {
   const scenarios = ['BEAR', 'BASE', 'BULL'];
   const freshness = report.data_freshness || {};
   const mos = base.margin_of_safety_pct;
+
+  // Feedback 31/08: doanh nghiệp không đạt chuẩn Buffett (chất lượng quá thấp,
+  // hard reject, hoặc mô hình chưa xác thực) -> KHÔNG hiển thị section chi tiết
+  // định giá, chỉ đưa ra cảnh báo + nguyên nhân.
+  const isQualified = report.model_status === 'MODEL_VERIFIED'
+    && !report.valuation_warning
+    && report.public_base_iv != null
+    && Number(report.public_base_iv) > 0;
+  if (!isQualified) {
+    const hardRejects = quality.hard_rejects || [];
+    const reason = report.valuation_warning || (
+      report.model_status === 'MODEL_VERIFIED'
+        ? 'Điểm chất lượng hoặc dữ liệu chưa đạt chuẩn Buffett/Munger; Giá trị Thực (IV) và Biên An Toàn (MOS) không được công bố.'
+        : `Mô hình định giá chưa được xác thực (${report.model_status || 'chưa verified'}): thiếu dữ liệu mô hình đặc thù nên chưa thể công bố định giá chi tiết.`
+    );
+    return <article id={`valuation-${symbol}`} className="valuation-card valuation-card-blocked">
+      <div className="valuation-card-header">
+        <div className="valuation-title-group">
+          <div className="valuation-symbol-row">
+            <h2>{symbol}</h2>
+            <span className="valuation-sector-tag">{multiples.sector || 'Doanh nghiệp niêm yết'}</span>
+            {quality.total_score != null && (
+              <span className="valuation-sector-tag" style={{ background: 'var(--surface-soft, var(--panel-2))', borderColor: 'var(--border)', color: 'var(--text)' }}>
+                Điểm Chất lượng: {quality.total_score}/100 ({quality.tier === 'EXCEPTIONAL' ? 'Xuất sắc' : quality.tier === 'HIGH_QUALITY' ? 'Chất lượng cao' : quality.tier === 'INVESTABLE' ? 'Đạt chuẩn đầu tư' : quality.tier === 'WATCH' ? 'Theo dõi' : 'Thấp'})
+              </span>
+            )}
+          </div>
+          <p className="valuation-period-subtitle">Kỳ Báo cáo Tài chính: <strong>{report.fiscal_period_latest || 'Năm 2025'}</strong></p>
+        </div>
+        <div>
+          <ValuationStatusPill status={assessment.valuation_status} />
+        </div>
+      </div>
+
+      <div className="valuation-warning-banner" role="alert">
+        <span className="valuation-warning-icon">⚠️</span>
+        <div className="valuation-warning-text">
+          <b>KHÔNG CÔNG BỐ GIÁ TRỊ THỰC (IV) & BIÊN AN TOÀN (MOS)</b>
+          <p>{reason}</p>
+        </div>
+      </div>
+
+      {/* Vẫn hiển thị hệ số định giá cơ bản (P/E, P/B, EPS, ROE) cho mã chất lượng thấp */}
+      {(multiples.pe != null || multiples.pb != null || multiples.eps != null || multiples.roe != null) && (
+        <div className="valuation-multiples-ribbon">
+          <div className="metric-chip" title="P/E: Giá trên Lợi nhuận mỗi cổ phần">
+            <span className="chip-label">P/E (Giá/LNST)</span>
+            <span className="chip-value">{multiples.pe != null ? displayNumber(multiples.pe, ' lần') : '—'}</span>
+          </div>
+          <div className="metric-chip" title="P/B: Giá trên Giá trị sổ sách mỗi cổ phần">
+            <span className="chip-label">P/B (Giá/Sổ sách)</span>
+            <span className="chip-value">{multiples.pb != null ? displayNumber(multiples.pb, ' lần', 2) : '—'}</span>
+          </div>
+          <div className="metric-chip" title="EPS: Lợi nhuận sau thuế tạo ra trên mỗi cổ phần">
+            <span className="chip-label">Lợi nhuận/CP (EPS)</span>
+            <span className="chip-value">{multiples.eps == null ? '—' : `${formatMoney(multiples.eps, false, locale)} ₫`}</span>
+          </div>
+          <div className="metric-chip" title="ROE: Tỷ suất sinh lời trên Vốn chủ sở hữu">
+            <span className="chip-label">Sinh lời Vốn (ROE)</span>
+            <span className="chip-value">{multiples.roe != null ? displayNumber(multiples.roe, '%') : '—'}</span>
+          </div>
+        </div>
+      )}
+
+      {hardRejects.length > 0 && (
+        <div className="valuation-hard-rejects">
+          <b>Lý do chặn định giá:</b>
+          <ul>
+            {hardRejects.map(reasonItem => <li key={reasonItem}>{reasonItem}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Dữ liệu cần thiết để hoàn thiện mô hình (khi block do thiếu dữ liệu) */}
+      {!report.valuation_warning && Array.isArray(report.missing_data) && report.missing_data.length > 0 && (
+        <div className="valuation-missing-data">
+          <div className="valuation-missing-header">
+            <span className="valuation-missing-icon" aria-hidden="true">📋</span>
+            <div>
+              <b>DỮ LIỆU CẦN THIẾT ĐỂ ĐỊNH GIÁ {symbol}</b>
+              <span className="valuation-missing-sub">
+                Cần bổ sung để hoàn thiện mô hình {valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}
+              </span>
+            </div>
+          </div>
+          <ul className="valuation-missing-list">
+            {report.missing_data.map(item => (
+              <li key={item}>
+                <span className="valuation-missing-bullet">▸</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="valuation-blocked-note">
+        QPort chỉ công bố phần định giá chi tiết (Giá trị Thực, Biên An Toàn, các kịch bản Bear/Base/Bull,
+        Mô hình Định giá, Ma trận độ nhạy) cho doanh nghiệp đạt chuẩn chất lượng Buffett/Munger.
+        Doanh nghiệp này chưa đạt chuẩn nên phần định giá chi tiết không được hiển thị.
+      </div>
+
+      {/* feedback.txt — Regime Engine: phân loại lịch sử + window chuẩn hóa */}
+      <HistoricalResolutionsBlock report={report} locale={locale} />
+    </article>;
+  }
 
   return <article id={`valuation-${symbol}`} className="valuation-card">
     <div className="valuation-card-header">
@@ -219,9 +319,6 @@ function ValuationCard({ symbol, report, error, locale }) {
       )}
     </div>
 
-    {/* Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?" with minor sections 01, 02, 03, 04 */}
-    <IntrinsicValueExplanation report={report} locale={locale} />
-
     {/* Value Investor Health Pillars (Miller's Law - 3 Focused Cards) */}
     {report.value_investor_pillars && (
       <div className="valuation-pillars-grid">
@@ -234,8 +331,22 @@ function ValuationCard({ symbol, report, error, locale }) {
             </span>
           </div>
           <div className="pillar-metric">
-            <span className="pillar-val">{report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y}%` : '—'}</span>
-            <span className="pillar-sub">Đổi LNST ra Tiền mặt (5 năm)</span>
+            <span className="pillar-val">{report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y}%` : (report.value_investor_pillars.earnings_quality?.avg_roe_5y != null ? `${report.value_investor_pillars.earnings_quality.avg_roe_5y}%` : '—')}</span>
+            <span className="pillar-sub">{report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null ? 'LNST → Tiền mặt (bình quân 5 năm)' : 'ROE chu kỳ 5 năm (tổ chức tài chính)'}</span>
+          </div>
+          <div className="pillar-metric-list">
+            {report.value_investor_pillars.earnings_quality?.latest_cash_conversion != null && (
+              <div className="pillar-metric-item">
+                <span className="pm-label">Chuyển hóa LNST→Tiền mặt (Năm gần nhất)</span>
+                <span className="pm-val">{report.value_investor_pillars.earnings_quality.latest_cash_conversion}%</span>
+              </div>
+            )}
+            {report.value_investor_pillars.earnings_quality?.avg_cash_conversion_5y != null && (
+              <div className="pillar-metric-item">
+                <span className="pm-label">≥90% chuẩn Xuất sắc · ≥70% Tốt</span>
+                <span className="pm-val">{report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y >= 90 ? '✓ Xuất sắc' : report.value_investor_pillars.earnings_quality.avg_cash_conversion_5y >= 70 ? '✓ Tốt' : '⚠ Dưới chuẩn'}</span>
+              </div>
+            )}
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.earnings_quality?.diagnosis}</p>
         </div>
@@ -243,14 +354,32 @@ function ValuationCard({ symbol, report, error, locale }) {
         <div className={`pillar-card pillar-${report.value_investor_pillars.financial_fortress?.status?.toLowerCase() || 'strong'}`}>
           <div className="pillar-header">
             <span className="pillar-num">02</span>
-            <span className="pillar-title">Pháo đài Tài chính</span>
+            <span className="pillar-title">Pháo đài Tài chính · Nợ / VCSH</span>
             <span className="pillar-badge">
               {report.value_investor_pillars.financial_fortress?.status === 'STRONG' ? 'Rất Vững' : report.value_investor_pillars.financial_fortress?.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
             </span>
           </div>
           <div className="pillar-metric">
-            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm' : `${report.value_investor_pillars.financial_fortress?.debt_payback_years} năm`}</span>
-            <span className="pillar-sub">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? 'Tiền mặt ròng (Không rủi ro nợ)' : 'Thời gian trả hết Nợ bằng Dòng tiền'}</span>
+            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_to_equity_ratio != null ? `${report.value_investor_pillars.financial_fortress.debt_to_equity_ratio}x` : (report.value_investor_pillars.financial_fortress?.net_debt_vnd === 0 ? '0x' : '—')}</span>
+            <span className="pillar-sub">Nợ / Vốn chủ sở hữu (D/E)</span>
+          </div>
+          <div className="pillar-metric-list">
+            <div className="pillar-metric-item">
+              <span className="pm-label">Tổng nợ vay</span>
+              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.total_debt_vnd != null ? money(report.value_investor_pillars.financial_fortress.total_debt_vnd, locale) : '—'}</span>
+            </div>
+            <div className="pillar-metric-item">
+              <span className="pm-label">Tiền mặt & tương đương</span>
+              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.total_cash_vnd != null ? money(report.value_investor_pillars.financial_fortress.total_cash_vnd, locale) : '—'}</span>
+            </div>
+            <div className="pillar-metric-item">
+              <span className="pm-label">Nợ ròng (Nợ − Tiền)</span>
+              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.net_debt_vnd != null ? money(report.value_investor_pillars.financial_fortress.net_debt_vnd, locale) : '—'}</span>
+            </div>
+            <div className="pillar-metric-item">
+              <span className="pm-label">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? 'Trả hết nợ bằng dòng tiền' : 'Nợ ròng / EBITDA'}</span>
+              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.net_debt_to_ebitda != null ? `${report.value_investor_pillars.financial_fortress.net_debt_to_ebitda}x` : (report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm' : '—')}</span>
+            </div>
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.financial_fortress?.diagnosis}</p>
         </div>
@@ -265,12 +394,30 @@ function ValuationCard({ symbol, report, error, locale }) {
           </div>
           <div className="pillar-metric">
             <span className="pillar-val">{report.value_investor_pillars.capital_allocation?.avg_roe_5y != null ? `${report.value_investor_pillars.capital_allocation.avg_roe_5y}%` : '—'}</span>
-            <span className="pillar-sub">ROE 5 năm · Pha loãng: {report.value_investor_pillars.capital_allocation?.share_dilution_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.share_dilution_5y_pct}%` : '0%'}</span>
+            <span className="pillar-sub">ROE bình quân 5 năm</span>
+          </div>
+          <div className="pillar-metric-list">
+            <div className="pillar-metric-item">
+              <span className="pm-label">iROIC lũy kế 3 năm (ΔLNST/ΔVCSH)</span>
+              <span className="pm-val">{report.quality_scorecard?.capital_allocation_evidence?.cumulative_3y_iroic_pct != null ? `${report.quality_scorecard.capital_allocation_evidence.cumulative_3y_iroic_pct}%` : '—'}</span>
+            </div>
+            <div className="pillar-metric-item">
+              <span className="pm-label">Pha loãng đã xác nhận (5Y)</span>
+              <span className="pm-val">{report.value_investor_pillars.capital_allocation?.confirmed_economic_dilution_5y_pct != null ? `+${report.value_investor_pillars.capital_allocation.confirmed_economic_dilution_5y_pct}%` : (report.value_investor_pillars.capital_allocation?.dilution_classification === 'UNEXPLAINED_SHARE_CHANGE' ? 'Chưa rõ' : '0%')}</span>
+            </div>
+            <div className="pillar-metric-item">
+              <span className="pm-label">Tăng CP chưa giải thích (5Y)</span>
+              <span className="pm-val">{report.value_investor_pillars.capital_allocation?.unexplained_share_change_5y_pct != null ? `${report.value_investor_pillars.capital_allocation.unexplained_share_change_5y_pct}%` : '—'}</span>
+            </div>
           </div>
           <p className="pillar-desc">{report.value_investor_pillars.capital_allocation?.diagnosis}</p>
         </div>
       </div>
     )}
+
+    {/* feedback.txt — Numeric Validation & Regime Engine: biến động lịch sử đã
+        phân loại + Window chuẩn hóa (latest comparable regime / structural break) */}
+    <HistoricalResolutionsBlock report={report} locale={locale} />
 
     {/* Collapsed Technical Details (for advanced inspection) */}
     <details className="valuation-technical-details">
@@ -342,6 +489,9 @@ function ValuationCard({ symbol, report, error, locale }) {
       </div>
     </details>
 
+    {/* Vì sao Giá trị Thực cơ sở như vậy — dưới section chi tiết tính toán */}
+    <ValuationRationale report={report} locale={locale} />
+
     <footer className="valuation-card-footer">
       <span>Nguồn dữ liệu: Báo cáo Tài chính Kiểm toán ({freshness.provider || multiples.source || 'Sàn chứng khoán'}) · Kỳ BCTC {report.fiscal_period_latest || 'Năm 2025'}</span>
       <span>Thời điểm đồng bộ: {freshness.fetched_at ? new Date(freshness.fetched_at).toLocaleDateString('vi-VN') : 'Mới nhất'}</span>
@@ -389,14 +539,9 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
             <tr>
               <th className="th-symbol">Mã CP</th>
               <th>Bản chất Kinh tế</th>
-              <th>Mô hình Định giá</th>
-              <th style={{ textAlign: 'center' }}>Trạng thái Mô hình</th>
               <th style={{ textAlign: 'right' }}>Thị giá</th>
-              <th style={{ textAlign: 'right' }}>Bear IV</th>
-              <th style={{ textAlign: 'right' }}>Base IV</th>
-              <th style={{ textAlign: 'right' }}>Bull IV</th>
+              <th style={{ textAlign: 'right' }}>Giá trị Thực (Base)</th>
               <th style={{ textAlign: 'right' }}>MOS</th>
-              <th style={{ textAlign: 'right' }}>Req MOS</th>
               <th style={{ textAlign: 'center' }}>Kết luận</th>
               <th style={{ textAlign: 'center' }}>Thao tác</th>
             </tr>
@@ -404,51 +549,32 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
           <tbody>
             {paginatedRows.map(({ sym, rep }) => {
               const base = rep.scenarios?.BASE || {};
-              const bear = rep.scenarios?.BEAR || {};
-              const bull = rep.scenarios?.BULL || {};
               const mos = base.margin_of_safety_pct;
               const archName = archetypeLabel(rep.archetype_profile?.archetype);
-              const modelName = valuationModelLabel(rep.valuation_model || rep.archetype_profile?.recommended_model);
-              const mStatus = modelStatusLabel(rep.model_status);
-              const isVerified = rep.model_status === 'MODEL_VERIFIED';
-              const iv = isVerified ? base.intrinsic_value_per_share : null;
-              const pubMos = isVerified ? mos : null;
-              const reqMos = rep.margin_of_safety_analysis?.required_mos_pct;
+              const iv = rep.public_base_iv ?? rep.base_iv ?? null;
+              const pubMos = rep.public_mos ?? rep.margin_of_safety_pct ?? null;
+              const hasWarning = Boolean(rep.valuation_warning);
               const isSelected = selectedSymbol === sym;
               return (
                 <tr
                   key={sym}
                   className={`valuation-overview-row clickable ${isSelected ? 'row-selected' : ''}`}
                   onClick={() => onSelectSymbol?.(sym)}
-                  title={`Xem chi tiết định giá ${sym}`}
+                  title={hasWarning ? rep.valuation_warning : `Xem chi tiết định giá ${sym}`}
                   style={isSelected ? { backgroundColor: 'color-mix(in srgb, var(--accent, #a63f30) 10%, var(--surface-soft, #f4ecd9))' } : undefined}
                 >
                   <td className="td-symbol">
                     <strong>{sym}</strong>
+                    {hasWarning && <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: 'var(--retro-hanko, #a63f30)' }} title={rep.valuation_warning}>⚠</span>}
                     {isSelected && <span style={{ marginLeft: '6px', fontSize: '0.72rem', color: 'var(--accent)', fontWeight: '700' }}>● Đang xem</span>}
                   </td>
                   <td className="td-arch">{archName}</td>
-                  <td className="td-model">{modelName}</td>
-                  <td className="td-status" style={{ textAlign: 'center' }}>
-                    <span className={`model-status-badge ${rep.model_status === 'MODEL_VERIFIED' ? 'status-verified' : 'status-incomplete'}`}>
-                      {mStatus}
-                    </span>
-                  </td>
                   <td className="td-num" style={{ textAlign: 'right' }}>{money(rep.current_market_price, locale)}</td>
                   <td className="td-num td-iv" style={{ textAlign: 'right' }}>
-                    {isVerified && bear.intrinsic_value_per_share != null ? money(bear.intrinsic_value_per_share, locale) : 'N/A'}
-                  </td>
-                  <td className="td-num td-iv" style={{ textAlign: 'right' }}>
-                    {iv != null && Number.isFinite(Number(iv)) ? money(iv, locale) : 'N/A'}
-                  </td>
-                  <td className="td-num td-iv" style={{ textAlign: 'right' }}>
-                    {isVerified && bull.intrinsic_value_per_share != null ? money(bull.intrinsic_value_per_share, locale) : 'N/A'}
+                    {iv != null && Number.isFinite(Number(iv)) ? money(iv, locale) : (hasWarning ? '—' : 'N/A')}
                   </td>
                   <td className="td-num" style={{ textAlign: 'right', fontWeight: '700', color: pubMos > 0 ? 'var(--retro-green, #2f6b4d)' : pubMos < 0 ? 'var(--retro-hanko, #a63f30)' : 'inherit' }}>
-                    {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : 'N/A'}
-                  </td>
-                  <td className="td-num" style={{ textAlign: 'right' }}>
-                    {reqMos != null ? `${reqMos}%` : '—'}
+                    {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : (hasWarning ? '⚠ Không công bố' : 'N/A')}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
@@ -476,24 +602,30 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
           const mos = base.margin_of_safety_pct;
           const archName = archetypeLabel(rep.archetype_profile?.archetype);
           const isVerified = rep.model_status === 'MODEL_VERIFIED';
-          const iv = isVerified ? base.intrinsic_value_per_share : null;
-          const pubMos = isVerified ? mos : null;
+          const iv = rep.public_base_iv ?? rep.base_iv ?? null;
+          const pubMos = rep.public_mos ?? rep.margin_of_safety_pct ?? null;
+          const hasWarning = Boolean(rep.valuation_warning);
           const isSelected = selectedSymbol === sym;
           const quality = rep.quality_scorecard || {};
 
           return (
             <article
               key={sym}
-              className={`valuation-mobile-card ${isSelected ? 'is-selected' : ''}`}
+              className={`valuation-mobile-card ${isSelected ? 'is-selected' : ''} ${hasWarning ? 'vm-card-warning' : ''}`}
               onClick={() => onSelectSymbol?.(sym)}
+              title={hasWarning ? rep.valuation_warning : undefined}
             >
               <div className="vm-card-top">
                 <div className="vm-title-wrap">
-                  <span className="vm-symbol">{sym}</span>
+                  <span className="vm-symbol">{sym}{hasWarning && <span style={{ marginLeft: '6px', color: 'var(--retro-hanko, #a63f30)' }}>⚠</span>}</span>
                   <span className="vm-arch">{archName}</span>
                 </div>
                 <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
               </div>
+
+              {hasWarning && (
+                <div className="vm-warning-line" role="alert">⚠ {rep.valuation_warning}</div>
+              )}
 
               <div className="vm-metrics-grid">
                 <div className="vm-metric-box">
@@ -507,7 +639,7 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
                 <div className="vm-metric-box vm-box-mos">
                   <span className="vm-label">Biên An toàn</span>
                   <span className={`vm-val ${pubMos > 0 ? 'pos' : pubMos < 0 ? 'neg' : ''}`}>
-                    {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : 'N/A'}
+                    {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : (hasWarning ? '⚠ Không công bố' : 'N/A')}
                   </span>
                 </div>
               </div>
@@ -675,7 +807,7 @@ export default function ValuationPage({ symbols = [], locale = 'vi' }) {
           <p>Mô hình chiết khấu dòng tiền kết hợp lợi nhuận thực của chủ doanh nghiệp. Phân tích khách quan theo nguyên lý Giá trị cốt lõi.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button type="button" className="btn-primary" onClick={exportForAI} disabled={exporting || loading || !normalized.length}>
+          <button type="button" className="btn-primary export-ai-btn" onClick={exportForAI} disabled={exporting || loading || !normalized.length}>
             {exporting ? 'Đang xuất…' : '📥 Xuất báo cáo cho AI'}
           </button>
           <button type="button" className="btn-secondary" onClick={load} disabled={loading || !normalized.length}>

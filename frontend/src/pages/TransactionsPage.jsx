@@ -3,7 +3,7 @@ import { useDispatch } from 'react-redux';
 import AppNav from '../components/AppNav.jsx';
 import QuickImportPanel from '../components/QuickImportPanel.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
-import { formatMoney, formatShares } from '../lib/format.js';
+import { formatShares, money as moneyFn } from '../lib/format.js';
 import { createPortfolioTransaction, discardPortfolioTransaction, updatePortfolioTransaction } from '../lib/api.js';
 import { BROKERS } from '../lib/brokers.js';
 import { deriveHoldingBooks, findHoldingBook, holdingBookKey } from '../lib/holdingBooks.js';
@@ -69,7 +69,7 @@ function tradeIntentFromLocation() {
 
 export default function TransactionsPage({ transactions: initialTransactions = [], today, locale = 'vi' }) {
   const dispatch = useDispatch();
-  const money = value => value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
+  const money = value => moneyFn(value, locale);
   const shares = value => formatShares(value, locale);
   const [transactions, setTransactions] = useState(initialTransactions);
 

@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
 import ValuationDetailOverlay from './ValuationDetailOverlay.jsx';
-import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
+import { formatShares, formatWeight, money, pct } from '../lib/format.js';
 import { BROKERS } from '../lib/brokers.js';
 
-function money(value, locale) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
 
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
 
 function brokerName(code) {
   return BROKERS.find(item => item.code === code)?.name || code || 'Chưa gán';

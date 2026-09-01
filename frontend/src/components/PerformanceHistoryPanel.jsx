@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
+import { pct } from '../lib/format.js';
+import { chooseText } from '../i18n.js';
 
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
+
 
 function chainReturn(rows, count) {
   const values = rows.map(row => row.daily_return).filter(value => value != null && Number.isFinite(Number(value)));
@@ -107,7 +107,7 @@ function monthlyReturns(rows) {
 }
 
 export default function PerformanceHistoryPanel({ performance = {}, locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const rows = useMemo(() => [...(performance.series || [])].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))), [performance.series]);
   const validReturns = rows.filter(row => row.daily_return != null && Number.isFinite(Number(row.daily_return)));
   const first = rows[0]?.date || performance.first_date || null;

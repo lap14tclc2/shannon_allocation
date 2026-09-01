@@ -4,6 +4,7 @@ import {
   getPortfolioOperations,
   getPortfolioPerformance,
   getPortfolioRisk,
+  getValuationReport,
   getValuationReports,
   listPortfolioSnapshots,
   listPortfolioTransactionAudit,
@@ -116,29 +117,36 @@ export function buildAIExportMarkdown({
   for (const symbol of Object.keys(valuations).sort()) {
     const rep = valuations[symbol] || {};
     const mult = rep.multiples || {};
-    const scen = rep.scenarios || {};
     const pillars = rep.value_investor_pillars || {};
-    // P0 audit (2026-08-29): only a verified model may publish IV/MOS. For
-    // MODEL_INCOMPLETE/PARTIAL/FALLBACK the public fields are null (shown as '-').
-    const verified = rep.model_status === 'MODEL_VERIFIED';
-    const baseIV = verified ? (rep.public_base_iv ?? scen.BASE?.intrinsic_value_per_share) : null;
-    const bearIV = verified ? (rep.public_bear_iv ?? scen.BEAR?.intrinsic_value_per_share) : null;
-    const bullIV = verified ? (rep.public_bull_iv ?? scen.BULL?.intrinsic_value_per_share) : null;
-    const mos = verified ? (rep.public_mos ?? rep.margin_of_safety_pct) : null;
-    const epv = verified ? (rep.public_epv ?? rep.epv_result?.epv_per_share) : null;
+    // P0 audit (2026-08-29) + feedback 31/08: chỉ model verified VÀ đạt chuẩn
+    // Buffett mới publish IV/MOS (public_* fields). Cổ phiếu bị chặn (hard reject
+    // / điểm quá thấp) trả null kèm valuation_warning.
+    const baseIV = rep.public_base_iv ?? null;
+    const bearIV = rep.public_bear_iv ?? null;
+    const bullIV = rep.public_bull_iv ?? null;
+    const mos = rep.public_mos ?? null;
+    const epv = rep.public_epv ?? null;
+    const warning = rep.valuation_warning || null;
+    const verified = rep.model_status === 'MODEL_VERIFIED' && !warning;
 
     valuationSummaryRows.push([
       symbol,
+      rep.archetype_profile?.archetype || '-',
+      rep.valuation_model || '-',
+      rep.model_status || '-',
       money(rep.current_market_price),
-      money(baseIV),
-      mos != null ? `${mos > 0 ? '+' : ''}${num(mos, 1)}%` : '-',
-      rep.valuation_pill || '-',
       money(bearIV),
+      money(baseIV),
       money(bullIV),
+      mos != null ? `${mos > 0 ? '+' : ''}${num(mos, 1)}%` : (warning ? '⚠ Không công bố' : '-'),
+      rep.margin_of_safety_analysis?.required_mos_pct != null ? `${num(rep.margin_of_safety_analysis.required_mos_pct, 1)}%` : '-',
+      rep.confidence_level || '-',
+      rep.valuation_pill || '-',
       money(epv),
       mult.pe != null ? `${num(mult.pe, 1)}x` : '-',
       mult.pb != null ? `${num(mult.pb, 2)}x` : '-',
       mult.roe != null ? `${num(mult.roe, 1)}%` : '-',
+      warning || '-',
     ]);
 
     const confirmed = pillars.capital_allocation?.confirmed_economic_dilution_5y_pct ?? pillars.capital_allocation?.share_dilution_5y_pct ?? null;
@@ -150,11 +158,23 @@ export function buildAIExportMarkdown({
         ? `N/A · ${num(unexplained, 1)}% unexplained`
         : (confirmed != null && Number.isFinite(Number(confirmed)) ? `+${num(confirmed, 1)}%` : '0%');
 
+    // Feedback 31/08 (P1): tách "5Y Avg ROE" (bản thân ROE không uncertain) khỏi
+      // "Capital Allocation" status (cái mới uncertain khi unexplained >= 20%).
+      const capStatusVi = {
+        EXCELLENT: 'Xuất sắc',
+        GOOD: 'Tốt',
+        UNCERTAIN: 'Không chắc (chờ bằng chứng phát hành)',
+        WATCH: 'Cần chú ý',
+      };
+      const capStatus = pillars.capital_allocation?.status || '';
+      const capStatusCell = capStatus ? (capStatusVi[capStatus] || capStatus) : '-';
+
     valuationPillarsRows.push([
       symbol,
       pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${num(pillars.earnings_quality.avg_cash_conversion_5y, 1)}% (${pillars.earnings_quality.status})` : '-',
-      pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm (FORTRESS)' : `${pillars.financial_fortress?.debt_payback_years} năm (${pillars.financial_fortress?.status})`,
-      pillars.capital_allocation?.avg_roe_5y != null ? `${num(pillars.capital_allocation.avg_roe_5y, 1)}% (${pillars.capital_allocation.status})` : '-',
+      pillars.financial_fortress?.debt_payback_years == null ? '-' : `${pillars.financial_fortress.debt_payback_years === 0 ? '0 năm (FORTRESS)' : `${pillars.financial_fortress.debt_payback_years} năm (${pillars.financial_fortress.status})`}`,
+      pillars.capital_allocation?.avg_roe_5y != null ? `${num(pillars.capital_allocation.avg_roe_5y, 1)}%` : '-',
+      capStatusCell,
       dilutionCell,
       rep.cagr_5y_net_profit != null ? `+${num(rep.cagr_5y_net_profit, 1)}%` : '-',
     ]);
@@ -184,9 +204,24 @@ export function buildAIExportMarkdown({
         sensTableStr = `\n\n#### Sensitivity Matrix (r vs g) for ${symbol}\n\n${table(discHeaders, sensRows)}`;
       }
 
+      const modelVerified = rep.model_status === 'MODEL_VERIFIED';
+      // Feedback 31/08 (P1): tách bạch model-gating vs quality-gating. Khi model
+      // VERIFIED nhưng bị chặn chất lượng (LOW_QUALITY/hard reject), IV/MOS bị ẩn
+      // do QUALITY gate chứ KHÔNG phải vì "model chưa verified".
+      const verdictLine = verified
+        ? (rep.verdict || rep.analyst_verdict || '-')
+        : (modelVerified
+            ? `_Model VERIFIED nhưng không đạt chuẩn chất lượng Buffett/Munger → IV/MOS bị ẩn (quality gate). ${rep.valuation_warning || ''}_`
+            : `_Mô hình chưa được xác thực (${rep.model_status || 'MODEL_*'}) – kết luận định giá chỉ dùng để kiểm toán (AUDIT_ONLY)._`);
+      const bridgeLine = verified
+        ? `Net Income: ${money(rep.owner_earnings_bridge?.net_income)} · D&A: ${money(rep.owner_earnings_bridge?.depreciation_amortization)} · Capex: ${money(rep.owner_earnings_bridge?.maintenance_capex)} $\\rightarrow$ Owner Earnings: ${money(rep.owner_earnings_bridge?.owner_earnings)}`
+        : (modelVerified
+            ? `_Ẩn theo nguyên tắc chất lượng (quality gate) – chỉ dùng để kiểm toán._`
+            : `_Ẩn theo nguyên tắc model-verified (AUDIT_ONLY)._`);
+
       valuationHistorySections.push(`### ${symbol} — Financial History & Sensitivity\n\n` +
-        `**Analyst Verdict:** ${verified ? (rep.verdict || rep.analyst_verdict || '-') : '_Mô hình chưa verified – kết luận định giá chỉ dùng để kiểm toán (AUDIT_ONLY)._'}\n\n` +
-        `**Owner Earnings Bridge:** ${verified ? `Net Income: ${money(rep.owner_earnings_bridge?.net_income)} · D&A: ${money(rep.owner_earnings_bridge?.depreciation_amortization)} · Capex: ${money(rep.owner_earnings_bridge?.maintenance_capex)} $\\rightarrow$ Owner Earnings: ${money(rep.owner_earnings_bridge?.owner_earnings)}` : '_Ẩn theo nguyên tắc model-verified (AUDIT_ONLY)._'}\n\n` +
+        `**Analyst Verdict:** ${verdictLine}\n\n` +
+        `**Owner Earnings Bridge:** ${bridgeLine}\n\n` +
         `#### 10-Year Financial Ledger (${rep.financial_history_10y[0]?.fiscal_year} – ${rep.financial_history_10y[rep.financial_history_10y.length - 1]?.fiscal_year})\n\n${histTable}` +
         sensTableStr
       );
@@ -194,12 +229,12 @@ export function buildAIExportMarkdown({
   }
 
   const valuationOverviewTable = table(
-    ['Ticker', 'Market Price', 'Intrinsic Value (Base)', 'Margin of Safety', 'Verdict', 'Bear DCF', 'Bull DCF', 'EPV', 'P/E', 'P/B', 'ROE'],
+    ['Ticker', 'Archetype', 'Model', 'Model Status', 'Price', 'Bear IV', 'Base IV', 'Bull IV', 'MOS', 'Required MOS', 'Confidence', 'Verdict', 'EPV', 'P/E', 'P/B', 'ROE', 'Warning'],
     valuationSummaryRows,
   );
 
   const valuationPillarsTable = table(
-    ['Ticker', 'Cash Conversion 5Y', 'Debt Payback (Fortress)', '5Y Avg ROE', '5Y Dilution (Confirmed | Unexplained)', '5Y Profit CAGR'],
+    ['Ticker', 'Cash Conversion 5Y', 'Debt Payback (Fortress)', '5Y Avg ROE', 'Capital Allocation', '5Y Dilution (Confirmed | Unexplained)', '5Y Profit CAGR'],
     valuationPillarsRows,
   );
 
@@ -330,4 +365,243 @@ export async function downloadAIExport() {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
   return anchor.download;
+}
+
+// ---------------------------------------------------------------------------
+// Screener AI export (feedback 31/08): gồm data chi tiết overlay của TẤT CẢ mã
+// được gợi ý, chia 2 section: đạt chuẩn & đầy đủ dữ liệu / đạt chuẩn nhưng thiếu
+// dữ liệu.
+// ---------------------------------------------------------------------------
+function screenerFullyValued(item) {
+  return item.model_status === 'MODEL_VERIFIED' && item.margin_of_safety != null;
+}
+
+function screenerStockDetail(symbol, item, rep) {
+  const lines = [`### ${symbol} — ${item?.company_name || ''}`];
+  if (rep) {
+    const scen = rep.scenarios || {};
+    const base = scen.BASE || {};
+    const bear = scen.BEAR || {};
+    const bull = scen.BULL || {};
+    const quality = rep.quality_scorecard || {};
+    const pillars = rep.value_investor_pillars || {};
+    const capAlloc = pillars.capital_allocation || {};
+    const missing = Array.isArray(rep.missing_data) ? rep.missing_data : [];
+    const warning = rep.valuation_warning;
+    lines.push(`- Thị giá: ${money(rep.current_market_price)}`);
+    lines.push(`- Archetype: ${rep.archetype_profile?.archetype || '-'} | Mô hình: ${rep.valuation_model || '-'} | Model status: ${rep.model_status || '-'} | Confidence: ${rep.confidence_level || '-'}`);
+    lines.push(`- Điểm chất lượng: ${quality.total_score ?? '-'}/100 (${quality.tier || '-'})`);
+    if (warning) {
+      lines.push(`- ⚠️ Cảnh báo: ${warning}`);
+    } else {
+      const mos = rep.public_mos ?? rep.margin_of_safety_pct ?? null;
+      lines.push(`- Base IV: ${money(rep.public_base_iv ?? base.intrinsic_value_per_share)}`);
+      lines.push(`- Bear IV: ${money(rep.public_bear_iv ?? bear.intrinsic_value_per_share)} | Bull IV: ${money(rep.public_bull_iv ?? bull.intrinsic_value_per_share)}`);
+      lines.push(`- MOS: ${mos != null ? `${(mos > 0 ? '+' : '')}${num(mos, 1)}%` : 'N/A'} | Required MOS: ${rep.margin_of_safety_analysis?.required_mos_pct != null ? `${num(rep.margin_of_safety_analysis.required_mos_pct, 1)}%` : '-'}`);
+      lines.push(`- Verdict: ${rep.valuation_pill || '-'}`);
+    }
+    lines.push(`- Chất lượng tiền mặt: ${pillars.earnings_quality?.status || '-'} (cash conversion 5Y: ${pillars.earnings_quality?.avg_cash_conversion_5y != null ? `${num(pillars.earnings_quality.avg_cash_conversion_5y, 1)}%` : 'N/A'})`);
+    lines.push(`- Nợ/VCSH: ${pillars.financial_fortress?.debt_to_equity_ratio != null ? `${num(pillars.financial_fortress.debt_to_equity_ratio, 2)}x` : 'N/A'} | Net debt: ${money(pillars.financial_fortress?.net_debt_vnd)} | Debt payback: ${pillars.financial_fortress?.debt_payback_years == null ? 'N/A' : `${pillars.financial_fortress.debt_payback_years} năm`}`);
+    lines.push(`- Phân bổ vốn: ${capAlloc.status || '-'} | ROE 5Y: ${capAlloc.avg_roe_5y != null ? `${num(capAlloc.avg_roe_5y, 1)}%` : '-'} | Dilution: ${capAlloc.dilution_classification || '-'} (confirmed: ${capAlloc.confirmed_economic_dilution_5y_pct != null ? `${num(capAlloc.confirmed_economic_dilution_5y_pct, 1)}%` : 'N/A'}, unexplained: ${capAlloc.unexplained_share_change_5y_pct != null ? `${num(capAlloc.unexplained_share_change_5y_pct, 1)}%` : 'N/A'})`);
+    if (missing.length) {
+      lines.push(`- **Dữ liệu cần thiết để định giá:**`);
+      missing.forEach(m => lines.push(`  - ${m}`));
+    }
+    if (Array.isArray(rep.confidence_reasons) && rep.confidence_reasons.length) {
+      lines.push(`- Nguyên nhân engine: ${rep.confidence_reasons.join(' | ')}`);
+    }
+    if (Array.isArray(quality.hard_rejects) && quality.hard_rejects.length) {
+      lines.push(`- Hard rejects: ${quality.hard_rejects.join(', ')}`);
+    }
+    // Bằng chứng chuẩn hóa full-cycle (user-test.md 31/08): MODEL_VERIFIED của
+    // công ty chu kỳ phải chứng minh normalization_years >= 7 + cycle window.
+    const bridge = rep.owner_earnings_bridge || {};
+    if (bridge.normalization_method || bridge.normalization_years != null) {
+      const histYears = (Array.isArray(rep.financial_history_10y) && rep.financial_history_10y.length)
+        ? rep.financial_history_10y.map(h => h.fiscal_year).filter(Boolean)
+        : [];
+      const win = histYears.length ? `${histYears[0]}–${histYears[histYears.length - 1]}` : '-';
+      lines.push(`- **Bằng chứng chuẩn hóa full-cycle:**`);
+      lines.push(`  - normalization_method: ${bridge.normalization_method || '-'} | normalization_years: ${bridge.normalization_years ?? '-'} | cycle_window: ${win}`);
+      lines.push(`  - current_owner_earnings: ${money(bridge.current_owner_earnings)}`);
+      lines.push(`  - normalized_owner_earnings: ${money(bridge.normalized_owner_earnings ?? bridge.owner_earnings)}`);
+      if (bridge.mid_cycle_margin != null) {
+        lines.push(`  - mid_cycle_margin: ${num(bridge.mid_cycle_margin * 100, 1)}%`);
+      }
+    }
+    if (Array.isArray(rep.data_anomalies) && rep.data_anomalies.length) {
+      const hasBlocking = rep.data_anomalies.some(a => a.resolution?.classification === 'UNRESOLVED_MATERIAL');
+      lines.push(hasBlocking
+        ? `- **⛔ Dữ liệu chưa phân loại — ảnh hưởng định giá (UNRESOLVED_MATERIAL):**`
+        : `- **🧭 Biến động lịch sử đã phân loại (Regime Engine):**`);
+      rep.data_anomalies.forEach(a => {
+        const cls = a.resolution?.classification || a.detector_status || 'UNKNOWN';
+        const metricSummary = (a.metrics || [])
+          .map(m => `${m.metric} ${m.change_pct > 0 ? '+' : ''}${m.change_pct}%`)
+          .join(', ');
+        const conf = a.resolution?.confidence ? ` | độ tin cậy: ${a.resolution.confidence}` : '';
+        const mat = a.materiality?.grade && a.materiality.grade !== 'IMMATERIAL'
+          ? ` [tác động: ${a.materiality.grade}]` : '';
+        lines.push(`  - ${a.fiscal_year}: ${cls}${metricSummary ? ` (${metricSummary})` : ''}${conf}${mat}`);
+      });
+    }
+    if (rep.normalization_window) {
+      const w = rep.normalization_window;
+      lines.push(`- **Window chuẩn hóa (latest comparable regime):** ${w.start_year}–${w.end_year} (dùng ${w.used_years} năm). ${w.note || ''}`);
+    }
+    if (Array.isArray(rep.regime_analysis) && rep.regime_analysis.length > 1) {
+      lines.push(`- **Phân tích regime (structural break):**`);
+      rep.regime_analysis.forEach(rg => {
+        lines.push(`  - Regime ${rg.label}: ${rg.start_year}–${rg.end_year}${rg.structural_break_year ? ` (break @${rg.structural_break_year}, confidence ${rg.break_confidence})` : ''}`);
+      });
+    }
+  } else {
+    lines.push(`- (Chưa có báo cáo định giá chi tiết — dữ liệu từ screener)`);
+    const refMos = item?.margin_of_safety != null ? item.margin_of_safety : item?.diagnostic_mos;
+    lines.push(`- Thị giá: ${money(item?.current_price)} | MOS: ${refMos != null ? `${(refMos > 0 ? '+' : '')}${num(refMos, 1)}%${item?.margin_of_safety == null ? ' (tham khảo)' : ''}` : 'N/A'}`);
+    lines.push(`- Điểm chất lượng: ${item?.total_score ?? '-'}/100 (${item?.tier || '-'}) | Model status: ${item?.model_status || '-'}`);
+    if (item?.valuation_gap) {
+      lines.push(`- ⚠️ ${item.valuation_gap}`);
+    } else if (item?.archetype === 'ARCHETYPE_UNKNOWN') {
+      lines.push(`- ⚠️ Chưa xác định được mô hình định giá (thiếu thông tin phân loại ngành).`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export async function downloadScreenerAIExport(items = []) {
+  const symbols = [...new Set((items || []).map(it => String(it.symbol || '').toUpperCase()).filter(Boolean))].sort();
+  const valuationRes = await getValuationReports(symbols).catch(() => ({ reports: {} }));
+  const reports = valuationRes.reports || {};
+
+  const section1 = (items || []).filter(screenerFullyValued);
+  const section2 = (items || []).filter(it => !screenerFullyValued(it));
+
+  const summaryRows = (items || []).map(it => [
+    it.symbol,
+    money(it.current_price),
+    it.margin_of_safety != null ? `${(it.margin_of_safety > 0 ? '+' : '')}${num(it.margin_of_safety, 1)}%` : 'N/A',
+    it.total_score ?? '-',
+    it.tier_vi || it.tier || '-',
+    it.archetype || '-',
+    it.valuation_status_vi || it.valuation_status || '-',
+    it.valuation_warning ? `⚠️ ${it.valuation_warning}` : '-',
+  ]);
+  const summaryTable = table(
+    ['Mã CP', 'Thị giá', 'MOS', 'Điểm CL', 'Hạng', 'Archetype', 'Trạng thái', 'Ghi chú'],
+    summaryRows,
+  );
+
+  const generatedAt = new Date().toISOString();
+  const md = [
+    `# QPort Bộ lọc Cổ phiếu — Export AI (${generatedAt.slice(0, 10)})`,
+    ``,
+    `Tổng số mã đạt bộ lọc: **${items.length}** | Đầy đủ dữ liệu định giá: **${section1.length}** | Thiếu dữ liệu định giá: **${section2.length}**`,
+    ``,
+    `## Bảng Tổng quan Kết quả Bộ lọc`,
+    ``,
+    summaryTable,
+    ``,
+    `## Section 1 — Đạt chuẩn & Đầy đủ dữ liệu định giá (${section1.length})`,
+    ``,
+    section1.length ? section1.map(it => screenerStockDetail(it.symbol, it, reports[it.symbol])).join('\n\n') : '_Không có mã nào._',
+    ``,
+    `## Section 2 — Đạt chuẩn nhưng Thiếu dữ liệu định giá (${section2.length})`,
+    ``,
+    section2.length ? section2.map(it => screenerStockDetail(it.symbol, it, reports[it.symbol])).join('\n\n') : '_Không có mã nào._',
+    ``,
+    `---`,
+    `*Generated ${generatedAt} · QPort screener AI export — data chi tiết overlay của từng mã được gợi ý.*`,
+  ].join('\n');
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `qport-screener-ai-${generatedAt.slice(0, 10)}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return anchor.download;
+}
+
+/** Export one symbol's full valuation detail (overlay data) as markdown. */
+export async function downloadSymbolAIExport(item, rep = null) {
+  const symbol = String(item?.symbol || '').toUpperCase();
+  if (!symbol) return null;
+  if (rep == null) {
+    try {
+      const res = await getValuationReport(symbol);
+      rep = res?.report || res || null;
+    } catch (err) {
+      rep = null;
+    }
+  }
+  const generatedAt = new Date().toISOString();
+  const hist = Array.isArray(rep?.financial_history_10y) ? rep.financial_history_10y : [];
+  const histTable = hist.length
+    ? table(
+      ['Năm', 'Doanh thu (VND)', 'LNST (VND)', 'VCSH (VND)', 'ROE (%)', 'CFO (VND)', 'FCF (VND)', 'Chuyển hóa tiền (%)', 'Nợ (VND)', 'Tiền (VND)', 'SL CP'],
+      hist.map(h => [
+        h.fiscal_year,
+        money(h.revenue),
+        money(h.net_profit),
+        money(h.equity),
+        h.roe != null ? `${num(h.roe, 1)}%` : '-',
+        money(h.operating_cash_flow),
+        money(h.free_cash_flow),
+        h.cash_conversion_ratio != null ? `${num(h.cash_conversion_ratio, 1)}%` : '-',
+        money(h.total_debt),
+        money(h.cash_and_equivalents),
+        h.shares_outstanding != null ? num(h.shares_outstanding, 0) : '-',
+      ]),
+    )
+    : '_Không có dữ liệu tài chính 10 năm._';
+
+  const md = [
+    `# QPort — Định giá AI: ${symbol} (${generatedAt.slice(0, 10)})`,
+    ``,
+    `- Mã: ${symbol} · ${item?.company_name || '-'} · Sàn ${item?.exchange || '-'} · Ngành: ${item?.industry || '-'}`,
+    `- Thị giá: ${money(item?.current_price)} | MOS: ${item?.margin_of_safety != null ? `${(item.margin_of_safety > 0 ? '+' : '')}${num(item.margin_of_safety, 1)}%` : (item?.diagnostic_mos != null ? `${num(item.diagnostic_mos, 1)}% (tham khảo)` : 'N/A')}`,
+    `- Điểm chất lượng: ${item?.total_score ?? '-'}/100 (${item?.tier || '-'}) | Model status: ${item?.model_status || '-'} | Verdict: ${item?.valuation_status_vi || item?.valuation_status || '-'}`,
+    ``,
+    screenerStockDetail(symbol, item, rep),
+    ``,
+    `## Dữ liệu Tài chính 10 Năm — ${symbol}`,
+    ``,
+    histTable,
+    ``,
+    `---`,
+    `*Generated ${generatedAt} · QPort AI export cho ${symbol}*`,
+  ].join('\n');
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `qport-ai-${symbol}-${generatedAt.slice(0, 10)}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return anchor.download;
+}
+
+/** Export the currently-open valuation report (overlay) as markdown with 10Y financials. */
+export async function downloadReportAIExport(symbol, report) {
+  const q = report?.quality_scorecard || {};
+  const mos = report?.public_mos ?? report?.margin_of_safety_pct ?? null;
+  const item = {
+    symbol,
+    company_name: report?.valuation_multiples?.sector || '',
+    current_price: report?.current_market_price,
+    margin_of_safety: mos,
+    total_score: q.total_score,
+    tier: q.tier,
+    model_status: report?.model_status,
+    valuation_status: report?.valuation_pill,
+    valuation_status_vi: report?.valuation_pill,
+  };
+  return downloadSymbolAIExport(item, report);
 }

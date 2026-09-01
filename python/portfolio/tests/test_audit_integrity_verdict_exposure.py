@@ -407,7 +407,10 @@ def test_classifier_separates_non_economic_share_change():
         non_economic_events=[{"action_type": "STOCK_DIVIDEND", "stock_ratio": 1.0}],
     )
     assert result["non_economic_share_change_pct"] == pytest.approx(100.0, abs=0.1)
-    assert result["economic_dilution_pct"] == pytest.approx(0.0, abs=0.1)
+    assert result["residual_share_change_pct"] == pytest.approx(0.0, abs=0.1)
+    # Feedback 03:56: `economic_dilution_pct` chỉ mang giá trị ĐÃ XÁC NHẬN (null
+    # khi chưa có bằng chứng sự kiện), không phải residual.
+    assert result["economic_dilution_pct"] is None
     assert result["classification"] == "NON_ECONOMIC_SHARE_CHANGE"
 
 
@@ -417,9 +420,10 @@ def test_classifier_flags_only_economic_dilution():
         shares_new=300,
         non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
     )
-    # Expected base = 200; actual = 300 -> economic dilution = 100/100 = 100%.
+    # Expected base = 200; actual = 300 -> residual = 100/100 = 100%.
     # With NO economic events the residual is UNEXPLAINED, not proven dilution.
-    assert result["economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
+    assert result["residual_share_change_pct"] == pytest.approx(100.0, abs=0.1)
+    assert result["economic_dilution_pct"] is None
     assert result["classification"] == "UNEXPLAINED_SHARE_CHANGE"
 
 
@@ -430,7 +434,9 @@ def test_classifier_excessive_dilution_requires_event_evidence():
         non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
         economic_events=[{"action_type": "RIGHTS_ISSUE", "stock_ratio": 0.5}],
     )
-    assert result["economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
+    assert result["residual_share_change_pct"] == pytest.approx(100.0, abs=0.1)
+    # 50% rights issue confirms at most 50%; economic_dilution_pct = confirmed.
+    assert result["economic_dilution_pct"] == pytest.approx(50.0, abs=0.1)
     assert result["classification"] == "EXCESSIVE_DILUTION"
 
 
@@ -440,7 +446,8 @@ def test_classifier_split_is_non_economic():
         shares_new=200,
         non_economic_events=[{"action_type": "SPLIT", "stock_ratio": 1.0}],
     )
-    assert result["economic_dilution_pct"] == pytest.approx(0.0, abs=0.1)
+    assert result["residual_share_change_pct"] == pytest.approx(0.0, abs=0.1)
+    assert result["economic_dilution_pct"] is None
     assert result["classification"] == "NON_ECONOMIC_SHARE_CHANGE"
 
 
@@ -453,7 +460,8 @@ def test_classifier_confirmed_vs_unexplained_split():
         non_economic_events=[{"action_type": "BONUS_SHARE", "stock_ratio": 1.0}],
     )
     assert unexplained["classification"] == "UNEXPLAINED_SHARE_CHANGE"
-    assert unexplained["economic_dilution_pct"] == pytest.approx(100.0, abs=0.1)
+    assert unexplained["residual_share_change_pct"] == pytest.approx(100.0, abs=0.1)
+    assert unexplained["economic_dilution_pct"] is None
     assert unexplained["confirmed_economic_dilution_pct"] is None
     assert unexplained["unexplained_share_change_pct"] == pytest.approx(100.0, abs=0.1)
 
@@ -622,12 +630,26 @@ def test_model_incomplete_hides_public_iv_and_mos():
 
 
 def test_model_verified_exposes_public_iv_and_mos():
-    report = _evaluate_symbol("FPT", {"sector": "Công nghệ"})
+    # Uses a healthy 10-year financial history so the company scores HIGH_QUALITY
+    # (no hard reject / not LOW_QUALITY) -> model verified exposes public IV/MOS.
+    report = _evaluate_symbol("FPT", {"sector": "Công nghệ"}, financial_history=_healthy_history())
     assert report.model_status == "MODEL_VERIFIED"
     assert report.public_base_iv is not None
     assert report.public_base_iv > Decimal("0")
     assert report.public_mos is not None
     assert report.diagnostic_fallback is None
+    assert report.valuation_warning is None
+
+
+def test_low_quality_verified_model_does_not_expose_public_iv_mos():
+    # Feedback 31/08: một cổ phiếu vẫn MODEL_VERIFIED nhưng điểm chất lượng quá
+    # thấp (LOW_QUALITY) hoặc có hard reject sẽ KHÔNG công bố IV/MOS - chỉ cảnh báo.
+    report = _evaluate_symbol("FRT", {"sector": "Bán lẻ"})
+    assert report.model_status == "MODEL_VERIFIED"
+    assert report.public_base_iv is None
+    assert report.public_mos is None
+    assert report.valuation_warning is not None
+    assert "không công bố" in report.valuation_warning.lower() or "KHÔNG công bố" in report.valuation_warning
 
 
 def test_model_incomplete_hides_public_epv():
@@ -641,7 +663,7 @@ def test_model_incomplete_hides_public_epv():
 
 def test_epv_is_part_of_public_surface_when_verified():
     # A verified model may publish public_epv; it must match the EPV result.
-    report = _evaluate_symbol("FPT", {"sector": "Công nghệ"})
+    report = _evaluate_symbol("FPT", {"sector": "Công nghệ"}, financial_history=_healthy_history())
     if report.epv_result is not None:
         assert report.public_epv == report.epv_result.epv_per_share
     else:
@@ -726,7 +748,28 @@ def _facts_for_oe():
     return facts
 
 
-def _evaluate_symbol(symbol, fundamentals, value_investor_pillars=None):
+def _healthy_history():
+    """10-year healthy financial history -> HIGH_QUALITY score (no hard reject)."""
+    b = 1000000000
+    return [
+        {
+            "fiscal_year": y,
+            "revenue": 10000 * b,
+            "net_profit": 1500 * b,
+            "equity": 5000 * b,
+            "roe": 30.0,
+            "operating_cash_flow": 1400 * b,
+            "free_cash_flow": 1200 * b,
+            "cash_conversion_ratio": 93.0,
+            "shares_outstanding": 100000000,
+            "total_debt": 500 * b,
+            "cash_and_equivalents": 800 * b,
+        }
+        for y in range(2014, 2024)
+    ]
+
+
+def _evaluate_symbol(symbol, fundamentals, value_investor_pillars=None, financial_history=None):
     return ValuationEngine.evaluate(
         symbol=symbol,
         facts=_facts_for_oe(),
@@ -734,5 +777,6 @@ def _evaluate_symbol(symbol, fundamentals, value_investor_pillars=None):
         shares_outstanding=Decimal("100000000"),
         fiscal_year=2023,
         fundamentals=fundamentals,
+        financial_history=financial_history,
         value_investor_pillars=value_investor_pillars,
     )

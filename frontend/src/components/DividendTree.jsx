@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { formatMoney } from '../lib/format.js';
+import { formatMoney, money } from '../lib/format.js';
 
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
+
 
 export function dividendEventDate(event) {
   return event?.effective_event_date || event?.record_date || event?.ex_date || event?.announcement_date || event?.payment_date || null;

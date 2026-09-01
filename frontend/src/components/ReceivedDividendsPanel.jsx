@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { listPortfolioTransactions } from '../lib/api.js';
-import { formatMoney, formatShares } from '../lib/format.js';
+import { formatShares, money as moneyFn } from '../lib/format.js';
+import { chooseText } from '../i18n.js';
 
 export default function ReceivedDividendsPanel({ locale = 'en' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  const money = value => value == null ? '-' : `${formatMoney(value, false, locale)} VND`;
+  const text = (en, vi) => chooseText(locale, en, vi);
+  const money = value => moneyFn(value, locale, 'VND');
   const shares = value => value == null ? '-' : formatShares(value, locale);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

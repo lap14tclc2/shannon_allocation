@@ -154,6 +154,8 @@ class BankValuationModel:
             discount_rate_basis="COST_OF_EQUITY",
             result_type="EQUITY_VALUE",
             present_value=equity_val,
+            residual_income_pv=pv_residual_income,
+            terminal_residual_income_pv=pv_terminal,
             debt_adjustment_policy="NO_NET_DEBT_ADJUSTMENT",
         )
 

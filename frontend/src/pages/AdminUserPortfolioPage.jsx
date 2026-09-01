@@ -1,14 +1,8 @@
 import React from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
+import { formatShares, formatWeight, money, pct } from '../lib/format.js';
 
-function money(value, locale = 'vi') {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${formatMoney(value, false, locale)} ₫`;
-}
 
-function pct(value, digits = 2) {
-  return value == null || !Number.isFinite(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(digits)}%`;
-}
 
 export default function AdminUserPortfolioPage({ payload = {}, locale = 'vi' }) {
   const user = payload.user || {};

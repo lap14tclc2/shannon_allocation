@@ -71,6 +71,27 @@ def _facts_oe(oe=1500, debt=2000, cash=300):
     ]
 
 
+def _healthy_history():
+    """10-year healthy financial history -> HIGH_QUALITY score (no hard reject)."""
+    b = 1000000000
+    return [
+        {
+            "fiscal_year": y,
+            "revenue": 10000 * b,
+            "net_profit": 1500 * b,
+            "equity": 5000 * b,
+            "roe": 30.0,
+            "operating_cash_flow": 1400 * b,
+            "free_cash_flow": 1200 * b,
+            "cash_conversion_ratio": 93.0,
+            "shares_outstanding": 100000000,
+            "total_debt": 500 * b,
+            "cash_and_equivalents": 800 * b,
+        }
+        for y in range(2014, 2024)
+    ]
+
+
 def test_negative_intrinsic_value_is_never_fairly_valued():
     # High net debt destroys equity value -> negative IV. Must NOT be FAIRLY_VALUED.
     report = ValuationEngine.evaluate(
@@ -81,7 +102,12 @@ def test_negative_intrinsic_value_is_never_fairly_valued():
         fiscal_year=2023,
         fundamentals={"sector": "Cấp thoát nước"},
     )
-    assert report.base_iv is not None and report.base_iv < Decimal("0")
+    # Feedback 31/08: giá trị nội tại âm + chất lượng kém => không công bố IV/MOS;
+    # con số âm vẫn được giữ trong diagnostic_fallback để audit.
+    assert report.public_base_iv is None
+    assert report.diagnostic_fallback is not None
+    assert report.diagnostic_fallback["base_iv_per_share"] is not None
+    assert report.diagnostic_fallback["base_iv_per_share"] < 0
     assert report.valuation_pill in ("AVOID_SOLVENCY", "UNVALUABLE")
     assert report.margin_of_safety_pct is None
     assert "âm" in report.verdict
@@ -418,6 +444,8 @@ def test_gated_model_has_null_public_iv_and_diagnostic_fallback():
 
 
 def test_verified_model_keeps_public_iv_and_no_fallback():
+    # Uses a healthy 10-year history so the stock is HIGH_QUALITY (no hard reject /
+    # not LOW_QUALITY) -> MODEL_VERIFIED keeps public IV and no fallback.
     report = ValuationEngine.evaluate(
         symbol="FPT",
         facts=_facts_oe(),
@@ -425,6 +453,7 @@ def test_verified_model_keeps_public_iv_and_no_fallback():
         shares_outstanding=Decimal("1000000000"),
         fiscal_year=2023,
         fundamentals={"sector": "Công nghệ"},
+        financial_history=_healthy_history(),
     )
     assert report.model_status == "MODEL_VERIFIED"
     assert report.base_iv is not None

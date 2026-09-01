@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from html import unescape
 from html.parser import HTMLParser
+import random
 import time
 import threading
 from datetime import date, datetime, timezone
@@ -793,6 +794,10 @@ class ProviderPayloadError(RuntimeError):
     """Raised when a provider returned an HTTP response with wrong content."""
 
 
+class TcbsAuthRequiredError(RuntimeError):
+    """Raised when TCBS returns 401/403 — token missing or rejected by the server."""
+
+
 class ProviderPeriodUnavailableError(ProviderPayloadError):
     """Raised when a provider has no row for the requested logical period."""
 
@@ -948,6 +953,10 @@ def _canonicalize_document(symbol: str, provider: str, document_type: str, perio
             )),
         ),
         "INCOME_STATEMENT": (
+            ("IS.REVENUE.NET", (
+                "revenue", "netRevenue", "sales", "doanh thu", "doanh thu thuan",
+                "net revenue", "net sales",
+            )),
             ("IS.PROFIT.NET", (
                 "postTaxProfit", "net_profit", "net_profit_after_tax",
                 "profit_after_tax", "net_income", "net profit after tax",
@@ -1320,6 +1329,86 @@ def valuation_snapshot_from_catalog(symbol: str, market_price: float | None = No
     }
 
 
+def backfill_market_prices(
+    limit: int | None = None,
+    max_workers: int = 10,
+    days: int = 45,
+) -> dict:
+    """Fetch + persist market prices cho toàn universe (mã có BCTC nhưng chưa có giá).
+
+    user-test.md §19/§37: screener chỉ bao phủ mã có giá → muốn "sàng lọc toàn diện"
+    cần backfill `market_prices` cho ~1189 mã thiếu giá. Threaded qua VNDirect/Vnstock
+    (AutoMarketData), persist vào bảng market_prices của qport_finance.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import date, timedelta
+
+    from .market_data import AutoMarketData, frame_to_price_rows
+
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        rows = db.execute(
+            """SELECT DISTINCT s.symbol FROM securities s
+               WHERE EXISTS (SELECT 1 FROM canonical_facts f WHERE f.symbol = s.symbol)
+                 AND NOT EXISTS (SELECT 1 FROM market_prices m WHERE m.symbol = s.symbol)
+               ORDER BY s.symbol"""
+        ).fetchall()
+    symbols = [str(r["symbol"]).upper().strip() for r in rows]
+    if limit is not None:
+        symbols = symbols[:max(0, int(limit))]
+    if not symbols:
+        return {"requested": 0, "fetched_price": 0, "rows_saved": 0, "failed": 0, "remaining": 0}
+
+    md = AutoMarketData()
+    today = date.today().isoformat()
+    start = (date.today() - timedelta(days=days)).isoformat()
+
+    def _fetch(sym: str):
+        try:
+            df = md.daily_history(sym, start, today)
+            if not df.empty:
+                price_rows = frame_to_price_rows(sym, df, source="vndirect")
+                latest = float(df["close"].iloc[-1])
+                return sym, latest, len(price_rows), price_rows
+        except Exception:
+            pass
+        return sym, None, 0, []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        results = list(ex.map(_fetch, symbols))
+
+    all_rows = []
+    with_price = 0
+    for sym, latest, n, price_rows in results:
+        if latest is not None and latest > 0:
+            with_price += 1
+        if price_rows:
+            all_rows.extend(price_rows)
+
+    if all_rows:
+        with _schema_connection(FINANCE_SCHEMA) as db:
+            for r in all_rows:
+                db.execute(
+                    """INSERT INTO market_prices (symbol, trading_date, close, volume, source)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT (symbol, trading_date)
+                       DO UPDATE SET close = EXCLUDED.close, volume = EXCLUDED.volume, source = EXCLUDED.source""",
+                    [r["symbol"], r["trading_date"], r["close"], r.get("volume"), r["source"]],
+                )
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        remaining = db.execute(
+            """SELECT count(*) AS n FROM securities s
+               WHERE EXISTS (SELECT 1 FROM canonical_facts f WHERE f.symbol = s.symbol)
+                 AND NOT EXISTS (SELECT 1 FROM market_prices m WHERE m.symbol = s.symbol)"""
+        ).fetchone()
+    return {
+        "requested": len(symbols),
+        "fetched_price": with_price,
+        "rows_saved": len(all_rows),
+        "failed": len(symbols) - with_price,
+        "remaining": int((remaining or {}).get("n") or 0),
+    }
+
+
 def _save_document(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, source_url: str, status: str, payload: str | None, error_code: str | None, error_message: str | None, run_id: int | None, db: Any | None = None) -> None:
     body_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None
     connection = (
@@ -1358,22 +1447,60 @@ def _crawl_progress(symbol: str, message: str) -> None:
 
 
 
-def _tcbs_document_headers(*, require_token: bool = False) -> dict[str, str]:
-    """Build local-only TCBS request headers without logging credentials."""
+def _tcbs_document_headers(*, require_token: bool = False, token: str | None = None) -> dict[str, str]:
+    """Build local-only TCBS request headers without logging credentials.
+
+    Prefers an explicit per-request ``token`` (user-supplied via UI); falls back
+    to the server env ``TCBS_BEARER_TOKEN``.
+    """
     headers = {
         "Referer": "https://tcinvest.tcbs.com.vn/",
         "Origin": "https://tcinvest.tcbs.com.vn",
     }
-    token = str(os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
-    if require_token and not token:
+    resolved = str(token or os.environ.get("TCBS_BEARER_TOKEN") or "").strip()
+    if require_token and not resolved:
         raise RuntimeError(
             "TCBS_BEARER_TOKEN is required for authenticated TCBS crawling"
         )
-    if token:
+    if resolved:
         headers["Authorization"] = (
-            token if token.lower().startswith("bearer ") else f"Bearer {token}"
+            resolved if resolved.lower().startswith("bearer ") else f"Bearer {resolved}"
         )
     return headers
+
+def _tcbs_fetch_json(url: str, *, token: str | None = None, timeout: float = 20, retries: int = 3) -> tuple[int, str]:
+    """Fetch TCBS with TLS impersonation (curl_cffi) + retry/backoff jitter.
+
+    TCBS WAF blocks plain ``urllib``/``requests`` by TLS fingerprint (JA3/JA4).
+    ``curl_cffi`` impersonate='chrome120' mimics a real Chrome handshake; the
+    Bearer token comes from ``token`` (user-supplied) or ``TCBS_BEARER_TOKEN``.
+    Falls back to ``_url_json`` if curl_cffi is not installed (won't pass the WAF).
+    """
+    headers = _tcbs_document_headers(require_token=True, token=token)
+    headers["Accept"] = "application/json, text/plain, */*"
+    try:
+        from curl_cffi import requests as cr
+    except ImportError:
+        return _url_json(url, headers=headers, timeout=timeout, retries=retries)
+    session = cr.Session(impersonate="chrome120")
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            resp = session.get(url, headers=headers, timeout=timeout)
+            if resp.status_code == 429:
+                last = resp
+                time.sleep(2.0 * attempt + random.uniform(0.5, 1.5))
+                continue
+            if resp.status_code == 403 and "Just a moment" in resp.text:
+                last = resp
+                time.sleep(2.0 * (attempt + 1) + random.uniform(0.5, 1.5))
+                continue
+            return resp.status_code, resp.text
+        except Exception as exc:  # pragma: no cover
+            last = exc
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"TCBS request failed after {retries + 1} attempts: {last}")
+
 
 def _tcbs_records(
     payload: str | None,
@@ -1518,7 +1645,7 @@ def _tcbs_document_url(symbol: str, document_type: str) -> str:
         raise ValueError(f"unsupported TCBS document type: {document_type}")
     return (
         f"{TCBS_FINANCE_BASE_URL}/{str(symbol).upper().strip()}/{endpoint}"
-        "?yearly=0&isAll=true"
+        "?yearly=1&isAll=true"
     )
 
 
@@ -1540,17 +1667,19 @@ def _document_status_for_failure(code: str) -> str:
     return "NOT_AVAILABLE" if code == "SOURCE_PERIOD_UNAVAILABLE" else "FAILED"
 
 
-def _fetch_tcbs_history(symbol: str, document_type: str) -> tuple[str, str]:
+def _fetch_tcbs_history(symbol: str, document_type: str, *, token: str | None = None) -> tuple[str, str]:
     """Fetch one complete history response for one statement type."""
     url = _tcbs_document_url(symbol, document_type)
     _crawl_progress(
         symbol,
         f"fetch provider=tcbs document={document_type} history",
     )
-    status, payload = _url_json(
-        url,
-        headers=_tcbs_document_headers(require_token=True),
-    )
+    status, payload = _tcbs_fetch_json(url, token=token)
+    if status in (401, 403):
+        raise TcbsAuthRequiredError(
+            f"TCBS xác thực thất bại (HTTP {status}) — token thiếu/không hợp lệ. "
+            "Nhập Bearer token từ TCInvest để thử lại."
+        )
     if status < 200 or status >= 300:
         raise RuntimeError(f"HTTP {status}")
     records = _tcbs_records(payload, document_type)
@@ -1924,7 +2053,7 @@ def import_tcbs_crawled_directory(
         "skipped_documents": skipped_documents,
     }
 
-def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None) -> bool:
+def _fetch_provider(symbol: str, provider: str, document_type: str, period_type: str, year: int, quarter: int | None, period_end: str, run_id: int | None, *, token: str | None = None) -> bool:
     """Fetch and persist one logical TCBS period.
 
     This helper remains for single-document retry. Normal symbol crawls use the
@@ -1945,7 +2074,7 @@ def _fetch_provider(symbol: str, provider: str, document_type: str, period_type:
         f"fetch provider=tcbs document={document_type} period={period_label}",
     )
     try:
-        _url, history_payload = _fetch_tcbs_history(symbol, document_type)
+        _url, history_payload = _fetch_tcbs_history(symbol, document_type, token=token)
         _persist_tcbs_period(
             symbol,
             document_type,
@@ -2174,15 +2303,21 @@ def enqueue_crawl_all(requested_by: int | None = None, exchange: str | None = No
 
 
 def _validate_crawl_runtime() -> None:
-    """Provider calls are allowed only in an explicitly named local worker."""
-    runtime = str(os.environ.get("QPORT_FINANCE_RUNTIME") or "").strip().lower()
-    if runtime not in {"local", "worker"}:
-        raise RuntimeError(
-            "CRAWL_RUNTIME_INVALID: set QPORT_FINANCE_RUNTIME=local (or worker) "
-            "on the external crawler; Vercel is database-read-only"
-        )
+    """Provider calls are allowed on a local/worker runtime; Vercel is read-only.
+
+    Local dev (no ``VERCEL`` env) defaults to crawl-enabled so the "Cập nhật dữ
+    liệu TCBS" button works without extra env. A deployed Vercel instance is
+    always database-read-only; an explicitly unsupported runtime value is also
+    rejected as a safety guard.
+    """
     if os.environ.get("VERCEL"):
         raise RuntimeError("CRAWL_RUNTIME_INVALID: provider crawling is disabled on Vercel")
+    runtime = str(os.environ.get("QPORT_FINANCE_RUNTIME") or "").strip().lower()
+    if runtime and runtime not in {"local", "worker"}:
+        raise RuntimeError(
+            f"CRAWL_RUNTIME_INVALID: unsupported QPORT_FINANCE_RUNTIME={runtime!r}; "
+            "use local (or worker) for the external crawler"
+        )
 
 
 def _should_fetch_document(status: str | None, *, retry_failed_only: bool) -> bool:
@@ -2243,6 +2378,8 @@ def crawl_symbol(
     symbol: str,
     requested_by: int | None = None,
     *,
+    token: str | None = None,
+    force_refresh: bool = False,
     retry_failed_only: bool = False,
     document_filter: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -2331,7 +2468,7 @@ def crawl_symbol(
             if target is not None and current_key != target:
                 continue
             status = statuses.get(current_key)
-            if not _should_fetch_document(
+            if not force_refresh and not _should_fetch_document(
                 status,
                 retry_failed_only=retry_failed_only,
             ):
@@ -2354,7 +2491,11 @@ def crawl_symbol(
             continue
         source_url = _tcbs_document_url(symbol, document_type)
         try:
-            _url, history_payload = _fetch_tcbs_history(symbol, document_type)
+            _url, history_payload = _fetch_tcbs_history(symbol, document_type, token=token)
+        except TcbsAuthRequiredError:
+            # 401/403 must surface to the caller (UI token prompt), not be
+            # swallowed as per-document FAILED rows.
+            raise
         except Exception as exc:
             code, detail, status_label = _provider_failure(exc)
             for period_type, year, quarter, period_end in pending:

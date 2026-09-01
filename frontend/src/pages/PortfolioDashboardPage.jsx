@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
-import { formatMoney, formatShares, formatWeight } from '../lib/format.js';
+import { Metric } from '../components/MetricCard.jsx';
+import { formatShares, formatWeight, money as moneyFn, pct } from '../lib/format.js';
 import { getLatestDividend, getPortfolioOperations, syncPortfolio } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
 import { useI18n } from '../i18n.js';
 
-function pct(v, digits = 2) {
-  return v == null || !Number.isFinite(Number(v)) ? '-' : `${(Number(v) * 100).toFixed(digits)}%`;
-}
+
 
 function latestComponents(result) {
   return result?.latest_components?.length ? result.latest_components : (result?.latest ? [result.latest] : []);
@@ -80,18 +79,9 @@ function groupBrokerSources(lots, dividendReceipts, position) {
     .sort((a, b) => b.shares - a.shares || b.stock_dividend_shares_received - a.stock_dividend_shares_received || a.broker.localeCompare(b.broker) || a.account.localeCompare(b.account));
 }
 
-function Metric({ label, value, note, tone = '' }) {
-  return <div className={`metric-card ${tone}`}>
-    <div className="metric-label">{label}</div>
-    <div className="metric-value">{value}</div>
-    {note && <div className="metric-note">{note}</div>}
-  </div>;
-}
-
 export default function PortfolioDashboardPage({ dashboard: initialDashboard, locale = 'en' }) {
-  const { t, status } = useI18n(locale);
-  const text = (en, vi) => locale === 'vi' ? vi : en;
-  const money = (v) => (v == null || !Number.isFinite(Number(v)) ? '-' : `${formatMoney(v, false, locale)} VND`);
+  const { t, status, text } = useI18n(locale);
+  const money = (v) => moneyFn(v, locale, 'VND');
   const shares = (v) => formatShares(v, locale);
   const [dashboard] = useState(initialDashboard || {});
   const [syncing, setSyncing] = useState(false);
@@ -239,7 +229,7 @@ export default function PortfolioDashboardPage({ dashboard: initialDashboard, lo
             {syncing ? t('portfolio.syncing') : text('Refresh portfolio', 'Cập nhật danh mục')}
           </button>
           <a className="btn-secondary" href="/transactions">{text('+ Add transaction', '+ Thêm giao dịch')}</a>
-          <button className="btn-ghost" type="button" onClick={exportAI} disabled={exporting}>
+          <button className="btn-ghost export-ai-btn" type="button" onClick={exportAI} disabled={exporting}>
             {exporting ? text('Exporting…', 'Đang xuất…') : text('Export for AI', 'Xuất cho AI')}
           </button>
         </div>

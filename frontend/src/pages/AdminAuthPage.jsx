@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import { changeAdminPassword } from '../lib/api.js';
+import { chooseText } from '../i18n.js';
 
 export default function AdminAuthPage({ locale = 'vi' }) {
-  const text = (en, vi) => locale === 'vi' ? vi : en;
+  const text = (en, vi) => chooseText(locale, en, vi);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

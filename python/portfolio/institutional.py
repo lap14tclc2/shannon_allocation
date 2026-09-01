@@ -7,7 +7,6 @@ from datetime import date, datetime, timedelta, timezone
 from .accounting import apply_event, derive_state
 from .corporate_actions import (
     CorporateAction,
-    VnstockCorporateActionProvider,
     action_as_dict,
     default_window,
 )
@@ -50,7 +49,9 @@ class InstitutionalBook:
     def __init__(self, store, *, today_fn=None, corporate_action_provider=None) -> None:
         self.store = store
         self.today_fn = today_fn or (lambda: date.today().isoformat())
-        self.ca_provider = corporate_action_provider or VnstockCorporateActionProvider()
+        # Default: VSDC (official depository, canonical) first, then multi-source fallback.
+        from .vsdc import default_corporate_action_provider
+        self.ca_provider = corporate_action_provider or default_corporate_action_provider()
         self.ensure_schema()
 
     def ensure_schema(self) -> None:

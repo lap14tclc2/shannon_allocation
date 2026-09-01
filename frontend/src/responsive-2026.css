@@ -197,6 +197,15 @@ svg {
     row-gap: 8px;
     column-gap: 8px;
   }
+
+  /* Ẩn toàn bộ nút "Xuất dữ liệu cho AI" trên mobile (<720px) — file Markdown
+     AI export chỉ hữu ích trên desktop. Giữ nguyên nút CSV / làm mới / khác. */
+  .screener-export-ai-btn,
+  .export-ai-btn,
+  .settings-export-button,
+  .v-ai-export-btn {
+    display: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------
