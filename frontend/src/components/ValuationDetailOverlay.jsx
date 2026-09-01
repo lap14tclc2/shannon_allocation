@@ -471,6 +471,15 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                         <span className="p-chunk">Tổng nợ: <strong>{formatGridMoney(debtVal, locale)}</strong></span>
                         <span className="p-op">⟹</span>
                         <span className="p-chunk">Tiền mặt ròng = <strong>{formatGridMoney(netCashVal, locale)}</strong></span>
+                        {netCashVal >= 0 ? (
+                          <span className="p-chunk fortress-tag-safe">🛡️ Pháo đài tiền mặt ròng (0 rủi ro nợ)</span>
+                        ) : (normOe > 0 && Math.abs(netCashVal) / normOe <= 2.0) ? (
+                          <span className="p-chunk fortress-tag-safe">✓ Nợ thấp: Trả hết sau {(Math.abs(netCashVal) / normOe).toFixed(1)} năm LN (Chuẩn Buffett &lt; 3 năm)</span>
+                        ) : (normOe > 0 && Math.abs(netCashVal) / normOe <= 4.0) ? (
+                          <span className="p-chunk fortress-tag-moderate">⚖️ Đòn bẩy vừa: Cần {(Math.abs(netCashVal) / normOe).toFixed(1)} năm hoàn nợ (Đã cộng MoS +3%)</span>
+                        ) : (
+                          <span className="p-chunk fortress-tag-warning">⚠️ Cảnh báo đòn bẩy cao: Cần {normOe > 0 ? (Math.abs(netCashVal) / normOe).toFixed(1) : '> 5'} năm hoàn nợ</span>
+                        )}
                       </div>
                       <p className="proof-note">
                         💡 <em>Lưu ý chuẩn định giá Buffett–FCFE:</em> Lợi nhuận Thực (OE) bắt nguồn từ LNST (đã khấu trừ toàn bộ chi phí lãi vay cho chủ nợ). Do đó, dòng tiền chiết khấu theo Chi phí vốn Cổ phần (Cost of Equity) chính là <strong>Giá trị Vốn chủ sở hữu (Equity Value)</strong> trực tiếp của cổ đông. Không trừ lại nợ lần 2 để tránh phạt trùng nợ (double counting).

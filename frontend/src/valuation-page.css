@@ -2581,6 +2581,30 @@
   font-weight: 700;
 }
 
+.p-chunk.fortress-tag-safe {
+  background: color-mix(in srgb, var(--retro-green, #2f6b4d) 12%, var(--panel, #fffaf0));
+  border-color: var(--retro-green, #2f6b4d);
+  color: var(--retro-green, #2f6b4d);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.p-chunk.fortress-tag-moderate {
+  background: color-mix(in srgb, var(--retro-gold, #7a551d) 12%, var(--panel, #fffaf0));
+  border-color: var(--retro-gold, #7a551d);
+  color: var(--retro-gold, #7a551d);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.p-chunk.fortress-tag-warning {
+  background: color-mix(in srgb, var(--danger, #9f382d) 14%, var(--panel, #fffaf0));
+  border-color: var(--danger, #9f382d);
+  color: var(--danger, #9f382d);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
 .p-chunk.is-final-result {
   border-color: var(--accent, #a63f30);
   background: var(--accent, #a63f30);
