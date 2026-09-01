@@ -267,6 +267,12 @@ export function ValuationRationale({ report, locale = 'vi' }) {
   const base = report.scenarios?.BASE || {};
   const win = report.normalization_window;
 
+  const isBank = (
+    report.archetype_profile?.archetype === 'FINANCIAL_BANK' ||
+    report.valuation_model === 'RESIDUAL_INCOME_MODEL' ||
+    report.valuation_model === 'BANK_EQUITY_MODEL'
+  );
+
   const normMethod = bridge.normalization_method === 'MID_CYCLE_MEDIAN'
     ? 'Mid-Cycle Median (biên LNST trung vị × doanh thu trung vị)'
     : bridge.normalization_method === 'LATEST_FY'
