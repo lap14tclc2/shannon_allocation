@@ -1282,4 +1282,309 @@
     align-items: flex-start;
     gap: 4px;
   }
+
+  /* Intrinsic Value Explanation Mobile Adaptions */
+  .ive-grid-2,
+  .ive-grid-4 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .ive-summary-title h3 {
+    font-size: 0.95rem;
+  }
+
+  .ive-body {
+    padding: 12px 10px;
+    gap: 12px;
+  }
+
+  .ive-step-item {
+    padding: 12px 10px;
+    gap: 10px;
+  }
+
+  .ive-calc-step-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .calc-step-math {
+    width: 100%;
+    font-size: 0.8rem;
+    gap: 6px;
+  }
+}
+
+/* ==========================================================================
+   Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?"
+   ========================================================================== */
+.intrinsic-value-explanation-card {
+  margin: 20px 0;
+  border: 1.5px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 8px;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  box-shadow: 2px 2px 0 var(--retro-shadow, rgba(65, 55, 42, 0.15));
+  overflow: hidden;
+}
+
+.ive-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  border-bottom: 1px solid var(--border, var(--retro-border, #9c927f));
+  cursor: pointer;
+  user-select: none;
+}
+
+.ive-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ive-summary-title h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.ive-chevron {
+  font-size: 1.1rem;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  transition: transform 0.2s ease;
+}
+
+.intrinsic-value-explanation-card[open] .ive-chevron {
+  transform: rotate(180deg);
+}
+
+.ive-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ive-intro {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+/* Step Items 01, 02, 03, 04 */
+.ive-step-item {
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 6px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ive-step-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ive-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #a63f30;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: var(--font-mono-num, monospace);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ive-step-badge.ive-badge-highlight {
+  background: var(--retro-indigo, #2b4c7e);
+}
+
+.ive-step-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.ive-step-title-wrap h4 {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.ive-step-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.ive-step-cards-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.ive-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ive-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ive-data-box {
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ive-data-box.highlight-box {
+  border-color: var(--accent, var(--retro-hanko, #a63f30));
+  background: color-mix(in srgb, var(--accent, #a63f30) 6%, var(--panel, #fffaf0));
+}
+
+.ive-box-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+}
+
+.ive-box-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: var(--font-mono-num, monospace);
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.ive-box-value.highlight {
+  color: var(--accent, var(--retro-hanko, #a63f30));
+}
+
+/* Minor Section 04 Formulas & Calculations */
+.ive-formula-card {
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  border: 1.5px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ive-formula-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  color: var(--retro-indigo, #2b4c7e);
+}
+
+.ive-formula-equations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  border: 1px dashed var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+}
+
+.ive-eq-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text, var(--retro-ink, #201d18));
+}
+
+.eq-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--retro-indigo, #2b4c7e) 15%, transparent);
+  color: var(--retro-indigo, #2b4c7e);
+  font-size: 0.7rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.eq-highlight {
+  color: var(--retro-indigo, #2b4c7e);
+}
+
+.ive-calc-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ive-calc-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  border: 1px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 4px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ive-calc-step-row.is-final-step {
+  border-color: var(--accent, var(--retro-hanko, #a63f30));
+  background: color-mix(in srgb, var(--accent, #a63f30) 8%, var(--surface-soft, #f4ecd9));
+}
+
+.calc-step-tag {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text-secondary, var(--retro-muted, #696257));
+  white-space: nowrap;
+}
+
+.calc-step-math {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-family: var(--font-mono-num, monospace);
+  color: var(--text, var(--retro-ink, #201d18));
+  flex-wrap: wrap;
+}
+
+.calc-op {
+  color: var(--retro-muted, #736b5e);
+  font-weight: 700;
+}
+
+.calc-res {
+  color: var(--retro-indigo, #2b4c7e);
+}
+
+.calc-res.final-highlight {
+  color: var(--accent, var(--retro-hanko, #a63f30));
+  font-size: 0.95rem;
 }

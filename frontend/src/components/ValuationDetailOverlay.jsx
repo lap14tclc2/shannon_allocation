@@ -9,6 +9,7 @@ import {
   verdictLabel,
   verdictPillClass,
 } from '../lib/valuationLabels.js';
+import IntrinsicValueExplanation from './IntrinsicValueExplanation.jsx';
 
 function displayNumber(value, suffix = '', digits = 1) {
   return value == null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(digits)}${suffix}`;
@@ -237,6 +238,9 @@ export function ValuationReportBody({ symbol, report, locale = 'vi' }) {
           </div>
         )}
       </div>
+
+      {/* Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?" with minor sections 01, 02, 03, 04 */}
+      <IntrinsicValueExplanation report={report} locale={locale} />
 
       {/* Value Investor Health Pillars Accordion - Only if pillars exist */}
       {hasPillars && (

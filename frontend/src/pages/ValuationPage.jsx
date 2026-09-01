@@ -4,6 +4,7 @@ import {
   ValuationSkeletonCard,
   ValuationStatusPill,
 } from '../components/ValuationDetailOverlay.jsx';
+import IntrinsicValueExplanation from '../components/IntrinsicValueExplanation.jsx';
 import { getValuationReports } from '../lib/api.js';
 import { downloadAIExport } from '../lib/aiExport.js';
 import { formatMoney } from '../lib/format.js';
@@ -217,6 +218,9 @@ function ValuationCard({ symbol, report, error, locale }) {
         </div>
       )}
     </div>
+
+    {/* Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?" with minor sections 01, 02, 03, 04 */}
+    <IntrinsicValueExplanation report={report} locale={locale} />
 
     {/* Value Investor Health Pillars (Miller's Law - 3 Focused Cards) */}
     {report.value_investor_pillars && (
