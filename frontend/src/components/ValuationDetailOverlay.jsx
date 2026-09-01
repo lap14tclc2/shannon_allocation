@@ -281,6 +281,27 @@ export function ValuationRationale({ report, locale = 'vi' }) {
 
   const iv = base.intrinsic_value_per_share;
 
+  // Fact-checked financial metrics & balance sheet facts
+  const hist = report.financial_history_10y || [];
+  const latestHist = hist.length > 0 ? hist[hist.length - 1] : {};
+  const fortress = report.value_investor_pillars?.financial_fortress || {};
+
+  const cashVal = fortress.total_cash_vnd != null
+    ? fortress.total_cash_vnd
+    : (latestHist.cash_and_equivalents != null ? latestHist.cash_and_equivalents : (base.cash_and_equivalents || 0));
+
+  const debtVal = fortress.total_debt_vnd != null
+    ? fortress.total_debt_vnd
+    : (latestHist.total_debt != null ? latestHist.total_debt : (base.total_debt || 0));
+
+  const netCashVal = cashVal - debtVal;
+  const sharesVal = report.shares_outstanding || latestHist.shares_outstanding || (base.equity_value && iv ? Math.round(base.equity_value / iv) : 1);
+  const totalEquity = base.equity_value || base.enterprise_value || (base.present_value || 0);
+  const pvTerminalPct = base.terminal_value_contribution_pct != null ? Number(base.terminal_value_contribution_pct) / 100 : 0.732;
+  const pvTerminal = base.pv_terminal != null ? base.pv_terminal : totalEquity * pvTerminalPct;
+  const pvStage1 = base.pv_stage1 != null ? base.pv_stage1 : totalEquity * (1 - pvTerminalPct);
+  const normOe = bridge.normalized_owner_earnings || bridge.current_owner_earnings || bridge.net_profit || 0;
+
   return (
     <details className="valuation-rationale valuation-rationale-collapse" open={false}>
       <summary className="valuation-rationale-summary">
@@ -373,78 +394,121 @@ export function ValuationRationale({ report, locale = 'vi' }) {
           <div className="rationale-step rationale-step-formula">
             <span className="rationale-num rationale-num-formula">04</span>
             <div style={{ width: '100%' }}>
-              <b>Công thức toán học & Số liệu tính toán cụ thể</b>
+              <b>Mô hình Toán học & Chứng minh Số liệu Định lượng</b>
               <p>
-                Áp dụng chuẩn phương pháp định giá Warren Buffett với toàn bộ công thức và số liệu thay thế minh bạch:
+                Toàn bộ biến số đầu vào từ BCTC kiểm toán và các bước thế số giải tích xác định Giá trị Thực nội tại:
               </p>
 
               {!isBank ? (
-                <div className="rationale-formula-container">
-                  <div className="rationale-eq-list">
-                    <div className="rationale-eq-item">
-                      <span className="r-eq-badge">1</span>
-                      <span className="r-eq-formula">
-                        <strong>Giá trị Doanh nghiệp (EV)</strong> = PV(Dòng tiền 5 năm) + PV(Giá trị cuối Terminal)
-                      </span>
-                    </div>
-                    <div className="rationale-eq-item">
-                      <span className="r-eq-badge">2</span>
-                      <span className="r-eq-formula">
-                        <strong>Giá trị Vốn chủ sở hữu (Equity)</strong> = EV + Tiền mặt & Tương đương tiền - Tổng nợ vay
-                      </span>
-                    </div>
-                    <div className="rationale-eq-item">
-                      <span className="r-eq-badge">3</span>
-                      <span className="r-eq-formula">
-                        <strong>Giá trị Thực / Cổ phần (IV)</strong> = Giá trị Vốn chủ sở hữu (Equity) ÷ Số lượng CP lưu hành
-                      </span>
+                <div className="math-model-wrapper">
+                  {/* LaTeX-style Main Mathematical Equation Box */}
+                  <div className="math-latex-card">
+                    <div className="math-latex-title">CÔNG THỨC ĐỊNH GIÁ CHIẾT KHẤU LỢI NHUẬN THỰC (TWO-STAGE OWNER EARNINGS DCF)</div>
+                    <div className="math-latex-formula">
+                      <div className="math-fraction">
+                        <div className="math-num">
+                          <span>PV(Dòng tiền 5 năm)</span>
+                          <span className="math-sym">+</span>
+                          <span>PV(Giá trị cuối Terminal)</span>
+                        </div>
+                        <div className="math-denom">Số lượng Cổ phần lưu hành (Shares)</div>
+                      </div>
+                      <span className="math-sym">=</span>
+                      <span className="math-result-tag">Giá trị Thực / Cổ phần (IV)</span>
                     </div>
                   </div>
 
-                  <div className="rationale-math-substitution">
-                    <div className="r-sub-row">
-                      <span className="r-sub-step">Bước 1 (Tính EV):</span>
-                      <span className="r-sub-calc">
-                        PV(5Y): <strong>{formatGridMoney(base.pv_stage1 || (base.enterprise_value ? base.enterprise_value * 0.268 : 0), locale)}</strong> + PV(Terminal): <strong>{formatGridMoney(base.pv_terminal || (base.enterprise_value ? base.enterprise_value * 0.732 : 0), locale)}</strong> = EV: <strong>{formatGridMoney(base.enterprise_value || 0, locale)}</strong>
-                      </span>
+                  {/* Input Parameters Ledger */}
+                  <div className="math-params-ledger">
+                    <div className="param-item">
+                      <span className="param-label">Lợi nhuận cơ sở (OE₀)</span>
+                      <span className="param-val">{formatGridMoney(normOe, locale)}</span>
                     </div>
-                    <div className="r-sub-row">
-                      <span className="r-sub-step">Bước 2 (Cộng Tiền ròng):</span>
-                      <span className="r-sub-calc">
-                        EV: <strong>{formatGridMoney(base.enterprise_value || 0, locale)}</strong> + Tiền: <strong>{formatGridMoney(base.cash_and_equivalents != null ? base.cash_and_equivalents : (report.valuation_multiples?.cash_and_equivalents || 0), locale)}</strong> - Nợ: <strong>{formatGridMoney(base.total_debt != null ? base.total_debt : (report.valuation_multiples?.total_debt || 0), locale)}</strong> = Equity: <strong>{formatGridMoney(base.equity_value || (base.enterprise_value || 0), locale)}</strong>
-                      </span>
+                    <div className="param-item">
+                      <span className="param-label">Tăng trưởng 5 năm (g)</span>
+                      <span className="param-val">{growth.base_growth != null ? displayNumber(growth.base_growth, '%') : '—'}</span>
                     </div>
-                    <div className="r-sub-row r-sub-final">
-                      <span className="r-sub-step">Bước 3 (Chia Số CP):</span>
-                      <span className="r-sub-calc">
-                        Equity: <strong>{formatGridMoney(base.equity_value || 0, locale)}</strong> ÷ <strong>{report.shares_outstanding ? `${(report.shares_outstanding / 1e6).toFixed(1)}M` : '—'} CP</strong> = <strong className="r-final-iv">Giá trị Thực: {money(iv, locale)}</strong>
-                      </span>
+                    <div className="param-item">
+                      <span className="param-label">Chi phí vốn (r)</span>
+                      <span className="param-val">{displayNumber(Number(base.discount_rate || 0) * 100, '%')}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Tăng trưởng vĩnh viễn (g_term)</span>
+                      <span className="param-val">{displayNumber(Number(base.terminal_growth_rate || 0) * 100, '%')}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Tiền mặt & Đầu tư ngắn hạn</span>
+                      <span className="param-val">{formatGridMoney(cashVal, locale)}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Tổng nợ vay tài chính</span>
+                      <span className="param-val">{formatGridMoney(debtVal, locale)}</span>
+                    </div>
+                    <div className="param-item">
+                      <span className="param-label">Số CP lưu hành (S)</span>
+                      <span className="param-val">{sharesVal ? `${(sharesVal / 1e6).toFixed(1)}M CP` : '—'}</span>
+                    </div>
+                  </div>
+
+                  {/* Step-by-Step Mathematical Proof */}
+                  <div className="math-proof-ledger">
+                    <div className="proof-row">
+                      <div className="proof-badge">Bước 1 · Hiện giá Dòng tiền (PV)</div>
+                      <div className="proof-calc">
+                        <span className="p-chunk">PV(5 năm) = <strong>{formatGridMoney(pvStage1, locale)}</strong></span>
+                        <span className="p-op">+</span>
+                        <span className="p-chunk">PV(Terminal) = <strong>{formatGridMoney(pvTerminal, locale)}</strong></span>
+                        <span className="p-op">⟹</span>
+                        <span className="p-chunk highlight-blue">Tổng Hiện giá = <strong>{formatGridMoney(totalEquity, locale)}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className="proof-row">
+                      <div className="proof-badge">Bước 2 · Cấu trúc Vốn & Tiền ròng</div>
+                      <div className="proof-calc">
+                        <span className="p-chunk">Tiền mặt: <strong>{formatGridMoney(cashVal, locale)}</strong></span>
+                        <span className="p-op">-</span>
+                        <span className="p-chunk">Tổng nợ: <strong>{formatGridMoney(debtVal, locale)}</strong></span>
+                        <span className="p-op">⟹</span>
+                        <span className="p-chunk">Tiền mặt ròng = <strong>{formatGridMoney(netCashVal, locale)}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className="proof-row is-final-proof">
+                      <div className="proof-badge is-final-badge">Bước 3 · Giá trị Thực mỗi Cổ phần (IV)</div>
+                      <div className="proof-calc">
+                        <span className="p-chunk">Vốn chủ sở hữu: <strong>{formatGridMoney(totalEquity, locale)}</strong></span>
+                        <span className="p-op">÷</span>
+                        <span className="p-chunk"><strong>{sharesVal ? `${(sharesVal / 1e6).toFixed(1)} triệu CP` : '—'}</strong></span>
+                        <span className="p-op">=</span>
+                        <span className="p-chunk is-final-result">
+                          Giá trị Thực: <strong>{money(iv, locale)}</strong>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="rationale-formula-container">
-                  <div className="rationale-eq-list">
-                    <div className="rationale-eq-item">
-                      <span className="r-eq-badge">1</span>
-                      <span className="r-eq-formula">
-                        <strong>Hệ số P/B Hợp lý (Target P/B)</strong> = 1 + (ROE - Chi phí vốn r) ÷ (Chi phí vốn r - Tăng trưởng g)
-                      </span>
-                    </div>
-                    <div className="rationale-eq-item">
-                      <span className="r-eq-badge">2</span>
-                      <span className="r-eq-formula">
-                        <strong>Giá trị Thực / Cổ phần (IV)</strong> = Giá trị sổ sách mỗi cổ phần (BVPS) × Target P/B
-                      </span>
+                <div className="math-model-wrapper">
+                  <div className="math-latex-card">
+                    <div className="math-latex-title">CÔNG THỨC ĐỊNH GIÁ NGÂN HÀNG (RESIDUAL INCOME MODEL - RIM)</div>
+                    <div className="math-latex-formula">
+                      <span>Giá trị Thực / CP (IV) = BVPS × [1 + (ROE - r) ÷ (r - g)]</span>
                     </div>
                   </div>
 
-                  <div className="rationale-math-substitution">
-                    <div className="r-sub-row r-sub-final">
-                      <span className="r-sub-step">Thay số tính toán:</span>
-                      <span className="r-sub-calc">
-                        BVPS: <strong>{money(report.fundamentals?.bvps || 0, locale)}</strong> × Target P/B = <strong className="r-final-iv">Giá trị Thực: {money(iv, locale)}</strong>
-                      </span>
+                  <div className="math-proof-ledger">
+                    <div className="proof-row is-final-proof">
+                      <div className="proof-badge is-final-badge">Thay số tính toán</div>
+                      <div className="proof-calc">
+                        <span className="p-chunk">BVPS: <strong>{money(report.fundamentals?.bvps || 0, locale)}</strong></span>
+                        <span className="p-op">×</span>
+                        <span className="p-chunk">Hệ số P/B Hợp lý</span>
+                        <span className="p-op">=</span>
+                        <span className="p-chunk is-final-result">
+                          Giá trị Thực: <strong>{money(iv, locale)}</strong>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

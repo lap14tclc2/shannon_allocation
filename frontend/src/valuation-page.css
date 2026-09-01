@@ -2407,100 +2407,189 @@
   margin: 0;
 }
 
-/* Minor Section 04 - Formula & Quantitative Breakdown */
+/* Minor Section 04 - Mathematical Model & Quantitative Proof */
 .rationale-num-formula {
   background: var(--retro-indigo, #2b4c7e);
 }
 
-.rationale-formula-container {
+.math-model-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
-.rationale-eq-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
-  border: 1px dashed var(--border, #9c927f);
-  border-radius: 4px;
+.math-latex-card {
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  border: 1.5px solid var(--border, var(--retro-border, #9c927f));
+  border-radius: 6px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.rationale-eq-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--text, var(--retro-ink, #201d18));
-}
-
-.r-eq-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--retro-indigo, #2b4c7e) 15%, transparent);
-  color: var(--retro-indigo, #2b4c7e);
-  font-size: 0.7rem;
+.math-latex-title {
+  font-size: 0.75rem;
   font-weight: 800;
-  flex-shrink: 0;
-}
-
-.r-eq-formula strong {
+  letter-spacing: 0.04em;
   color: var(--retro-indigo, #2b4c7e);
+  margin-bottom: 8px;
+  text-transform: uppercase;
 }
 
-.rationale-math-substitution {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.r-sub-row {
+.math-latex-formula {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 12px;
+  font-family: var(--font-mono, "Cambria Math", "Latin Modern Math", monospace);
+  font-size: 0.92rem;
+  color: var(--text, var(--retro-ink, #201d18));
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.math-fraction {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.math-num {
+  border-bottom: 1.5px solid var(--text, #201d18);
+  padding: 2px 6px;
+  text-align: center;
+  font-weight: 600;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.math-denom {
+  padding: 2px 6px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #696257);
+}
+
+.math-sym {
+  font-weight: 700;
+  color: var(--retro-muted, #696257);
+}
+
+.math-result-tag {
+  font-weight: 800;
+  color: var(--accent, #a63f30);
+  background: color-mix(in srgb, var(--accent, #a63f30) 10%, transparent);
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--accent, #a63f30);
+  font-size: 0.86rem;
+}
+
+/* Parameters Ledger Grid */
+.math-params-ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.param-item {
   background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
   border: 1px solid var(--border, #9c927f);
   border-radius: 4px;
-  font-size: 0.8rem;
-  flex-wrap: wrap;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.r-sub-row.r-sub-final {
-  border-color: var(--accent, #a63f30);
-  background: color-mix(in srgb, var(--accent, #a63f30) 8%, var(--surface-soft, #f4ecd9));
-}
-
-.r-sub-step {
-  font-size: 0.75rem;
-  font-weight: 800;
+.param-label {
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
   color: var(--text-secondary, #696257);
-  white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.r-sub-calc {
+.param-val {
+  font-size: 0.88rem;
+  font-weight: 800;
   font-family: var(--font-mono-num, monospace);
   color: var(--text, var(--retro-ink, #201d18));
+}
+
+/* Proof Ledger Steps */
+.math-proof-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.proof-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--panel, var(--retro-panel, #fffaf0));
+  border: 1px solid var(--border, #9c927f);
+  border-radius: 6px;
+}
+
+.proof-row.is-final-proof {
+  border-color: var(--accent, #a63f30);
+  background: color-mix(in srgb, var(--accent, #a63f30) 6%, var(--panel, #fffaf0));
+  box-shadow: 0 1px 4px rgba(166, 63, 48, 0.12);
+}
+
+.proof-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--retro-indigo, #2b4c7e);
+  letter-spacing: 0.03em;
+}
+
+.proof-badge.is-final-badge {
+  color: var(--accent, #a63f30);
+}
+
+.proof-calc {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-family: var(--font-mono-num, monospace);
+  color: var(--text, var(--retro-ink, #201d18));
   flex-wrap: wrap;
 }
 
-.r-final-iv {
-  color: var(--accent, #a63f30);
-  font-size: 0.92rem;
+.p-chunk {
+  background: var(--surface-soft, var(--retro-panel-subtle, #f4ecd9));
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border, #9c927f);
+}
+
+.p-chunk.highlight-blue {
+  border-color: var(--retro-indigo, #2b4c7e);
+  color: var(--retro-indigo, #2b4c7e);
+}
+
+.p-chunk.is-final-result {
+  border-color: var(--accent, #a63f30);
+  background: var(--accent, #a63f30);
+  color: #ffffff;
   font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.p-chunk.is-final-result strong {
+  color: #ffffff;
+}
+
+.p-op {
+  color: var(--retro-muted, #736b5e);
+  font-weight: 700;
 }
 
 @media (max-width: 719px) {
@@ -2516,12 +2605,17 @@
   .v-collapse-chevron {
     margin-top: 2px;
   }
-  .r-sub-row {
+  .math-latex-formula {
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: 8px;
   }
-  .r-sub-calc {
+  .math-params-ledger {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .proof-calc {
     font-size: 0.78rem;
+    gap: 6px;
   }
 }
