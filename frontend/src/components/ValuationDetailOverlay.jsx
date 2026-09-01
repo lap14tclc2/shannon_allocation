@@ -1103,9 +1103,6 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
           </div>
         </details>
       )}
-
-      {/* Vì sao Giá trị Thực cơ sở như vậy (expand/collapse) */}
-      <ValuationRationale report={report} locale={locale} />
     </div>
   );
 }
