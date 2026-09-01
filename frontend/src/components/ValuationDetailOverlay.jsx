@@ -882,7 +882,7 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
       </div>
 
       {/* Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?" with minor sections 01, 02, 03, 04 */}
-      <IntrinsicValueExplanation report={report} locale={locale} />
+      <ValuationRationale report={report} locale={locale} />
 
       {/* Value Investor Health Pillars Accordion - Only if pillars exist */}
       {hasPillars && (
