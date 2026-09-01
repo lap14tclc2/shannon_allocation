@@ -1318,11 +1318,27 @@ def portfolio_symbol_valuation(
             ),
         }
     else:
+        status = "WATCH"
+        diag = "Lợi nhuận có độ trễ hoặc thâm dụng vốn lưu động."
+        if avg_cash_conversion_5y is not None:
+            if avg_cash_conversion_5y > 200.0:
+                status = "GOOD"
+                diag = f"Tỷ lệ CFO/LNST ({avg_cash_conversion_5y:.1f}%) rất cao do mẫu số lợi nhuận thấp hoặc giải phóng vốn lưu động; hệ thống đã chuẩn hóa và kiểm tra timing dòng tiền."
+            elif 80.0 <= avg_cash_conversion_5y <= 140.0:
+                status = "EXCELLENT"
+                diag = f"Dòng tiền kinh doanh dồi dào, lợi nhuận chuyển hóa thành tiền mặt cao và ổn định ({avg_cash_conversion_5y:.1f}%)."
+            elif (70.0 <= avg_cash_conversion_5y < 80.0) or (140.0 < avg_cash_conversion_5y <= 200.0):
+                status = "GOOD"
+                diag = f"Chuyển hóa dòng tiền tốt ({avg_cash_conversion_5y:.1f}%)."
+            else:
+                status = "WATCH"
+                diag = f"Chuyển hóa dòng tiền thấp ({avg_cash_conversion_5y:.1f}%); lợi nhuận chưa chuyển hóa thành tiền mặt."
+
         earnings_quality = {
             "latest_cash_conversion": latest_conversion,
             "avg_cash_conversion_5y": avg_cash_conversion_5y,
-            "status": "EXCELLENT" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else ("GOOD" if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 70) else "WATCH"),
-            "diagnosis": "Dòng tiền kinh doanh dồi dào, lợi nhuận chuyển hóa thành tiền mặt cao." if (avg_cash_conversion_5y and avg_cash_conversion_5y >= 90) else "Lợi nhuận có độ trễ hoặc thâm dụng vốn lưu động.",
+            "status": status,
+            "diagnosis": diag,
         }
 
     # 2. Financial Fortress: Debt Payback Period (Non-bank) or Capital Adequacy / Net Cash

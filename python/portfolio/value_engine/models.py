@@ -105,6 +105,7 @@ class OwnerEarningsBridge:
     maintenance_capex_method: str = "MIN_DEPRECIATION_CAPEX_PROXY"  # EXPLICIT_PPE_ROLLFORWARD | MIN_DEPRECIATION_CAPEX_PROXY
     current_owner_earnings: Optional[Decimal] = None
     normalized_owner_earnings: Optional[Decimal] = None
+    normalization_input_years: List[int] = field(default_factory=list)
 
 
 @dataclass

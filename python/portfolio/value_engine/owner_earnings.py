@@ -256,4 +256,5 @@ class OwnerEarningsCalculator:
             maintenance_capex_confidence="HIGH" if len(per_year) >= 7 else "MEDIUM",
             owner_earnings_confidence="HIGH" if len(per_year) >= 7 else "MEDIUM",
             maintenance_capex_method="MULTI_YEAR_CYCLE_MEDIAN",
+            normalization_input_years=[p[0] for p in per_year],
         )

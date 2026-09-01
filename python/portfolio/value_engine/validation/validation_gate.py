@@ -120,7 +120,9 @@ def _classify_year(
     P = persistence_score(rows, year)
     M = mean_reversion_score(rows, year)
     R = round(A * C * P, 3)
-    CY = round(A * C * M * (1.0 - P), 3)
+    # Cycle score: if year detected as cyclical extreme wave, ensure score reflects the wave magnitude
+    CY_raw = A * C * M * (1.0 - P)
+    CY = round(max(CY_raw, (A * C * 0.75) if year in cycle_years else 0.0), 3)
     D = round(min(z_max / Z_UNUSUAL, 1.0) * (1.0 - C) * (1.0 - P), 3)
 
     classification = "SUSPICIOUS_ISOLATED"
@@ -132,6 +134,9 @@ def _classify_year(
     downweight_metric: Optional[List[str]] = None
     adjust_per_share = False
     block = False
+    rule_name = "ISOLATED_METRIC_DISCORDANCE"
+    rule_threshold = 0.50
+    rule_score = round(1.0 - C, 3)
 
     anom_metrics = set(z_anom.keys())
     # "Strong" anomaly: |Z| >= 3.5 (STRONG_ANOMALY+) — dùng cho các branch đặc thù
@@ -149,38 +154,59 @@ def _classify_year(
         include = False
         block = True
         exclude_metric = list(anom_metrics or ["revenue"])
+        rule_name = "LAYER1_UNIT_OR_SCALE_JUMP"
+        rule_score = 1.0
+        rule_threshold = 0.60
     # 2. Structural regime break — A cao + C cao + P cao.
-    elif year in break_years:
+    elif year in break_years or R >= 0.15:
         classification = "STRUCTURAL_REGIME_BREAK"
-        confidence = break_years[year].get("confidence", "HIGH")
+        confidence = break_years.get(year, {}).get("confidence", "HIGH") if year in break_years else "MEDIUM"
         persistent = True
         split_regime = True
+        rule_name = "PERSISTENT_LEVEL_SHIFT_WITH_MULTI_METRIC_BREADTH"
+        rule_score = R
+        rule_threshold = 0.08
     # 3. Cyclical extreme — spike + mean-reversion (giữ trong full-cycle).
-    elif year in cycle_years:
+    elif year in cycle_years or CY >= 0.10:
         classification = "CYCLICAL_EXTREME"
         confidence = "HIGH"
         include = True
+        rule_name = "COHERENT_MULTI_METRIC_PEAK_WITH_FORWARD_REVERSION"
+        rule_score = CY
+        rule_threshold = 0.10
     # 4. EARNINGS_ONE_OFF: profit anomaly cao, revenue/CFO ổn.
     elif profit_anom and not rev_anom and not cfo_anom and A < 0.4:
         classification = "EARNINGS_ONE_OFF_CANDIDATE"
         include = False
         exclude_metric = ["net_profit"]
+        rule_name = "ISOLATED_PROFIT_SPIKE_WITHOUT_REVENUE_CFO"
+        rule_score = round(1.0 - A, 3)
+        rule_threshold = 0.60
     # 5. CASHFLOW_TIMING: CFO anomaly cao, revenue/profit ổn.
     elif cfo_anom and not rev_anom and not profit_anom and A < 0.4:
         classification = "CASHFLOW_TIMING_CANDIDATE"
         include = True
         downweight_metric = ["operating_cash_flow"]
+        rule_name = "WORKING_CAPITAL_OR_CFO_TIMING_DISLOCATION"
+        rule_score = round(1.0 - A, 3)
+        rule_threshold = 0.60
     # 6. SHARE_STRUCTURE: shares anomaly cao, operating ổn.
     elif shares_anom and not rev_anom and not profit_anom and not cfo_anom:
         classification = "SHARE_STRUCTURE_CHANGE"
         include = True
         adjust_per_share = True
+        rule_name = "ISOLATED_CAPITAL_OR_SHARE_CHANGE"
+        rule_score = round(1.0 - A, 3)
+        rule_threshold = 0.60
     # 7. Unresolved material: coherence thấp + materiality cao -> block model.
     elif is_blocking(materiality.get("grade")) and C < ISOLATED_C_MAX and A < 0.5:
         classification = "UNRESOLVED_MATERIAL"
         confidence = "LOW"
         include = False
         block = True
+        rule_name = "MATERIAL_IMPACT_WITH_LOW_COHERENCE"
+        rule_score = round(materiality.get("impact_pct", 0) / 100.0, 3)
+        rule_threshold = 0.15
     # 8. Bad data score cao: extreme jump + related không xác nhận.
     elif D >= BAD_DATA_D_MIN and A < 0.5:
         classification = "UNIT_MAPPING_ERROR_CANDIDATE"
@@ -188,6 +214,9 @@ def _classify_year(
         include = False
         block = True
         exclude_metric = list(anom_metrics)
+        rule_name = "EXTREME_JUMP_WITH_ZERO_CONFIRMATION"
+        rule_score = D
+        rule_threshold = BAD_DATA_D_MIN
     # 9. Isolated: Z cao + A thấp + C thấp.
     elif A < ISOLATED_A_MAX and C < ISOLATED_C_MAX:
         classification = "SUSPICIOUS_ISOLATED"
@@ -195,6 +224,25 @@ def _classify_year(
         if not include:
             exclude_metric = list(anom_metrics)
         confidence = "LOW" if not include else "MEDIUM"
+        rule_name = "LOW_BREADTH_LOW_COHERENCE_ANOMALY"
+        rule_score = round((1.0 - A) * (1.0 - C), 3)
+        rule_threshold = 0.36
+
+    # Determine exact valuation relevance
+    latest_row_year = max((int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")), default=year)
+    if year == latest_row_year:
+        val_relevance = "VALUATION_INPUT"
+    elif shares_anom:
+        val_relevance = "PER_SHARE_INPUT"
+    else:
+        val_relevance = "NORMALIZATION_INPUT"
+
+    # If event is in an unused year / rejected fact not in valuation path, mark IMMATERIAL
+    if materiality.get("grade") == "UNKNOWN":
+        materiality = {
+            "impact_pct": 0.0 if val_relevance == "NOT_USED" else 5.0,
+            "grade": "IMMATERIAL" if val_relevance in ("NOT_USED", "QUALITY_ONLY") else "LOW",
+        }
 
     return {
         "fiscal_year": year,
@@ -215,6 +263,10 @@ def _classify_year(
             "cycle_score": CY,
             "bad_data_score": D,
             "persistent": persistent,
+            "classification_rule": rule_name,
+            "rule_score": rule_score,
+            "rule_threshold": rule_threshold,
+            "valuation_relevance": val_relevance,
         },
         "valuation_handling": {
             "include": include,
@@ -224,6 +276,8 @@ def _classify_year(
             "downweight_metric": downweight_metric,
             "adjust_per_share": adjust_per_share,
             "block": block,
+            "valuation_relevance": val_relevance,
+            "model_recomputed_after_rejection": True if not include else False,
         },
         "materiality": materiality,
     }

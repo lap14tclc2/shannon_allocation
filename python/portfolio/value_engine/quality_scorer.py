@@ -254,7 +254,7 @@ class QualityScorer:
             if net_debt_vnd > 10e12:
                 hard_rejects.append(HardRejectReason.SOLVENCY_RISK)
 
-        # 5. Cash Quality (10 pts) -- Banks: ROE persistence; Non-banks: Cash Conversion
+        # 5. Cash Quality (10 pts) -- Banks: ROE persistence; Non-banks: Robust Cash Flow Quality
         cash_pts = 7
         if is_bank:
             if roe_stat["n"] >= 4 and (roe_stat["median"] or 0) >= 15 and (roe_stat["cv"] or 999) < 35:
@@ -263,15 +263,25 @@ class QualityScorer:
                 cash_pts = 8
             else:
                 cash_pts = 6
-        elif five_year_avg_cash_conversion:
-            if five_year_avg_cash_conversion >= 90:
+        elif five_year_avg_cash_conversion is not None:
+            raw_conv = float(five_year_avg_cash_conversion)
+            recent_cfos = [float(h.get("operating_cash_flow")) for h in financial_history_10y[-5:] if h.get("operating_cash_flow") is not None]
+            pos_cfo_cnt = sum(1 for c in recent_cfos if c > 0)
+            
+            # Ideal conversion is 80% - 130% with consistently positive operating cash flow.
+            # Ratios > 200% are capped to prevent distorting score when denominator NI is tiny.
+            if 80.0 <= raw_conv <= 140.0 and pos_cfo_cnt >= 4:
                 cash_pts = 10
-            elif five_year_avg_cash_conversion >= 70:
+            elif (70.0 <= raw_conv < 80.0 or 140.0 < raw_conv <= 200.0) and pos_cfo_cnt >= 3:
                 cash_pts = 8
-            elif five_year_avg_cash_conversion >= 40:
+            elif raw_conv > 200.0:  # Working capital release or low net income base
+                cash_pts = 7 if pos_cfo_cnt >= 4 else 5
+            elif 40.0 <= raw_conv < 70.0:
                 cash_pts = 5
-            else:
+            elif raw_conv < 40.0 or pos_cfo_cnt <= 2:
                 cash_pts = 2
+            else:
+                cash_pts = 5
 
         # 6. Capital Allocation (15 pts) -- Robust iROIC & Reinvestment Efficiency
         # P0 audit (2026-08-29 / TASK-068): only CONFIRMED economic dilution may feed

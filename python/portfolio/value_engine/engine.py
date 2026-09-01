@@ -188,26 +188,35 @@ class ValuationEngine:
         """
         if not included_years:
             return None
+        norm_inputs = (oe_bridge.normalization_input_years if oe_bridge and oe_bridge.normalization_input_years else list(included_years))
         inc_set = set(included_years)
+        input_set = set(norm_inputs)
         candidate = sorted({
             int(h["fiscal_year"])
             for h in (financial_history or [])
             if h.get("fiscal_year") is not None
         })
-        excluded = sorted([y for y in candidate if y not in inc_set])
-        used = int(oe_bridge.normalization_years or 0) if oe_bridge is not None else 0
+        excluded = [
+            {
+                "year": y,
+                "reason": "PREVIOUS_REGIME" if y not in inc_set else "MISSING_OR_UNAVAILABLE_FINANCIALS",
+            }
+            for y in candidate if y not in input_set
+        ]
+        used = len(norm_inputs) if norm_inputs else (int(oe_bridge.normalization_years or 0) if oe_bridge is not None else 0)
         return {
             "normalization_method": oe_bridge.normalization_method if oe_bridge is not None else None,
             "comparable_regime_start": min(included_years),
             "comparable_regime_end": max(included_years),
-            "included_years": included_years,
+            "included_years": norm_inputs,
+            "normalization_input_years": norm_inputs,
             "candidate_years": candidate,
+            "regime_years": included_years,
             "excluded_years": excluded,
             "normalization_years": used,
-            "regime_years": included_years,
+            "used_years": used,
             "start_year": min(included_years),
             "end_year": max(included_years),
-            "used_years": used,
             "note": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
             "reason": "Latest comparable regime (structural-break split) dùng cho mid-cycle normalization.",
         }
