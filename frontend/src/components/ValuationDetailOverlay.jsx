@@ -515,8 +515,8 @@ export function ValuationRationale({ report, locale = 'vi' }) {
                         <span className="p-op">÷</span>
                         <span className="p-chunk"><strong>{sharesVal ? `${(sharesVal / 1e6).toFixed(1)} triệu CP` : '—'}</strong></span>
                         <span className="p-op">=</span>
-                        <span className="p-chunk is-final-result">
-                          Giá trị Thực: <strong>{money(iv, locale)}</strong>
+                        <span className={`p-chunk is-final-result ${iv != null && iv <= 0 ? 'is-negative-iv' : ''}`}>
+                          Giá trị Thực: <strong>{money(iv, locale)}</strong>{iv != null && iv <= 0 ? ' (Rủi ro Nợ vay / Solvency)' : ''}
                         </span>
                       </div>
                     </div>

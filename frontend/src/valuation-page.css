@@ -2613,6 +2613,11 @@
   font-size: 0.95rem;
 }
 
+.p-chunk.is-final-result.is-negative-iv {
+  background: var(--danger, #9f382d);
+  border-color: var(--danger, #9f382d);
+}
+
 .p-chunk.is-final-result strong {
   color: #ffffff;
 }

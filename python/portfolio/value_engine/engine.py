@@ -1143,7 +1143,7 @@ class ValuationEngine:
             is_public_verified = False
             if model_status == "MODEL_VERIFIED":
                 model_status = "MODEL_PARTIAL"
-            if val_status not in (ValuationPill.MODEL_INCOMPLETE, ValuationPill.MODEL_UNVALUABLE):
+            if val_status not in (ValuationPill.MODEL_INCOMPLETE, ValuationPill.UNVALUABLE):
                 val_status = ValuationPill.MODEL_INCOMPLETE
             confidence_reasons.append(
                 f"Độ tin cậy validation (UFVS) thấp ({validation_conf}/100, cần ≥ {cls.MIN_VALIDATION_CONFIDENCE}); "
