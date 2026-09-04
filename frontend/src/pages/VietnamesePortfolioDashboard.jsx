@@ -174,10 +174,10 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
     {message && <div className="run-message banner-message">{message}</div>}
 
     <div className="metric-grid portfolio-metrics overview-metrics investor-overview">
-      <Metric label="Cổ phiếu" value={money(portfolio.equity_value, locale)} note={`${positions.length} mã đang nắm giữ`} />
-      <Metric label="Tiền mặt" value={money(portfolio.cash, locale)} note={hasCashRatio ? `${pct(Number(portfolio.cash) / Number(portfolio.nav))} tổng tài sản` : undefined} />
-      <Metric label="Tổng giá vốn" value={money(portfolio.cost_value, locale)} note="Giá vốn các cổ phiếu hiện có" />
-      <Metric label="Cổ tức thực nhận" value={money(dividendIncome, locale)} note="Tiền mặt sau thuế đã ghi nhận" tone="income-metric" />
+      <Metric label="Cổ phiếu" value={money(portfolio.equity_value, locale)} dataSensitive="money" note={`${positions.length} mã đang nắm giữ`} />
+      <Metric label="Tiền mặt" value={money(portfolio.cash, locale)} dataSensitive="money" note={hasCashRatio ? `${pct(Number(portfolio.cash) / Number(portfolio.nav))} tổng tài sản` : undefined} />
+      <Metric label="Tổng giá vốn" value={money(portfolio.cost_value, locale)} dataSensitive="money" note="Giá vốn các cổ phiếu hiện có" />
+      <Metric label="Cổ tức thực nhận" value={money(dividendIncome, locale)} dataSensitive="money" note="Tiền mặt sau thuế đã ghi nhận" tone="income-metric" />
     </div>
 
     {/* Buy & Hold Discipline Health Score - Goal-Gradient & Zeigarnik Effect */}
