@@ -43,11 +43,11 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
             <span className="tree-caret" aria-hidden="true">›</span>
             <div className="holding-source-symbol-name">
               <strong>{symbol}</strong>
-              <span>{formatShares(position.shares, locale)} CP</span>
+              <span><span data-sensitive="shares">{formatShares(position.shares, locale)}</span> CP</span>
             </div>
             <div className="holding-source-symbol-value">
               <strong data-sensitive="money">{money(position.market_value, locale)}</strong>
-              <span data-sensitive="pnl" className={pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}>{pnl == null ? '-' : `${pnl >= 0 ? '+' : ''}${money(pnl, locale)}`} · {pct(position.unrealized_return)}</span>
+              <span className={pnl == null ? '' : pnl >= 0 ? 'pos' : 'neg'}><span data-sensitive="pnl">{pnl == null ? '-' : `${pnl >= 0 ? '+' : ''}${money(pnl, locale)}`}</span> · {pct(position.unrealized_return)}</span>
             </div>
             <span className="holding-source-weight">{formatWeight(position.weight)}</span>
           </summary>
@@ -82,7 +82,7 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
                           <span>Tài khoản {book.account_id}</span>
                         </div>
                         <div className="holding-source-book-numbers">
-                          <div><span>Số lượng tại CTCK</span><b>{formatShares(book.shares, locale)} CP</b></div>
+                          <div><span>Số lượng tại CTCK</span><b><span data-sensitive="shares">{formatShares(book.shares, locale)}</span> CP</b></div>
                           <div><span>Giá trị ước tính</span><b data-sensitive="money">{money(sourceValue, locale)}</b></div>
                         </div>
                         <div className="holding-source-book-action">
@@ -110,4 +110,3 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
     </div>
   );
 }
-
