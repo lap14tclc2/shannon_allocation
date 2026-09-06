@@ -502,3 +502,15 @@ def test_reported_symbols_synthetic_fixtures_regression():
         elif expected_target_type is None:
             assert dec.target_mid is None
             assert "REVIEW_REQUIRED" in dec.reason_codes
+
+
+def test_reduce_small_holding_weight_never_targets_zero():
+    """Verify that REDUCE on tiny holding weights (e.g. HHV) never produces target_mid <= 0.0."""
+    sig = {"symbol": "HHV", "quality_tier": "LOW_QUALITY", "quality_score": 35}
+    elig = eligibility_from_signal(sig)
+    for small_w in (0.001, 0.0001, 0.00005):
+        dec = decide_holding(elig, current_weight=small_w, risk_contribution=None, equal_risk=None)
+        assert dec.action == "REDUCE"
+        assert dec.target_mid is not None
+        assert 0.0 < dec.target_mid < small_w
+        assert 0.0 < dec.target_min <= dec.target_mid <= dec.target_max

@@ -104,11 +104,16 @@ def _dedupe(reasons: list[str]) -> tuple[str, ...]:
 def _reduce_target(weight: float, cap: float = 0.05) -> tuple[float, float, float]:
     """Compute a positive partial reduction target (0 < target_mid < weight)."""
     w = max(0.0, float(weight))
-    mid = round(max(0.005, min(w * 0.5, cap)), 4)
-    if mid >= w and w > 0:
-        mid = round(w * 0.5, 4)
-    low = round(mid * 0.5, 4)
-    return low, mid, mid
+    if w <= 0.0:
+        return 0.0, 0.0, 0.0
+    mid = round(max(0.005, min(w * 0.5, cap)), 6)
+    if mid >= w:
+        mid = round(w * 0.5, 6)
+    if mid <= 0.0:
+        mid = round(w * 0.5, 6)
+    low = round(mid * 0.5, 6)
+    high = max(mid, round(mid * 1.25, 6))
+    return low, mid, high
 
 
 # ---------------------------------------------------------------------------
