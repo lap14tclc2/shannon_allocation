@@ -71,4 +71,5 @@
 | [TASK-20260901-092](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-092-validation-engine-determinism-provenance-regime-source.md) | Validation Engine Determinism, Materiality Provenance & Regime Single Source | completed | high | 2026-09-01 |
 | [TASK-20260901-093](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-093-cross-layer-normalization-and-unclamped-classifier.md) | Cross-Layer Normalization & Unclamped Classifier Score Integrity | completed | high | 2026-09-01 |
 | [TASK-20260901-094](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-094-valuation-handling-consistency-and-publication-gate-hardening.md) | Valuation Handling Consistency & Publication Gate Hardening | completed | high | 2026-09-01 |
+| [TASK-20260906-095](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-095-buffett-thorp-allocation.md) | Implement Buffett Core + Thorp Overlay Allocation Architecture | ready | high | 2026-09-06 |
 
