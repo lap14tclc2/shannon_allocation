@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import MetricCard from '../components/MetricCard.jsx';
+import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
 import { simulatePortfolioAllocation } from '../lib/api.js';
 import { formatWeight, pct } from '../lib/format.js';
-import { navigate } from '../lib/navigation.js';
 import {
   ACTION_LABEL_VI,
   ACTION_TONE,
@@ -14,6 +14,7 @@ import {
   POSTURE_LABEL_VI,
   reasonCodeVi,
 } from '../lib/allocationLabels.js';
+import '../valuation-page.css';
 
 const VERDICT_LABEL_VI = {
   NO_ACTION_REQUIRED: 'Không cần hành động',
@@ -93,6 +94,7 @@ function RiskRow({ label, before, after, fmt }) {
 
 export default function AllocationPage({ allocation: initialAllocation = null, locale = 'vi' }) {
   const [allocation, setAllocation] = useState(initialAllocation || null);
+  const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [simSymbol, setSimSymbol] = useState('');
   const [simWeight, setSimWeight] = useState('');
   const [simResult, setSimResult] = useState(null);
@@ -231,7 +233,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           ) : (
             <div className="allocation-opportunity-grid">
               {opportunities.map(opp => (
-                <OpportunityCard key={opp.symbol} opportunity={opp} onViewValuation={symbol => navigate(`/valuation?s=${symbol}`)} />
+                <OpportunityCard key={opp.symbol} opportunity={opp} onViewValuation={setSelectedSymbol} />
               ))}
             </div>
           )}
@@ -317,6 +319,14 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           </div>
         </section>
       </main>
+
+      {selectedSymbol && (
+        <ValuationDetailOverlay
+          symbol={selectedSymbol}
+          locale={locale}
+          onClose={() => setSelectedSymbol(null)}
+        />
+      )}
     </div>
   );
 }
