@@ -53,10 +53,14 @@ function HoldingRow({ decision }) {
 function OpportunityCard({ opportunity, onViewValuation }) {
   const fit = opportunity.portfolio_fit || {};
   const sizing = opportunity.sizing || {};
+  const evidence = opportunity.selection_evidence || {};
   const reasons = (opportunity.reason_codes || []).slice(0, 3);
   const bandText = sizing.target_min != null
     ? `${formatWeight(sizing.target_min)} – ${formatWeight(sizing.target_max)}`
     : '—';
+  const plan = opportunity.decision?.execution_plan;
+  const showQtyPlan = plan && plan.is_executable && plan.rounded_quantity_change > 0;
+
   return (
     <article className="allocation-opportunity-card">
       <div className="allocation-opportunity-head">
@@ -65,6 +69,11 @@ function OpportunityCard({ opportunity, onViewValuation }) {
       </div>
       <div className="allocation-opportunity-action">
         {opportunity.decision?.action ? <ActionPill action={opportunity.decision.action} /> : <ActionPill action="WATCH" />}
+        {showQtyPlan && (
+          <span className="allocation-qty-badge">
+            MUA {plan.rounded_quantity_change.toLocaleString('vi-VN')} CP (Lô {plan.lot_size})
+          </span>
+        )}
       </div>
       <div className="allocation-opportunity-body">
         <div className="allocation-opp-grid">
@@ -73,6 +82,18 @@ function OpportunityCard({ opportunity, onViewValuation }) {
           <span>Mức tin cậy</span><strong>{CONVICTION_LABEL_VI[sizing.conviction_tier] || sizing.conviction_tier}</strong>
           <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? '—' : pct(fit.average_correlation_to_portfolio)}</strong>
         </div>
+
+        {evidence.why_selected?.length > 0 && (
+          <div className="allocation-why-selected">
+            <div className="allocation-why-title">Vì sao mã này được đề xuất?</div>
+            <ul className="allocation-why-list">
+              {evidence.why_selected.map((item, i) => (
+                <li key={i}>✓ {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="allocation-reasons">
           {reasons.map(code => <span className="allocation-reason" key={code}>{reasonCodeVi(code)}</span>)}
         </div>
@@ -125,6 +146,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           action: d.action,
           current_weight: d.current_weight,
           target: d.target_mid,
+          decision: d,
           reason: d.reason_codes?.length ? reasonCodeVi(d.reason_codes[0]) : ''
         });
       }
@@ -136,6 +158,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           action: 'BUY_MORE',
           current_weight: 0,
           target: opp.decision.target_mid,
+          decision: opp.decision,
           reason: opp.reason_codes?.length ? reasonCodeVi(opp.reason_codes[0]) : ''
         });
       }
@@ -264,6 +287,15 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           ) : (
             <ul className="allocation-change-list">
               {proposedChanges.map(change => {
+                const plan = change.decision?.execution_plan || {};
+                const hasPlan = Boolean(plan.is_executable && plan.rounded_quantity_change);
+                const qtyAbs = Math.abs(plan.rounded_quantity_change || 0);
+
+                let labelText = '';
+                if (change.action === 'REDUCE') labelText = `GIẢM ${qtyAbs.toLocaleString('vi-VN')} CP`;
+                else if (change.action === 'SELL') labelText = `BÁN TOÀN BỘ ${qtyAbs.toLocaleString('vi-VN')} CP`;
+                else if (change.action === 'BUY_MORE') labelText = `MUA THÊM ${qtyAbs.toLocaleString('vi-VN')} CP`;
+
                 let targetText = '';
                 if (change.action === 'REDUCE') {
                   targetText = change.target != null
@@ -275,15 +307,27 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
                   targetText = change.target != null ? `→ ${formatWeight(change.target)}` : '';
                 }
                 return (
-                  <li key={change.symbol}>
-                    <strong>{change.symbol}</strong> <ActionPill action={change.action} />
-                    {targetText ? <span data-sensitive>{targetText}</span> : null}
-                    <span className="muted">{change.reason}</span>
+                  <li key={change.symbol} className="allocation-change-item">
+                    <div className="allocation-change-main">
+                      <strong>{change.symbol}</strong> <ActionPill action={change.action} />
+                      {labelText ? <span className="allocation-qty-badge">{labelText}</span> : null}
+                      {targetText ? <span data-sensitive className="allocation-target-weight">{targetText}</span> : null}
+                    </div>
+                    {hasPlan && (
+                      <div className="allocation-plan-details">
+                        <span>Giá tham chiếu: <strong data-sensitive>{plan.reference_price ? `${plan.reference_price.toLocaleString('vi-VN')} VND` : '—'}</strong></span>
+                        <span>Giá trị giao dịch: <strong data-sensitive>{plan.gross_trade_value ? `~${(plan.gross_trade_value / 1e6).toFixed(1)} triệu VND` : '—'}</strong></span>
+                        <span>Chi phí ước tính: <strong data-sensitive>{(plan.estimated_total_cost || 0).toLocaleString('vi-VN')} VND</strong></span>
+                        <span>Tỷ trọng thực tế sau giao dịch: <strong data-sensitive>{formatWeight(plan.post_trade_weight)}</strong></span>
+                      </div>
+                    )}
+                    <span className="muted allocation-change-reason">{change.reason}</span>
                   </li>
                 );
               })}
             </ul>
           )}
+
 
           <div className="allocation-handoff">
             <a className="btn-secondary btn-small" href="/transactions">Tạo bản nháp giao dịch</a>
