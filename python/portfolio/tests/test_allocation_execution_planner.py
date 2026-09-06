@@ -13,7 +13,15 @@ from portfolio.allocation.candidate_service import (
 )
 from portfolio.allocation.service import AllocationService
 
-def make_decision(symbol: str, action: str, current_weight: float = 0.0, target_weight: float = 0.10, target_min: float = 0.08, target_max: float = 0.12) -> AllocationDecision:
+
+def make_decision(
+    symbol: str,
+    action: str,
+    current_weight: float = 0.0,
+    target_weight: float = 0.10,
+    target_min: float = 0.08,
+    target_max: float = 0.12,
+) -> AllocationDecision:
     return AllocationDecision(
         symbol=symbol,
         action=action,
@@ -24,11 +32,11 @@ def make_decision(symbol: str, action: str, current_weight: float = 0.0, target_
         reason_codes=("TEST_REASON",),
     )
 
-def test_buy_raw_quantity_and_board_lot_rounding():
-    # portfolio NAV = 1,000,000,000, target weight 0.10 => desired value = 100M
-    # current value = 0, price = 50,000.
-    # effective cost per share = 50,000 * (1 + 0.001 + 0.0005) = 50,075
-    # raw buy = 100,000,000 / 50,075 = 1997.004 => rounded down to 1900
+
+def test_buy_reconciles_percent_vnd_and_shares():
+    # NAV = 1,000,000,000, target weight 0.10 => target value VND = 100,000,000
+    # Price = 50,000. Effective unit cost = 50,000 * (1 + 0.001 + 0.0005) = 50,075
+    # Raw buy = 100,000,000 / 50,075 = 1997.004 => 1,900 shares
     decision = make_decision("VNM", "BUY_MORE", current_weight=0.0, target_weight=0.10, target_min=0.08, target_max=0.12)
     plan = compute_execution_plan(
         decision,
@@ -41,12 +49,76 @@ def test_buy_raw_quantity_and_board_lot_rounding():
         lot_size=100,
     )
     assert plan.is_executable is True
-    assert plan.raw_quantity_change == 1997
+    # 1. Share quantity
     assert plan.rounded_quantity_change == 1900
     assert plan.post_trade_quantity == 1900
-    assert plan.gross_trade_value == 1900 * 50000.0
-    assert plan.estimated_fee == 1900 * 50000.0 * 0.001
-    assert plan.estimated_tax == 0.0  # Buy has no sell tax
+    # 2. VND amounts
+    assert plan.gross_trade_value_vnd == 1900 * 50000.0
+    assert plan.target_value_vnd == 100000000.0
+    assert plan.estimated_fee_vnd == 1900 * 50000.0 * 0.001
+    assert plan.estimated_tax_vnd == 0.0
+    assert plan.net_cash_change_vnd == -plan.estimated_total_cost_vnd
+    assert plan.cash_after_vnd == 500000000.0 - plan.estimated_total_cost_vnd
+    assert plan.post_trade_market_value_vnd == 1900 * 50000.0
+    # 3. Portfolio weight (%)
+    expected_w = round((1900 * 50000.0) / 1000000000.0, 4)
+    assert plan.post_trade_weight == expected_w
+    assert plan.post_trade_weight > 0.0
+
+
+def test_reduce_reconciles_percent_vnd_and_shares():
+    # current 10,000 shares * 50k = 500M (20% of 2.5B NAV)
+    # target 10% = 250M => sell raw 5,000 shares
+    decision = make_decision("REE", "REDUCE", current_weight=0.20, target_weight=0.10, target_min=0.09, target_max=0.11)
+    plan = compute_execution_plan(
+        decision,
+        current_quantity=10000,
+        reference_price=50000.0,
+        available_cash=100000000.0,
+        portfolio_nav=2500000000.0,
+        lot_size=100,
+    )
+    assert plan.is_executable is True
+    # 1. Share quantity
+    assert plan.rounded_quantity_change == -5000
+    assert plan.post_trade_quantity == 5000
+    assert 0 < plan.post_trade_quantity < 10000  # Invariant: REDUCE never sells out completely!
+    # 2. VND amounts
+    assert plan.gross_trade_value_vnd == 250000000.0
+    assert plan.target_value_vnd == 250000000.0
+    assert plan.estimated_fee_vnd == 250000000.0 * 0.001
+    assert plan.estimated_tax_vnd == 250000000.0 * 0.001  # Sell tax included!
+    assert plan.net_cash_change_vnd > 0.0
+    assert plan.cash_after_vnd == 100000000.0 + plan.net_cash_change_vnd
+    assert plan.post_trade_market_value_vnd == 250000000.0
+    # 3. Portfolio weight (%)
+    assert plan.post_trade_weight == 0.10
+
+
+def test_sell_reconciles_percent_vnd_and_shares():
+    # 1,250 shares @ 80k = 100M VND (5% of 2B NAV) -> target 0%
+    decision = make_decision("FRT", "SELL", current_weight=0.05, target_weight=0.0, target_min=0.0, target_max=0.0)
+    plan = compute_execution_plan(
+        decision,
+        current_quantity=1250,
+        reference_price=80000.0,
+        available_cash=50000000.0,
+        portfolio_nav=2000000000.0,
+    )
+    assert plan.is_executable is True
+    # 1. Share quantity
+    assert plan.rounded_quantity_change == -1250
+    assert plan.post_trade_quantity == 0.0
+    # 2. VND amounts
+    assert plan.gross_trade_value_vnd == 100000000.0
+    assert plan.target_value_vnd == 0.0
+    assert plan.estimated_fee_vnd == 100000000.0 * 0.001
+    assert plan.estimated_tax_vnd == 100000000.0 * 0.001
+    assert plan.net_cash_change_vnd > 0.0
+    assert plan.cash_after_vnd == 50000000.0 + plan.net_cash_change_vnd
+    assert plan.post_trade_market_value_vnd == 0.0
+    # 3. Portfolio weight (%)
+    assert plan.post_trade_weight == 0.0
 
 
 def test_buy_never_exceeds_cash():
@@ -56,12 +128,13 @@ def test_buy_never_exceeds_cash():
         decision,
         current_quantity=0,
         reference_price=50000.0,
-        available_cash=4000000.0,  # Insufficient cash for 1 lot (needs ~5,007,500)
+        available_cash=4000000.0,
         portfolio_nav=1000000000.0,
     )
     assert plan.is_executable is False
     assert "CASH_INSUFFICIENT_FOR_LOT" in plan.blocking_reasons
     assert plan.rounded_quantity_change == 0
+    assert plan.cash_after_vnd >= 0.0
 
 
 def test_stale_or_missing_price_blocks_execution():
@@ -75,39 +148,6 @@ def test_stale_or_missing_price_blocks_execution():
     )
     assert plan_missing.is_executable is False
     assert "PRICE_UNAVAILABLE" in plan_missing.blocking_reasons
-
-
-def test_reduce_never_accidental_full_exit_and_includes_tax():
-    # current 10,000 shares, current weight 0.20, target 0.10 (band 0.09-0.11)
-    decision = make_decision("REE", "REDUCE", current_weight=0.20, target_weight=0.10, target_min=0.09, target_max=0.11)
-    plan = compute_execution_plan(
-        decision,
-        current_quantity=10000,
-        reference_price=50000.0,
-        available_cash=100000000.0,
-        portfolio_nav=2500000000.0,  # 10,000 shares * 50k = 500M (20%)
-        lot_size=100,
-    )
-    assert plan.is_executable is True
-    # Theoretical sell value = 250M => 5,000 shares
-    assert plan.rounded_quantity_change == -5000
-    assert plan.post_trade_quantity == 5000
-    assert plan.post_trade_quantity > 0  # Not a full exit!
-    assert plan.estimated_tax == 5000 * 50000.0 * 0.001  # Sell tax 0.1%
-
-
-def test_sell_equals_holding_quantity():
-    decision = make_decision("FRT", "SELL", current_weight=0.05, target_weight=0.0, target_min=0.0, target_max=0.0)
-    plan = compute_execution_plan(
-        decision,
-        current_quantity=1250,
-        reference_price=80000.0,
-        available_cash=50000000.0,
-        portfolio_nav=2000000000.0,
-    )
-    assert plan.is_executable is True
-    assert plan.rounded_quantity_change == -1250
-    assert plan.post_trade_quantity == 0
 
 
 def test_security_universe_gate():
