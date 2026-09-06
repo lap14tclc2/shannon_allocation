@@ -1,0 +1,188 @@
+"""Allocation domain contracts (immutable result models).
+
+These are pure data contracts. Business logic lives in the sibling modules
+(eligibility, candidate_service, sizing, opportunity, service).
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+# Literal membership is validated at the enum level in the engine; the result
+# models keep the exact canonical strings for stable serialization.
+ELIGIBILITY_STATUSES = ("INVESTABLE", "WATCHLIST", "INELIGIBLE")
+ACTIONS = ("BUY_MORE", "HOLD", "WATCH", "REDUCE", "SELL", "KEEP_CASH")
+CONFIDENCE_LEVELS = ("HIGH", "MEDIUM", "LOW")
+FIT_LEVELS = ("GOOD", "MODERATE", "WEAK", "UNAVAILABLE")
+CONVICTION_TIERS = ("STARTER", "NORMAL", "HIGH_CONVICTION")
+OPPORTUNITY_KINDS = ("HOLDING", "CANDIDATE")
+
+# Advisory ordering used by the UI (not an execution order).
+ACTION_ORDER: tuple[str, ...] = ACTIONS
+
+
+def _as_dict(obj: Any) -> dict[str, Any]:
+    return asdict(obj)
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert tuples to lists for stable JSON serialization."""
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+@dataclass(frozen=True)
+class EligibilityResult:
+    """Buffett eligibility derived from canonical value-engine outputs.
+
+    ``valuation_safety = actual_mos_pct - required_mos_pct`` keeps Valuation
+    distinct from Quality (no double counting).
+    """
+
+    symbol: str
+    status: str
+    hard_rejects: tuple[str, ...] = ()
+    quality_tier: str | None = None
+    quality_score: int | None = None
+    valuation_status: str | None = None
+    valuation_confidence: str | None = None
+    valuation_safety: float | None = None
+    actual_mos_pct: float | None = None
+    required_mos_pct: float | None = None
+    reason_codes: tuple[str, ...] = ()
+    data_quality: str = "OK"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_safe(_as_dict(self))
+
+
+@dataclass(frozen=True)
+class PortfolioFitResult:
+    """Before/after portfolio-risk comparison for a hypothetical position change.
+
+    Computed exclusively by calling the canonical ``portfolio.risk.portfolio_risk``
+    engine on cloned position rows. Missing risk history yields ``UNAVAILABLE``
+    fit, never fabricated zero risk.
+    """
+
+    symbol: str
+    current_weight: float
+    proposed_weight: float
+    portfolio_vol_before: float | None = None
+    portfolio_vol_after: float | None = None
+    risk_contribution_before: float | None = None
+    risk_contribution_after: float | None = None
+    diversification_ratio_before: float | None = None
+    diversification_ratio_after: float | None = None
+    average_correlation_to_portfolio: float | None = None
+    max_correlation_to_portfolio: float | None = None
+    hhi_after: float | None = None
+    effective_positions_after: float | None = None
+    risk_available: bool = True
+    fit: str = "UNAVAILABLE"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _as_dict(self)
+
+
+@dataclass(frozen=True)
+class SizingResult:
+    """Conservative allocation band for a security (governance defaults, not Kelly).
+
+    Band reference (V1 governance defaults):
+      starter        3-5%
+      normal         7-12%
+      high conviction 12-18%
+      hard cap       configurable, default 20%
+    ``target_mid`` follows ``min(conviction_weight, risk_cap)``.
+    """
+
+    symbol: str
+    conviction_tier: str = "STARTER"
+    target_min: float = 0.03
+    target_mid: float = 0.04
+    target_max: float = 0.05
+    risk_cap: float = 0.20
+    reason_codes: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _as_dict(self)
+
+
+@dataclass(frozen=True)
+class AllocationDecision:
+    """A single advisory decision for a holding or a candidate.
+
+    ``action`` is recommendation-only and never executes a trade.
+    """
+
+    symbol: str
+    action: str
+    kind: str = "HOLDING"
+    current_weight: float = 0.0
+    target_min: float | None = None
+    target_mid: float | None = None
+    target_max: float | None = None
+    confidence: str = "LOW"
+    reason_codes: tuple[str, ...] = ()
+    bands: dict[str, float | None] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return _as_dict(self)
+
+
+@dataclass(frozen=True)
+class CandidateOpportunity:
+    """A screener-discovered research candidate, not a final BUY action."""
+
+    symbol: str
+    source: str
+    eligibility: EligibilityResult
+    candidate_rank: int = 0
+    portfolio_fit: PortfolioFitResult | None = None
+    sizing: SizingResult | None = None
+    opportunity_score: float | None = None
+    reason_codes: tuple[str, ...] = ()
+    decision: AllocationDecision | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = _as_dict(self)
+        payload["eligibility"] = self.eligibility.to_dict() if self.eligibility else None
+        payload["portfolio_fit"] = self.portfolio_fit.to_dict() if self.portfolio_fit else None
+        payload["sizing"] = self.sizing.to_dict() if self.sizing else None
+        payload["decision"] = self.decision.to_dict() if self.decision else None
+        return _json_safe(payload)
+
+
+@dataclass(frozen=True)
+class PortfolioAllocationReport:
+    """Full advisory portfolio allocation evaluation."""
+
+    portfolio_id: int | None = None
+    as_of: str | None = None
+    verdict: str = "HOLD"
+    posture: str = "HOLD_SELECTIVE_BUY"
+    cash_current: float | None = None
+    cash_suggested_range: tuple[float, float] | None = None
+    no_action_required: bool = True
+    holdings: tuple[AllocationDecision, ...] = ()
+    opportunities: tuple[CandidateOpportunity, ...] = ()
+    risk_summary: dict[str, Any] = field(default_factory=dict)
+    data_quality: dict[str, Any] = field(default_factory=dict)
+    reason_codes: tuple[str, ...] = ()
+    confidence: str = "LOW"
+    simulation: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = _as_dict(self)
+        payload["holdings"] = [h.to_dict() for h in self.holdings]
+        payload["opportunities"] = [o.to_dict() for o in self.opportunities]
+        payload["cash_suggested_range"] = (
+            list(self.cash_suggested_range) if self.cash_suggested_range is not None else None
+        )
+        return _json_safe(payload)
