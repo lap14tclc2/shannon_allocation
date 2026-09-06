@@ -152,17 +152,26 @@ class AllocationExecutionPlan:
     """Executable advisory share-quantity plan for a single decision.
 
     NOT an automated trade order. Information and simulation only.
+    Reconciles three dimensions together: %, VND money amount, and share quantity.
     """
 
     symbol: str
     action: str
+
     current_quantity: float = 0.0
+    current_market_value_vnd: float = 0.0
     current_weight: float = 0.0
+
     target_weight_theoretical: float | None = None
+    target_weight_min: float | None = None
+    target_weight_max: float | None = None
     target_weight_band_min: float | None = None
     target_weight_band_max: float | None = None
+    target_value_vnd: float | None = None
 
     reference_price: float | None = None
+    reference_price_date: str | None = None
+    reference_price_source: str | None = None
     price_date: str | None = None
     price_source: str | None = None
 
@@ -171,16 +180,25 @@ class AllocationExecutionPlan:
     lot_size: int = 100
 
     gross_trade_value: float = 0.0
+    gross_trade_value_vnd: float = 0.0
     estimated_fee: float = 0.0
+    estimated_fee_vnd: float = 0.0
     estimated_tax: float = 0.0
+    estimated_tax_vnd: float = 0.0
     estimated_slippage: float = 0.0
+    estimated_slippage_vnd: float = 0.0
     estimated_total_cost: float = 0.0
+    estimated_total_cost_vnd: float = 0.0
+    net_cash_change_vnd: float = 0.0
 
     cash_before: float = 0.0
+    cash_before_vnd: float = 0.0
     cash_after: float = 0.0
+    cash_after_vnd: float = 0.0
 
     post_trade_quantity: float = 0.0
     post_trade_market_value: float = 0.0
+    post_trade_market_value_vnd: float = 0.0
     post_trade_weight: float = 0.0
 
     target_error_pp: float | None = None

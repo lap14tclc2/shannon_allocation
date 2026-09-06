@@ -56,31 +56,48 @@ def compute_execution_plan(
 
     # Non-actionable actions (HOLD, WATCH, KEEP_CASH) or missing price
     if action in ("HOLD", "WATCH", "KEEP_CASH"):
-        post_mv = qty * (reference_price or 0.0)
+        ref_p = reference_price or 0.0
+        post_mv = round(qty * ref_p, 2)
         post_w = (post_mv / nav) if nav > 0 else weight
+        target_val = round(target_mid * nav, 2) if (target_mid is not None and nav > 0) else None
         return AllocationExecutionPlan(
             symbol=symbol,
             action=action,
             current_quantity=qty,
+            current_market_value_vnd=post_mv,
             current_weight=weight,
             target_weight_theoretical=target_mid,
+            target_weight_min=target_min,
+            target_weight_max=target_max,
             target_weight_band_min=target_min,
             target_weight_band_max=target_max,
+            target_value_vnd=target_val,
             reference_price=reference_price,
+            reference_price_date=price_date,
+            reference_price_source=price_source,
             price_date=price_date,
             price_source=price_source,
             raw_quantity_change=0.0,
             rounded_quantity_change=0.0,
             lot_size=lot,
             gross_trade_value=0.0,
+            gross_trade_value_vnd=0.0,
             estimated_fee=0.0,
+            estimated_fee_vnd=0.0,
             estimated_tax=0.0,
+            estimated_tax_vnd=0.0,
             estimated_slippage=0.0,
+            estimated_slippage_vnd=0.0,
             estimated_total_cost=0.0,
+            estimated_total_cost_vnd=0.0,
+            net_cash_change_vnd=0.0,
             cash_before=cash,
+            cash_before_vnd=cash,
             cash_after=cash,
+            cash_after_vnd=cash,
             post_trade_quantity=qty,
             post_trade_market_value=post_mv,
+            post_trade_market_value_vnd=post_mv,
             post_trade_weight=post_w,
             target_error_pp=round((post_w - target_mid) * 100, 4) if target_mid is not None else None,
             within_target_band=True,
@@ -91,24 +108,34 @@ def compute_execution_plan(
 
     # Missing or invalid reference price
     if reference_price is None or reference_price <= 0:
+        target_val = round(target_mid * nav, 2) if (target_mid is not None and nav > 0) else None
         return AllocationExecutionPlan(
             symbol=symbol,
             action=action,
             current_quantity=qty,
+            current_market_value_vnd=0.0,
             current_weight=weight,
             target_weight_theoretical=target_mid,
+            target_weight_min=target_min,
+            target_weight_max=target_max,
             target_weight_band_min=target_min,
             target_weight_band_max=target_max,
+            target_value_vnd=target_val,
             reference_price=None,
+            reference_price_date=price_date,
+            reference_price_source=price_source,
             price_date=price_date,
             price_source=price_source,
             raw_quantity_change=0.0,
             rounded_quantity_change=0.0,
             lot_size=lot,
             cash_before=cash,
+            cash_before_vnd=cash,
             cash_after=cash,
+            cash_after_vnd=cash,
             post_trade_quantity=qty,
-            post_trade_market_value=qty * (reference_price or 0.0),
+            post_trade_market_value=0.0,
+            post_trade_market_value_vnd=0.0,
             post_trade_weight=weight,
             is_executable=False,
             blocking_reasons=("PRICE_UNAVAILABLE",),
@@ -123,6 +150,7 @@ def compute_execution_plan(
         target = target_mid if target_mid is not None else 0.04
         t_min = target_min if target_min is not None else round(target * 0.75, 4)
         t_max = target_max if target_max is not None else min(hard_cap, round(target * 1.25, 4))
+        target_val = round(target * nav, 2) if nav > 0 else None
 
         desired_mv = target * nav
         additional_mv = max(0.0, desired_mv - current_mv)
@@ -139,13 +167,18 @@ def compute_execution_plan(
         if rounded_buy < lot:
             blocking = ("CASH_INSUFFICIENT_FOR_LOT",) if raw_buy >= lot and cash_max_buy < lot else ("TRADE_BELOW_MINIMUM_LOT",)
             return AllocationExecutionPlan(
-                symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-                target_weight_theoretical=target, target_weight_band_min=t_min, target_weight_band_max=t_max,
-                reference_price=price, price_date=price_date, price_source=price_source,
+                symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(current_mv, 2), current_weight=weight,
+                target_weight_theoretical=target, target_weight_min=t_min, target_weight_max=t_max,
+                target_weight_band_min=t_min, target_weight_band_max=t_max, target_value_vnd=target_val,
+                reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+                price_date=price_date, price_source=price_source,
                 raw_quantity_change=round(raw_buy, 2), rounded_quantity_change=0.0, lot_size=lot,
-                gross_trade_value=0.0, estimated_fee=0.0, estimated_tax=0.0, estimated_slippage=0.0, estimated_total_cost=0.0,
-                cash_before=cash, cash_after=cash, post_trade_quantity=qty, post_trade_market_value=current_mv, post_trade_weight=weight,
-                target_error_pp=round((weight - target) * 100, 4), within_target_band=(t_min <= weight <= t_max),
+                gross_trade_value=0.0, gross_trade_value_vnd=0.0, estimated_fee=0.0, estimated_fee_vnd=0.0,
+                estimated_tax=0.0, estimated_tax_vnd=0.0, estimated_slippage=0.0, estimated_slippage_vnd=0.0,
+                estimated_total_cost=0.0, estimated_total_cost_vnd=0.0, net_cash_change_vnd=0.0,
+                cash_before=cash, cash_before_vnd=cash, cash_after=cash, cash_after_vnd=cash,
+                post_trade_quantity=qty, post_trade_market_value=round(current_mv, 2), post_trade_market_value_vnd=round(current_mv, 2),
+                post_trade_weight=weight, target_error_pp=round((weight - target) * 100, 4), within_target_band=(t_min <= weight <= t_max),
                 is_executable=False, blocking_reasons=blocking, reason_codes=decision.reason_codes,
             )
 
@@ -163,16 +196,32 @@ def compute_execution_plan(
         target_err = round((post_w - target) * 100, 4)
         within_band = (t_min <= post_w <= t_max)
 
+        gross_val = round(gross, 2)
+        fee_val = round(fee, 2)
+        tax_val = round(tax, 2)
+        slip_val = round(slippage, 2)
+        tot_val = round(total_cost, 2)
+        cash_aft = round(cash_after, 2)
+        net_cash = round(-total_cost, 2)
+        post_mv_val = round(post_mv, 2)
+        post_w_val = round(post_w, 4)
+
         return AllocationExecutionPlan(
-            symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-            target_weight_theoretical=target, target_weight_band_min=t_min, target_weight_band_max=t_max,
-            reference_price=price, price_date=price_date, price_source=price_source,
+            symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(current_mv, 2), current_weight=weight,
+            target_weight_theoretical=target, target_weight_min=t_min, target_weight_max=t_max,
+            target_weight_band_min=t_min, target_weight_band_max=t_max, target_value_vnd=target_val,
+            reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+            price_date=price_date, price_source=price_source,
             raw_quantity_change=round(raw_buy, 2), rounded_quantity_change=rounded_buy, lot_size=lot,
-            gross_trade_value=round(gross, 2), estimated_fee=round(fee, 2), estimated_tax=round(tax, 2),
-            estimated_slippage=round(slippage, 2), estimated_total_cost=round(total_cost, 2),
-            cash_before=cash, cash_after=round(cash_after, 2), post_trade_quantity=post_qty,
-            post_trade_market_value=round(post_mv, 2), post_trade_weight=round(post_w, 4),
-            target_error_pp=target_err, within_target_band=within_band,
+            gross_trade_value=gross_val, gross_trade_value_vnd=gross_val,
+            estimated_fee=fee_val, estimated_fee_vnd=fee_val,
+            estimated_tax=tax_val, estimated_tax_vnd=tax_val,
+            estimated_slippage=slip_val, estimated_slippage_vnd=slip_val,
+            estimated_total_cost=tot_val, estimated_total_cost_vnd=tot_val,
+            net_cash_change_vnd=net_cash,
+            cash_before=cash, cash_before_vnd=cash, cash_after=cash_aft, cash_after_vnd=cash_aft,
+            post_trade_quantity=post_qty, post_trade_market_value=post_mv_val, post_trade_market_value_vnd=post_mv_val,
+            post_trade_weight=post_w_val, target_error_pp=target_err, within_target_band=within_band,
             is_executable=True, blocking_reasons=(), reason_codes=decision.reason_codes,
         )
 
@@ -181,6 +230,7 @@ def compute_execution_plan(
         target = target_mid if target_mid is not None else 0.05
         t_min = target_min if target_min is not None else round(target * 0.75, 4)
         t_max = target_max if target_max is not None else round(target * 1.25, 4)
+        target_val = round(target * nav, 2) if nav > 0 else None
 
         desired_mv = target * nav
         sell_value = max(0.0, current_mv - desired_mv)
@@ -207,12 +257,18 @@ def compute_execution_plan(
 
         if not candidates:
             return AllocationExecutionPlan(
-                symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-                target_weight_theoretical=target, target_weight_band_min=t_min, target_weight_band_max=t_max,
-                reference_price=price, price_date=price_date, price_source=price_source,
+                symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(current_mv, 2), current_weight=weight,
+                target_weight_theoretical=target, target_weight_min=t_min, target_weight_max=t_max,
+                target_weight_band_min=t_min, target_weight_band_max=t_max, target_value_vnd=target_val,
+                reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+                price_date=price_date, price_source=price_source,
                 raw_quantity_change=-round(raw_sell, 2), rounded_quantity_change=0.0, lot_size=lot,
-                cash_before=cash, cash_after=cash, post_trade_quantity=qty, post_trade_market_value=current_mv, post_trade_weight=weight,
-                is_executable=False, blocking_reasons=("TRADE_BELOW_MINIMUM_LOT",), reason_codes=decision.reason_codes,
+                gross_trade_value=0.0, gross_trade_value_vnd=0.0, estimated_fee=0.0, estimated_fee_vnd=0.0,
+                estimated_tax=0.0, estimated_tax_vnd=0.0, estimated_slippage=0.0, estimated_slippage_vnd=0.0,
+                estimated_total_cost=0.0, estimated_total_cost_vnd=0.0, net_cash_change_vnd=0.0,
+                cash_before=cash, cash_before_vnd=cash, cash_after=cash, cash_after_vnd=cash,
+                post_trade_quantity=qty, post_trade_market_value=round(current_mv, 2), post_trade_market_value_vnd=round(current_mv, 2),
+                post_trade_weight=weight, is_executable=False, blocking_reasons=("TRADE_BELOW_MINIMUM_LOT",), reason_codes=decision.reason_codes,
             )
 
         candidates.sort(reverse=True)
@@ -232,16 +288,32 @@ def compute_execution_plan(
         target_err = round((post_w - target) * 100, 4)
         within_band = (t_min <= post_w <= t_max)
 
+        gross_val = round(gross, 2)
+        fee_val = round(fee, 2)
+        tax_val = round(tax, 2)
+        slip_val = round(slippage, 2)
+        tot_val = round(total_cost, 2)
+        net_cash = round(net_proceeds, 2)
+        cash_aft = round(cash_after, 2)
+        post_mv_val = round(post_mv, 2)
+        post_w_val = round(post_w, 4)
+
         return AllocationExecutionPlan(
-            symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-            target_weight_theoretical=target, target_weight_band_min=t_min, target_weight_band_max=t_max,
-            reference_price=price, price_date=price_date, price_source=price_source,
+            symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(current_mv, 2), current_weight=weight,
+            target_weight_theoretical=target, target_weight_min=t_min, target_weight_max=t_max,
+            target_weight_band_min=t_min, target_weight_band_max=t_max, target_value_vnd=target_val,
+            reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+            price_date=price_date, price_source=price_source,
             raw_quantity_change=-round(raw_sell, 2), rounded_quantity_change=-chosen_sell, lot_size=lot,
-            gross_trade_value=round(gross, 2), estimated_fee=round(fee, 2), estimated_tax=round(tax, 2),
-            estimated_slippage=round(slippage, 2), estimated_total_cost=round(total_cost, 2),
-            cash_before=cash, cash_after=round(cash_after, 2), post_trade_quantity=post_qty,
-            post_trade_market_value=round(post_mv, 2), post_trade_weight=round(post_w, 4),
-            target_error_pp=target_err, within_target_band=within_band,
+            gross_trade_value=gross_val, gross_trade_value_vnd=gross_val,
+            estimated_fee=fee_val, estimated_fee_vnd=fee_val,
+            estimated_tax=tax_val, estimated_tax_vnd=tax_val,
+            estimated_slippage=slip_val, estimated_slippage_vnd=slip_val,
+            estimated_total_cost=tot_val, estimated_total_cost_vnd=tot_val,
+            net_cash_change_vnd=net_cash,
+            cash_before=cash, cash_before_vnd=cash, cash_after=cash_aft, cash_after_vnd=cash_aft,
+            post_trade_quantity=post_qty, post_trade_market_value=post_mv_val, post_trade_market_value_vnd=post_mv_val,
+            post_trade_weight=post_w_val, target_error_pp=target_err, within_target_band=within_band,
             is_executable=True, blocking_reasons=(), reason_codes=decision.reason_codes,
         )
 
@@ -250,11 +322,14 @@ def compute_execution_plan(
         sell_qty = qty
         if sell_qty <= 0:
             return AllocationExecutionPlan(
-                symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-                target_weight_theoretical=0.0, target_weight_band_min=0.0, target_weight_band_max=0.0,
-                reference_price=price, price_date=price_date, price_source=price_source,
+                symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=0.0, current_weight=weight,
+                target_weight_theoretical=0.0, target_weight_min=0.0, target_weight_max=0.0,
+                target_weight_band_min=0.0, target_weight_band_max=0.0, target_value_vnd=0.0,
+                reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+                price_date=price_date, price_source=price_source,
                 raw_quantity_change=0.0, rounded_quantity_change=0.0, lot_size=lot,
-                cash_before=cash, cash_after=cash, post_trade_quantity=0.0, post_trade_market_value=0.0, post_trade_weight=0.0,
+                cash_before=cash, cash_before_vnd=cash, cash_after=cash, cash_after_vnd=cash,
+                post_trade_quantity=0.0, post_trade_market_value=0.0, post_trade_market_value_vnd=0.0, post_trade_weight=0.0,
                 is_executable=True, blocking_reasons=(), reason_codes=decision.reason_codes,
             )
 
@@ -266,23 +341,38 @@ def compute_execution_plan(
         net_proceeds = max(0.0, gross - total_cost)
         cash_after = cash + net_proceeds
 
+        gross_val = round(gross, 2)
+        fee_val = round(fee, 2)
+        tax_val = round(tax, 2)
+        slip_val = round(slippage, 2)
+        tot_val = round(total_cost, 2)
+        net_cash = round(net_proceeds, 2)
+        cash_aft = round(cash_after, 2)
+
         return AllocationExecutionPlan(
-            symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-            target_weight_theoretical=0.0, target_weight_band_min=0.0, target_weight_band_max=0.0,
-            reference_price=price, price_date=price_date, price_source=price_source,
+            symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(current_mv, 2), current_weight=weight,
+            target_weight_theoretical=0.0, target_weight_min=0.0, target_weight_max=0.0,
+            target_weight_band_min=0.0, target_weight_band_max=0.0, target_value_vnd=0.0,
+            reference_price=price, reference_price_date=price_date, reference_price_source=price_source,
+            price_date=price_date, price_source=price_source,
             raw_quantity_change=-sell_qty, rounded_quantity_change=-sell_qty, lot_size=lot,
-            gross_trade_value=round(gross, 2), estimated_fee=round(fee, 2), estimated_tax=round(tax, 2),
-            estimated_slippage=round(slippage, 2), estimated_total_cost=round(total_cost, 2),
-            cash_before=cash, cash_after=round(cash_after, 2), post_trade_quantity=0.0,
-            post_trade_market_value=0.0, post_trade_weight=0.0,
+            gross_trade_value=gross_val, gross_trade_value_vnd=gross_val,
+            estimated_fee=fee_val, estimated_fee_vnd=fee_val,
+            estimated_tax=tax_val, estimated_tax_vnd=tax_val,
+            estimated_slippage=slip_val, estimated_slippage_vnd=slip_val,
+            estimated_total_cost=tot_val, estimated_total_cost_vnd=tot_val,
+            net_cash_change_vnd=net_cash,
+            cash_before=cash, cash_before_vnd=cash, cash_after=cash_aft, cash_after_vnd=cash_aft,
+            post_trade_quantity=0.0, post_trade_market_value=0.0, post_trade_market_value_vnd=0.0, post_trade_weight=0.0,
             target_error_pp=0.0, within_target_band=True,
             is_executable=True, blocking_reasons=(), reason_codes=decision.reason_codes,
         )
 
     # Fallback
     return AllocationExecutionPlan(
-        symbol=symbol, action=action, current_quantity=qty, current_weight=weight,
-        reference_price=price, price_date=price_date, price_source=price_source,
-        cash_before=cash, cash_after=cash, post_trade_quantity=qty, post_trade_weight=weight,
+        symbol=symbol, action=action, current_quantity=qty, current_market_value_vnd=round(qty * (price if 'price' in locals() else 0.0), 2), current_weight=weight,
+        reference_price=price if 'price' in locals() else None, reference_price_date=price_date, reference_price_source=price_source,
+        price_date=price_date, price_source=price_source,
+        cash_before=cash, cash_before_vnd=cash, cash_after=cash, cash_after_vnd=cash, post_trade_quantity=qty, post_trade_weight=weight,
         is_executable=False, blocking_reasons=("UNSUPPORTED_ACTION",), reason_codes=decision.reason_codes,
     )
