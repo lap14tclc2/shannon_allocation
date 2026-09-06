@@ -60,6 +60,8 @@ function OpportunityCard({ opportunity, onViewValuation }) {
     : '—';
   const plan = opportunity.decision?.execution_plan;
   const showQtyPlan = plan && plan.is_executable && plan.rounded_quantity_change > 0;
+  const grossVnd = plan?.gross_trade_value_vnd || plan?.gross_trade_value || 0;
+  const cashAfterVnd = plan?.cash_after_vnd || plan?.cash_after || 0;
 
   return (
     <article className="allocation-opportunity-card">
@@ -82,6 +84,13 @@ function OpportunityCard({ opportunity, onViewValuation }) {
           <span>Mức tin cậy</span><strong>{CONVICTION_LABEL_VI[sizing.conviction_tier] || sizing.conviction_tier}</strong>
           <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? '—' : pct(fit.average_correlation_to_portfolio)}</strong>
         </div>
+
+        {showQtyPlan && (
+          <div className="allocation-opp-trade-summary" data-sensitive>
+            <div><strong>Giá trị mua đề xuất:</strong> ~{(grossVnd / 1e6).toFixed(1)} triệu VND</div>
+            <div><strong>Tỷ trọng sau mua:</strong> {formatWeight(plan.post_trade_weight)} | <strong>Cash còn lại:</strong> ~{(cashAfterVnd / 1e6).toFixed(1)}M VND</div>
+          </div>
+        )}
 
         {evidence.why_selected?.length > 0 && (
           <div className="allocation-why-selected">
@@ -299,13 +308,17 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
                 let targetText = '';
                 if (change.action === 'REDUCE') {
                   targetText = change.target != null
-                    ? `${formatWeight(change.current_weight)} → ${formatWeight(change.target)}`
+                    ? `${formatWeight(change.current_weight)} → ${formatWeight(plan.post_trade_weight || change.target)}`
                     : '';
                 } else if (change.action === 'SELL') {
                   targetText = `${formatWeight(change.current_weight)} → 0.0%`;
                 } else if (change.action === 'BUY_MORE') {
-                  targetText = change.target != null ? `→ ${formatWeight(change.target)}` : '';
+                  targetText = change.target != null ? `→ ${formatWeight(plan.post_trade_weight || change.target)}` : '';
                 }
+                const grossVnd = plan.gross_trade_value_vnd || plan.gross_trade_value || 0;
+                const costVnd = plan.estimated_total_cost_vnd || plan.estimated_total_cost || 0;
+                const cashAfterVnd = plan.cash_after_vnd || plan.cash_after || 0;
+
                 return (
                   <li key={change.symbol} className="allocation-change-item">
                     <div className="allocation-change-main">
@@ -316,9 +329,10 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
                     {hasPlan && (
                       <div className="allocation-plan-details">
                         <span>Giá tham chiếu: <strong data-sensitive>{plan.reference_price ? `${plan.reference_price.toLocaleString('vi-VN')} VND` : '—'}</strong></span>
-                        <span>Giá trị giao dịch: <strong data-sensitive>{plan.gross_trade_value ? `~${(plan.gross_trade_value / 1e6).toFixed(1)} triệu VND` : '—'}</strong></span>
-                        <span>Chi phí ước tính: <strong data-sensitive>{(plan.estimated_total_cost || 0).toLocaleString('vi-VN')} VND</strong></span>
-                        <span>Tỷ trọng thực tế sau giao dịch: <strong data-sensitive>{formatWeight(plan.post_trade_weight)}</strong></span>
+                        <span>Giá trị giao dịch: <strong data-sensitive>{grossVnd ? `~${(grossVnd / 1e6).toFixed(1)} triệu VND` : '—'}</strong></span>
+                        <span>Chi phí ước tính: <strong data-sensitive>{costVnd.toLocaleString('vi-VN')} VND</strong></span>
+                        <span>Tiền mặt sau giao dịch: <strong data-sensitive>~{(cashAfterVnd / 1e6).toFixed(1)} triệu VND</strong></span>
+                        <span>Số lượng & Tỷ trọng sau: <strong data-sensitive>{(plan.post_trade_quantity || 0).toLocaleString('vi-VN')} CP ({formatWeight(plan.post_trade_weight)})</strong></span>
                       </div>
                     )}
                     <span className="muted allocation-change-reason">{change.reason}</span>
