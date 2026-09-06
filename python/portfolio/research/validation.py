@@ -14,8 +14,10 @@ import pandas as pd
 
 from .walk_forward import (
     ResearchConfig,
+    assert_not_sealed,
     is_sealed,
     partition_periods,
+    research_cutoff,
     walk_forward_windows as _walk_forward_windows,
 )
 
@@ -26,6 +28,11 @@ MIN_CROSS_SECTION = 3          # symbols required per date for a rank IC
 MIN_OBSERVATIONS = 30          # minimum pooled observations for any verdict
 MIN_IC_POSITIVE_RATIO = 0.55   # required for WEAK/VALIDATED candidate
 OOS_IC_FLOOR = 0.0             # sealed-OOS mean IC must be > this for VALIDATED
+# After-cost spread must clear a material minimum (50 bps round-trip return)
+# for VALIDATED; sub-bps spreads are treated as noise, not an edge.
+MIN_AFTER_COST_SPREAD = 0.005
+# Walk-forward persistence: mean validation-window IC must be > 0 for VALIDATED.
+WALK_FORWARD_IC_FLOOR = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -44,12 +51,16 @@ def date_rank_ic(factor_series: pd.Series, excess_series: pd.Series) -> float | 
     return float(np.corrcoef(factor_rank, excess_rank)[0, 1])
 
 
-def rank_ic_series(snapshot_rows: Iterable[dict], excess_key: str) -> pd.Series:
+def rank_ic_series(
+    snapshot_rows: Iterable[dict],
+    excess_key: str,
+    factor_key: str = "value_factor",
+) -> pd.Series:
     """Per-date rank IC series across the full sample (excludes sealed by caller)."""
     rows = list(snapshot_rows)
     if not rows:
         return pd.Series(dtype=float)
-    factor = pd.Series({(r["snapshot_date"], r["symbol"]): r.get("value_factor") for r in rows}, dtype=float)
+    factor = pd.Series({(r["snapshot_date"], r["symbol"]): r.get(factor_key) for r in rows}, dtype=float)
     excess = pd.Series({(r["snapshot_date"], r["symbol"]): r.get(excess_key) for r in rows}, dtype=float)
     factor.index = pd.MultiIndex.from_tuples(factor.index, names=["date", "symbol"])
     excess.index = pd.MultiIndex.from_tuples(excess.index, names=["date", "symbol"])
@@ -86,7 +97,12 @@ def ic_summary(ic_series: pd.Series) -> dict:
 # ---------------------------------------------------------------------------
 # Quantile analysis
 # ---------------------------------------------------------------------------
-def quantile_analysis(snapshot_rows: Iterable[dict], excess_key: str, n_quantiles: int = 5) -> dict:
+def quantile_analysis(
+    snapshot_rows: Iterable[dict],
+    excess_key: str,
+    n_quantiles: int = 5,
+    factor_key: str = "value_factor",
+) -> dict:
     """Cross-sectional quantile assignment per date, then pooled averages.
 
     Returns per-quantile mean excess return, top-minus-bottom spread, and
@@ -95,7 +111,7 @@ def quantile_analysis(snapshot_rows: Iterable[dict], excess_key: str, n_quantile
     rows = list(snapshot_rows)
     frame = pd.DataFrame([
         {"date": r["snapshot_date"], "symbol": r["symbol"],
-         "factor": r.get("value_factor"), "excess": r.get(excess_key)}
+         "factor": r.get(factor_key), "excess": r.get(excess_key)}
         for r in rows
     ], columns=["date", "symbol", "factor", "excess"]).dropna(subset=["factor", "excess"])
     if frame.empty:
@@ -179,41 +195,85 @@ class ResearchCostModel:
 # ---------------------------------------------------------------------------
 # Verdict
 # ---------------------------------------------------------------------------
+def walk_forward_window_ic(
+    snapshot_rows: Iterable[dict],
+    windows: list[dict],
+    excess_key: str,
+    factor_key: str = "value_factor",
+) -> list[dict]:
+    """Per-walk-forward-window mean rank IC (chronological persistence check)."""
+    rows = list(snapshot_rows)
+    result: list[dict] = []
+    for window in windows:
+        window_rows = [
+            r for r in rows
+            if window["valid_start"] <= r["snapshot_date"] <= window["valid_end"]
+        ]
+        if not window_rows:
+            result.append({**window, "mean_ic": None, "dates": 0})
+            continue
+        ic = rank_ic_series(window_rows, excess_key, factor_key=factor_key)
+        summary = ic_summary(ic)
+        result.append({
+            **window,
+            "mean_ic": summary.get("mean_ic"),
+            "dates": int(summary.get("count") or 0),
+        })
+    return result
+
+
 def factor_verdict(
     *,
     ic: dict,
     oos_mean_ic: float | None,
     quantile_spread_after_cost: float | None,
+    walk_forward_mean_ic: float | None = None,
     min_observations: int = MIN_OBSERVATIONS,
     oos_ic_floor: float = OOS_IC_FLOOR,
+    min_after_cost_spread: float = MIN_AFTER_COST_SPREAD,
+    walk_forward_ic_floor: float = WALK_FORWARD_IC_FLOOR,
 ) -> str:
     """Conservative explicit verdict rules (documented governance policy).
 
-    - insufficient sample            -> INSUFFICIENT_DATA
-    - mean IC <= 0 or no positive edge -> REJECTED
-    - positive in-sample but no OOS support -> UNSTABLE
-    - consistent positive IC + after-cost spread + OOS floor -> VALIDATED
-    - otherwise                      -> WEAK
+    VALIDATED requires ALL of:
+      - sample >= ``min_observations``
+      - mean IC > 0 AND median IC > 0
+      - positive IC ratio >= 0.55
+      - after-cost spread >= ``min_after_cost_spread`` (material, not noise)
+      - walk-forward persistence: mean validation-window IC > ``walk_forward_ic_floor``
+      - sealed OOS mean IC > ``oos_ic_floor``
+
+    - insufficient sample -> INSUFFICIENT_DATA
+    - mean IC <= 0           -> REJECTED
+    - positive in-sample but OOS or walk-forward not supporting -> UNSTABLE
+    - otherwise              -> WEAK
     """
     count = int(ic.get("count") or 0)
     if count < min_observations:
         return "INSUFFICIENT_DATA"
     mean_ic = ic.get("mean_ic")
+    median_ic = ic.get("median_ic")
     positive_ratio = ic.get("positive_ic_ratio")
     if mean_ic is None or mean_ic <= 0:
         return "REJECTED"
     if positive_ratio is None or positive_ratio < MIN_IC_POSITIVE_RATIO:
         return "WEAK"
-    if quantile_spread_after_cost is None or quantile_spread_after_cost <= 0:
+    if quantile_spread_after_cost is None or quantile_spread_after_cost < min_after_cost_spread:
         return "WEAK"
+    if walk_forward_mean_ic is None or walk_forward_mean_ic <= walk_forward_ic_floor:
+        return "UNSTABLE"
     if oos_mean_ic is None or oos_mean_ic <= oos_ic_floor:
         return "UNSTABLE"
+    if median_ic is None or median_ic <= 0:
+        return "WEAK"
     return "VALIDATED"
 
 
 def validate_factor(
     snapshot_rows: Iterable[dict],
     *,
+    factor_key: str = "value_factor",
+    factor_name: str = "VALUE_SAFETY",
     excess_key: str = "forward_excess_return_63",
     config: ResearchConfig | None = None,
     cost_model: ResearchCostModel | None = None,
@@ -226,34 +286,50 @@ def validate_factor(
     # Split sealed OOS out of the tuning path.
     tuning_rows = rows
     sealed_rows: list[dict] = []
+    sealed_evaluated = False
+    sealed_used_for_tuning = False
     if config is not None and (config.sealed_oos_start or config.sealed_oos_end):
         partitioned = partition_periods(config, [r["snapshot_date"] for r in rows])
-        sealed_dates = set(partitioned["sealed"])
+        sealed_dates = set(partitioned["sealed_oos"])
         tuning_rows = [r for r in rows if r["snapshot_date"] not in sealed_dates]
         sealed_rows = [r for r in rows if r["snapshot_date"] in sealed_dates]
 
-    in_sample_ic = rank_ic_series(tuning_rows, excess_key)
+    in_sample_ic = rank_ic_series(tuning_rows, excess_key, factor_key=factor_key)
     ic = ic_summary(in_sample_ic)
 
-    quant = quantile_analysis(tuning_rows, excess_key, n_quantiles=n_quantiles)
+    quant = quantile_analysis(tuning_rows, excess_key, n_quantiles=n_quantiles, factor_key=factor_key)
     gross_spread = quant.get("spread")
     after_cost_spread = cost_model.after_cost_spread(gross_spread)
 
     oos_mean_ic = None
     if sealed_rows:
-        oos_ic = rank_ic_series(sealed_rows, excess_key)
+        oos_ic = rank_ic_series(sealed_rows, excess_key, factor_key=factor_key)
         oos_summary = ic_summary(oos_ic)
         oos_mean_ic = oos_summary.get("mean_ic")
+        sealed_evaluated = True
 
     windows = _walk_forward_windows(config) if config else []
+    # Walk-forward persistence: mean IC over the validation windows.
+    wf_ic = walk_forward_window_ic(tuning_rows, windows, excess_key, factor_key=factor_key)
+    wf_means = [w["mean_ic"] for w in wf_ic if w.get("mean_ic") is not None]
+    walk_forward_mean_ic = float(np.mean(wf_means)) if wf_means else None
+
+    # The sealed period is never used for tuning (enforced by partition + guard).
+    if config is not None:
+        for row in tuning_rows:
+            assert_not_sealed(config, row["snapshot_date"])
+        sealed_used_for_tuning = False
+
     verdict = factor_verdict(
         ic=ic,
         oos_mean_ic=oos_mean_ic,
         quantile_spread_after_cost=after_cost_spread,
+        walk_forward_mean_ic=walk_forward_mean_ic,
     )
 
     return {
-        "factor": "value_factor",
+        "factor": factor_name,
+        "factor_key": factor_key,
         "horizon_sessions": int(excess_key.split("_")[-1]),
         "excess_key": excess_key,
         "observations": int(len(tuning_rows)),
@@ -265,6 +341,20 @@ def validate_factor(
         "cost_model": cost_model.to_dict(),
         "sealed_oos_mean_ic": oos_mean_ic,
         "walk_forward_windows": windows,
+        "walk_forward_window_ic": wf_ic,
+        "walk_forward_mean_ic": walk_forward_mean_ic,
+        "periods": {
+            "in_sample_range": (
+                min(r["snapshot_date"] for r in tuning_rows),
+                max(r["snapshot_date"] for r in tuning_rows),
+            ) if tuning_rows else None,
+            "sealed_range": (config.sealed_oos_start, config.sealed_oos_end)
+            if config and config.sealed_oos_start else None,
+            "walk_forward": windows,
+            "research_cutoff": str(research_cutoff(config)) if config else None,
+            "sealed_evaluated": sealed_evaluated,
+            "sealed_used_for_tuning": sealed_used_for_tuning,
+        },
         "verdict": verdict,
         "limitations": [
             "Historical universe membership is not reconstructible from current data; "

@@ -138,11 +138,13 @@ def test_tuning_on_sealed_oos_is_guarded():
 
 
 def test_validate_factor_verdict_rules():
-    # Positive factor-edge in-sample, but sealed-OOS mean IC <= 0 -> UNSTABLE.
+    # Positive factor-edge in-sample (2023, inside walk-forward windows), but
+    # sealed-OOS mean IC <= 0 -> UNSTABLE.
     in_sample = _cross_section(_dates(40, "2023-01-02"), positive=True)
     sealed = _cross_section(_dates(12, "2024-01-02"), positive=False)
     config = ResearchConfig(
-        research_start="2016-01-01", sealed_oos_start="2024-01-01", sealed_oos_end="2025-12-31",
+        research_start="2019-01-01", train_years=2, validation_years=1,
+        sealed_oos_start="2024-01-01", sealed_oos_end="2025-12-31",
     )
     result = validate_factor(in_sample + sealed, config=config, n_quantiles=5)
     assert result["verdict"] == "UNSTABLE"
@@ -159,7 +161,7 @@ def test_validate_factor_insufficient_data():
 def test_validate_factor_rejected_when_no_edge():
     result = validate_factor(
         _cross_section(_dates(40, "2023-01-02"), positive=False),
-        config=ResearchConfig(research_start="2016-01-01"),
+        config=ResearchConfig(research_start="2019-01-01", train_years=2, validation_years=1),
     )
     assert result["verdict"] == "REJECTED"
 
@@ -168,11 +170,14 @@ def test_validate_factor_validated_with_stable_oos():
     in_sample = _cross_section(_dates(40, "2023-01-02"), positive=True)
     sealed = _cross_section(_dates(12, "2024-01-02"), positive=True)
     config = ResearchConfig(
-        research_start="2016-01-01", sealed_oos_start="2024-01-01", sealed_oos_end="2025-12-31",
+        research_start="2019-01-01", train_years=2, validation_years=1,
+        sealed_oos_start="2024-01-01", sealed_oos_end="2025-12-31",
     )
     result = validate_factor(in_sample + sealed, config=config, n_quantiles=5)
     assert result["verdict"] == "VALIDATED"
     assert result["sealed_oos_mean_ic"] is not None and result["sealed_oos_mean_ic"] > 0
+    # Persistence requires a positive mean IC over the walk-forward windows.
+    assert result["walk_forward_mean_ic"] is not None and result["walk_forward_mean_ic"] > 0
 
 
 def test_cost_adjusted_output():
@@ -199,14 +204,39 @@ def test_factor_verdict_direct_rules():
         ic={"count": 50, "mean_ic": -0.01, "positive_ic_ratio": 0.4},
         oos_mean_ic=0.01, quantile_spread_after_cost=0.01,
     ) == "REJECTED"
+    # Walk-forward missing -> UNSTABLE even with positive in-sample IC.
     assert factor_verdict(
-        ic={"count": 50, "mean_ic": 0.05, "positive_ic_ratio": 0.9},
+        ic={"count": 50, "mean_ic": 0.05, "median_ic": 0.05, "positive_ic_ratio": 0.9},
         oos_mean_ic=0.0, quantile_spread_after_cost=0.03,
     ) == "UNSTABLE"
+    # Sub-material after-cost spread -> WEAK, not VALIDATED.
     assert factor_verdict(
-        ic={"count": 50, "mean_ic": 0.05, "positive_ic_ratio": 0.9},
-        oos_mean_ic=0.03, quantile_spread_after_cost=0.03,
+        ic={"count": 50, "mean_ic": 0.05, "median_ic": 0.05, "positive_ic_ratio": 0.9},
+        oos_mean_ic=0.03, quantile_spread_after_cost=0.001, walk_forward_mean_ic=0.01,
+    ) == "WEAK"
+    # Median IC <= 0 -> WEAK.
+    assert factor_verdict(
+        ic={"count": 50, "mean_ic": 0.05, "median_ic": -0.01, "positive_ic_ratio": 0.9},
+        oos_mean_ic=0.03, quantile_spread_after_cost=0.03, walk_forward_mean_ic=0.01,
+    ) == "WEAK"
+    # All conditions met -> VALIDATED.
+    assert factor_verdict(
+        ic={"count": 50, "mean_ic": 0.05, "median_ic": 0.05, "positive_ic_ratio": 0.9},
+        oos_mean_ic=0.03, quantile_spread_after_cost=0.03, walk_forward_mean_ic=0.01,
     ) == "VALIDATED"
+
+
+def test_walk_forward_window_ic_persistence():
+    from portfolio.research.validation import walk_forward_window_ic
+
+    config = ResearchConfig(research_start="2019-01-01", train_years=2, validation_years=1)
+    windows = walk_forward_windows(config)
+    rows = _cross_section(_dates(24, "2021-01-04"), positive=True)
+    wf = walk_forward_window_ic(rows, windows, "forward_excess_return_63")
+    # The validation windows must have been populated with positive ICs.
+    assert wf
+    positive = [w for w in wf if w.get("mean_ic") is not None and w["mean_ic"] > 0]
+    assert positive, "chronological validation windows should show positive IC for a positively-linked factor"
 
 
 def test_rank_ic_series_deterministic():
