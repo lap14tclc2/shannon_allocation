@@ -78,6 +78,7 @@
 | [TASK-20260906-099](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-099-allocation-valuation-overlay.md) | Open Valuation Overlay from Allocation Opportunities | in-progress | medium | 2026-09-06 |
 | [TASK-20260906-100](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-100-fix-allocation-reduce-to-zero-semantics.md) | Fix Allocation Reduce-to-Zero and Missing-Data Decision Semantics | verified | high | 2026-09-06 |
 | [TASK-20260906-101](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-101-executable-share-quantity-plans-and-explainable-candidate-selection.md) | Add Executable Share-Quantity Plans and Explainable Candidate Selection to Allocation | completed | high | 2026-09-06 |
+| [TASK-20260906-102](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-102-add-vnd-amount-and-share-quantity-to-allocation.md) | Add VND Amount and Share Quantity to Allocation Recommendations | completed | high | 2026-09-06 |
 
 
 
