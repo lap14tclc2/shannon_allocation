@@ -49,6 +49,15 @@ TECHNICAL_DETERIORATION = "TECHNICAL_DETERIORATION"
 DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
 REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
+# Watchlist specific reasons
+WATCH_VALUATION_TOO_EXPENSIVE = "WATCH_VALUATION_TOO_EXPENSIVE"
+WATCH_MOS_NEAR_THRESHOLD = "WATCH_MOS_NEAR_THRESHOLD"
+WATCH_PORTFOLIO_FIT_WEAK = "WATCH_PORTFOLIO_FIT_WEAK"
+WATCH_SECTOR_CONCENTRATION = "WATCH_SECTOR_CONCENTRATION"
+WATCH_LOW_VALUATION_CONFIDENCE = "WATCH_LOW_VALUATION_CONFIDENCE"
+WATCH_DATA_INCOMPLETE = "WATCH_DATA_INCOMPLETE"
+WATCH_LIQUIDITY_BELOW_BUY_THRESHOLD = "WATCH_LIQUIDITY_BELOW_BUY_THRESHOLD"
+
 ALL_REASON_CODES: frozenset[str] = frozenset({
     QUALITY_STRONG,
     QUALITY_DETERIORATING,
@@ -78,6 +87,13 @@ ALL_REASON_CODES: frozenset[str] = frozenset({
     TECHNICAL_DETERIORATION,
     DATA_INSUFFICIENT,
     REVIEW_REQUIRED,
+    WATCH_VALUATION_TOO_EXPENSIVE,
+    WATCH_MOS_NEAR_THRESHOLD,
+    WATCH_PORTFOLIO_FIT_WEAK,
+    WATCH_SECTOR_CONCENTRATION,
+    WATCH_LOW_VALUATION_CONFIDENCE,
+    WATCH_DATA_INCOMPLETE,
+    WATCH_LIQUIDITY_BELOW_BUY_THRESHOLD,
 })
 
 # Vietnamese human explanations used by the frontend.
@@ -110,6 +126,13 @@ REASON_CODE_VI: dict[str, str] = {
     TECHNICAL_DETERIORATION: "Diễn biến giá suy yếu, chưa nên mua thêm.",
     DATA_INSUFFICIENT: "Thiếu dữ liệu, không thể kết luận đáng tin cậy.",
     REVIEW_REQUIRED: "Cần rà soát dữ liệu định giá / rủi ro.",
+    WATCH_VALUATION_TOO_EXPENSIVE: "Định giá cao hơn vùng mua an toàn.",
+    WATCH_MOS_NEAR_THRESHOLD: "Biên an toàn gần đạt ngưỡng yêu cầu.",
+    WATCH_PORTFOLIO_FIT_WEAK: "Mức độ phù hợp danh mục chưa đạt chuẩn mua.",
+    WATCH_SECTOR_CONCENTRATION: "Tỷ trọng ngành hiện tại cao, cần thêm không gian.",
+    WATCH_LOW_VALUATION_CONFIDENCE: "Mức tin cậy định giá chưa đủ cao để giải ngân.",
+    WATCH_DATA_INCOMPLETE: "Dữ liệu định giá / tài chính chưa đầy đủ.",
+    WATCH_LIQUIDITY_BELOW_BUY_THRESHOLD: "Thanh khoản đạt ngưỡng nghiên cứu nhưng chưa đủ ngưỡng MUA.",
 }
 
 

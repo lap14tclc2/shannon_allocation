@@ -248,11 +248,12 @@ class AllocationDecision:
 
 @dataclass(frozen=True)
 class CandidateOpportunity:
-    """A screener-discovered research candidate, not a final BUY action."""
+    """A screener-discovered research candidate, classified into explicit candidate tiers."""
 
     symbol: str
     source: str
     eligibility: EligibilityResult
+    candidate_tier: str = "BUY_READY"
     candidate_rank: int = 0
     portfolio_fit: PortfolioFitResult | None = None
     sizing: SizingResult | None = None
@@ -260,8 +261,13 @@ class CandidateOpportunity:
     # shortlist and is NEVER used to determine BUY/HOLD/REDUCE/SELL.
     discovery_score: float | None = None
     reason_codes: tuple[str, ...] = ()
+    failed_gates: tuple[str, ...] = ()
+    watch_reasons: tuple[str, ...] = ()
+    max_qualifying_price: float | None = None
+    max_qualifying_price_vnd: float | None = None
     decision: AllocationDecision | None = None
     selection_evidence: dict[str, Any] = field(default_factory=dict)
+    gate_evidence: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = _as_dict(self)
@@ -270,7 +276,6 @@ class CandidateOpportunity:
         payload["sizing"] = self.sizing.to_dict() if self.sizing else None
         payload["decision"] = self.decision.to_dict() if self.decision else None
         return _json_safe(payload)
-
 
 
 @dataclass(frozen=True)
@@ -286,6 +291,12 @@ class PortfolioAllocationReport:
     no_action_required: bool = True
     holdings: tuple[AllocationDecision, ...] = ()
     opportunities: tuple[CandidateOpportunity, ...] = ()
+    watchlist: tuple[CandidateOpportunity, ...] = ()
+    rejected: tuple[CandidateOpportunity, ...] = ()
+    buy_ready_count: int = 0
+    watchlist_count: int = 0
+    rejected_count: int = 0
+    universe_count: int = 0
     risk_summary: dict[str, Any] = field(default_factory=dict)
     data_quality: dict[str, Any] = field(default_factory=dict)
     reason_codes: tuple[str, ...] = ()
@@ -296,6 +307,8 @@ class PortfolioAllocationReport:
         payload = _as_dict(self)
         payload["holdings"] = [h.to_dict() for h in self.holdings]
         payload["opportunities"] = [o.to_dict() for o in self.opportunities]
+        payload["watchlist"] = [o.to_dict() for o in self.watchlist]
+        payload["rejected"] = [o.to_dict() for o in self.rejected]
         payload["cash_suggested_range"] = (
             list(self.cash_suggested_range) if self.cash_suggested_range is not None else None
         )

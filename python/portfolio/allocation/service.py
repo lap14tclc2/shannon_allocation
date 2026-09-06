@@ -12,10 +12,11 @@ from dataclasses import replace
 from typing import Any, Callable
 
 from ..risk import portfolio_risk as canonical_portfolio_risk
-from .candidate_service import shortlist_candidates
+from .candidate_service import classify_candidate, classify_screener_universe, shortlist_candidates
 from .eligibility import eligibility_from_signal, signal_from_screener_item
 from .execution_planner import compute_execution_plan
 from .models import (
+    AllocationDecision,
     CandidateOpportunity,
     PortfolioFitResult,
     PortfolioAllocationReport,
@@ -165,6 +166,25 @@ class AllocationService:
             0.0,
         ))
         proposed = max(0.0, float(proposed_weight))
+        if not base_rows:
+            return PortfolioFitResult(
+                symbol=str(symbol).upper(),
+                current_weight=0.0,
+                proposed_weight=proposed,
+                portfolio_vol_before=None,
+                portfolio_vol_after=None,
+                risk_contribution_before=None,
+                risk_contribution_after=1.0,
+                diversification_ratio_before=None,
+                diversification_ratio_after=1.0,
+                average_correlation_to_portfolio=0.0,
+                max_correlation_to_portfolio=0.0,
+                hhi_after=1.0,
+                effective_positions_after=1.0,
+                risk_available=True,
+                fit="GOOD",
+            )
+
         cloned = self._clone_apply_weight(base_rows, nav, symbol, proposed)
         after_risk: dict = {}
         if cloned:
@@ -292,48 +312,82 @@ class AllocationService:
             })
 
         # Candidate discovery + portfolio-fit simulation.
-        shortlist, candidate_diagnostics = shortlist_candidates(
+        # Candidate discovery + portfolio-fit simulation across candidate tiers.
+        buy_ready_candidates, watchlist_candidates, rejected_candidates, counts, candidate_diagnostics = classify_screener_universe(
             candidate_items or [],
             exclude_symbols=holding_symbols,
-            max_candidates=self._max_candidates,
-            min_liquidity=self._min_liquidity,
+            max_buy_ready=self._max_candidates,
+            min_buy_liquidity=self._min_liquidity,
         )
 
-        opportunities: list[CandidateOpportunity] = []
-        for candidate in shortlist:
-            signal = self._signal_for(candidate.symbol, valuation_map)
-            if not signal.get("quality_tier") or signal.get("symbol") != candidate.symbol:
-                item_signal = {
-                    "symbol": candidate.symbol,
-                    "quality_tier": candidate.eligibility.quality_tier,
-                    "quality_score": candidate.eligibility.quality_score,
-                    "hard_rejects": list(candidate.eligibility.hard_rejects),
-                    "valuation_status": candidate.eligibility.valuation_status,
-                    "actual_mos_pct": candidate.eligibility.actual_mos_pct,
-                    "required_mos_pct": candidate.eligibility.required_mos_pct,
-                    "valuation_confidence": candidate.eligibility.valuation_confidence,
+        cash_weight = (simulated_cash / nav) if nav > 0 else 0.0
+
+        # Helper to hydrate candidate with portfolio fit & sizing
+        def _hydrate_candidate(cand: CandidateOpportunity) -> CandidateOpportunity:
+            signal = self._signal_for(cand.symbol, valuation_map)
+            if not signal.get("quality_tier") or signal.get("symbol") != cand.symbol:
+                signal = {
+                    "symbol": cand.symbol,
+                    "quality_tier": cand.eligibility.quality_tier,
+                    "quality_score": cand.eligibility.quality_score,
+                    "hard_rejects": list(cand.eligibility.hard_rejects),
+                    "valuation_status": cand.eligibility.valuation_status,
+                    "actual_mos_pct": cand.eligibility.actual_mos_pct,
+                    "required_mos_pct": cand.eligibility.required_mos_pct,
+                    "valuation_confidence": cand.eligibility.valuation_confidence,
                 }
-                signal = item_signal
+            eligibility = eligibility_from_signal(signal) if signal else cand.eligibility
             provisional_tier = conviction_tier_for(signal)
             provisional_mid = conviction_mid(provisional_tier)
-            fit = self._fit_for_proposed(rows, histories, baseline, nav, candidate.symbol, provisional_mid)
+            fit = self._fit_for_proposed(rows, histories, baseline, nav, cand.symbol, provisional_mid)
             sizing = sizing_for(signal, fit=fit.fit, hard_cap=self._hard_cap)
             if abs(sizing.target_mid - provisional_mid) > 1e-6:
-                fit = self._fit_for_proposed(rows, histories, baseline, nav, candidate.symbol, sizing.target_mid)
-            candidate = replace(
-                candidate,
+                fit = self._fit_for_proposed(rows, histories, baseline, nav, cand.symbol, sizing.target_mid)
+
+            c_item = {"symbol": cand.symbol, "avg_turnover_20d_billion": cand.gate_evidence.get("liquidity_20d_billion", 50.0)}
+            tier, gate_ev, failed_g, watch_r, max_p = classify_candidate(
+                c_item,
+                signal,
+                eligibility,
+                portfolio_fit=fit,
+                min_buy_liquidity=self._min_liquidity,
+            )
+
+            return replace(
+                cand,
+                candidate_tier=tier,
+                gate_evidence=gate_ev,
+                failed_gates=failed_g,
+                watch_reasons=watch_r,
+                max_qualifying_price=max_p,
+                eligibility=eligibility,
                 portfolio_fit=fit,
                 sizing=sizing,
-                reason_codes=tuple(dict.fromkeys(list(candidate.reason_codes) + list(sizing.reason_codes))),
+                reason_codes=tuple(dict.fromkeys(list(cand.reason_codes) + list(sizing.reason_codes) + list(watch_r))),
             )
-            opportunities.append(candidate)
+
+        hydrated_buy_ready_raw = [_hydrate_candidate(c) for c in buy_ready_candidates]
+        hydrated_watchlist_raw = [_hydrate_candidate(c) for c in watchlist_candidates]
+        hydrated_rejected = [_hydrate_candidate(c) for c in rejected_candidates]
+
+        hydrated_buy_ready = []
+        hydrated_watchlist = list(hydrated_watchlist_raw)
+        for c in hydrated_buy_ready_raw:
+            if c.candidate_tier == "BUY_READY":
+                hydrated_buy_ready.append(c)
+            else:
+                hydrated_watchlist.append(c)
+
+        counts["buy_ready_count"] = len(hydrated_buy_ready)
+        counts["watchlist_count"] = len(hydrated_watchlist)
+        counts["rejected_count"] = len(hydrated_rejected)
 
         # Rotation coordination — explicit gates only (no composite score).
         for idx, decision in enumerate(holding_decisions):
             if decision.action != "HOLD":
                 continue
             context = holding_context[idx]
-            for candidate in opportunities:
+            for candidate in hydrated_buy_ready:
                 passed, gate_reasons = rotation_gates(
                     context["eligibility"],
                     holding_fit=context["current_fit"],
@@ -370,40 +424,77 @@ class AllocationService:
             updated_holding_decisions.append(replace(decision, execution_plan=plan))
         holding_decisions = updated_holding_decisions
 
-        # Candidate decisions & execution plans.
-        cash_weight = (simulated_cash / nav) if nav > 0 else 0.0
         rotation_funded_symbols = {
             decision.symbol for decision in holding_decisions if decision.action in ("SELL", "REDUCE")
             and "SUPERIOR_REPLACEMENT_AVAILABLE" in decision.reason_codes
         }
-        candidate_decisions = {
-            candidate.symbol: decide_candidate(
+
+        # Process BUY_READY candidates -> decide_candidate
+        final_buy_ready: list[CandidateOpportunity] = []
+        demoted_to_watchlist: list[CandidateOpportunity] = []
+
+        for candidate in hydrated_buy_ready:
+            cand_dec = decide_candidate(
                 candidate,
                 cash_weight=cash_weight,
                 rotation_funded=candidate.symbol in rotation_funded_symbols,
             )
-            for candidate in opportunities
-        }
+            item = next((it for it in (candidate_items or []) if str(it.get("symbol") or "").upper() == candidate.symbol), {})
+            cand_price = _number(item.get("current_price") or item.get("close") or item.get("latest_price") or item.get("price"))
+            plan = compute_execution_plan(
+                cand_dec,
+                portfolio_nav=nav,
+                available_cash=simulated_cash,
+                current_quantity=0.0,
+                reference_price=cand_price,
+                hard_cap=self._hard_cap,
+            )
+            cand_dec = replace(cand_dec, execution_plan=plan)
+            candidate = replace(candidate, decision=cand_dec)
 
-        # Attach execution plan and decision to each opportunity for the UI.
-        updated_opportunities = []
-        for candidate in opportunities:
-            cand_dec = candidate_decisions.get(candidate.symbol)
-            if cand_dec:
-                item = next((it for it in (candidate_items or []) if str(it.get("symbol") or "").upper() == candidate.symbol), {})
-                cand_price = _number(item.get("current_price") or item.get("close") or item.get("latest_price") or item.get("price"))
-                plan = compute_execution_plan(
-                    cand_dec,
-                    portfolio_nav=nav,
-                    available_cash=simulated_cash,
-                    current_quantity=0.0,
-                    reference_price=cand_price,
-                    hard_cap=self._hard_cap,
-                )
-                cand_dec = replace(cand_dec, execution_plan=plan)
-            updated_opportunities.append(replace(candidate, decision=cand_dec))
-        opportunities = tuple(updated_opportunities)
+            final_buy_ready.append(candidate)
 
+        # Process WATCHLIST candidates
+        final_watchlist: list[CandidateOpportunity] = []
+        for candidate in hydrated_watchlist:
+            cand_dec = decide_candidate(
+                candidate,
+                cash_weight=cash_weight,
+                rotation_funded=False,
+            )
+            # Ensure action is WATCH and target weights are None for Watchlist
+            cand_dec = replace(
+                cand_dec,
+                action="WATCH",
+                target_min=None,
+                target_mid=None,
+                target_max=None,
+                execution_plan=None,
+            )
+            final_watchlist.append(replace(candidate, decision=cand_dec))
+
+        # Process REJECTED candidates
+        final_rejected: list[CandidateOpportunity] = []
+        for candidate in hydrated_rejected:
+            cand_dec = AllocationDecision(
+                symbol=candidate.symbol,
+                action="WATCH",
+                kind="CANDIDATE",
+                current_weight=0.0,
+                target_min=None,
+                target_mid=None,
+                target_max=None,
+                confidence="LOW",
+                reason_codes=candidate.reason_codes,
+            )
+            final_rejected.append(replace(candidate, decision=cand_dec))
+
+        opportunities = tuple(final_buy_ready)
+        watchlist_tuple = tuple(final_watchlist)
+        rejected_tuple = tuple(final_rejected)
+
+        # Candidate decisions map for verdict
+        candidate_decisions = {c.symbol: c.decision for c in opportunities if c.decision}
 
         # Portfolio verdict.
         holdings_actions = [d.action for d in holding_decisions]
@@ -476,7 +567,13 @@ class AllocationService:
             cash_suggested_range=cash_suggested_range,
             no_action_required=no_action_required,
             holdings=tuple(holding_decisions),
-            opportunities=tuple(opportunities),
+            opportunities=opportunities,
+            watchlist=watchlist_tuple,
+            rejected=rejected_tuple,
+            buy_ready_count=len(final_buy_ready),
+            watchlist_count=len(final_watchlist),
+            rejected_count=len(final_rejected),
+            universe_count=counts.get("universe_count", len(candidate_items or [])),
             risk_summary=self._risk_summary(baseline),
             data_quality=data_quality,
             reason_codes=reason_codes,
