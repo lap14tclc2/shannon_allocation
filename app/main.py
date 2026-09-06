@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+import psycopg
 from fastapi import Body, Cookie, FastAPI, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -145,6 +146,46 @@ def handle_auth_error(_request: Request, exc: AuthError):
     elif exc.code == "PORTFOLIO_NAME_TAKEN":
         status = 409
     return JSONResponse(status_code=status, content=exc.as_dict())
+
+
+@app.exception_handler(psycopg.Error)
+def handle_psycopg_error(_request: Request, exc: psycopg.Error):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": {
+                "message": "Không thể kết nối cơ sở dữ liệu PostgreSQL. Vui lòng kiểm tra dịch vụ PostgreSQL.",
+                "code": "DATABASE_UNAVAILABLE",
+                "details": str(exc),
+            }
+        },
+    )
+
+
+@app.exception_handler(RuntimeError)
+def handle_runtime_error(_request: Request, exc: RuntimeError):
+    msg = str(exc)
+    if "DATABASE_URL" in msg:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "message": "DATABASE_URL chưa được cấu hình.",
+                    "code": "DATABASE_NOT_CONFIGURED",
+                    "details": msg,
+                }
+            },
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": "Lỗi hệ thống.",
+                "code": "INTERNAL_SERVER_ERROR",
+                "details": msg,
+            }
+        },
+    )
 
 
 def auth() -> PostgresAuthStore:
@@ -1079,20 +1120,26 @@ def portfolio_allocation(qport_session: str | None = Cookie(default=None)):
     user = require_portfolio_user(qport_session)
     selected = active_portfolio(user)
     svc = portfolio(user)
-    candidate_items = _allocation_candidates()
-    candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
-    base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
-    valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
-    report = AllocationService().evaluate(
-        position_rows=base_rows,
-        histories=histories,
-        cash=cash,
-        portfolio_id=int(selected["id"]),
-        as_of=as_of,
-        valuation_map=valuation_map,
-        candidate_items=candidate_items,
-    )
-    payload = report.to_dict()
+    try:
+        candidate_items = _allocation_candidates()
+        candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
+        base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
+        valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
+        report = AllocationService().evaluate(
+            position_rows=base_rows,
+            histories=histories,
+            cash=cash,
+            portfolio_id=int(selected["id"]),
+            as_of=as_of,
+            valuation_map=valuation_map,
+            candidate_items=candidate_items,
+        )
+        payload = report.to_dict()
+    except ApiError:
+        raise
+    except Exception as exc:
+        raise ApiError(500, f"Lỗi tính toán phân bổ vốn: {exc}", "ALLOCATION_CALCULATION_ERROR")
+
     return {
         "ok": True,
         "allocation": payload,
@@ -1119,23 +1166,30 @@ def portfolio_allocation_simulate(
     selected = active_portfolio(user)
     svc = portfolio(user)
     changes = _validate_allocation_changes(body.get("changes") or [])
-    candidate_items = _allocation_candidates()
-    candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
-    base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
-    valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
-    report = AllocationService().simulate(
-        changes=changes,
-        position_rows=base_rows,
-        histories=histories,
-        cash=cash,
-        portfolio_id=int(selected["id"]),
-        as_of=as_of,
-        valuation_map=valuation_map,
-        candidate_items=candidate_items,
-    )
+    try:
+        candidate_items = _allocation_candidates()
+        candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
+        base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
+        valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
+        report = AllocationService().simulate(
+            changes=changes,
+            position_rows=base_rows,
+            histories=histories,
+            cash=cash,
+            portfolio_id=int(selected["id"]),
+            as_of=as_of,
+            valuation_map=valuation_map,
+            candidate_items=candidate_items,
+        )
+        payload = report.to_dict()
+    except ApiError:
+        raise
+    except Exception as exc:
+        raise ApiError(500, f"Lỗi mô phỏng phân bổ vốn: {exc}", "ALLOCATION_SIMULATION_ERROR")
+
     return {
         "ok": True,
-        "allocation": report.to_dict(),
+        "allocation": payload,
         "informational_only": True,
         "persisted": False,
         "policy": "SIMULATION_ONLY_NO_PERSISTENCE",
