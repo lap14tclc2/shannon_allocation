@@ -74,4 +74,5 @@
 | [TASK-20260906-095](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-095-buffett-thorp-allocation.md) | Implement Buffett Core + Thorp Overlay Allocation Architecture | verified | high | 2026-09-06 |
 | [TASK-20260906-096](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-096-refactor-allocation-remove-composite-weights.md) | Refactor Allocation V1 to Remove Unvalidated Composite Opportunity Weights | verified | high | 2026-09-06 |
 | [TASK-20260906-097](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-097-pit-quant-research-foundation.md) | Implement PIT Quant Research Foundation for Buffett-Thorp Allocation | verified | high | 2026-09-06 |
+| [TASK-20260906-098](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-098-harden-sealed-oos-and-factor-research.md) | Harden Sealed OOS Semantics and Run End-to-End Factor Research | verified | high | 2026-09-06 |
 
