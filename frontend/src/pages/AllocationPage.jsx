@@ -9,7 +9,6 @@ import {
   ACTION_TONE,
   CONFIDENCE_LABEL_VI,
   CONVICTION_LABEL_VI,
-  ELIGIBILITY_LABEL_VI,
   FIT_LABEL_VI,
   POSTURE_LABEL_VI,
   reasonCodeVi,
@@ -64,13 +63,13 @@ function OpportunityCard({ opportunity, onViewValuation }) {
   const cashAfterVnd = plan?.cash_after_vnd || plan?.cash_after || 0;
 
   return (
-    <article className="allocation-opportunity-card">
+    <article className="allocation-opportunity-card allocation-card-buy-ready">
       <div className="allocation-opportunity-head">
         <strong className="allocation-symbol">{opportunity.symbol}</strong>
-        <span className="allocation-rank">Cơ hội #{opportunity.candidate_rank}</span>
+        <span className="allocation-rank">Cơ hội MUA #{opportunity.candidate_rank}</span>
       </div>
       <div className="allocation-opportunity-action">
-        {opportunity.decision?.action ? <ActionPill action={opportunity.decision.action} /> : <ActionPill action="WATCH" />}
+        <ActionPill action={opportunity.decision?.action || 'BUY_MORE'} />
         {showQtyPlan && (
           <span className="allocation-qty-badge">
             MUA {plan.rounded_quantity_change.toLocaleString('vi-VN')} CP (Lô {plan.lot_size})
@@ -94,9 +93,72 @@ function OpportunityCard({ opportunity, onViewValuation }) {
 
         {evidence.why_selected?.length > 0 && (
           <div className="allocation-why-selected">
-            <div className="allocation-why-title">Vì sao mã này được đề xuất?</div>
+            <div className="allocation-why-title">Vì sao đủ điều kiện MUA?</div>
             <ul className="allocation-why-list">
               {evidence.why_selected.map((item, i) => (
+                <li key={i}>✓ {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="allocation-reasons">
+          {reasons.map(code => <span className="allocation-reason" key={code}>{reasonCodeVi(code)}</span>)}
+        </div>
+      </div>
+      <div className="allocation-opportunity-foot">
+        <button type="button" className="btn-secondary btn-small" onClick={() => onViewValuation(opportunity.symbol)}>Xem định giá</button>
+      </div>
+    </article>
+  );
+}
+
+function WatchlistCard({ opportunity, onViewValuation }) {
+  const fit = opportunity.portfolio_fit || {};
+  const evidence = opportunity.selection_evidence || {};
+  const reasons = (opportunity.reason_codes || []).slice(0, 3);
+  const maxPrice = opportunity.max_qualifying_price || evidence.max_qualifying_price;
+
+  return (
+    <article className="allocation-opportunity-card allocation-card-watchlist">
+      <div className="allocation-opportunity-head">
+        <strong className="allocation-symbol">{opportunity.symbol}</strong>
+        <span className="allocation-rank">Theo dõi #{opportunity.candidate_rank}</span>
+      </div>
+      <div className="allocation-opportunity-action">
+        <ActionPill action="WATCH" />
+      </div>
+      <div className="allocation-opportunity-body">
+        <div className="allocation-opp-grid">
+          <span>Chất lượng</span><strong>{opportunity.eligibility.quality_tier || 'WATCH'}</strong>
+          <span>MOS hiện tại</span><strong data-sensitive>{opportunity.eligibility.actual_mos_pct != null ? `${opportunity.eligibility.actual_mos_pct.toFixed(1)}%` : '—'}</strong>
+          <span>MOS yêu cầu</span><strong data-sensitive>{opportunity.eligibility.required_mos_pct != null ? `${opportunity.eligibility.required_mos_pct.toFixed(1)}%` : '—'}</strong>
+          <span>Phù hợp danh mục</span><strong>{FIT_LABEL_VI[fit.fit] || fit.fit}</strong>
+        </div>
+
+        {evidence.missing_explanations?.length > 0 && (
+          <div className="allocation-missing-gates">
+            <div className="allocation-why-title allocation-missing-title">Yếu tố chưa đạt chuẩn MUA:</div>
+            <ul className="allocation-why-list allocation-missing-list">
+              {evidence.missing_explanations.map((item, i) => (
+                <li key={i}>✕ {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {maxPrice != null && (
+          <div className="allocation-target-price-hint">
+            <span>Giá tối đa để đạt MOS yêu cầu:</span>
+            <strong data-sensitive> ~{maxPrice.toLocaleString('vi-VN')} VND</strong>
+          </div>
+        )}
+
+        {evidence.why_selected?.length > 0 && (
+          <div className="allocation-why-selected">
+            <div className="allocation-why-title">Điểm tích cực:</div>
+            <ul className="allocation-why-list">
+              {evidence.why_selected.slice(0, 2).map((item, i) => (
                 <li key={i}>✓ {item}</li>
               ))}
             </ul>
@@ -127,6 +189,7 @@ function RiskRow({ label, before, after, fmt }) {
 export default function AllocationPage({ allocation: initialAllocation = null, locale = 'vi' }) {
   const [allocation, setAllocation] = useState(initialAllocation || null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [showRejected, setShowRejected] = useState(false);
   const [simSymbol, setSimSymbol] = useState('');
   const [simWeight, setSimWeight] = useState('');
   const [simResult, setSimResult] = useState(null);
@@ -143,7 +206,14 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
   const report = useMemo(() => allocation?.allocation || null, [allocation]);
   const holdings = report?.holdings || [];
   const opportunities = report?.opportunities || [];
+  const watchlist = report?.watchlist || [];
+  const rejected = report?.rejected || [];
   const risk = report?.risk_summary || {};
+
+  const buyReadyCount = report?.buy_ready_count ?? opportunities.length;
+  const watchlistCount = report?.watchlist_count ?? watchlist.length;
+  const rejectedCount = report?.rejected_count ?? rejected.length;
+  const universeCount = report?.universe_count ?? (buyReadyCount + watchlistCount + rejectedCount);
 
   const proposedChanges = useMemo(() => {
     const changes = [];
@@ -224,6 +294,9 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
             <div className="eyebrow">QPort · Phân bổ vốn</div>
             <h1>Phân bổ vốn</h1>
             <p className="muted">Khuyến nghị dài hạn theo triết lý Buffett Core + Thorp Overlay. Không tự động giao dịch.</p>
+            <div className="allocation-universe-summary">
+              <strong>Vũ trụ nghiên cứu ({universeCount} mã):</strong> Đủ điều kiện mua: <span>{buyReadyCount}</span> · Theo dõi: <span>{watchlistCount}</span> · Bị loại: <span>{rejectedCount}</span>
+            </div>
           </div>
           <a className="header-link" href="/transactions">Ghi giao dịch thực tế →</a>
         </header>
@@ -268,12 +341,16 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
           )}
         </section>
 
+        {/* Candidate Tiers */}
         <section className="allocation-section">
-          <h2 className="allocation-section-title">3 · Cơ hội mới (nghiên cứu)</h2>
+          <h2 className="allocation-section-title">
+            3 · Cơ hội đủ điều kiện MUA
+            <span className="allocation-badge-count allocation-count-buy">{buyReadyCount}</span>
+          </h2>
           {opportunities.length === 0 ? (
             <div className="allocation-no-opportunities">
-              <strong>Chưa có cơ hội vượt trội</strong>
-              <p className="muted">Không có ứng viên nào từ bộ lọc vượt qua ngưỡng chất lượng + định giá + phù hợp danh mục. Giữ tiền mặt là lựa chọn hợp lệ.</p>
+              <strong>Chưa có ứng viên đạt chuẩn MUA</strong>
+              <p className="muted">Không có ứng viên nào vượt qua đồng thời tất cả các ngưỡng Chất lượng + Biên an toàn (MOS) + Thanh khoản + Phù hợp danh mục. Tiêu chuẩn MUA không bị hạ thấp. Giữ tiền mặt là hợp lệ.</p>
               <a className="btn-secondary btn-small" href="/screener">Mở bộ lọc cổ phiếu</a>
             </div>
           ) : (
@@ -286,7 +363,66 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
         </section>
 
         <section className="allocation-section">
-          <h2 className="allocation-section-title">4 · Thay đổi đề xuất</h2>
+          <h2 className="allocation-section-title">
+            4 · Gần đạt / Cần theo dõi (Watchlist)
+            <span className="allocation-badge-count allocation-count-watch">{watchlistCount}</span>
+          </h2>
+          {watchlist.length === 0 ? (
+            <p className="muted">Không có mã nào thuộc nhóm theo dõi.</p>
+          ) : (
+            <div className="allocation-opportunity-grid">
+              {watchlist.map(opp => (
+                <WatchlistCard key={opp.symbol} opportunity={opp} onViewValuation={setSelectedSymbol} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {rejected.length > 0 && (
+          <section className="allocation-section">
+            <h2 className="allocation-section-title">
+              5 · Danh sách bị loại
+              <span className="allocation-badge-count allocation-count-rejected">{rejectedCount}</span>
+            </h2>
+            <div className="allocation-rejected-box">
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={() => setShowRejected(!showRejected)}
+              >
+                {showRejected ? 'Ẩn danh sách bị loại ▲' : `Xem ${rejectedCount} mã bị loại (vi phạm loại trừ cứng / chất lượng thấp) ▼`}
+              </button>
+              {showRejected && (
+                <div className="allocation-table-wrap allocation-rejected-table">
+                  <table className="allocation-table">
+                    <thead>
+                      <tr>
+                        <th>Mã</th><th>Tầng chất lượng</th><th>Lý do bị loại</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rejected.map(cand => {
+                        const rejects = cand.eligibility.hard_rejects?.length
+                          ? cand.eligibility.hard_rejects.join(', ')
+                          : (cand.failed_gates?.join(', ') || 'QUALITY_LOW');
+                        return (
+                          <tr key={cand.symbol}>
+                            <td className="allocation-symbol">{cand.symbol}</td>
+                            <td>{cand.eligibility.quality_tier || 'LOW_QUALITY'}</td>
+                            <td className="error">{rejects}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        <section className="allocation-section">
+          <h2 className="allocation-section-title">6 · Thay đổi đề xuất</h2>
           {proposedChanges.length === 0 ? (
             <div className="allocation-no-changes">
               <strong>{noAction ? 'Không cần hành động' : 'Không có thay đổi bắt buộc'}</strong>
@@ -341,7 +477,6 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
             </ul>
           )}
 
-
           <div className="allocation-handoff">
             <a className="btn-secondary btn-small" href="/transactions">Tạo bản nháp giao dịch</a>
             <a className="btn-secondary btn-small" href="/risk">Xem phân tích rủi ro</a>
@@ -349,7 +484,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
         </section>
 
         <section className="allocation-section">
-          <h2 className="allocation-section-title">5 · Mô phỏng thay đổi (trước / sau rủi ro)</h2>
+          <h2 className="allocation-section-title">7 · Mô phỏng thay đổi (trước / sau rủi ro)</h2>
           <form className="allocation-sim-form" onSubmit={runSimulation}>
             <label>
               <span>Mã cổ phiếu</span>
@@ -385,7 +520,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
         </section>
 
         <section className="allocation-section">
-          <h2 className="allocation-section-title">6 · Bằng chứng & chất lượng dữ liệu</h2>
+          <h2 className="allocation-section-title">8 · Bằng chứng & chất lượng dữ liệu</h2>
           <div className="allocation-evidence">
             <div>
               <h3>Lý do khuyến nghị</h3>
