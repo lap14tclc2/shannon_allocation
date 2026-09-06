@@ -328,8 +328,8 @@ def test_scenario7_correlated_bank_candidate_is_capped_and_watched():
         position_rows=rows, cash=30.0, portfolio_id=1, as_of="2026-09-06",
         valuation_map=valuation_map, candidate_items=candidates,
     )
-    assert report.opportunities, "VPB must appear as a candidate opportunity"
-    vpb = report.opportunities[0]
+    assert report.watchlist, "VPB must appear as a candidate in watchlist"
+    vpb = report.watchlist[0]
     assert vpb.portfolio_fit.fit == "WEAK"
     assert vpb.sizing.target_max <= 0.05
     from portfolio.allocation.opportunity import decide_candidate
