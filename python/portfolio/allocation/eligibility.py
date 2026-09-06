@@ -81,10 +81,25 @@ def _valuation_reason_codes(valuation_status: str | None) -> list[str]:
     return []
 
 
+THESIS_BREAKING_REJECTS = frozenset({
+    "SOLVENCY_RISK",
+    "ACCOUNTING_UNRELIABLE",
+    "EXCESSIVE_DILUTION",
+    "UNNORMALIZABLE_EARNINGS",
+    "CIRCLE_OF_COMPETENCE_FAIL",
+})
+DATA_QUALITY_REJECTS = frozenset({
+    "DATA_INSUFFICIENT",
+})
+
+
 def eligibility_from_signal(signal: dict) -> EligibilityResult:
     """Deterministically map a value-engine signal to an EligibilityResult."""
     symbol = str(signal.get("symbol") or "?").upper()
-    hard_rejects = tuple(str(code).upper() for code in (signal.get("hard_rejects") or []) if code)
+    raw_rejects = tuple(str(code).upper() for code in (signal.get("hard_rejects") or []) if code)
+    thesis_rejects = tuple(r for r in raw_rejects if r in THESIS_BREAKING_REJECTS or r not in DATA_QUALITY_REJECTS)
+    data_rejects = tuple(r for r in raw_rejects if r in DATA_QUALITY_REJECTS)
+
     quality_tier = str(signal.get("quality_tier") or "").upper() or None
     quality_score = _number(signal.get("quality_score"))
     valuation_status = signal.get("valuation_status")
@@ -98,15 +113,14 @@ def eligibility_from_signal(signal: dict) -> EligibilityResult:
         else None
     )
 
-    # 1. Hard rejects always override momentum/technical strength.
-    if hard_rejects:
+    # 1. Thesis-breaking hard rejects (SOLVENCY_RISK, ACCOUNTING_UNRELIABLE, etc.)
+    if thesis_rejects:
         reasons = [HARD_REJECT]
-        if DATA_INSUFFICIENT in hard_rejects:
-            reasons.append(DATA_INSUFFICIENT)
+        reasons.extend(thesis_rejects)
         return EligibilityResult(
             symbol=symbol,
             status="INELIGIBLE",
-            hard_rejects=hard_rejects,
+            hard_rejects=thesis_rejects,
             quality_tier=quality_tier,
             quality_score=int(quality_score) if quality_score is not None else None,
             valuation_status=valuation_status,
@@ -135,11 +149,9 @@ def eligibility_from_signal(signal: dict) -> EligibilityResult:
             data_quality="LOW_QUALITY",
         )
 
-    # 3. Missing quality/data -> cannot conclude investable.
-    if quality_tier is None or quality_tier not in _INVESTABLE_TIERS:
+    # 3. Data insufficient / non-investable tier -> WATCHLIST (never INELIGIBLE).
+    if data_rejects or quality_tier is None or quality_tier not in _INVESTABLE_TIERS:
         reasons = [DATA_INSUFFICIENT]
-        if quality_tier == "WATCH":
-            reasons = [DATA_INSUFFICIENT]
         return EligibilityResult(
             symbol=symbol,
             status="WATCHLIST",
@@ -152,8 +164,9 @@ def eligibility_from_signal(signal: dict) -> EligibilityResult:
             actual_mos_pct=actual_mos,
             required_mos_pct=required_mos,
             reason_codes=tuple(dict.fromkeys(reasons)),
-            data_quality="DATA_INSUFFICIENT" if quality_tier is None else "WATCH",
+            data_quality="DATA_INSUFFICIENT" if (data_rejects or quality_tier is None) else "WATCH",
         )
+
 
     # 4. Investable tier requires a published valuation (public MOS).
     if actual_mos is None or required_mos is None:

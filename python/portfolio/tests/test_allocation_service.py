@@ -273,8 +273,10 @@ def test_scenario5_weak_holding_superior_candidate_rotates():
         valuation_map=valuation_map, candidate_items=candidates,
     )
     xyz = next(d for d in report.holdings if d.symbol == "XYZ")
-    assert xyz.action == "REDUCE"
+    assert xyz.action == "SELL"
+    assert xyz.target_mid == 0.0
     assert "SUPERIOR_REPLACEMENT_AVAILABLE" in xyz.reason_codes
+
     from portfolio.allocation.opportunity import decide_candidate
     opp = report.opportunities[0]
     cand_decision = decide_candidate(opp, cash_weight=report.cash_current, rotation_funded=True)

@@ -9,8 +9,9 @@ from __future__ import annotations
 QUALITY_STRONG = "QUALITY_STRONG"
 QUALITY_DETERIORATING = "QUALITY_DETERIORATING"
 
-# Hard rejection
+# Hard rejection / Thesis break
 HARD_REJECT = "HARD_REJECT"
+THESIS_BROKEN = "THESIS_BROKEN"
 
 # Valuation
 VALUATION_ATTRACTIVE = "VALUATION_ATTRACTIVE"
@@ -21,6 +22,7 @@ VALUATION_SAFETY_POSITIVE = "VALUATION_SAFETY_POSITIVE"
 VALUATION_SAFETY_NEGATIVE = "VALUATION_SAFETY_NEGATIVE"
 VALUATION_SAFETY_INSUFFICIENT = "VALUATION_SAFETY_INSUFFICIENT"
 VALUATION_SAFETY_IMPROVES = "VALUATION_SAFETY_IMPROVES"
+NO_PUBLIC_VALUATION = "NO_PUBLIC_VALUATION"
 
 # Risk / concentration
 POSITION_CONCENTRATED = "POSITION_CONCENTRATED"
@@ -43,13 +45,15 @@ CASH_PREFERRED = "CASH_PREFERRED"
 TECHNICAL_CONFIRMATION = "TECHNICAL_CONFIRMATION"
 TECHNICAL_DETERIORATION = "TECHNICAL_DETERIORATION"
 
-# Data
+# Data & Review
 DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
+REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
 ALL_REASON_CODES: frozenset[str] = frozenset({
     QUALITY_STRONG,
     QUALITY_DETERIORATING,
     HARD_REJECT,
+    THESIS_BROKEN,
     VALUATION_ATTRACTIVE,
     VALUATION_FAIR,
     VALUATION_EXPENSIVE,
@@ -58,6 +62,7 @@ ALL_REASON_CODES: frozenset[str] = frozenset({
     VALUATION_SAFETY_NEGATIVE,
     VALUATION_SAFETY_INSUFFICIENT,
     VALUATION_SAFETY_IMPROVES,
+    NO_PUBLIC_VALUATION,
     POSITION_CONCENTRATED,
     RISK_CONTRIBUTION_HIGH,
     CORRELATION_HIGH,
@@ -72,6 +77,7 @@ ALL_REASON_CODES: frozenset[str] = frozenset({
     TECHNICAL_CONFIRMATION,
     TECHNICAL_DETERIORATION,
     DATA_INSUFFICIENT,
+    REVIEW_REQUIRED,
 })
 
 # Vietnamese human explanations used by the frontend.
@@ -79,6 +85,7 @@ REASON_CODE_VI: dict[str, str] = {
     QUALITY_STRONG: "Doanh nghiệp chất lượng cao, lợi thế cạnh tranh rõ ràng.",
     QUALITY_DETERIORATING: "Chất lượng doanh nghiệp suy giảm, cần thận trọng.",
     HARD_REJECT: "Vi phạm tiêu chí loại trừ cứng của Buffett/Munger.",
+    THESIS_BROKEN: "Vi phạm luận điểm đầu tư cốt lõi.",
     VALUATION_ATTRACTIVE: "Mức giá có biên an toàn hấp dẫn.",
     VALUATION_FAIR: "Mức giá hợp lý, chưa đủ biên an toàn vượt trội.",
     VALUATION_EXPENSIVE: "Mức giá cao hơn giá trị hợp lý.",
@@ -87,6 +94,7 @@ REASON_CODE_VI: dict[str, str] = {
     VALUATION_SAFETY_NEGATIVE: "Biên an toàn thực tế thấp hơn mức yêu cầu.",
     VALUATION_SAFETY_INSUFFICIENT: "Biên an toàn chưa đủ để cam kết vốn mới.",
     VALUATION_SAFETY_IMPROVES: "Biên an toàn của ứng viên tốt hơn rõ rệt vị thế hiện tại.",
+    NO_PUBLIC_VALUATION: "Chưa có định giá công khai.",
     POSITION_CONCENTRATED: "Tỷ trọng nắm giữ đang quá tập trung.",
     RISK_CONTRIBUTION_HIGH: "Mã này đóng góp rủi ro quá lớn cho danh mục.",
     CORRELATION_HIGH: "Tương quan cao với các vị thế hiện tại.",
@@ -101,7 +109,9 @@ REASON_CODE_VI: dict[str, str] = {
     TECHNICAL_CONFIRMATION: "Xu hướng giá xác nhận quyết định cơ bản.",
     TECHNICAL_DETERIORATION: "Diễn biến giá suy yếu, chưa nên mua thêm.",
     DATA_INSUFFICIENT: "Thiếu dữ liệu, không thể kết luận đáng tin cậy.",
+    REVIEW_REQUIRED: "Cần rà soát dữ liệu định giá / rủi ro.",
 }
+
 
 
 def reason_code_vi(code: str) -> str:

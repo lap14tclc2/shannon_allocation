@@ -39,10 +39,12 @@ from .reason_codes import (
     POSITION_CONCENTRATED,
     QUALITY_DETERIORATING,
     QUALITY_STRONG,
+    REVIEW_REQUIRED,
     RISK_CONTRIBUTION_HIGH,
     SUPERIOR_REPLACEMENT_AVAILABLE,
     TECHNICAL_CONFIRMATION,
     TECHNICAL_DETERIORATION,
+    THESIS_BROKEN,
     VALUATION_SAFETY_IMPROVES,
     VALUATION_SAFETY_INSUFFICIENT,
 )
@@ -99,6 +101,16 @@ def _dedupe(reasons: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(reasons))
 
 
+def _reduce_target(weight: float, cap: float = 0.05) -> tuple[float, float, float]:
+    """Compute a positive partial reduction target (0 < target_mid < weight)."""
+    w = max(0.0, float(weight))
+    mid = round(max(0.005, min(w * 0.5, cap)), 4)
+    if mid >= w and w > 0:
+        mid = round(w * 0.5, 4)
+    low = round(mid * 0.5, 4)
+    return low, mid, mid
+
+
 # ---------------------------------------------------------------------------
 # Decision gates
 # ---------------------------------------------------------------------------
@@ -117,10 +129,12 @@ def decide_holding(
 ) -> AllocationDecision:
     """Advisory decision for a current holding — explicit gates, no score.
 
-    A. hard reject   -> SELL
-    B. LOW_QUALITY   -> REDUCE (fundamental deterioration)
-    C. excessive risk contribution -> REDUCE (canonical thresholds)
-    D. otherwise     -> HOLD (default; no composite score required)
+    Hierarchy:
+    A. Destructive hard reject / thesis break -> SELL (target 0%)
+    B. Confirmed LOW_QUALITY                 -> REDUCE (positive target > 0)
+    C. Excessive risk contribution           -> REDUCE (positive risk-capped target)
+    D. Incomplete data / low confidence      -> HOLD + REVIEW_REQUIRED (no fabricated target)
+    E. Otherwise                             -> HOLD (default)
     """
     weight = max(0.0, float(current_weight))
     rc = risk_contribution if risk_contribution is not None else None
@@ -132,28 +146,27 @@ def decide_holding(
         "technical_confirmation": technical,
     }
 
-    # A. Hard reject / thesis break -> SELL.
+    # A. Destructive hard reject / thesis break -> SELL (target 0%).
     if eligibility.hard_rejects:
-        reasons.append(HARD_REJECT)
+        reasons.extend([HARD_REJECT, THESIS_BROKEN])
         return AllocationDecision(
             symbol=eligibility.symbol, action="SELL", kind="HOLDING",
             current_weight=weight, target_min=0.0, target_mid=0.0, target_max=0.0,
             confidence="HIGH", reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # B. Fundamental deterioration -> REDUCE.
-    if eligibility.status == "INELIGIBLE":
+    # B. Confirmed fundamental deterioration (LOW_QUALITY) -> REDUCE (target > 0).
+    if eligibility.quality_tier == "LOW_QUALITY" or (eligibility.status == "INELIGIBLE" and not eligibility.hard_rejects):
         reasons.append(QUALITY_DETERIORATING)
+        low, mid, high = _reduce_target(weight, cap=0.05)
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, target_min=0.0, target_mid=0.0,
-            target_max=min(weight, 0.05), confidence="MEDIUM",
+            current_weight=weight, target_min=low, target_mid=mid,
+            target_max=high, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # C. Excessive risk contribution (canonical QPort health convention) -> REDUCE.
-    #    Nominal weight > hard_cap alone is informational (POSITION_CONCENTRATED)
-    #    and never forces a trade by itself.
+    # C. Excessive risk contribution -> REDUCE (positive risk-capped target).
     risk_breach = bool(
         rc is not None and equal_risk is not None and equal_risk > 0
         and rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
@@ -162,15 +175,30 @@ def decide_holding(
         reasons.append(POSITION_CONCENTRATED)
     if risk_breach:
         reasons.append(RISK_CONTRIBUTION_HIGH)
-        reduce_target = max(0.0, min(weight, 0.25))
+        low, mid, high = _reduce_target(weight, cap=min(0.15, hard_cap * 0.75))
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, target_min=0.0, target_mid=reduce_target,
-            target_max=reduce_target, confidence="MEDIUM",
+            current_weight=weight, target_min=low, target_mid=mid,
+            target_max=high, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # D. Normal good holding -> HOLD (default). No score threshold required.
+    # D. Missing evidence / low valuation confidence -> HOLD + REVIEW_REQUIRED.
+    # UNKNOWN != BAD: Insufficient data does NOT cause forced sell or reduction.
+    if (
+        eligibility.status == "WATCHLIST"
+        or DATA_INSUFFICIENT in eligibility.reason_codes
+        or eligibility.valuation_confidence == "LOW"
+        or eligibility.data_quality in ("DATA_INSUFFICIENT", "NO_PUBLIC_VALUATION", "WATCH")
+    ):
+        reasons.append(REVIEW_REQUIRED)
+        return AllocationDecision(
+            symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
+            current_weight=weight, target_min=None, target_mid=None, target_max=None,
+            confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+        )
+
+    # E. Normal good holding -> HOLD (default).
     if eligibility.quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
         reasons.append(QUALITY_STRONG)
     if eligibility.status == "INVESTABLE":
@@ -183,8 +211,10 @@ def decide_holding(
         symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
         current_weight=weight, target_min=target_min,
         target_mid=target_mid, target_max=target_max,
-        confidence="MEDIUM", reason_codes=_dedupe(reasons), bands=bands,
+        confidence=eligibility.valuation_confidence or "MEDIUM",
+        reason_codes=_dedupe(reasons), bands=bands,
     )
+
 
 
 def decide_candidate(

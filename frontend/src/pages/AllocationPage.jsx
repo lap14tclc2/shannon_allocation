@@ -28,9 +28,12 @@ function ActionPill({ action }) {
 
 function HoldingRow({ decision }) {
   const reasons = (decision.reason_codes || []).slice(0, 3);
-  const bandText = decision.target_min != null && decision.target_mid != null
-    ? `${formatWeight(decision.target_min)} – ${formatWeight(decision.target_max)}`
-    : '—';
+  let bandText = '—';
+  if (decision.action === 'SELL') {
+    bandText = '0.0%';
+  } else if (decision.target_min != null && decision.target_mid != null) {
+    bandText = `${formatWeight(decision.target_min)} – ${formatWeight(decision.target_max)}`;
+  }
   return (
     <tr>
       <td className="allocation-symbol">{decision.symbol}</td>
@@ -117,12 +120,24 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
     const changes = [];
     for (const d of holdings) {
       if (d.action === 'REDUCE' || d.action === 'SELL') {
-        changes.push({ symbol: d.symbol, action: d.action, target: d.target_mid, reason: d.reason_codes?.length ? reasonCodeVi(d.reason_codes[0]) : '' });
+        changes.push({
+          symbol: d.symbol,
+          action: d.action,
+          current_weight: d.current_weight,
+          target: d.target_mid,
+          reason: d.reason_codes?.length ? reasonCodeVi(d.reason_codes[0]) : ''
+        });
       }
     }
     for (const opp of opportunities) {
       if (opp.decision?.action === 'BUY_MORE') {
-        changes.push({ symbol: opp.symbol, action: 'BUY_MORE', target: opp.decision.target_mid, reason: opp.reason_codes?.length ? reasonCodeVi(opp.reason_codes[0]) : '' });
+        changes.push({
+          symbol: opp.symbol,
+          action: 'BUY_MORE',
+          current_weight: 0,
+          target: opp.decision.target_mid,
+          reason: opp.reason_codes?.length ? reasonCodeVi(opp.reason_codes[0]) : ''
+        });
       }
     }
     return changes;
@@ -248,15 +263,28 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
             </div>
           ) : (
             <ul className="allocation-change-list">
-              {proposedChanges.map(change => (
-                <li key={change.symbol}>
-                  <strong>{change.symbol}</strong> <ActionPill action={change.action} />
-                  <span data-sensitive>{change.target != null ? `→ ${formatWeight(change.target)}` : ''}</span>
-                  <span className="muted">{change.reason}</span>
-                </li>
-              ))}
+              {proposedChanges.map(change => {
+                let targetText = '';
+                if (change.action === 'REDUCE') {
+                  targetText = change.target != null
+                    ? `${formatWeight(change.current_weight)} → ${formatWeight(change.target)}`
+                    : '';
+                } else if (change.action === 'SELL') {
+                  targetText = `${formatWeight(change.current_weight)} → 0.0%`;
+                } else if (change.action === 'BUY_MORE') {
+                  targetText = change.target != null ? `→ ${formatWeight(change.target)}` : '';
+                }
+                return (
+                  <li key={change.symbol}>
+                    <strong>{change.symbol}</strong> <ActionPill action={change.action} />
+                    {targetText ? <span data-sensitive>{targetText}</span> : null}
+                    <span className="muted">{change.reason}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
+
           <div className="allocation-handoff">
             <a className="btn-secondary btn-small" href="/transactions">Tạo bản nháp giao dịch</a>
             <a className="btn-secondary btn-small" href="/risk">Xem phân tích rủi ro</a>

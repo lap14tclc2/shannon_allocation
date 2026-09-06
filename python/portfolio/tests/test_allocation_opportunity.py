@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from portfolio.allocation.models import CandidateOpportunity, EligibilityResult, PortfolioFitResult, SizingResult
+from portfolio.allocation.eligibility import eligibility_from_signal
+from portfolio.allocation.models import (
+    AllocationDecision,
+    CandidateOpportunity,
+    EligibilityResult,
+    PortfolioFitResult,
+    SizingResult,
+)
 from portfolio.allocation.opportunity import (
     MIN_VALUATION_SAFETY,
     VALUATION_SAFETY_REPLACEMENT_DELTA,
@@ -14,6 +21,7 @@ from portfolio.allocation.opportunity import (
     quality_tier_rank,
     rotation_gates,
 )
+
 from portfolio.allocation.reason_codes import (
     CASH_PREFERRED,
     CORRELATION_HIGH,
@@ -301,3 +309,196 @@ def test_bands_expose_separate_dimensions_not_a_composite():
     assert "technical_confirmation" in bands
     assert "opportunity_score" not in bands
     assert bands["business_quality_tier"] == "HIGH_QUALITY"
+
+
+# ---------------------------------------------------------------------------
+# Semantic Invariant & Matrix Tests (TASK-20260906-100)
+# ---------------------------------------------------------------------------
+
+def test_reduce_cannot_have_zero_target():
+    """Requirement 1: REDUCE can never target 0%."""
+    import pytest
+    with pytest.raises(ValueError, match="REDUCE decision.*cannot target <= 0%"):
+        AllocationDecision(
+            symbol="REE",
+            action="REDUCE",
+            current_weight=0.10,
+            target_min=0.0,
+            target_mid=0.0,
+            target_max=0.0,
+        )
+
+
+def test_sell_must_have_zero_target():
+    """Requirement 2: SELL must have target_mid == 0."""
+    import pytest
+    with pytest.raises(ValueError, match="SELL decision.*must target 0%"):
+        AllocationDecision(
+            symbol="FRT",
+            action="SELL",
+            current_weight=0.10,
+            target_min=0.05,
+            target_mid=0.05,
+            target_max=0.05,
+        )
+    valid_sell = AllocationDecision(
+        symbol="FRT",
+        action="SELL",
+        current_weight=0.10,
+        target_min=0.0,
+        target_mid=0.0,
+        target_max=0.0,
+    )
+    assert valid_sell.target_mid == 0.0
+
+
+def test_data_insufficient_alone_produces_hold_review():
+    """Requirement 3: DATA_INSUFFICIENT alone on existing holding -> HOLD/REVIEW."""
+    sig = {
+        "symbol": "GAS",
+        "quality_tier": "WATCH",
+        "hard_rejects": ["DATA_INSUFFICIENT"],
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.15, risk_contribution=None, equal_risk=None)
+    assert dec.action == "HOLD"
+    assert dec.target_mid is None
+    assert "REVIEW_REQUIRED" in dec.reason_codes
+    assert "DATA_INSUFFICIENT" in dec.reason_codes
+
+
+def test_missing_public_valuation_alone_produces_hold_review():
+    """Requirement 4: Missing public valuation alone -> HOLD/REVIEW."""
+    sig = {
+        "symbol": "GAS",
+        "quality_tier": "HIGH_QUALITY",
+        "actual_mos_pct": None,
+        "required_mos_pct": None,
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.10, risk_contribution=None, equal_risk=None)
+    assert dec.action == "HOLD"
+    assert dec.target_mid is None
+    assert "REVIEW_REQUIRED" in dec.reason_codes
+
+
+def test_low_valuation_confidence_alone_produces_hold_review():
+    """Requirement 5: LOW valuation confidence alone -> HOLD/REVIEW."""
+    sig = {
+        "symbol": "KSV",
+        "quality_tier": "INVESTABLE",
+        "actual_mos_pct": 20.0,
+        "required_mos_pct": 15.0,
+        "valuation_confidence": "LOW",
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.08, risk_contribution=None, equal_risk=None)
+    assert dec.action == "HOLD"
+    assert dec.target_mid is None
+    assert "REVIEW_REQUIRED" in dec.reason_codes
+
+
+def test_low_quality_confirmed_produces_reduce_positive():
+    """Requirement 6: LOW_QUALITY confirmed -> REDUCE with positive target."""
+    sig = {
+        "symbol": "REE",
+        "quality_tier": "LOW_QUALITY",
+        "quality_score": 45,
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.12, risk_contribution=None, equal_risk=None)
+    assert dec.action == "REDUCE"
+    assert dec.target_mid is not None
+    assert dec.target_mid > 0.0
+    assert dec.target_mid < 0.12
+
+
+def test_solvency_risk_produces_sell():
+    """Requirement 7: SOLVENCY_RISK -> SELL with 0% target."""
+    sig = {
+        "symbol": "FRT",
+        "quality_tier": "INVESTABLE",
+        "hard_rejects": ["SOLVENCY_RISK"],
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.10, risk_contribution=None, equal_risk=None)
+    assert dec.action == "SELL"
+    assert dec.target_mid == 0.0
+
+
+def test_accounting_unreliable_produces_sell():
+    """Requirement 8: ACCOUNTING_UNRELIABLE -> SELL with 0% target."""
+    sig = {
+        "symbol": "FRT",
+        "quality_tier": "HIGH_QUALITY",
+        "hard_rejects": ["ACCOUNTING_UNRELIABLE"],
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.10, risk_contribution=None, equal_risk=None)
+    assert dec.action == "SELL"
+    assert dec.target_mid == 0.0
+
+
+def test_excessive_risk_contribution_produces_reduce_positive():
+    """Requirement 9: Excessive risk contribution -> REDUCE with target > 0."""
+    sig = {
+        "symbol": "VGI",
+        "quality_tier": "HIGH_QUALITY",
+        "actual_mos_pct": 25.0,
+        "required_mos_pct": 15.0,
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(
+        elig,
+        current_weight=0.35,
+        risk_contribution=0.50,
+        equal_risk=0.20,
+    )
+    assert dec.action == "REDUCE"
+    assert dec.target_mid is not None
+    assert dec.target_mid > 0.0
+    assert dec.target_mid < 0.35
+    assert "RISK_CONTRIBUTION_HIGH" in dec.reason_codes
+
+
+def test_reported_symbols_synthetic_fixtures_regression():
+    """Requirement 21: Regression fixtures for reported symbols (FRT, VJC, KSV, REE, GAS)."""
+    cases = [
+        # 1. Thesis break (FRT) -> SELL 0%
+        (
+            {"symbol": "FRT", "quality_tier": "INVESTABLE", "hard_rejects": ["SOLVENCY_RISK"]},
+            0.10, "SELL", 0.0,
+        ),
+        # 2. Missing data (VJC) -> HOLD / REVIEW
+        (
+            {"symbol": "VJC", "quality_tier": "WATCH", "hard_rejects": ["DATA_INSUFFICIENT"]},
+            0.08, "HOLD", None,
+        ),
+        # 3. Low confidence (KSV) -> HOLD / REVIEW
+        (
+            {"symbol": "KSV", "quality_tier": "INVESTABLE", "actual_mos_pct": 15.0, "required_mos_pct": 10.0, "valuation_confidence": "LOW"},
+            0.05, "HOLD", None,
+        ),
+        # 4. Confirmed Low Quality (REE) -> REDUCE > 0
+        (
+            {"symbol": "REE", "quality_tier": "LOW_QUALITY", "quality_score": 40},
+            0.12, "REDUCE", "POSITIVE",
+        ),
+        # 5. Data Insufficient (GAS) -> HOLD / REVIEW
+        (
+            {"symbol": "GAS", "quality_tier": None, "hard_rejects": ["DATA_INSUFFICIENT"]},
+            0.15, "HOLD", None,
+        ),
+    ]
+
+    for sig, weight, expected_action, expected_target_type in cases:
+        elig = eligibility_from_signal(sig)
+        dec = decide_holding(elig, current_weight=weight, risk_contribution=None, equal_risk=None)
+        assert dec.action == expected_action
+        if expected_target_type == 0.0:
+            assert dec.target_mid == 0.0
+        elif expected_target_type == "POSITIVE":
+            assert dec.target_mid is not None and 0.0 < dec.target_mid < weight
+        elif expected_target_type is None:
+            assert dec.target_mid is None
+            assert "REVIEW_REQUIRED" in dec.reason_codes

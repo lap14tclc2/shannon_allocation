@@ -5,6 +5,7 @@ export const REASON_CODE_VI = {
   QUALITY_STRONG: 'Doanh nghiệp chất lượng cao, lợi thế cạnh tranh rõ ràng.',
   QUALITY_DETERIORATING: 'Chất lượng doanh nghiệp suy giảm, cần thận trọng.',
   HARD_REJECT: 'Vi phạm tiêu chí loại trừ cứng của Buffett/Munger.',
+  THESIS_BROKEN: 'Vi phạm luận điểm đầu tư cốt lõi.',
   VALUATION_ATTRACTIVE: 'Mức giá có biên an toàn hấp dẫn.',
   VALUATION_FAIR: 'Mức giá hợp lý, chưa đủ biên an toàn vượt trội.',
   VALUATION_EXPENSIVE: 'Mức giá cao hơn giá trị hợp lý.',
@@ -13,6 +14,7 @@ export const REASON_CODE_VI = {
   VALUATION_SAFETY_NEGATIVE: 'Biên an toàn thực tế thấp hơn mức yêu cầu.',
   VALUATION_SAFETY_INSUFFICIENT: 'Biên an toàn chưa đủ để cam kết vốn mới.',
   VALUATION_SAFETY_IMPROVES: 'Biên an toàn của ứng viên tốt hơn rõ rệt vị thế hiện tại.',
+  NO_PUBLIC_VALUATION: 'Chưa có định giá công khai.',
   POSITION_CONCENTRATED: 'Tỷ trọng nắm giữ đang quá tập trung.',
   RISK_CONTRIBUTION_HIGH: 'Mã này đóng góp rủi ro quá lớn cho danh mục.',
   CORRELATION_HIGH: 'Tương quan cao với các vị thế hiện tại.',
@@ -27,6 +29,8 @@ export const REASON_CODE_VI = {
   TECHNICAL_CONFIRMATION: 'Xu hướng giá xác nhận quyết định cơ bản.',
   TECHNICAL_DETERIORATION: 'Diễn biến giá suy yếu, chưa nên mua thêm.',
   DATA_INSUFFICIENT: 'Thiếu dữ liệu, không thể kết luận đáng tin cậy.',
+  REVIEW_REQUIRED: 'Cần rà soát dữ liệu định giá / rủi ro.',
+
 };
 
 export function reasonCodeVi(code) {

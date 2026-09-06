@@ -114,6 +114,39 @@ class SizingResult:
         return _as_dict(self)
 
 
+def validate_decision_semantics(decision: AllocationDecision) -> bool:
+    """Validate decision semantics and invariants.
+
+    Invariants:
+    1. REDUCE: target_mid MUST NOT be 0. If target_mid is provided, 0 < target_mid < current_weight (when current_weight > 0).
+    2. SELL: target_mid MUST be 0.0, target_min == 0.0, target_max == 0.0.
+    3. BUY_MORE: target_mid MUST be > 0.0.
+    """
+    action = decision.action
+    mid = decision.target_mid
+    weight = max(0.0, float(decision.current_weight or 0.0))
+
+    if action == "REDUCE":
+        if mid is not None and mid <= 0:
+            raise ValueError(f"REDUCE decision for {decision.symbol} cannot target <= 0%: target_mid={mid}")
+        if mid is not None and weight > 0 and round(mid, 6) >= round(weight, 6):
+            raise ValueError(f"REDUCE decision for {decision.symbol} target ({mid}) must be less than current weight ({weight})")
+
+    elif action == "SELL":
+        if mid is not None and mid != 0.0:
+            raise ValueError(f"SELL decision for {decision.symbol} must target 0%, got {mid}")
+        if decision.target_min is not None and decision.target_min != 0.0:
+            raise ValueError(f"SELL decision for {decision.symbol} target_min must be 0%, got {decision.target_min}")
+        if decision.target_max is not None and decision.target_max != 0.0:
+            raise ValueError(f"SELL decision for {decision.symbol} target_max must be 0%, got {decision.target_max}")
+
+    elif action == "BUY_MORE":
+        if mid is not None and mid <= 0:
+            raise ValueError(f"BUY_MORE decision for {decision.symbol} must have positive target_mid, got {mid}")
+
+    return True
+
+
 @dataclass(frozen=True)
 class AllocationDecision:
     """A single advisory decision for a holding or a candidate.
@@ -135,8 +168,12 @@ class AllocationDecision:
     # composite weighted score.
     bands: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        validate_decision_semantics(self)
+
     def to_dict(self) -> dict[str, Any]:
         return _as_dict(self)
+
 
 
 @dataclass(frozen=True)

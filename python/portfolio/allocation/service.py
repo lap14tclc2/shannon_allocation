@@ -342,7 +342,7 @@ class AllocationService:
                 reasons = list(dict.fromkeys(list(decision.reason_codes) + list(gate_reasons)))
                 holding_decisions[idx] = replace(
                     decision,
-                    action="REDUCE",
+                    action="SELL",
                     target_min=0.0,
                     target_mid=0.0,
                     target_max=0.0,
@@ -353,7 +353,7 @@ class AllocationService:
         # Candidate decisions.
         cash_weight = (simulated_cash / nav) if nav > 0 else 0.0
         rotation_funded_symbols = {
-            decision.symbol for decision in holding_decisions if decision.action == "REDUCE"
+            decision.symbol for decision in holding_decisions if decision.action in ("SELL", "REDUCE")
             and "SUPERIOR_REPLACEMENT_AVAILABLE" in decision.reason_codes
         }
         candidate_decisions = {
@@ -364,6 +364,7 @@ class AllocationService:
             )
             for candidate in opportunities
         }
+
         # Attach the final advisory decision to each opportunity for the UI.
         opportunities = tuple(
             replace(candidate, decision=candidate_decisions.get(candidate.symbol))
