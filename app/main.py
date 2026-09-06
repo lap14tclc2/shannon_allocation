@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+import psycopg
 from fastapi import Body, Cookie, FastAPI, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -145,6 +146,46 @@ def handle_auth_error(_request: Request, exc: AuthError):
     elif exc.code == "PORTFOLIO_NAME_TAKEN":
         status = 409
     return JSONResponse(status_code=status, content=exc.as_dict())
+
+
+@app.exception_handler(psycopg.Error)
+def handle_psycopg_error(_request: Request, exc: psycopg.Error):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": {
+                "message": "Không thể kết nối cơ sở dữ liệu PostgreSQL. Vui lòng kiểm tra dịch vụ PostgreSQL.",
+                "code": "DATABASE_UNAVAILABLE",
+                "details": str(exc),
+            }
+        },
+    )
+
+
+@app.exception_handler(RuntimeError)
+def handle_runtime_error(_request: Request, exc: RuntimeError):
+    msg = str(exc)
+    if "DATABASE_URL" in msg:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "message": "DATABASE_URL chưa được cấu hình.",
+                    "code": "DATABASE_NOT_CONFIGURED",
+                    "details": msg,
+                }
+            },
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": "Lỗi hệ thống.",
+                "code": "INTERNAL_SERVER_ERROR",
+                "details": msg,
+            }
+        },
+    )
 
 
 def auth() -> PostgresAuthStore:
@@ -998,6 +1039,161 @@ def portfolio_screener_endpoint(
     )
     result["crawl_enabled"] = _crawl_enabled()
     return result
+
+
+# ---------------------------------------------------------------------------
+# Allocation (Buffett Core + Thorp Overlay) — advisory, read-only
+# ---------------------------------------------------------------------------
+def _allocation_inputs(svc, extra_symbols: list[str] | None = None) -> tuple[list[dict], dict, float, str]:
+    """Read current portfolio state for allocation without writing anything."""
+    from portfolio.accounting import derive_state
+    from portfolio.corrections import effective_events
+
+    state = derive_state(effective_events(svc.store))
+    symbols = sorted(state.positions)
+    history_symbols = sorted(set(symbols) | {str(s).upper() for s in (extra_symbols or []) if s})
+    prices = svc.store.latest_prices(symbols)
+    base_rows, _ = svc._mark_to_market(state, prices)
+    histories = svc._histories(history_symbols)
+    cash = float(state.cash)
+    return base_rows, histories, cash, svc.today_vn()
+
+
+def _allocation_valuation_map(symbols: list[str]) -> dict:
+    """Build symbol -> valuation signal from the canonical scored universe.
+
+    DB-first: reads the cached screener universe; prices are persisted in the
+    finance DB by the existing screener pipeline. No allocation-specific crawl.
+    """
+    from portfolio.allocation.eligibility import signal_from_screener_item
+    from portfolio.screener import compute_all_screener_scores
+
+    items = compute_all_screener_scores(force_refresh=False)
+    signals = {item["symbol"]: signal_from_screener_item(item) for item in items}
+    return {str(s).upper(): signals.get(str(s).upper()) for s in symbols}
+
+
+def _allocation_candidates() -> list[dict]:
+    """Candidate discovery reuses the existing Screener (never executes trades)."""
+    from portfolio.screener import get_screener_results
+
+    result = get_screener_results(
+        mos_filter="all",
+        min_liquidity=10.0,
+        sort_by="mos",
+        limit=80,
+    )
+    return result.get("items", [])
+
+
+def _validate_allocation_changes(changes) -> list[dict]:
+    import re
+
+    if not isinstance(changes, list) or len(changes) > 50:
+        raise ApiError(400, "Simulation changes must be a list of up to 50 items.", "INVALID_CHANGES", "changes")
+    clean: list[dict] = []
+    for index, change in enumerate(changes):
+        if not isinstance(change, dict):
+            raise ApiError(400, "Each change must be an object.", "INVALID_CHANGES", "changes")
+        symbol = str(change.get("symbol") or "").upper().strip()
+        if not re.fullmatch(r"[A-Z0-9]{3,10}", symbol):
+            raise ApiError(400, "Invalid stock symbol.", "INVALID_SYMBOL", "changes")
+        try:
+            target = float(change.get("target_weight"))
+        except (TypeError, ValueError):
+            raise ApiError(400, "target_weight must be a number between 0 and 1.", "INVALID_TARGET_WEIGHT", "changes")
+        if not (0.0 <= target <= 1.0):
+            raise ApiError(400, "target_weight must be a number between 0 and 1.", "INVALID_TARGET_WEIGHT", "changes")
+        clean.append({"symbol": symbol, "target_weight": round(target, 6)})
+    return clean
+
+
+@app.get("/api/portfolio/allocation")
+def portfolio_allocation(qport_session: str | None = Cookie(default=None)):
+    """Read-only advisory allocation for the active portfolio.
+
+    Returns portfolio verdict, holding decisions, candidate opportunities,
+    suggested cash range, risk summary and reason codes. Never executes a trade.
+    """
+    from portfolio.allocation.service import AllocationService
+
+    user = require_portfolio_user(qport_session)
+    selected = active_portfolio(user)
+    svc = portfolio(user)
+    try:
+        candidate_items = _allocation_candidates()
+        candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
+        base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
+        valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
+        report = AllocationService().evaluate(
+            position_rows=base_rows,
+            histories=histories,
+            cash=cash,
+            portfolio_id=int(selected["id"]),
+            as_of=as_of,
+            valuation_map=valuation_map,
+            candidate_items=candidate_items,
+        )
+        payload = report.to_dict()
+    except ApiError:
+        raise
+    except Exception as exc:
+        raise ApiError(500, f"Lỗi tính toán phân bổ vốn: {exc}", "ALLOCATION_CALCULATION_ERROR")
+
+    return {
+        "ok": True,
+        "allocation": payload,
+        "portfolio_context": public_portfolio(selected),
+        "no_action_required": bool(payload["no_action_required"]),
+        "informational_only": True,
+        "policy": "INFORMATION_ONLY",
+    }
+
+
+@app.post("/api/portfolio/allocation/simulate")
+def portfolio_allocation_simulate(
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    """Simulate hypothetical position changes (before/after risk).
+
+    The simulation is advisory and in-memory only: it never persists a
+    transaction and never changes holdings or cash.
+    """
+    from portfolio.allocation.service import AllocationService
+
+    user = require_portfolio_user(qport_session)
+    selected = active_portfolio(user)
+    svc = portfolio(user)
+    changes = _validate_allocation_changes(body.get("changes") or [])
+    try:
+        candidate_items = _allocation_candidates()
+        candidate_symbols = [str(item["symbol"]).upper() for item in candidate_items if item.get("symbol")]
+        base_rows, histories, cash, as_of = _allocation_inputs(svc, extra_symbols=candidate_symbols)
+        valuation_map = _allocation_valuation_map([r["symbol"] for r in base_rows])
+        report = AllocationService().simulate(
+            changes=changes,
+            position_rows=base_rows,
+            histories=histories,
+            cash=cash,
+            portfolio_id=int(selected["id"]),
+            as_of=as_of,
+            valuation_map=valuation_map,
+            candidate_items=candidate_items,
+        )
+        payload = report.to_dict()
+    except ApiError:
+        raise
+    except Exception as exc:
+        raise ApiError(500, f"Lỗi mô phỏng phân bổ vốn: {exc}", "ALLOCATION_SIMULATION_ERROR")
+
+    return {
+        "ok": True,
+        "allocation": payload,
+        "informational_only": True,
+        "persisted": False,
+        "policy": "SIMULATION_ONLY_NO_PERSISTENCE",
+    }
 
 
 @app.get("/api/portfolio/valuation/{symbol}")

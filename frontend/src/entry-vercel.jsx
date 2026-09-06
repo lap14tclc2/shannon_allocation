@@ -13,6 +13,7 @@ import PerformancePage from './pages/PerformancePageV2.jsx';
 import RiskPage from './pages/RiskPage.jsx';
 import ValuationPage from './pages/ValuationPage.jsx';
 import ScreenerPage from './pages/ScreenerPage.jsx';
+import AllocationPage from './pages/AllocationPage.jsx';
 import DividendHistoryPage from './pages/DividendHistoryPage.jsx';
 import SnapshotsPage from './pages/SnapshotsPage.jsx';
 import OperationsPage from './pages/OperationsPage.jsx';
@@ -48,6 +49,7 @@ import './appearance-controls.css';
 import './risk-readable.css';
 import './valuation-page.css';
 import './screener-page.css';
+import './allocation-page.css';
 import './guide-friendly.css';
 import './dividend-history.css';
 import './settings-friendly.css';
@@ -70,6 +72,7 @@ const ROUTES = {
   '/risk': RiskPage,
   '/valuation': ValuationPage,
   '/screener': ScreenerPage,
+  '/allocation': AllocationPage,
   '/dividends': DividendHistoryPage,
   '/snapshots': SnapshotsPage,
   '/operations': PortfolioPage,

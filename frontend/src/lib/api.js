@@ -180,6 +180,8 @@ export const deletePortfolio = (confirmation) => sendJSON('/api/portfolio', 'DEL
 export const syncPortfolio = () => sendJSON('/api/portfolio/sync', 'POST', {});
 export const getPortfolioPerformance = () => getJSON('/api/portfolio/performance');
 export const getPortfolioRisk = () => getJSON('/api/portfolio/risk');
+export const getPortfolioAllocation = () => getJSON('/api/portfolio/allocation');
+export const simulatePortfolioAllocation = (changes) => sendJSON('/api/portfolio/allocation/simulate', 'POST', { changes });
 export async function listPortfolioSnapshots() { const d = await getJSON('/api/portfolio/snapshots'); return d.snapshots || []; }
 export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
 export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });

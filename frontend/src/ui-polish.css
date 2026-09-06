@@ -3,9 +3,10 @@
    terminal/quant-tool visual language toward a familiar Vietnamese portfolio UI. */
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   font-size: 14px;
   letter-spacing: normal;
+  line-height: 1.45;
 }
 
 button,

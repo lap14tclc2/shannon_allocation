@@ -1,0 +1,693 @@
+/* Allocation / Phân bổ vốn — long-term advisory page.
+   Deliberately calm, not a trading terminal. NO ACTION REQUIRED is a
+   first-class positive outcome. */
+
+.allocation-page {
+  --alloc-border: var(--border, #272c27);
+  --alloc-panel: var(--panel, #0f110f);
+  --alloc-accent: var(--accent, #a6ff4d);
+  --alloc-success: var(--success, #9cf26d);
+  --alloc-warning: var(--warning, #f0c65b);
+  --alloc-danger: var(--danger, #ff7474);
+  --alloc-muted: var(--muted, #737c73);
+  --alloc-text: var(--text, #f1f4ef);
+}
+
+.allocation-content {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 72px;
+}
+
+.allocation-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.allocation-header h1 {
+  margin: 4px 0 6px;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.allocation-header .header-link {
+  color: var(--alloc-accent);
+  text-decoration: none;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* NO ACTION REQUIRED hero */
+.allocation-no-action-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 24px;
+  border: 1px solid var(--alloc-border);
+  border-left: 4px solid var(--alloc-success);
+  border-radius: 14px;
+  background: var(--alloc-panel);
+  margin-bottom: 28px;
+}
+
+.allocation-no-action-badge {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--alloc-success) 14%, transparent);
+  color: var(--alloc-success);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.allocation-no-action-hero h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--alloc-success);
+  line-height: 1.3;
+}
+
+.allocation-no-action-hero p {
+  margin: 0;
+  color: var(--alloc-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Sections */
+.allocation-section {
+  margin-bottom: 30px;
+}
+
+.allocation-section-title {
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--alloc-text);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.3;
+}
+
+.allocation-section-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--alloc-border);
+}
+
+.allocation-verdict-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Holdings table */
+.allocation-table-wrap {
+  border: 1px solid var(--alloc-border);
+  border-radius: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--alloc-panel);
+  -webkit-overflow-scrolling: touch;
+}
+
+.allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.allocation-table th,
+.allocation-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--alloc-border);
+}
+
+.allocation-table thead th {
+  color: var(--alloc-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, var(--alloc-border) 22%, transparent);
+  white-space: nowrap;
+}
+
+.allocation-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.allocation-table tbody tr:hover td {
+  background: var(--row-hover, rgba(255, 255, 255, 0.025));
+}
+
+.allocation-symbol {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.allocation-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.allocation-reason {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--alloc-accent) 8%, transparent);
+  color: var(--alloc-text);
+  font-size: 11.5px;
+  border: 1px solid var(--alloc-border);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+/* Action pills — calm advisory tones, not trade execution */
+.allocation-action-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--alloc-border);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.allocation-action-buy { color: var(--alloc-success); border-color: color-mix(in srgb, var(--alloc-success) 45%, transparent); background: color-mix(in srgb, var(--alloc-success) 9%, transparent); }
+.allocation-action-hold { color: var(--alloc-text); }
+.allocation-action-watch { color: var(--alloc-warning); border-color: color-mix(in srgb, var(--alloc-warning) 40%, transparent); background: color-mix(in srgb, var(--alloc-warning) 8%, transparent); }
+.allocation-action-reduce { color: var(--alloc-warning); border-color: color-mix(in srgb, var(--alloc-warning) 55%, transparent); background: color-mix(in srgb, var(--alloc-warning) 12%, transparent); }
+.allocation-action-sell { color: var(--alloc-danger); border-color: color-mix(in srgb, var(--alloc-danger) 50%, transparent); background: color-mix(in srgb, var(--alloc-danger) 10%, transparent); }
+.allocation-action-cash { color: var(--alloc-accent); border-color: color-mix(in srgb, var(--alloc-accent) 40%, transparent); background: color-mix(in srgb, var(--alloc-accent) 8%, transparent); }
+
+/* Opportunities */
+.allocation-opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.allocation-opportunity-card {
+  border: 1px solid var(--alloc-border);
+  border-radius: 14px;
+  background: var(--alloc-panel);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.allocation-opportunity-card:hover {
+  border-color: color-mix(in srgb, var(--alloc-accent) 35%, var(--alloc-border));
+  transform: translateY(-1px);
+}
+
+.allocation-opportunity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.allocation-opportunity-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.allocation-rank {
+  font-size: 11.5px;
+  color: var(--alloc-muted);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.allocation-opportunity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.allocation-opp-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  font-size: 13px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--alloc-border) 60%, transparent);
+}
+
+.allocation-opp-grid span { color: var(--alloc-muted); }
+.allocation-opp-grid strong { font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
+
+.allocation-opp-trade-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--alloc-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--alloc-accent) 22%, transparent);
+  font-size: 12px;
+  color: var(--alloc-text);
+  line-height: 1.4;
+}
+
+.allocation-opp-trade-summary strong {
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.allocation-why-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.allocation-why-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--alloc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.allocation-why-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--alloc-text);
+  line-height: 1.4;
+}
+
+.allocation-why-list li {
+  overflow-wrap: anywhere;
+}
+
+.allocation-opportunity-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed var(--alloc-border);
+}
+
+.allocation-no-opportunities,
+.allocation-no-changes {
+  border: 1px dashed var(--alloc-border);
+  border-radius: 14px;
+  padding: 18px;
+  background: var(--alloc-panel);
+}
+
+.allocation-no-opportunities strong,
+.allocation-no-changes strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.allocation-no-opportunities p,
+.allocation-no-changes p {
+  margin: 0 0 10px;
+}
+
+/* Proposed changes list & item cards */
+.allocation-change-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.allocation-change-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--alloc-border);
+  border-radius: 12px;
+  background: var(--alloc-panel);
+  font-size: 13.5px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  transition: border-color 0.18s ease;
+}
+
+.allocation-change-item:hover {
+  border-color: color-mix(in srgb, var(--alloc-accent) 40%, var(--alloc-border));
+}
+
+.allocation-change-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.allocation-change-main strong {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  color: var(--alloc-text);
+}
+
+.allocation-qty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--alloc-accent) 12%, transparent);
+  color: var(--alloc-accent);
+  border: 1px solid color-mix(in srgb, var(--alloc-accent) 30%, transparent);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.allocation-target-weight {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--alloc-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.allocation-plan-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--alloc-border) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--alloc-border) 50%, transparent);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.allocation-plan-details > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--alloc-muted);
+  white-space: nowrap;
+}
+
+.allocation-plan-details strong {
+  color: var(--alloc-text);
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.allocation-change-reason {
+  font-size: 12px;
+  color: var(--alloc-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.allocation-handoff {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Simulation */
+.allocation-sim-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px;
+  border: 1px solid var(--alloc-border);
+  border-radius: 14px;
+  background: var(--alloc-panel);
+  margin-bottom: 12px;
+}
+
+.allocation-sim-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--alloc-muted);
+}
+
+.allocation-sim-form input {
+  min-width: 160px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--alloc-border);
+  background: var(--input, #0a0c0a);
+  color: var(--alloc-text);
+  font-size: 14px;
+}
+
+.allocation-sim-result {
+  margin-top: 12px;
+}
+
+.allocation-sim-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 4px solid var(--alloc-success);
+  background: color-mix(in srgb, var(--alloc-success) 8%, transparent);
+  font-size: 13.5px;
+}
+
+/* Evidence */
+.allocation-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.allocation-evidence > div {
+  border: 1px solid var(--alloc-border);
+  border-radius: 14px;
+  background: var(--alloc-panel);
+  padding: 14px 16px;
+}
+
+.allocation-evidence h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--alloc-muted);
+  line-height: 1.3;
+}
+
+.allocation-evidence-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--alloc-text);
+  line-height: 1.45;
+}
+
+.allocation-empty {
+  padding: 48px 20px;
+  text-align: center;
+}
+
+/* Responsive queries */
+@media (max-width: 1023px) {
+  .allocation-opportunity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  .allocation-content {
+    padding: 20px 14px 96px;
+  }
+
+  .allocation-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .allocation-header h1 {
+    font-size: 23px;
+  }
+
+  .allocation-verdict-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .allocation-opportunity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .allocation-evidence {
+    grid-template-columns: 1fr;
+  }
+
+  .allocation-table {
+    font-size: 12.5px;
+  }
+
+  .allocation-table th,
+  .allocation-table td {
+    padding: 8px 9px;
+  }
+
+  .allocation-table .allocation-reasons {
+    display: none;
+  }
+
+  .allocation-change-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .allocation-target-weight {
+    margin-left: 0;
+  }
+
+  .allocation-plan-details {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .allocation-sim-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .allocation-sim-form input {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .allocation-verdict-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Candidate Tiers & Watchlist Polish */
+.allocation-universe-summary {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--alloc-muted);
+}
+
+.allocation-universe-summary span {
+  color: var(--alloc-text);
+  font-weight: 700;
+}
+
+.allocation-badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  margin-left: 6px;
+  border: 1px solid var(--alloc-border);
+}
+
+.allocation-count-buy {
+  background: color-mix(in srgb, var(--alloc-success) 16%, transparent);
+  color: var(--alloc-success);
+  border-color: color-mix(in srgb, var(--alloc-success) 35%, transparent);
+}
+
+.allocation-count-watch {
+  background: color-mix(in srgb, var(--alloc-warning) 16%, transparent);
+  color: var(--alloc-warning);
+  border-color: color-mix(in srgb, var(--alloc-warning) 35%, transparent);
+}
+
+.allocation-count-rejected {
+  background: color-mix(in srgb, var(--alloc-danger) 16%, transparent);
+  color: var(--alloc-danger);
+  border-color: color-mix(in srgb, var(--alloc-danger) 35%, transparent);
+}
+
+.allocation-card-watchlist {
+  border-color: color-mix(in srgb, var(--alloc-warning) 25%, var(--alloc-border));
+}
+
+.allocation-missing-gates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--alloc-warning) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--alloc-warning) 25%, transparent);
+}
+
+.allocation-missing-title {
+  color: var(--alloc-warning);
+}
+
+.allocation-missing-list {
+  color: var(--alloc-warning);
+}
+
+.allocation-target-price-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--alloc-accent) 8%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--alloc-accent) 30%, transparent);
+  font-size: 12px;
+  color: var(--alloc-text);
+}
+
+.allocation-target-price-hint strong {
+  color: var(--alloc-accent);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.allocation-rejected-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.allocation-rejected-table {
+  margin-top: 8px;
+}

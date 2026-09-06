@@ -56,7 +56,7 @@ def test_start_page_and_admin_management_ui_are_wired_to_spa_without_credential_
     assert "Tạo danh mục mới" in auth_page
     assert "isAdmin" in auth_page
     assert "Xóa user + data" in admin_page
-    assert "Cập nhật password" in admin_page
+    assert "Xem danh mục" in admin_page
     assert "PostgreSQL schema" in admin_page
 
     for visible_source in (auth_page, admin_page, guide, readme, api):
