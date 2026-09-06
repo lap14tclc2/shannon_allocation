@@ -4,6 +4,7 @@ import {
   getActivityLog,
   getAdminUserPortfolio,
   getCurrentUser,
+  getPortfolioAllocation,
   getPortfolioDashboard,
   getPortfolioHoldingSymbols,
   getPortfolioOperations,
@@ -81,6 +82,8 @@ async function fetchRoutePayload(pathname) {
       ]);
       return { risk, snapshots };
     }
+    case '/allocation':
+      return { allocation: await getPortfolioAllocation() };
     case '/valuation':
       return { symbols: await getPortfolioHoldingSymbols() };
     case '/dividends':

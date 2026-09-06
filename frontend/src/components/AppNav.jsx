@@ -18,11 +18,12 @@ const LINKS = [
   ['/performance', 'performance', 'Hiệu quả'],
   ['/valuation', 'valuation', 'Định giá'],
   ['/screener', 'screener', 'Bộ lọc'],
+  ['/allocation', 'allocation', 'Phân bổ vốn'],
   ['/risk', 'risk', 'Phân tích'],
 ];
 
 const NAVIGATION_LINKS = [
-  ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : 'Rủi ro và mức độ tập trung']),
+  ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : item[2] === 'Phân bổ vốn' ? 'Khuyến nghị phân bổ vốn dài hạn' : 'Rủi ro và mức độ tập trung']),
   ['/dividends', 'dividends', 'Cổ tức', 'Sự kiện và khoản thực nhận'],
   ['/snapshots', 'snapshots', 'Nhật ký NAV', 'Các mốc dữ liệu chính thức'],
   ['/guide', 'guide', 'Hướng dẫn', 'Cách sử dụng QPort'],
@@ -56,6 +57,7 @@ function NavIcon({ name, size = 18 }) {
   if (name === 'performance') return <svg {...common}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 2 5-6" /></svg>;
   if (name === 'valuation') return <svg {...common}><path d="M5 3h14v18H5z" /><path d="M8 8h8M8 12h5M8 16h8" /></svg>;
   if (name === 'screener') return <svg {...common}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>;
+  if (name === 'allocation') return <svg {...common}><path d="M4 7h16" /><path d="M4 12h10" /><path d="M4 17h6" /><circle cx="18" cy="12" r="3" /><circle cx="16" cy="17" r="2.5" /></svg>;
   if (name === 'risk') return <svg {...common}><path d="M12 3 19 6v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6Z" /><path d="M9 12h6" /></svg>;
   if (name === 'portfolio-stack') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8M8 13h5" /></svg>;
   if (name === 'chevron') return <svg {...common}><path d="m8 10 4 4 4-4" /></svg>;
