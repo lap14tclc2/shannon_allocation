@@ -74,6 +74,12 @@ def build_financial_history(facts: list[dict]) -> list[dict]:
                 return None
             return float(Decimal(str(v)) * _BILLION) if abs(Decimal(str(v))) < _BILLION else float(Decimal(str(v)))
 
+        def shares_scale(v):
+            # Shares outstanding are already a full share count, never VND.
+            if v is None:
+                return None
+            return float(Decimal(str(v)))
+
         def scale_pos(v):
             if v is None:
                 return None
@@ -90,7 +96,7 @@ def build_financial_history(facts: list[dict]) -> list[dict]:
             "operating_cash_flow": scale(cfo_val),
             "free_cash_flow": (scale(cfo_val) - scale_pos(capex_val)) if (cfo_val is not None and capex_val is not None) else None,
             "cash_conversion_ratio": conv,
-            "shares_outstanding": scale(shares_y),
+            "shares_outstanding": shares_scale(shares_y),
             "total_debt": scale(debt_val),
             "cash_and_equivalents": scale(cash_val),
         })

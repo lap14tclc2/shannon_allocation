@@ -135,8 +135,32 @@ def cmd_validate_factor(args) -> None:
     print(json.dumps(result, indent=2, default=str))
 
 
+def build_period_payload(config) -> dict:
+    """Structured period report separating walk-forward windows and sealed OOS."""
+    from ..research.walk_forward import (
+        research_cutoff,
+        walk_forward_windows,
+    )
+
+    windows = walk_forward_windows(config)
+    sealed = {
+        "start": config.sealed_oos_start,
+        "end": config.sealed_oos_end,
+    } if (config.sealed_oos_start and config.sealed_oos_end) else None
+    no_after = True
+    if sealed:
+        no_after = all(w["valid_end"] < sealed["start"] for w in windows)
+    return {
+        "research_start": config.research_start,
+        "research_cutoff": research_cutoff(config).isoformat(),
+        "walk_forward_windows": windows,
+        "sealed_oos": sealed,
+        "no_validation_after_sealed": bool(no_after),
+    }
+
+
 def cmd_run_walk_forward(args) -> None:
-    from ..research.walk_forward import ResearchConfig, walk_forward_windows
+    from ..research.walk_forward import ResearchConfig
 
     config = ResearchConfig(
         research_start=args.research_start,
@@ -146,13 +170,55 @@ def cmd_run_walk_forward(args) -> None:
         sealed_oos_start=args.sealed_oos_start,
         sealed_oos_end=args.sealed_oos_end,
     )
-    windows = walk_forward_windows(config)
-    print(json.dumps(windows, indent=2, default=str))
+    payload = build_period_payload(config)
+    print(json.dumps(payload, indent=2, default=str))
+
+
+def cmd_audit_data(args) -> None:
+    from ..research.audit import audit_benchmark, audit_finance_data
+
+    report = audit_finance_data()
+    report["benchmark"] = audit_benchmark()
+    print(json.dumps(report, indent=2, default=str))
+
+
+def cmd_run_full_research(args) -> None:
+    from ..research.runner import run_full_research
+    from ..research.store import ResearchStore
+
+    store = ResearchStore()
+    result = run_full_research(
+        top_n=args.top_n,
+        min_recent_bars=args.min_recent_bars,
+        research_start=args.research_start,
+        snapshot_end=args.snapshot_end,
+        research_end=args.research_end,
+        sealed_oos_start=args.sealed_oos_start,
+        sealed_oos_end=args.sealed_oos_end,
+        train_years=args.train_years,
+        validation_years=args.validation_years,
+        store=store,
+    )
+    if args.report_path:
+        from ..research.report import build_full_report_markdown
+        from pathlib import Path
+
+        path = Path(args.report_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_full_report_markdown(result), encoding="utf-8")
+        print(json.dumps({"run_id": result["run_id"], "report": str(path)}, default=str))
+    else:
+        from ..research.runner import summarize_results
+
+        print(json.dumps({"run_id": result["run_id"], "summary": summarize_results(result["results"])}, indent=2, default=str))
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="QPort research CLI (T09-T13)")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_audit = sub.add_parser("audit-data", help="Produce the real DATA READINESS report")
+    p_audit.set_defaults(func=cmd_audit_data)
 
     p_snap = sub.add_parser("build-snapshots", help="Build and persist factor snapshots")
     p_snap.add_argument("--symbols", help="comma-separated symbols")
@@ -174,7 +240,7 @@ def main(argv: list[str] | None = None) -> None:
     p_val.add_argument("--universe", default="default-liquid-vn")
     p_val.set_defaults(func=cmd_validate_factor)
 
-    p_wf = sub.add_parser("run-walk-forward", help="Print chronological walk-forward windows")
+    p_wf = sub.add_parser("run-walk-forward", help="Print chronological walk-forward windows + sealed OOS")
     p_wf.add_argument("--research-start", default="2016-01-01")
     p_wf.add_argument("--research-end")
     p_wf.add_argument("--train-years", type=int, default=5)
@@ -182,6 +248,19 @@ def main(argv: list[str] | None = None) -> None:
     p_wf.add_argument("--sealed-oos-start")
     p_wf.add_argument("--sealed-oos-end")
     p_wf.set_defaults(func=cmd_run_walk_forward)
+
+    p_full = sub.add_parser("run-full-research", help="End-to-end real factor research")
+    p_full.add_argument("--top-n", type=int, default=150)
+    p_full.add_argument("--min-recent-bars", type=int, default=30)
+    p_full.add_argument("--research-start", default="2019-01-31")
+    p_full.add_argument("--snapshot-end", default="2024-12-31")
+    p_full.add_argument("--research-end", default="2025-12-31")
+    p_full.add_argument("--sealed-oos-start", default="2024-01-01")
+    p_full.add_argument("--sealed-oos-end", default="2025-12-31")
+    p_full.add_argument("--train-years", type=int, default=4)
+    p_full.add_argument("--validation-years", type=int, default=1)
+    p_full.add_argument("--report-path", default=None)
+    p_full.set_defaults(func=cmd_run_full_research)
 
     args = parser.parse_args(argv)
     args.func(args)

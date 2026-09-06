@@ -68,6 +68,17 @@ CREATE TABLE IF NOT EXISTS research_benchmark_prices (
     PRIMARY KEY(benchmark, trading_date)
 );
 
+CREATE TABLE IF NOT EXISTS research_stock_prices (
+    symbol TEXT NOT NULL,
+    trading_date TEXT NOT NULL,
+    close DOUBLE PRECISION NOT NULL,
+    volume DOUBLE PRECISION,
+    source TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    data_quality TEXT NOT NULL DEFAULT 'VALID',
+    PRIMARY KEY(symbol, trading_date)
+);
+
 CREATE TABLE IF NOT EXISTS research_validation_runs (
     run_id TEXT NOT NULL PRIMARY KEY,
     factor TEXT NOT NULL,
@@ -238,6 +249,52 @@ class ResearchStore:
                 (benchmark,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- stock prices --------------------------------------------------------
+    def write_stock_prices(self, symbol: str, rows: list[dict]) -> int:
+        sql = (
+            "INSERT INTO research_stock_prices "
+            "(symbol, trading_date, close, volume, source, fetched_at, data_quality) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (symbol, trading_date) "
+            "DO UPDATE SET close=excluded.close, volume=excluded.volume, "
+            "source=excluded.source, fetched_at=excluded.fetched_at, "
+            "data_quality=excluded.data_quality"
+        )
+        params = [
+            (str(symbol).upper(), r["trading_date"], r["close"],
+             r.get("volume"), r.get("source", "vndirect"),
+             r.get("fetched_at", ""), r.get("data_quality", "VALID"))
+            for r in rows
+        ]
+        with self._connect() as db:
+            db.executemany(sql, params)
+        return len(params)
+
+    def read_stock_price_frame(self, symbol: str):
+        import pandas as pd
+
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT trading_date, close, volume FROM research_stock_prices "
+                "WHERE symbol = ? ORDER BY trading_date",
+                (str(symbol).upper(),),
+            ).fetchall()
+        if not rows:
+            return pd.DataFrame(columns=["close"])
+        frame = pd.DataFrame([dict(r) for r in rows])
+        frame["trading_date"] = pd.to_datetime(frame["trading_date"])
+        return frame.set_index("trading_date").sort_index()
+
+    def read_benchmark_frame(self, benchmark: str = "VNINDEX"):
+        import pandas as pd
+
+        rows = self.read_benchmark_prices(benchmark)
+        if not rows:
+            return pd.DataFrame(columns=["close"])
+        frame = pd.DataFrame(rows)
+        frame["trading_date"] = pd.to_datetime(frame["trading_date"])
+        return frame.set_index("trading_date").sort_index()
 
     # -- validation ---------------------------------------------------------
     def write_validation_run(self, run: dict) -> None:
