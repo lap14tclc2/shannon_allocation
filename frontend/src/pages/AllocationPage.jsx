@@ -120,7 +120,6 @@ function RiskRow({ label, before, after, fmt }) {
       <td>{label}</td>
       <td data-sensitive>{fmt(before)}</td>
       <td data-sensitive>{fmt(after)}</td>
-      <td data-sensitive>{fmt(after)}</td>
     </tr>
   );
 }
