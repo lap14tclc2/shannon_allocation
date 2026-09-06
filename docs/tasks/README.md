@@ -73,4 +73,5 @@
 | [TASK-20260901-094](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260901-094-valuation-handling-consistency-and-publication-gate-hardening.md) | Valuation Handling Consistency & Publication Gate Hardening | completed | high | 2026-09-01 |
 | [TASK-20260906-095](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-095-buffett-thorp-allocation.md) | Implement Buffett Core + Thorp Overlay Allocation Architecture | verified | high | 2026-09-06 |
 | [TASK-20260906-096](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-096-refactor-allocation-remove-composite-weights.md) | Refactor Allocation V1 to Remove Unvalidated Composite Opportunity Weights | verified | high | 2026-09-06 |
+| [TASK-20260906-097](file:///f:/workspace/shannon_allocation/docs/tasks/TASK-20260906-097-pit-quant-research-foundation.md) | Implement PIT Quant Research Foundation for Buffett-Thorp Allocation | verified | high | 2026-09-06 |
 
