@@ -388,14 +388,22 @@ def test_scenario9_missing_risk_history_is_unavailable_not_zero():
 
 
 # ---------------------------------------------------------------------------
-# Hysteresis: small advantages never rotate.
+# Hysteresis: small valuation differences never rotate.
 # ---------------------------------------------------------------------------
-def test_hysteresis_small_advantage_never_rotates():
-    from portfolio.allocation.opportunity import ROTATION_ADVANTAGE_THRESHOLD, evaluate_rotation
+def test_hysteresis_small_valuation_difference_never_rotates():
+    from portfolio.allocation.models import CandidateOpportunity, EligibilityResult, PortfolioFitResult
+    from portfolio.allocation.opportunity import VALUATION_SAFETY_REPLACEMENT_DELTA, rotation_gates
 
-    assert evaluate_rotation(0.45, 0.50) < ROTATION_ADVANTAGE_THRESHOLD
-    assert evaluate_rotation(0.40, 0.50) < ROTATION_ADVANTAGE_THRESHOLD
-    assert evaluate_rotation(0.40, 0.60) >= ROTATION_ADVANTAGE_THRESHOLD
+    holding = EligibilityResult(symbol="XYZ", status="INVESTABLE", quality_tier="WATCH", quality_score=62, valuation_safety=-5.0)
+    candidate = CandidateOpportunity(
+        symbol="VNM", source="SCREENER",
+        eligibility=EligibilityResult(symbol="VNM", status="INVESTABLE", quality_tier="HIGH_QUALITY", quality_score=85, valuation_safety=-2.0),
+        portfolio_fit=PortfolioFitResult(symbol="VNM", current_weight=0.0, proposed_weight=0.1, risk_available=True, fit="GOOD"),
+    )
+    # Delta (3 pp) below the 10 pp governance buffer -> no rotation.
+    passed, _ = rotation_gates(holding, holding_fit="MODERATE", candidate=candidate)
+    assert passed is False
+    assert VALUATION_SAFETY_REPLACEMENT_DELTA == 10.0
 
 
 # ---------------------------------------------------------------------------

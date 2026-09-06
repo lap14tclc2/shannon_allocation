@@ -60,6 +60,52 @@ def test_no_kelly_or_expected_alpha_in_allocation_v1():
             assert forbidden not in lower
 
 
+def test_no_composite_opportunity_weights_in_decision_code():
+    # The unvalidated weighted factor model must not exist anywhere in the
+    # allocation package (opportunity.py, service.py, candidate_service.py).
+    for path in ALLOCATION_DIR.glob("*.py"):
+        source = _source(path)
+        for forbidden in ("QUALITY_WEIGHT", "VALUATION_WEIGHT", "FIT_WEIGHT", "TECHNICAL_WEIGHT",
+                          "full_opportunity_score", "WEAK_HOLDING_SCORE", "ROTATION_ADVANTAGE_THRESHOLD"):
+            assert forbidden not in source, f"{path.name} still contains {forbidden}"
+
+
+def test_no_composite_score_in_decision_models_or_bands():
+    # ``opportunity_score`` must not be a decision input; the renamed discovery
+    # rank is explicitly a research-ordering field.
+    models = _source(ALLOCATION_DIR / "models.py")
+    assert "opportunity_score" not in models
+    assert "discovery_score" in models
+    opportunity = _source(ALLOCATION_DIR / "opportunity.py")
+    assert "opportunity_score" not in opportunity
+    # Decision evidence must expose separate dimensions, never a composite.
+    assert '"opportunity_score"' not in opportunity
+    for dimension in ('"business_quality_tier"', '"valuation_safety_pp"', '"portfolio_fit"', '"technical_confirmation"'):
+        assert dimension in opportunity
+
+
+def test_decision_logic_is_explicit_gates_not_scores():
+    source = _source(ALLOCATION_DIR / "opportunity.py")
+    for gate in ("def decide_holding", "def decide_candidate", "def rotation_gates",
+                 "def holding_is_rotation_eligible", "quality_tier_rank", "fit_rank"):
+        assert gate in source
+    # Rotation must require a material valuation-safety delta (governance buffer).
+    assert "VALUATION_SAFETY_REPLACEMENT_DELTA" in source
+
+
+def test_rotation_delta_is_a_documented_governance_default_not_alpha():
+    source = _source(ALLOCATION_DIR / "opportunity.py")
+    assert "VALUATION_SAFETY_REPLACEMENT_DELTA = 10.0" in source
+    assert "never described as" in source or "NOT alpha" in source
+
+
+def test_explainable_reason_codes_present():
+    source = _source(ALLOCATION_DIR / "reason_codes.py")
+    for code in ("VALUATION_SAFETY_INSUFFICIENT", "VALUATION_SAFETY_IMPROVES",
+                 "PORTFOLIO_FIT_IMPROVES", "PORTFOLIO_FIT_WEAK"):
+        assert code in source
+
+
 def test_allocation_never_auto_executes_or_writes_ledger():
     for path in ALLOCATION_DIR.glob("*.py"):
         source = _source(path)

@@ -1,22 +1,29 @@
-"""Opportunity-cost decision engine (conservative, hysteresis-guarded).
+"""Opportunity-cost decision engine — explicit rule gates (no composite score).
 
-V1 must NOT use expected alpha or Kelly. Decision components are kept
-transparent:
+V1 uses a deterministic sequence of gates, NOT an unvalidated weighted factor
+score. Decision dimensions are kept separate and never collapsed into one
+weighted scalar:
 
-    business_quality_band
-    valuation_safety_band
-    portfolio_fit_band
-    technical_confirmation_band
+    business quality   -> ordinal tier  (EXCEPTIONAL > HIGH_QUALITY > INVESTABLE
+                                          > WATCH > LOW_QUALITY)
+    valuation safety   -> pp            (actual_mos_pct - required_mos_pct)
+    portfolio fit      -> categorical   (GOOD / MODERATE / WEAK / UNAVAILABLE)
+    technical signal   -> secondary evidence only (never required, never weighted)
+
+Thresholds below are conservative governance defaults. They are documented
+policy choices, NOT empirically calibrated, and must never be described as
+expected alpha.
 
 Decision hierarchy:
-    1. hard reject / thesis broken            -> SELL or REDUCE
-    2. excessive concentration / risk          -> REDUCE
-    3. good holding + no superior replacement  -> HOLD
-    4. investable candidate + cash + good fit  -> BUY_MORE
-    5. weak holding + materially superior candidate -> REDUCE/ROTATE
-    6. otherwise                               -> HOLD / KEEP_CASH
+    A. hard reject / thesis break        -> SELL or REDUCE
+    B. fundamental deterioration         -> REDUCE (LOW_QUALITY / INELIGIBLE)
+    C. excessive portfolio risk          -> REDUCE (canonical risk thresholds)
+    D. normal good holding               -> HOLD
+    E. new candidate gates               -> BUY_MORE only if all gates pass
+    F. rotation gates                    -> REDUCE/ROTATE only if all gates pass
+    otherwise                            -> HOLD / KEEP_CASH
 
-Hysteresis: small score/rank changes never create trades.
+HOLD is the default action. Lower rank alone never forces a trade.
 """
 from __future__ import annotations
 
@@ -27,102 +34,74 @@ from .reason_codes import (
     DATA_INSUFFICIENT,
     HARD_REJECT,
     NO_SUPERIOR_REPLACEMENT,
+    PORTFOLIO_FIT_IMPROVES,
+    PORTFOLIO_FIT_WEAK,
     POSITION_CONCENTRATED,
     QUALITY_DETERIORATING,
+    QUALITY_STRONG,
     RISK_CONTRIBUTION_HIGH,
     SUPERIOR_REPLACEMENT_AVAILABLE,
-    VALUATION_SAFETY_NEGATIVE,
+    TECHNICAL_CONFIRMATION,
+    TECHNICAL_DETERIORATION,
+    VALUATION_SAFETY_IMPROVES,
+    VALUATION_SAFETY_INSUFFICIENT,
 )
 
-# Weighting of the transparent opportunity bands (sums to 1.0).
-QUALITY_WEIGHT = 0.45
-VALUATION_WEIGHT = 0.30
-FIT_WEIGHT = 0.20
-TECHNICAL_WEIGHT = 0.05
+# ---------------------------------------------------------------------------
+# Ordinal / categorical references (comparison only, never weighted scalars)
+# ---------------------------------------------------------------------------
+QUALITY_TIER_ORDER: tuple[str, ...] = (
+    "LOW_QUALITY", "WATCH", "INVESTABLE", "HIGH_QUALITY", "EXCEPTIONAL",
+)
+FIT_ORDER: tuple[str, ...] = ("UNAVAILABLE", "WEAK", "MODERATE", "GOOD")
 
-# Hysteresis: a replacement must beat a weak holding by at least this much
-# (in opportunity-score delta) before a rotation is proposed.
-ROTATION_ADVANTAGE_THRESHOLD = 0.15
-# A holding with full opportunity score below this is considered weak.
-WEAK_HOLDING_SCORE = 0.50
+# ---------------------------------------------------------------------------
+# Governance thresholds (conservative defaults, configurable, NOT alpha)
+# ---------------------------------------------------------------------------
+# Minimum valuation safety (pp) a candidate must clear to be BUY_MORE.
+MIN_VALUATION_SAFETY = 0.0
+# Material improvement in valuation safety (pp) required to propose a rotation.
+# Conservative hysteresis buffer — a policy choice, never an empirical optimum.
+VALUATION_SAFETY_REPLACEMENT_DELTA = 10.0
+
 # Risk-contribution "excessive" breach, matching the existing QPort health
-# convention: largest contributor > max(45%, 1.5 x equal-risk) flags a
-# RISK_CONCENTRATION warning. High-but-not-excessive contributions are
-# informational only and never force a trade.
+# convention: largest contributor > max(45%, 1.5 x equal-risk).
 RISK_CONTRIBUTION_BREACH_MULTIPLIER = 1.50
 RISK_CONTRIBUTION_ABSOLUTE_BREACH = 0.45
 # Nominal weight above which a holding is flagged as concentrated (informational).
 POSITION_CONCENTRATED_WEIGHT = 0.40
 # Correlation to the rest of the portfolio that marks a candidate as
-# concentration-dampening vs concentration-increasing.
+# concentration-increasing vs concentration-dampening.
 HIGH_CORRELATION_THRESHOLD = 0.70
 
-QUALITY_TIER_BAND = {
-    "EXCEPTIONAL": 1.0,
-    "HIGH_QUALITY": 0.8,
-    "INVESTABLE": 0.6,
-    "WATCH": 0.4,
-    "LOW_QUALITY": 0.1,
-}
+
+def quality_tier_rank(tier: str | None) -> int:
+    """Ordinal rank of a quality tier (comparison only, not a weighted score)."""
+    if not tier:
+        return -1
+    try:
+        return QUALITY_TIER_ORDER.index((tier or "").upper())
+    except ValueError:
+        return -1
 
 
-def quality_band(tier: str | None) -> float:
-    return QUALITY_TIER_BAND.get((tier or "").upper(), 0.0)
-
-
-def valuation_safety_band(safety: float | None) -> float:
-    if safety is None:
-        return 0.0
-    if safety >= 10.0:
-        return 1.0
-    if safety >= 0.0:
-        return 0.6
-    if safety >= -10.0:
-        return 0.3
-    return 0.0
-
-
-def fit_band(fit: str | None) -> float:
-    mapping = {"GOOD": 1.0, "MODERATE": 0.6, "WEAK": 0.2}
-    if fit is None or fit == "UNAVAILABLE":
-        return 0.0
-    return mapping.get(fit, 0.0)
-
-
-def full_opportunity_score(
-    eligibility: EligibilityResult,
-    fit: str | None,
-    technical_band: float = 0.5,
-) -> float:
-    """Transparent weighted combination of the four opportunity bands."""
-    q = quality_band(eligibility.quality_tier)
-    v = valuation_safety_band(eligibility.valuation_safety)
-    f = fit_band(fit)
-    t = max(0.0, min(1.0, float(technical_band)))
-    return round(
-        QUALITY_WEIGHT * q + VALUATION_WEIGHT * v + FIT_WEIGHT * f + TECHNICAL_WEIGHT * t,
-        4,
-    )
-
-
-def opportunity_bands(
-    eligibility: EligibilityResult,
-    fit: str | None,
-    technical_band: float = 0.5,
-) -> dict[str, float | None]:
-    return {
-        "business_quality_band": quality_band(eligibility.quality_tier),
-        "valuation_safety_band": valuation_safety_band(eligibility.valuation_safety),
-        "portfolio_fit_band": fit_band(fit),
-        "technical_confirmation_band": max(0.0, min(1.0, float(technical_band))),
-        "opportunity_score": full_opportunity_score(eligibility, fit, technical_band),
-    }
+def fit_rank(fit: str | None) -> int:
+    """Ordinal rank of a portfolio-fit level (categorical comparison)."""
+    if not fit:
+        return 0
+    try:
+        return FIT_ORDER.index((fit or "").upper())
+    except ValueError:
+        return 0
 
 
 def _dedupe(reasons: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(reasons))
 
 
+# ---------------------------------------------------------------------------
+# Decision gates
+# ---------------------------------------------------------------------------
 def decide_holding(
     eligibility: EligibilityResult,
     *,
@@ -132,19 +111,28 @@ def decide_holding(
     target_min: float | None = None,
     target_mid: float | None = None,
     target_max: float | None = None,
-    hard_cap: float,
-    current_fit: str,
-    best_replacement_advantage: float = 0.0,
+    hard_cap: float = 0.20,
+    current_fit: str = "UNAVAILABLE",
+    technical: bool | None = None,
 ) -> AllocationDecision:
-    """Advisory decision for a current holding."""
-    reasons = list(eligibility.reason_codes)
-    confidence = "MEDIUM"
+    """Advisory decision for a current holding — explicit gates, no score.
+
+    A. hard reject   -> SELL
+    B. LOW_QUALITY   -> REDUCE (fundamental deterioration)
+    C. excessive risk contribution -> REDUCE (canonical thresholds)
+    D. otherwise     -> HOLD (default; no composite score required)
+    """
     weight = max(0.0, float(current_weight))
     rc = risk_contribution if risk_contribution is not None else None
-    bands = opportunity_bands(eligibility, current_fit)
-    score = bands["opportunity_score"]
+    reasons = list(eligibility.reason_codes)
+    bands = {
+        "business_quality_tier": eligibility.quality_tier,
+        "valuation_safety_pp": eligibility.valuation_safety,
+        "portfolio_fit": current_fit,
+        "technical_confirmation": technical,
+    }
 
-    # 1. Hard reject / thesis broken -> SELL.
+    # A. Hard reject / thesis break -> SELL.
     if eligibility.hard_rejects:
         reasons.append(HARD_REJECT)
         return AllocationDecision(
@@ -153,7 +141,7 @@ def decide_holding(
             confidence="HIGH", reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # 1b. LOW_QUALITY (no hard reject) -> REDUCE.
+    # B. Fundamental deterioration -> REDUCE.
     if eligibility.status == "INELIGIBLE":
         reasons.append(QUALITY_DETERIORATING)
         return AllocationDecision(
@@ -163,18 +151,17 @@ def decide_holding(
             reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # 2. Excessive risk contribution (matching QPort health convention) -> REDUCE.
-    #    Nominal weight > hard_cap alone does NOT force a sell; it is flagged
-    #    as informational POSITION_CONCENTRATED (the plan's example holds a 28%
-    #    position as HOLD with RISK_CONTRIBUTION_HIGH listed as a reason).
-    risk_breach = False
-    if rc is not None and equal_risk is not None and equal_risk > 0:
-        risk_breach = rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
+    # C. Excessive risk contribution (canonical QPort health convention) -> REDUCE.
+    #    Nominal weight > hard_cap alone is informational (POSITION_CONCENTRATED)
+    #    and never forces a trade by itself.
+    risk_breach = bool(
+        rc is not None and equal_risk is not None and equal_risk > 0
+        and rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
+    )
     if weight >= POSITION_CONCENTRATED_WEIGHT:
         reasons.append(POSITION_CONCENTRATED)
     if risk_breach:
         reasons.append(RISK_CONTRIBUTION_HIGH)
-    if risk_breach:
         reduce_target = max(0.0, min(weight, 0.25))
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
@@ -183,31 +170,20 @@ def decide_holding(
             reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # 3. Good holding + no materially better replacement -> HOLD.
-    if score >= WEAK_HOLDING_SCORE and best_replacement_advantage < ROTATION_ADVANTAGE_THRESHOLD:
+    # D. Normal good holding -> HOLD (default). No score threshold required.
+    if eligibility.quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
+        reasons.append(QUALITY_STRONG)
+    if eligibility.status == "INVESTABLE":
         reasons.append(NO_SUPERIOR_REPLACEMENT)
-        return AllocationDecision(
-            symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
-            current_weight=weight, target_min=target_min,
-            target_mid=target_mid, target_max=target_max,
-            confidence="MEDIUM", reason_codes=_dedupe(reasons), bands=bands,
-        )
-
-    # 5. Weak holding + materially superior candidate -> REDUCE/ROTATE.
-    if best_replacement_advantage >= ROTATION_ADVANTAGE_THRESHOLD:
-        reasons.append(SUPERIOR_REPLACEMENT_AVAILABLE)
-        return AllocationDecision(
-            symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, target_min=0.0, target_mid=0.0,
-            target_max=0.0, confidence="MEDIUM",
-            reason_codes=_dedupe(reasons), bands=bands,
-        )
-
-    # 6. Otherwise -> HOLD (lower rank alone never forces a sell).
+    if technical is False:
+        reasons.append(TECHNICAL_DETERIORATION)
+    elif technical is True:
+        reasons.append(TECHNICAL_CONFIRMATION)
     return AllocationDecision(
         symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
-        current_weight=weight, target_min=None, target_mid=None, target_max=None,
-        confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+        current_weight=weight, target_min=target_min,
+        target_mid=target_mid, target_max=target_max,
+        confidence="MEDIUM", reason_codes=_dedupe(reasons), bands=bands,
     )
 
 
@@ -216,15 +192,29 @@ def decide_candidate(
     *,
     cash_weight: float,
     rotation_funded: bool = False,
+    technical: bool | None = None,
+    min_valuation_safety: float = MIN_VALUATION_SAFETY,
 ) -> AllocationDecision:
-    """Advisory decision for a research candidate (BUY_MORE / WATCH)."""
+    """Advisory decision for a research candidate — explicit gates, no score.
+
+    BUY_MORE only if ALL gates pass:
+      - eligibility == INVESTABLE (no hard reject)
+      - portfolio fit is GOOD or MODERATE (never WEAK / UNAVAILABLE)
+      - valuation safety data available and meets the configured V1 rule
+      - cash available OR the position is funded by a valid rotation
+    Technical confirmation may only downgrade BUY_MORE -> WATCH (secondary).
+    """
     eligibility = candidate.eligibility
     reasons = list(candidate.reason_codes)
     fit = candidate.portfolio_fit
     sizing = candidate.sizing
     fit_level = fit.fit if fit else "UNAVAILABLE"
-    bands = opportunity_bands(eligibility, fit_level)
-    score = bands["opportunity_score"]
+    bands = {
+        "business_quality_tier": eligibility.quality_tier,
+        "valuation_safety_pp": eligibility.valuation_safety,
+        "portfolio_fit": fit_level,
+        "technical_confirmation": technical,
+    }
 
     if eligibility.status != "INVESTABLE":
         reasons.append(DATA_INSUFFICIENT)
@@ -243,9 +233,8 @@ def decide_candidate(
         )
 
     if fit_level == "WEAK":
+        reasons.append(PORTFOLIO_FIT_WEAK)
         reasons.extend(code for code in (CORRELATION_HIGH, RISK_CONTRIBUTION_HIGH) if code not in reasons)
-        reasons.append(DATA_INSUFFICIENT if fit.risk_available is False else None)
-        reasons = [r for r in reasons if r is not None]
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
             current_weight=0.0,
@@ -263,9 +252,17 @@ def decide_candidate(
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
         )
 
-    # Attractive-enough valuation required to commit new capital.
-    if eligibility.valuation_safety is not None and eligibility.valuation_safety < 0:
-        reasons.append(VALUATION_SAFETY_NEGATIVE)
+    # Valuation data must be available and meet the configured V1 rule.
+    if eligibility.valuation_safety is None:
+        reasons.extend((VALUATION_SAFETY_INSUFFICIENT, DATA_INSUFFICIENT))
+        return AllocationDecision(
+            symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
+            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            target_max=sizing.target_max, confidence="LOW",
+            reason_codes=_dedupe(reasons), bands=bands,
+        )
+    if eligibility.valuation_safety < min_valuation_safety:
+        reasons.append(VALUATION_SAFETY_INSUFFICIENT)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
             current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
@@ -283,6 +280,19 @@ def decide_candidate(
             reason_codes=_dedupe(reasons), bands=bands,
         )
 
+    # Technical is secondary evidence only: positive adds confirmation, negative
+    # downgrades BUY_MORE to WATCH. It can never override eligibility.
+    if technical is False:
+        reasons.append(TECHNICAL_DETERIORATION)
+        return AllocationDecision(
+            symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
+            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            target_max=sizing.target_max, confidence="MEDIUM",
+            reason_codes=_dedupe(reasons), bands=bands,
+        )
+    if technical is True:
+        reasons.append(TECHNICAL_CONFIRMATION)
+
     confidence = "HIGH" if fit_level == "GOOD" and eligibility.valuation_confidence in ("HIGH", None) else "MEDIUM"
     return AllocationDecision(
         symbol=eligibility.symbol, action="BUY_MORE", kind="CANDIDATE",
@@ -292,13 +302,84 @@ def decide_candidate(
     )
 
 
-def evaluate_rotation(
-    holding_score: float,
-    candidate_score: float,
-) -> float:
-    """Return the replacement advantage (candidate - holding).
+# ---------------------------------------------------------------------------
+# Rotation gates (explicit, no composite score)
+# ---------------------------------------------------------------------------
+def holding_is_rotation_eligible(eligibility: EligibilityResult) -> bool:
+    """Explicit weakness rules that make a holding a rotation candidate.
 
-    Rotation is proposed only when the advantage clears the hysteresis
-    threshold AND the holding is weak (checked by the caller).
+    NOT a composite score. A holding qualifies only when at least one explicit
+    rule applies:
+      - quality tier is WATCH or LOW_QUALITY (fundamentally weak)
+      - eligibility is not INVESTABLE (data insufficient / watchlist)
+      - no public valuation (valuation_safety is None)
+    Hard-reject and LOW_QUALITY holdings are already handled by gates A/B and
+    are intentionally excluded here (they are SELL/REDUCE regardless).
     """
-    return round(candidate_score - holding_score, 4)
+    if eligibility.hard_rejects:
+        return False
+    if eligibility.status == "INELIGIBLE":
+        return False
+    if eligibility.quality_tier in ("WATCH", "LOW_QUALITY"):
+        return True
+    if eligibility.status != "INVESTABLE":
+        return True
+    if eligibility.valuation_safety is None:
+        return True
+    return False
+
+
+def rotation_gates(
+    holding_eligibility: EligibilityResult,
+    *,
+    holding_fit: str,
+    candidate: CandidateOpportunity,
+    replacement_delta: float = VALUATION_SAFETY_REPLACEMENT_DELTA,
+    min_valuation_safety: float = MIN_VALUATION_SAFETY,
+) -> tuple[bool, tuple[str, ...]]:
+    """Explicit rotation gates. Rotation is proposed only if ALL pass.
+
+    Gates:
+      1. holding is genuinely weaker (explicit rules, not a score)
+      2. candidate is INVESTABLE
+      3. candidate quality tier is not worse than holding (ordinal)
+      4. candidate valuation safety is materially better than the holding
+         (delta >= ``replacement_delta``), or, when the holding has no public
+         valuation, meets the configured minimum
+      5. candidate portfolio fit is not WEAK / UNAVAILABLE
+    The delta threshold doubles as the transaction-cost / hysteresis buffer.
+    Returns (passed, reason_codes).
+    """
+    holding = holding_eligibility
+    cand = candidate.eligibility
+
+    if not holding_is_rotation_eligible(holding):
+        return False, ()
+
+    if cand.status != "INVESTABLE" or cand.hard_rejects:
+        return False, ()
+
+    # Ordinal quality comparison: candidate must not be worse.
+    if quality_tier_rank(cand.quality_tier) < quality_tier_rank(holding.quality_tier):
+        return False, ()
+
+    # Valuation safety: data must exist and be materially better.
+    if cand.valuation_safety is None:
+        return False, ()
+    if holding.valuation_safety is not None:
+        delta = cand.valuation_safety - holding.valuation_safety
+        if delta < replacement_delta:
+            return False, ()
+    else:
+        if cand.valuation_safety < min_valuation_safety:
+            return False, ()
+
+    # Portfolio fit must not be WEAK / UNAVAILABLE.
+    cand_fit = candidate.portfolio_fit.fit if candidate.portfolio_fit else "UNAVAILABLE"
+    if fit_rank(cand_fit) < fit_rank("MODERATE"):
+        return False, ()
+
+    reasons = [SUPERIOR_REPLACEMENT_AVAILABLE, VALUATION_SAFETY_IMPROVES]
+    if fit_rank(cand_fit) > fit_rank(holding_fit or "UNAVAILABLE"):
+        reasons.append(PORTFOLIO_FIT_IMPROVES)
+    return True, tuple(dict.fromkeys(reasons))

@@ -20,11 +20,9 @@ from .models import (
     PortfolioAllocationReport,
 )
 from .opportunity import (
-    WEAK_HOLDING_SCORE,
     decide_candidate,
     decide_holding,
-    evaluate_rotation,
-    full_opportunity_score,
+    rotation_gates,
 )
 from .reason_codes import DATA_INSUFFICIENT
 from .sizing import conviction_mid, conviction_tier_for, sizing_for
@@ -264,6 +262,7 @@ class AllocationService:
         holding_symbols = {str(r.get("symbol") or "").upper() for r in holdings}
 
         holding_decisions = []
+        holding_context: list[dict] = []
         for row in holdings:
             symbol = str(row.get("symbol") or "").upper()
             signal = self._signal_for(symbol, valuation_map)
@@ -282,9 +281,13 @@ class AllocationService:
                 target_max=sizing.target_max,
                 hard_cap=self._hard_cap,
                 current_fit=current_fit,
-                best_replacement_advantage=0.0,
             )
             holding_decisions.append(decision)
+            holding_context.append({
+                "symbol": symbol,
+                "eligibility": eligibility,
+                "current_fit": current_fit,
+            })
 
         # Candidate discovery + portfolio-fit simulation.
         shortlist, candidate_diagnostics = shortlist_candidates(
@@ -319,44 +322,33 @@ class AllocationService:
                 candidate,
                 portfolio_fit=fit,
                 sizing=sizing,
-                opportunity_score=full_opportunity_score(candidate.eligibility, fit.fit),
                 reason_codes=tuple(dict.fromkeys(list(candidate.reason_codes) + list(sizing.reason_codes))),
             )
             opportunities.append(candidate)
 
-        # Rotation coordination (hysteresis-guarded).
-        candidate_by_symbol: dict[str, CandidateOpportunity] = {o.symbol: o for o in opportunities}
+        # Rotation coordination — explicit gates only (no composite score).
         for idx, decision in enumerate(holding_decisions):
             if decision.action != "HOLD":
                 continue
-            holding_score = decision.bands.get("opportunity_score", 0.0)
-            if holding_score >= WEAK_HOLDING_SCORE:
-                continue
-            best_advantage = 0.0
-            best_symbol: str | None = None
+            context = holding_context[idx]
             for candidate in opportunities:
-                fit_level = candidate.portfolio_fit.fit if candidate.portfolio_fit else "UNAVAILABLE"
-                if fit_level not in ("GOOD", "MODERATE"):
+                passed, gate_reasons = rotation_gates(
+                    context["eligibility"],
+                    holding_fit=context["current_fit"],
+                    candidate=candidate,
+                )
+                if not passed:
                     continue
-                if candidate.eligibility.status != "INVESTABLE":
-                    continue
-                candidate_score = candidate.opportunity_score or 0.0
-                advantage = evaluate_rotation(holding_score, candidate_score)
-                if advantage > best_advantage:
-                    best_advantage = advantage
-                    best_symbol = candidate.symbol
-            if best_symbol and best_advantage >= 0.15:
-                reasons = list(decision.reason_codes)
-                if "SUPERIOR_REPLACEMENT_AVAILABLE" not in reasons:
-                    reasons.append("SUPERIOR_REPLACEMENT_AVAILABLE")
+                reasons = list(dict.fromkeys(list(decision.reason_codes) + list(gate_reasons)))
                 holding_decisions[idx] = replace(
                     decision,
                     action="REDUCE",
                     target_min=0.0,
                     target_mid=0.0,
                     target_max=0.0,
-                    reason_codes=tuple(dict.fromkeys(reasons)),
+                    reason_codes=tuple(reasons),
                 )
+                break
 
         # Candidate decisions.
         cash_weight = (simulated_cash / nav) if nav > 0 else 0.0

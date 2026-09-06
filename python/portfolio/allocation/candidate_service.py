@@ -36,10 +36,11 @@ def _valuation_safety_band(safety: float | None) -> float:
 
 
 def candidate_opportunity_score(signal: dict) -> float:
-    """Transparent candidate-discovery score (quality + valuation safety only).
+    """Transparent candidate-discovery ordering score (quality + valuation only).
 
-    Portfolio-fit and technical confirmation are applied later in the decision
-    engine; this score is used only to shortlist research candidates.
+    This ranks research candidates for the shortlist ONLY. It is explicitly NOT
+    a decision input: BUY/HOLD/REDUCE/SELL are decided by explicit gates in
+    ``opportunity.py`` (no unvalidated composite score in V1).
     """
     quality = signal.get("quality_score")
     quality_norm = (float(quality) / 100.0) if quality is not None else 0.0
@@ -108,7 +109,7 @@ def shortlist_candidates(
             source="SCREENER",
             eligibility=eligibility,
             candidate_rank=index,
-            opportunity_score=candidate_opportunity_score(entry["signal"]),
+            discovery_score=candidate_opportunity_score(entry["signal"]),
             reason_codes=tuple(dict.fromkeys(reasons)),
         ))
     return opportunities, diagnostics

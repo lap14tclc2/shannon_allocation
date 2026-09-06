@@ -130,7 +130,10 @@ class AllocationDecision:
     target_max: float | None = None
     confidence: str = "LOW"
     reason_codes: tuple[str, ...] = ()
-    bands: dict[str, float | None] = field(default_factory=dict)
+    # Transparent decision evidence: separate dimensions only (quality tier,
+    # valuation safety pp, portfolio fit, technical confirmation). NEVER a
+    # composite weighted score.
+    bands: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return _as_dict(self)
@@ -146,7 +149,9 @@ class CandidateOpportunity:
     candidate_rank: int = 0
     portfolio_fit: PortfolioFitResult | None = None
     sizing: SizingResult | None = None
-    opportunity_score: float | None = None
+    # Research-discovery ordering score only. It ranks candidates for the
+    # shortlist and is NEVER used to determine BUY/HOLD/REDUCE/SELL.
+    discovery_score: float | None = None
     reason_codes: tuple[str, ...] = ()
     decision: AllocationDecision | None = None
 

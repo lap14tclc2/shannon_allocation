@@ -201,3 +201,14 @@ Allocation V1 (T00–T08) implemented and verified:
 - 75 allocation tests + architecture audit pass; frontend production build passes; no new backend regressions (the 15 full-suite failures are pre-existing on the base commit and reproduced identically on a clean HEAD worktree).
 
 T09–T15 (PIT research foundation, VNIndex benchmark, factor snapshots/validation, expected-alpha, fractional Kelly) are explicitly deferred outside V1 scope. Status is `verified` for the V1 scope; it becomes `completed` only when the research milestone gates are implemented and verified.
+
+---
+**Correction note (TASK-20260906-096):** the test counts recorded above
+("75 allocation tests", "84 passed", "443 passed") were captured at earlier
+points in the V1 session and do not match the final re-measured command output.
+Authoritative re-measured figures (with the V1 gate refactor in place) are:
+91 allocation tests, 101 allocation + `test_architecture.py`, and
+460 passed / 1 skipped / 15 failed for the full backend suite. The 15
+pre-existing failures were reproduced on a clean worktree of `abde669` (the
+base commit at the time) and re-confirmed on `5380a78` (pushed V1 HEAD) in
+TASK-20260906-096.
