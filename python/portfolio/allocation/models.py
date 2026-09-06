@@ -148,6 +148,56 @@ def validate_decision_semantics(decision: AllocationDecision) -> bool:
 
 
 @dataclass(frozen=True)
+class AllocationExecutionPlan:
+    """Executable advisory share-quantity plan for a single decision.
+
+    NOT an automated trade order. Information and simulation only.
+    """
+
+    symbol: str
+    action: str
+    current_quantity: float = 0.0
+    current_weight: float = 0.0
+    target_weight_theoretical: float | None = None
+    target_weight_band_min: float | None = None
+    target_weight_band_max: float | None = None
+
+    reference_price: float | None = None
+    price_date: str | None = None
+    price_source: str | None = None
+
+    raw_quantity_change: float = 0.0
+    rounded_quantity_change: float = 0.0
+    lot_size: int = 100
+
+    gross_trade_value: float = 0.0
+    estimated_fee: float = 0.0
+    estimated_tax: float = 0.0
+    estimated_slippage: float = 0.0
+    estimated_total_cost: float = 0.0
+
+    cash_before: float = 0.0
+    cash_after: float = 0.0
+
+    post_trade_quantity: float = 0.0
+    post_trade_market_value: float = 0.0
+    post_trade_weight: float = 0.0
+
+    target_error_pp: float | None = None
+    within_target_band: bool = True
+
+    risk_before: dict[str, Any] | None = None
+    risk_after: dict[str, Any] | None = None
+
+    is_executable: bool = True
+    blocking_reasons: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_safe(_as_dict(self))
+
+
+@dataclass(frozen=True)
 class AllocationDecision:
     """A single advisory decision for a holding or a candidate.
 
@@ -167,13 +217,15 @@ class AllocationDecision:
     # valuation safety pp, portfolio fit, technical confirmation). NEVER a
     # composite weighted score.
     bands: dict[str, Any] = field(default_factory=dict)
+    execution_plan: AllocationExecutionPlan | None = None
 
     def __post_init__(self) -> None:
         validate_decision_semantics(self)
 
     def to_dict(self) -> dict[str, Any]:
-        return _as_dict(self)
-
+        payload = _as_dict(self)
+        payload["execution_plan"] = self.execution_plan.to_dict() if self.execution_plan else None
+        return _json_safe(payload)
 
 
 @dataclass(frozen=True)
@@ -191,6 +243,7 @@ class CandidateOpportunity:
     discovery_score: float | None = None
     reason_codes: tuple[str, ...] = ()
     decision: AllocationDecision | None = None
+    selection_evidence: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = _as_dict(self)
@@ -199,6 +252,7 @@ class CandidateOpportunity:
         payload["sizing"] = self.sizing.to_dict() if self.sizing else None
         payload["decision"] = self.decision.to_dict() if self.decision else None
         return _json_safe(payload)
+
 
 
 @dataclass(frozen=True)

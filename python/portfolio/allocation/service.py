@@ -14,6 +14,7 @@ from typing import Any, Callable
 from ..risk import portfolio_risk as canonical_portfolio_risk
 from .candidate_service import shortlist_candidates
 from .eligibility import eligibility_from_signal, signal_from_screener_item
+from .execution_planner import compute_execution_plan
 from .models import (
     CandidateOpportunity,
     PortfolioFitResult,
@@ -26,6 +27,7 @@ from .opportunity import (
 )
 from .reason_codes import DATA_INSUFFICIENT
 from .sizing import conviction_mid, conviction_tier_for, sizing_for
+
 
 DEFAULT_HARD_CAP = 0.20
 DEFAULT_MAX_CANDIDATES = 5
@@ -350,7 +352,25 @@ class AllocationService:
                 )
                 break
 
-        # Candidate decisions.
+        # Compute execution plans for holdings
+        updated_holding_decisions = []
+        for idx, decision in enumerate(holding_decisions):
+            row = holdings[idx]
+            qty = float(row.get("quantity") or row.get("shares") or 0.0)
+            mv = float(row.get("market_value") or 0.0)
+            price = _number(row.get("price") or row.get("close") or (mv / qty if qty > 0 else None))
+            plan = compute_execution_plan(
+                decision,
+                portfolio_nav=nav,
+                available_cash=simulated_cash,
+                current_quantity=qty,
+                reference_price=price,
+                hard_cap=self._hard_cap,
+            )
+            updated_holding_decisions.append(replace(decision, execution_plan=plan))
+        holding_decisions = updated_holding_decisions
+
+        # Candidate decisions & execution plans.
         cash_weight = (simulated_cash / nav) if nav > 0 else 0.0
         rotation_funded_symbols = {
             decision.symbol for decision in holding_decisions if decision.action in ("SELL", "REDUCE")
@@ -365,11 +385,25 @@ class AllocationService:
             for candidate in opportunities
         }
 
-        # Attach the final advisory decision to each opportunity for the UI.
-        opportunities = tuple(
-            replace(candidate, decision=candidate_decisions.get(candidate.symbol))
-            for candidate in opportunities
-        )
+        # Attach execution plan and decision to each opportunity for the UI.
+        updated_opportunities = []
+        for candidate in opportunities:
+            cand_dec = candidate_decisions.get(candidate.symbol)
+            if cand_dec:
+                item = next((it for it in (candidate_items or []) if str(it.get("symbol") or "").upper() == candidate.symbol), {})
+                cand_price = _number(item.get("current_price") or item.get("close") or item.get("latest_price") or item.get("price"))
+                plan = compute_execution_plan(
+                    cand_dec,
+                    portfolio_nav=nav,
+                    available_cash=simulated_cash,
+                    current_quantity=0.0,
+                    reference_price=cand_price,
+                    hard_cap=self._hard_cap,
+                )
+                cand_dec = replace(cand_dec, execution_plan=plan)
+            updated_opportunities.append(replace(candidate, decision=cand_dec))
+        opportunities = tuple(updated_opportunities)
+
 
         # Portfolio verdict.
         holdings_actions = [d.action for d in holding_decisions]
