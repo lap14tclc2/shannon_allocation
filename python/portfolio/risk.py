@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from .permanent_loss_risk import assess_portfolio_permanent_loss_risk
 from .risk_warnings import generate_risk_warnings
 
 
@@ -245,8 +246,15 @@ def _symbol_metrics(
     return metrics
 
 
-def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) -> dict:
-    """Informational portfolio risk; never produces or executes a trade."""
+def portfolio_risk(
+    position_rows: list[dict],
+    histories: dict[str, list[dict]],
+    valuation_signals: dict[str, dict] | None = None,
+) -> dict:
+    """Informational portfolio risk; strictly separates Market Risk from Permanent Capital Loss Risk.
+
+    Never produces or executes a trade recommendation.
+    """
     concentration = concentration_metrics(position_rows)
     empty_payload = {
         **concentration,
@@ -274,25 +282,60 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "positive_day_ratio": None,
         "return_observations": 0,
     }
-    if not position_rows:
-        payload = {**empty_payload, "status": "NO_POSITIONS", "quality": {"reason": "no_positions"}}
+
+    perm_loss_data = assess_portfolio_permanent_loss_risk(position_rows, valuation_signals)
+
+    if not position_rows or sum(max(0.0, float(p.get("market_value") or 0)) for p in position_rows) <= 0:
+        status_code = "NO_POSITIONS" if not position_rows else "UNAVAILABLE"
+        payload = {**empty_payload, "status": status_code, "quality": {"reason": status_code.lower()}}
         warn_data = generate_risk_warnings(payload, position_rows)
-        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
+
+        market_risk = {
+            "status": status_code,
+            "overall_severity": warn_data["summary"]["overall_severity"],
+            "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+            "headline": warn_data["summary"]["headline"],
+            "warnings": warn_data["warnings"],
+        }
+        permanent_loss_risk_summary = {
+            "overall_severity": perm_loss_data["overall_severity"],
+            "overall_severity_text": perm_loss_data["overall_severity_text"],
+            "headline": perm_loss_data["headline"],
+            "high_risk_count": perm_loss_data["high_risk_count"],
+            "elevated_count": perm_loss_data["elevated_count"],
+            "top_concerns": perm_loss_data["top_concerns"],
+        }
+        risk_summary = {
+            "market_risk": market_risk,
+            "permanent_loss_risk": permanent_loss_risk_summary,
+            "overall_severity": warn_data["summary"]["overall_severity"],
+            "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+            "headline": warn_data["summary"]["headline"],
+            "total_warning_count": warn_data["summary"]["total_warning_count"],
+            "high_risk_count": warn_data["summary"]["high_risk_count"],
+            "warning_count": warn_data["summary"]["warning_count"],
+            "top_concerns": warn_data["summary"]["top_concerns"],
+        }
+        return {
+            **payload,
+            "market_risk": market_risk,
+            "permanent_loss_risk": permanent_loss_risk_summary,
+            "symbol_risk": {},
+            "risk_summary": risk_summary,
+            "warnings": warn_data["warnings"],
+        }
+
+    returns = _returns_frame(histories)
+    cov, eligible, quality = _pairwise_covariance(returns, min_periods=40)
+    requested = [p["symbol"] for p in position_rows]
+    missing = sorted(set(requested) - set(eligible))
 
     value_by_symbol = {
         p["symbol"]: max(0.0, float(p.get("market_value") or 0))
         for p in position_rows
     }
     total = sum(value_by_symbol.values())
-    if total <= 0:
-        payload = {**empty_payload, "status": "UNAVAILABLE", "quality": {"reason": "zero_equity_value"}}
-        warn_data = generate_risk_warnings(payload, position_rows)
-        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
 
-    returns = _returns_frame(histories)
-    cov, eligible, quality = _pairwise_covariance(returns, min_periods=40)
-    requested = [p["symbol"] for p in position_rows]
-    missing = sorted(set(requested) - set(eligible))
     if cov is None:
         symbol_metrics = _symbol_metrics(position_rows, returns, [], {})
         payload = {
@@ -307,7 +350,40 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
             },
         }
         warn_data = generate_risk_warnings(payload, position_rows)
-        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
+        market_risk = {
+            "status": "UNAVAILABLE",
+            "overall_severity": warn_data["summary"]["overall_severity"],
+            "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+            "headline": warn_data["summary"]["headline"],
+            "warnings": warn_data["warnings"],
+        }
+        permanent_loss_risk_summary = {
+            "overall_severity": perm_loss_data["overall_severity"],
+            "overall_severity_text": perm_loss_data["overall_severity_text"],
+            "headline": perm_loss_data["headline"],
+            "high_risk_count": perm_loss_data["high_risk_count"],
+            "elevated_count": perm_loss_data["elevated_count"],
+            "top_concerns": perm_loss_data["top_concerns"],
+        }
+        risk_summary = {
+            "market_risk": market_risk,
+            "permanent_loss_risk": permanent_loss_risk_summary,
+            "overall_severity": warn_data["summary"]["overall_severity"],
+            "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+            "headline": warn_data["summary"]["headline"],
+            "total_warning_count": warn_data["summary"]["total_warning_count"],
+            "high_risk_count": warn_data["summary"]["high_risk_count"],
+            "warning_count": warn_data["summary"]["warning_count"],
+            "top_concerns": warn_data["summary"]["top_concerns"],
+        }
+        return {
+            **payload,
+            "market_risk": market_risk,
+            "permanent_loss_risk": permanent_loss_risk_summary,
+            "symbol_risk": {},
+            "risk_summary": risk_summary,
+            "warnings": warn_data["warnings"],
+        }
 
     eligible_values = np.array([value_by_symbol[s] for s in eligible], dtype=float)
     eligible_total = float(eligible_values.sum())
@@ -365,5 +441,91 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         },
     }
     warn_data = generate_risk_warnings(payload, position_rows)
-    return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
 
+    symbol_risk = {}
+    for p in position_rows:
+        sym = str(p.get("symbol") or "").upper()
+        if not sym or sym == "CASH":
+            continue
+        w = float(p.get("weight") or 0.0)
+        rc_val = float(risk_contrib.get(sym) or 0.0)
+        sm = symbol_metrics.get(sym) or {}
+        perm_assess = perm_loss_data["symbol_assessments"].get(sym) or {}
+
+        explanation = (
+            f"{sym} đang tạo ra khoảng {rc_val * 100:.1f}% biến động tổng thể của danh mục theo mô hình rủi ro hiện tại."
+            if rc_val >= 0.20 else f"{sym} đóng góp {rc_val * 100:.1f}% vào biến động danh mục."
+        )
+        if rc_val > w * 1.15 and rc_val >= 0.30:
+            explanation += (
+                f" Điều này cho thấy NAV đang phụ thuộc mạnh vào biến động giá của {sym}, "
+                f"nhưng không tự động có nghĩa doanh nghiệp {sym} đang có rủi ro kinh doanh cao."
+            )
+
+        symbol_risk[sym] = {
+            "market_risk": {
+                "symbol": sym,
+                "weight": w,
+                "risk_contribution": rc_val,
+                "volatility_63": sm.get("volatility_63"),
+                "volatility_252": sm.get("volatility_252"),
+                "volatility_ratio": sm.get("volatility_ratio"),
+                "average_correlation": sm.get("average_correlation_to_others"),
+                "explanation": explanation,
+            },
+            "permanent_loss_risk": perm_assess,
+        }
+
+    market_risk = {
+        "status": status,
+        "overall_severity": warn_data["summary"]["overall_severity"],
+        "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+        "headline": warn_data["summary"]["headline"],
+        "volatility_63": vol63,
+        "volatility_252": vol252,
+        "volatility_ratio": (vol63 / vol252) if vol63 is not None and vol252 and vol252 > 0 else None,
+        "largest_risk_symbol": largest_risk_symbol,
+        "largest_risk_contribution": largest_risk_contribution,
+        "max_position_weight": concentration.get("max_position_weight"),
+        "hhi": concentration.get("hhi"),
+        "effective_positions": concentration.get("effective_positions"),
+        "average_correlation": corr_metrics.get("average_correlation"),
+        "max_correlation": corr_metrics.get("max_correlation"),
+        "diversification_ratio": diversification_ratio,
+        "daily_var_95": return_metrics.get("daily_var_95"),
+        "daily_cvar_95": return_metrics.get("daily_cvar_95"),
+        "warnings": warn_data["warnings"],
+    }
+
+    permanent_loss_risk_summary = {
+        "overall_severity": perm_loss_data["overall_severity"],
+        "overall_severity_text": perm_loss_data["overall_severity_text"],
+        "headline": perm_loss_data["headline"],
+        "high_risk_count": perm_loss_data["high_risk_count"],
+        "elevated_count": perm_loss_data["elevated_count"],
+        "moderate_count": perm_loss_data["moderate_count"],
+        "low_count": perm_loss_data["low_count"],
+        "unknown_count": perm_loss_data["unknown_count"],
+        "top_concerns": perm_loss_data["top_concerns"],
+    }
+
+    risk_summary = {
+        "market_risk": market_risk,
+        "permanent_loss_risk": permanent_loss_risk_summary,
+        "overall_severity": warn_data["summary"]["overall_severity"],
+        "overall_severity_text": warn_data["summary"]["overall_severity_text"],
+        "headline": warn_data["summary"]["headline"],
+        "total_warning_count": warn_data["summary"]["total_warning_count"],
+        "high_risk_count": warn_data["summary"]["high_risk_count"],
+        "warning_count": warn_data["summary"]["warning_count"],
+        "top_concerns": warn_data["summary"]["top_concerns"],
+    }
+
+    return {
+        **payload,
+        "market_risk": market_risk,
+        "permanent_loss_risk": permanent_loss_risk_summary,
+        "symbol_risk": symbol_risk,
+        "risk_summary": risk_summary,
+        "warnings": warn_data["warnings"],
+    }
