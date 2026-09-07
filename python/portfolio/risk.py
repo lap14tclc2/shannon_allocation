@@ -618,9 +618,30 @@ def portfolio_risk(
         overall_severity_text = "Chưa đủ dữ liệu"
         headline = "Chưa đủ dữ liệu để ước tính đáng tin cậy biến động toàn danh mục"
 
+    market_risk_actionable = bool(
+        coverage_status == "COMPLETE"
+        or (eligible_nav_weight >= MIN_PORTFOLIO_RISK_NAV_COVERAGE_COMPLETE and eligible_count >= MIN_PORTFOLIO_RISK_SYMBOLS)
+    )
+
+    risk_context = {
+        "data_status": coverage_status,
+        "market_risk_data_status": "VALID" if coverage_status == "COMPLETE" else ("PARTIAL" if coverage_status == "PARTIAL" else "INSUFFICIENT"),
+        "actionable": market_risk_actionable,
+        "market_risk_actionable": market_risk_actionable,
+        "eligible_nav_weight": eligible_nav_weight,
+        "eligible_symbol_count": eligible_count,
+        "total_symbol_count": total_equity_symbols,
+        "eligible_symbols": eligible,
+        "missing_symbols": missing,
+        "risk_contribution_scope": contrib_scope,
+    }
+
     market_risk = {
         "status": market_risk_status,
         "status_text": overall_severity_text,
+        "market_risk_data_status": "VALID" if coverage_status == "COMPLETE" else ("PARTIAL" if coverage_status == "PARTIAL" else "INSUFFICIENT"),
+        "market_risk_actionable": market_risk_actionable,
+        "actionable": market_risk_actionable,
         "risk_coverage_status": coverage_status,
         "risk_contribution_scope": contrib_scope,
         "risk_eligible_symbols": eligible,
@@ -662,6 +683,7 @@ def portfolio_risk(
     risk_summary = {
         "market_risk": market_risk,
         "permanent_loss_risk": permanent_loss_risk_summary,
+        "market_risk_actionable": market_risk_actionable,
         "overall_severity": overall_severity,
         "overall_severity_text": overall_severity_text,
         "headline": headline,
@@ -673,6 +695,8 @@ def portfolio_risk(
 
     return {
         **payload,
+        "market_risk_actionable": market_risk_actionable,
+        "risk_context": risk_context,
         "overall_severity": overall_severity,
         "overall_severity_text": overall_severity_text,
         "portfolio_daily_var_95": return_metrics.get("daily_var_95"),
