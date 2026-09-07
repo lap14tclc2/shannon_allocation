@@ -25,7 +25,10 @@ const VERDICT_LABEL_VI = {
   SELECTIVE_ACTION: 'Hành động chọn lọc',
 };
 
-function ActionPill({ action }) {
+function ActionPill({ action, decision }) {
+  if (action === 'HOLD' && decision?.reason_codes?.includes('REVIEW_REQUIRED')) {
+    return <span className="allocation-action-pill allocation-action-watch">GIỮ · CẦN RÀ SOÁT</span>;
+  }
   const tone = ACTION_TONE[action] || 'hold';
   return <span className={`allocation-action-pill allocation-action-${tone}`}>{ACTION_LABEL_VI[action] || action}</span>;
 }
@@ -65,7 +68,7 @@ function HoldingRow({ decision }) {
           </button>
         </td>
         <td data-sensitive>{formatWeight(currentWeight)}</td>
-        <td><ActionPill action={decision.action} /></td>
+        <td><ActionPill action={decision.action} decision={decision} /></td>
         <td data-sensitive><strong>{postText}</strong></td>
         <td>{CONFIDENCE_LABEL_VI[decision.confidence] || decision.confidence}</td>
         <td className="allocation-reasons">
