@@ -372,12 +372,16 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
               label="Biến động danh mục (quy đổi năm)"
               value={risk.volatility_252 == null ? '—' : `${formatWeight(risk.volatility_252)} / năm`}
               note={
-                risk.average_correlation == null
-                  ? (risk.n_positions < 2 ? 'Tương quan: cần ≥2 mã cổ phiếu' : 'Tương quan: chưa đủ 40 phiên giao nhau')
-                  : `Tương quan TB: ${formatNumber(risk.average_correlation, 2)} · Vị thế hiệu quả: ${formatNumber(risk.effective_positions, 1)}`
+                [
+                  risk.effective_positions != null ? `Vị thế hiệu quả: ${formatNumber(risk.effective_positions, 1)}` : null,
+                  risk.average_correlation == null
+                    ? (risk.n_positions < 2 ? 'Tương quan: cần ≥2 mã' : 'Tương quan: chưa đủ 40 phiên')
+                    : `Tương quan TB: ${formatNumber(risk.average_correlation, 2)}`
+                ].filter(Boolean).join(' · ')
               }
               dataSensitive
             />
+
 
           </div>
         </section>
