@@ -321,6 +321,14 @@ class AllocationService:
             current_fit = self._current_fit(symbol, weight, baseline, self._hard_cap)
             sizing = sizing_for(signal, fit=current_fit, hard_cap=self._hard_cap)
             rc = (baseline.get("risk_contributions") or {}).get(symbol)
+            symbol_risk_dict = (baseline.get("symbol_risk") or {}).get(symbol, {})
+            holdings_detail_dict = (baseline.get("holdings_detail") or {}).get(symbol, {})
+            perm_loss_ctx = (
+                symbol_risk_dict.get("permanent_loss_risk")
+                or holdings_detail_dict.get("permanent_loss_risk")
+                or signal.get("permanent_loss_risk")
+                or signal.get("permanent_loss")
+            )
             decision = decide_holding(
                 eligibility,
                 current_weight=weight,
@@ -333,6 +341,7 @@ class AllocationService:
                 hard_cap=self._hard_cap,
                 current_fit=current_fit,
                 risk_actionable=risk_actionable,
+                permanent_loss_context=perm_loss_ctx,
             )
             holding_decisions.append(decision)
             holding_context.append({
