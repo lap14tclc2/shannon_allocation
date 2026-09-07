@@ -118,31 +118,45 @@ def validate_decision_semantics(decision: AllocationDecision) -> bool:
     """Validate decision semantics and invariants.
 
     Invariants:
-    1. REDUCE: target_mid MUST NOT be 0. If target_mid is provided, 0 < target_mid < current_weight (when current_weight > 0).
-    2. SELL: target_mid MUST be 0.0, target_min == 0.0, target_max == 0.0.
-    3. BUY_MORE: target_mid MUST be > 0.0.
+    1. HOLD: post_action_target_weight MUST equal current_weight (when current_weight > 0).
+    2. REDUCE: post_action_target_weight MUST NOT be 0. 0 < post_action_target_weight < current_weight.
+    3. SELL: post_action_target_weight MUST be 0.0.
+    4. BUY_MORE: post_action_target_weight MUST be > current_weight.
     """
     action = decision.action
-    mid = decision.target_mid
     weight = max(0.0, float(decision.current_weight or 0.0))
+    post_target = decision.post_action_target_weight if decision.post_action_target_weight is not None else decision.target_mid
 
-    if action == "REDUCE":
-        if mid is not None and mid <= 0:
-            raise ValueError(f"REDUCE decision for {decision.symbol} cannot target <= 0%: target_mid={mid}")
-        if mid is not None and weight > 0 and round(mid, 6) >= round(weight, 6):
-            raise ValueError(f"REDUCE decision for {decision.symbol} target ({mid}) must be less than current weight ({weight})")
+    if action == "HOLD":
+        if post_target is not None and weight > 0 and round(post_target, 4) != round(weight, 4):
+            raise ValueError(
+                f"HOLD decision for {decision.symbol} post_action_target_weight ({post_target}) "
+                f"must equal current_weight ({weight})"
+            )
+
+    elif action == "REDUCE":
+        if post_target is not None and post_target <= 0:
+            raise ValueError(f"REDUCE decision for {decision.symbol} cannot target <= 0%: post_target={post_target}")
+        if post_target is not None and weight > 0 and round(post_target, 6) >= round(weight, 6):
+            raise ValueError(
+                f"REDUCE decision for {decision.symbol} target ({post_target}) "
+                f"must be less than current weight ({weight})"
+            )
 
     elif action == "SELL":
-        if mid is not None and mid != 0.0:
-            raise ValueError(f"SELL decision for {decision.symbol} must target 0%, got {mid}")
+        if post_target is not None and post_target != 0.0:
+            raise ValueError(f"SELL decision for {decision.symbol} must target 0%, got {post_target}")
         if decision.target_min is not None and decision.target_min != 0.0:
-            raise ValueError(f"SELL decision for {decision.symbol} target_min must be 0%, got {decision.target_min}")
+            raise ValueError(f"SELL decision for {decision.symbol} must target 0%, got target_min={decision.target_min}")
         if decision.target_max is not None and decision.target_max != 0.0:
-            raise ValueError(f"SELL decision for {decision.symbol} target_max must be 0%, got {decision.target_max}")
+            raise ValueError(f"SELL decision for {decision.symbol} must target 0%, got target_max={decision.target_max}")
 
     elif action == "BUY_MORE":
-        if mid is not None and mid <= 0:
-            raise ValueError(f"BUY_MORE decision for {decision.symbol} must have positive target_mid, got {mid}")
+        if post_target is not None and post_target <= weight:
+            raise ValueError(
+                f"BUY_MORE decision for {decision.symbol} target ({post_target}) "
+                f"must be greater than current weight ({weight})"
+            )
 
     return True
 
@@ -226,6 +240,7 @@ class AllocationDecision:
     action: str
     kind: str = "HOLDING"
     current_weight: float = 0.0
+    post_action_target_weight: float | None = None
     target_min: float | None = None
     target_mid: float | None = None
     target_max: float | None = None
@@ -235,9 +250,17 @@ class AllocationDecision:
     # valuation safety pp, portfolio fit, technical confirmation). NEVER a
     # composite weighted score.
     bands: dict[str, Any] = field(default_factory=dict)
+    new_position_guidance: dict[str, Any] | None = None
     execution_plan: AllocationExecutionPlan | None = None
 
     def __post_init__(self) -> None:
+        if self.post_action_target_weight is None:
+            if self.action == "HOLD":
+                object.__setattr__(self, "post_action_target_weight", self.current_weight)
+            elif self.action == "SELL":
+                object.__setattr__(self, "post_action_target_weight", 0.0)
+            elif self.action in ("REDUCE", "BUY_MORE"):
+                object.__setattr__(self, "post_action_target_weight", self.target_mid)
         validate_decision_semantics(self)
 
     def to_dict(self) -> dict[str, Any]:

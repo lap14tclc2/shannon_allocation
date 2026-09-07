@@ -50,7 +50,7 @@ def compute_execution_plan(
     tax_rate = max(0.0, float(sell_tax_rate))
     slip_rate = max(0.0, float(slippage_rate))
 
-    target_mid = decision.target_mid
+    target_mid = decision.post_action_target_weight if decision.post_action_target_weight is not None else decision.target_mid
     target_min = decision.target_min
     target_max = decision.target_max
 

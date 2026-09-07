@@ -119,12 +119,34 @@ def _reduce_target(weight: float, cap: float = 0.05) -> tuple[float, float, floa
 # ---------------------------------------------------------------------------
 # Decision gates
 # ---------------------------------------------------------------------------
+def _build_guidance(
+    sizing: Any = None,
+    target_min: float | None = None,
+    target_mid: float | None = None,
+    target_max: float | None = None,
+) -> dict[str, Any]:
+    if sizing is not None:
+        return {
+            "tier": getattr(sizing, "conviction_tier", "STARTER"),
+            "min_weight": getattr(sizing, "target_min", 0.03),
+            "mid_weight": getattr(sizing, "target_mid", 0.04),
+            "max_weight": getattr(sizing, "target_max", 0.05),
+        }
+    return {
+        "tier": "STARTER",
+        "min_weight": target_min if target_min is not None else 0.03,
+        "mid_weight": target_mid if target_mid is not None else 0.04,
+        "max_weight": target_max if target_max is not None else 0.05,
+    }
+
+
 def decide_holding(
     eligibility: EligibilityResult,
     *,
     current_weight: float,
     risk_contribution: float | None,
     equal_risk: float | None,
+    sizing: Any = None,
     target_min: float | None = None,
     target_mid: float | None = None,
     target_max: float | None = None,
@@ -150,14 +172,17 @@ def decide_holding(
         "portfolio_fit": current_fit,
         "technical_confirmation": technical,
     }
+    guidance = _build_guidance(sizing, target_min, target_mid, target_max)
 
     # A. Destructive hard reject / thesis break -> SELL (target 0%).
     if eligibility.hard_rejects:
         reasons.extend([HARD_REJECT, THESIS_BROKEN])
         return AllocationDecision(
             symbol=eligibility.symbol, action="SELL", kind="HOLDING",
-            current_weight=weight, target_min=0.0, target_mid=0.0, target_max=0.0,
+            current_weight=weight, post_action_target_weight=0.0,
+            target_min=0.0, target_mid=0.0, target_max=0.0,
             confidence="HIGH", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # B. Confirmed fundamental deterioration (LOW_QUALITY) -> REDUCE (target > 0).
@@ -166,9 +191,10 @@ def decide_holding(
         low, mid, high = _reduce_target(weight, cap=0.05)
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, target_min=low, target_mid=mid,
-            target_max=high, confidence="MEDIUM",
+            current_weight=weight, post_action_target_weight=mid,
+            target_min=low, target_mid=mid, target_max=high, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # C. Excessive risk contribution -> REDUCE (positive risk-capped target).
@@ -183,9 +209,10 @@ def decide_holding(
         low, mid, high = _reduce_target(weight, cap=min(0.15, hard_cap * 0.75))
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, target_min=low, target_mid=mid,
-            target_max=high, confidence="MEDIUM",
+            current_weight=weight, post_action_target_weight=mid,
+            target_min=low, target_mid=mid, target_max=high, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # D. Missing evidence / low valuation confidence -> HOLD + REVIEW_REQUIRED.
@@ -199,8 +226,10 @@ def decide_holding(
         reasons.append(REVIEW_REQUIRED)
         return AllocationDecision(
             symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
-            current_weight=weight, target_min=None, target_mid=None, target_max=None,
+            current_weight=weight, post_action_target_weight=weight,
+            target_min=None, target_mid=None, target_max=None,
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # E. Normal good holding -> HOLD (default).
@@ -214,10 +243,11 @@ def decide_holding(
         reasons.append(TECHNICAL_CONFIRMATION)
     return AllocationDecision(
         symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
-        current_weight=weight, target_min=target_min,
-        target_mid=target_mid, target_max=target_max,
+        current_weight=weight, post_action_target_weight=weight,
+        target_min=None, target_mid=weight, target_max=None,
         confidence=eligibility.valuation_confidence or "MEDIUM",
         reason_codes=_dedupe(reasons), bands=bands,
+        new_position_guidance=guidance,
     )
 
 
@@ -250,21 +280,30 @@ def decide_candidate(
         "portfolio_fit": fit_level,
         "technical_confirmation": technical,
     }
+    guidance = _build_guidance(sizing)
 
     if eligibility.status != "INVESTABLE":
         reasons.append(DATA_INSUFFICIENT)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=None, target_mid=None, target_max=None,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min if sizing else None,
+            target_mid=sizing.target_mid if sizing else None,
+            target_max=sizing.target_max if sizing else None,
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     if fit is None or fit_level == "UNAVAILABLE":
         reasons.append(DATA_INSUFFICIENT)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=None, target_mid=None, target_max=None,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min if sizing else None,
+            target_mid=sizing.target_mid if sizing else None,
+            target_max=sizing.target_max if sizing else None,
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     if fit_level == "WEAK":
@@ -272,19 +311,22 @@ def decide_candidate(
         reasons.extend(code for code in (CORRELATION_HIGH, RISK_CONTRIBUTION_HIGH) if code not in reasons)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0,
+            current_weight=0.0, post_action_target_weight=None,
             target_min=sizing.target_min if sizing else None,
             target_mid=sizing.target_mid if sizing else None,
             target_max=sizing.target_max if sizing else None,
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     if sizing is None or sizing.target_mid <= 0:
         reasons.append(DATA_INSUFFICIENT)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=None, target_mid=None, target_max=None,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=None, target_mid=None, target_max=None,
             confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # Valuation data must be available and meet the configured V1 rule.
@@ -292,17 +334,21 @@ def decide_candidate(
         reasons.extend((VALUATION_SAFETY_INSUFFICIENT, DATA_INSUFFICIENT))
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min, target_mid=sizing.target_mid,
             target_max=sizing.target_max, confidence="LOW",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
     if eligibility.valuation_safety < min_valuation_safety:
         reasons.append(VALUATION_SAFETY_INSUFFICIENT)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min, target_mid=sizing.target_mid,
             target_max=sizing.target_max, confidence="LOW",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # Cash must cover at least the starter size (unless rotation funds it).
@@ -310,9 +356,11 @@ def decide_candidate(
         reasons.append(CASH_PREFERRED)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min, target_mid=sizing.target_mid,
             target_max=sizing.target_max, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
 
     # Technical is secondary evidence only: positive adds confirmation, negative
@@ -321,9 +369,11 @@ def decide_candidate(
         reasons.append(TECHNICAL_DETERIORATION)
         return AllocationDecision(
             symbol=eligibility.symbol, action="WATCH", kind="CANDIDATE",
-            current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+            current_weight=0.0, post_action_target_weight=None,
+            target_min=sizing.target_min, target_mid=sizing.target_mid,
             target_max=sizing.target_max, confidence="MEDIUM",
             reason_codes=_dedupe(reasons), bands=bands,
+            new_position_guidance=guidance,
         )
     if technical is True:
         reasons.append(TECHNICAL_CONFIRMATION)
@@ -331,9 +381,11 @@ def decide_candidate(
     confidence = "HIGH" if fit_level == "GOOD" and eligibility.valuation_confidence in ("HIGH", None) else "MEDIUM"
     return AllocationDecision(
         symbol=eligibility.symbol, action="BUY_MORE", kind="CANDIDATE",
-        current_weight=0.0, target_min=sizing.target_min, target_mid=sizing.target_mid,
+        current_weight=0.0, post_action_target_weight=sizing.target_mid,
+        target_min=sizing.target_min, target_mid=sizing.target_mid,
         target_max=sizing.target_max, confidence=confidence,
         reason_codes=_dedupe(reasons), bands=bands,
+        new_position_guidance=guidance,
     )
 
 

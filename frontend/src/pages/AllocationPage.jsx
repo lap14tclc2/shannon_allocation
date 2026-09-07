@@ -3,17 +3,22 @@ import AppNav from '../components/AppNav.jsx';
 import MetricCard from '../components/MetricCard.jsx';
 import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
 import { simulatePortfolioAllocation } from '../lib/api.js';
-import { formatWeight, pct } from '../lib/format.js';
+import { formatNumber, formatWeight, pct } from '../lib/format.js';
 import {
   ACTION_LABEL_VI,
   ACTION_TONE,
+  ALLOCATION_TOOLTIPS_VI,
   CONFIDENCE_LABEL_VI,
   CONVICTION_LABEL_VI,
+  CURRENT_WEIGHT_LABEL_VI,
   FIT_LABEL_VI,
+  NEW_POSITION_GUIDANCE_LABEL_VI,
   POSTURE_LABEL_VI,
+  POST_ACTION_WEIGHT_LABEL_VI,
   reasonCodeVi,
 } from '../lib/allocationLabels.js';
 import '../valuation-page.css';
+import '../allocation-page.css';
 
 const VERDICT_LABEL_VI = {
   NO_ACTION_REQUIRED: 'Không cần hành động',
@@ -26,26 +31,68 @@ function ActionPill({ action }) {
 }
 
 function HoldingRow({ decision }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const reasons = (decision.reason_codes || []).slice(0, 3);
-  let bandText = '—';
+  const currentWeight = decision.current_weight || 0;
+  
+  let postText = '—';
   if (decision.action === 'SELL') {
-    bandText = '0.0%';
-  } else if (decision.target_min != null && decision.target_mid != null) {
-    bandText = `${formatWeight(decision.target_min)} – ${formatWeight(decision.target_max)}`;
+    postText = '0.0%';
+  } else if (decision.action === 'HOLD') {
+    postText = formatWeight(currentWeight);
+  } else if (decision.post_action_target_weight != null) {
+    postText = (decision.action === 'REDUCE' ? '~' : '') + formatWeight(decision.post_action_target_weight);
+  } else if (decision.target_mid != null) {
+    postText = (decision.action === 'REDUCE' ? '~' : '') + formatWeight(decision.target_mid);
   }
+
+  const guidance = decision.new_position_guidance;
+  const newBandText = guidance?.min_weight != null && guidance?.max_weight != null
+    ? `${formatWeight(guidance.min_weight)} – ${formatWeight(guidance.max_weight)}`
+    : (decision.target_min != null && decision.target_max != null ? `${formatWeight(decision.target_min)} – ${formatWeight(decision.target_max)}` : '3–5%');
+
   return (
-    <tr>
-      <td className="allocation-symbol">{decision.symbol}</td>
-      <td><ActionPill action={decision.action} /></td>
-      <td data-sensitive>{formatWeight(decision.current_weight)}</td>
-      <td data-sensitive>{bandText}</td>
-      <td>{CONFIDENCE_LABEL_VI[decision.confidence] || decision.confidence}</td>
-      <td className="allocation-reasons">
-        {reasons.length ? reasons.map(code => (
-          <span className="allocation-reason" key={code}>{reasonCodeVi(code)}</span>
-        )) : <span className="muted">Không có lý do đặc biệt</span>}
-      </td>
-    </tr>
+    <React.Fragment>
+      <tr className={isExpanded ? 'allocation-row-expanded' : ''}>
+        <td className="allocation-symbol">
+          <button
+            type="button"
+            className="allocation-symbol-toggle-btn"
+            onClick={() => setIsExpanded(!isExpanded)}
+            title="Bấm để xem/ẩn mức vốn gợi ý khi mở vị thế mới"
+          >
+            <strong>{decision.symbol}</strong> {isExpanded ? '▲' : '▼'}
+          </button>
+        </td>
+        <td data-sensitive>{formatWeight(currentWeight)}</td>
+        <td><ActionPill action={decision.action} /></td>
+        <td data-sensitive><strong>{postText}</strong></td>
+        <td>{CONFIDENCE_LABEL_VI[decision.confidence] || decision.confidence}</td>
+        <td className="allocation-reasons">
+          {reasons.length ? reasons.map(code => (
+            <span className="allocation-reason" key={code}>{reasonCodeVi(code)}</span>
+          )) : <span className="muted">Không có lý do đặc biệt</span>}
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr className="allocation-detail-row">
+          <td colSpan={6}>
+            <div className="allocation-detail-box">
+              <div className="allocation-guidance-inline">
+                <strong>{NEW_POSITION_GUIDANCE_LABEL_VI}:</strong>{' '}
+                <span className="allocation-guidance-badge">{newBandText}</span>
+                {guidance?.tier && (
+                  <span className="muted font-small"> ({CONVICTION_LABEL_VI[guidance.tier] || guidance.tier})</span>
+                )}
+                <p className="allocation-guidance-help">
+                  Đây là mức sizing tham khảo nếu xây vị thế mới từ đầu theo điều kiện hiện tại. Không phải mục tiêu bắt buộc cho vị thế đang nắm giữ.
+                </p>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
   );
 }
 
@@ -54,13 +101,16 @@ function OpportunityCard({ opportunity, onViewValuation }) {
   const sizing = opportunity.sizing || {};
   const evidence = opportunity.selection_evidence || {};
   const reasons = (opportunity.reason_codes || []).slice(0, 3);
-  const bandText = sizing.target_min != null
+  const guidanceText = sizing.target_min != null
     ? `${formatWeight(sizing.target_min)} – ${formatWeight(sizing.target_max)}`
     : '—';
   const plan = opportunity.decision?.execution_plan;
   const showQtyPlan = plan && plan.is_executable && plan.rounded_quantity_change > 0;
   const grossVnd = plan?.gross_trade_value_vnd || plan?.gross_trade_value || 0;
   const cashAfterVnd = plan?.cash_after_vnd || plan?.cash_after || 0;
+  const postTradeWeightText = plan?.post_trade_weight != null
+    ? formatWeight(plan.post_trade_weight)
+    : (opportunity.decision?.post_action_target_weight != null ? formatWeight(opportunity.decision.post_action_target_weight) : guidanceText);
 
   return (
     <article className="allocation-opportunity-card allocation-card-buy-ready">
@@ -79,9 +129,10 @@ function OpportunityCard({ opportunity, onViewValuation }) {
       <div className="allocation-opportunity-body">
         <div className="allocation-opp-grid">
           <span>Phù hợp danh mục</span><strong>{FIT_LABEL_VI[fit.fit] || fit.fit}</strong>
-          <span>Vị thế đề xuất</span><strong data-sensitive>{bandText}</strong>
-          <span>Mức tin cậy</span><strong>{CONVICTION_LABEL_VI[sizing.conviction_tier] || sizing.conviction_tier}</strong>
-          <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? '—' : pct(fit.average_correlation_to_portfolio)}</strong>
+          <span>Tỷ trọng sau đề xuất</span><strong data-sensitive>{postTradeWeightText}</strong>
+          <span>Gợi ý mở vị thế mới</span><strong data-sensitive>{guidanceText}</strong>
+          <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? 'Chưa đủ dữ liệu' : formatNumber(fit.average_correlation_to_portfolio, 2)}</strong>
+
         </div>
 
         {showQtyPlan && (
@@ -266,7 +317,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
   const afterRisk = simAllocation?.simulation?.risk_after || {};
 
   const fmtWeight = value => (value == null ? '—' : formatWeight(value));
-  const fmtCorr = value => (value == null ? '—' : pct(value));
+  const fmtCorr = value => (value == null ? 'Chưa đủ dữ liệu' : formatNumber(value, 2));
 
   if (!report) {
     return (
@@ -317,7 +368,21 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
             <MetricCard label="Tư thế danh mục" value={POSTURE_LABEL_VI[posture] || posture} note={VERDICT_LABEL_VI[report.verdict] || report.verdict} dataSensitive={false} />
             <MetricCard label="Tiền mặt hiện tại" value={formatWeight(report.cash_current)} note={`Khuyến nghị giữ ${formatWeight((report.cash_suggested_range || [0, 0])[0])} – ${formatWeight((report.cash_suggested_range || [0, 0])[1])}`} dataSensitive />
             <MetricCard label="Độ tin cậy" value={CONFIDENCE_LABEL_VI[report.confidence] || report.confidence} note="Dựa trên mức đủ dữ liệu định giá & rủi ro" dataSensitive={false} />
-            <MetricCard label="Rủi ro danh mục (252D)" value={fmtWeight(risk.volatility_252)} note={`Tương quan TB ${fmtCorr(risk.average_correlation)}`} dataSensitive />
+            <MetricCard
+              label="Biến động danh mục (quy đổi năm)"
+              value={risk.volatility_252 == null ? '—' : `${formatWeight(risk.volatility_252)} / năm`}
+              note={
+                [
+                  risk.effective_positions != null ? `Vị thế hiệu quả: ${formatNumber(risk.effective_positions, 1)}` : null,
+                  risk.average_correlation == null
+                    ? (risk.n_positions < 2 ? 'Tương quan: cần ≥2 mã' : 'Tương quan: chưa đủ 40 phiên')
+                    : `Tương quan TB: ${formatNumber(risk.average_correlation, 2)}`
+                ].filter(Boolean).join(' · ')
+              }
+              dataSensitive
+            />
+
+
           </div>
         </section>
 
@@ -330,7 +395,12 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
               <table className="allocation-table">
                 <thead>
                   <tr>
-                    <th>Mã</th><th>Khuyến nghị</th><th>Tỷ trọng</th><th>Khoảng mục tiêu</th><th>Tin cậy</th><th>Lý do</th>
+                    <th>Mã</th>
+                    <th title={ALLOCATION_TOOLTIPS_VI.CURRENT_WEIGHT}>Tỷ trọng hiện tại ⓘ</th>
+                    <th>Khuyến nghị</th>
+                    <th title={ALLOCATION_TOOLTIPS_VI.POST_ACTION_WEIGHT}>Tỷ trọng sau đề xuất ⓘ</th>
+                    <th>Tin cậy</th>
+                    <th>Lý do</th>
                   </tr>
                 </thead>
                 <tbody>

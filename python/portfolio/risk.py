@@ -5,6 +5,8 @@ import math
 import numpy as np
 import pandas as pd
 
+from .risk_warnings import generate_risk_warnings
+
 
 def concentration_metrics(position_rows: list[dict]) -> dict:
     nav_weights = [max(0.0, float(p.get("weight") or 0)) for p in position_rows]
@@ -273,7 +275,9 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
         "return_observations": 0,
     }
     if not position_rows:
-        return {**empty_payload, "status": "NO_POSITIONS", "quality": {"reason": "no_positions"}}
+        payload = {**empty_payload, "status": "NO_POSITIONS", "quality": {"reason": "no_positions"}}
+        warn_data = generate_risk_warnings(payload, position_rows)
+        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
 
     value_by_symbol = {
         p["symbol"]: max(0.0, float(p.get("market_value") or 0))
@@ -281,7 +285,9 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     }
     total = sum(value_by_symbol.values())
     if total <= 0:
-        return {**empty_payload, "status": "UNAVAILABLE", "quality": {"reason": "zero_equity_value"}}
+        payload = {**empty_payload, "status": "UNAVAILABLE", "quality": {"reason": "zero_equity_value"}}
+        warn_data = generate_risk_warnings(payload, position_rows)
+        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
 
     returns = _returns_frame(histories)
     cov, eligible, quality = _pairwise_covariance(returns, min_periods=40)
@@ -289,7 +295,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     missing = sorted(set(requested) - set(eligible))
     if cov is None:
         symbol_metrics = _symbol_metrics(position_rows, returns, [], {})
-        return {
+        payload = {
             **empty_payload,
             "symbol_metrics": symbol_metrics,
             "status": "UNAVAILABLE",
@@ -300,6 +306,8 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
                 "coverage_weight": 0.0,
             },
         }
+        warn_data = generate_risk_warnings(payload, position_rows)
+        return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
 
     eligible_values = np.array([value_by_symbol[s] for s in eligible], dtype=float)
     eligible_total = float(eligible_values.sum())
@@ -332,7 +340,7 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
     symbol_metrics = _symbol_metrics(position_rows, returns, eligible, risk_contrib)
 
     status = "VALID" if not missing else "PARTIAL"
-    return {
+    payload = {
         **concentration,
         **corr_metrics,
         **return_metrics,
@@ -356,3 +364,6 @@ def portfolio_risk(position_rows: list[dict], histories: dict[str, list[dict]]) 
             "coverage_weight": eligible_total / total if total > 0 else 0.0,
         },
     }
+    warn_data = generate_risk_warnings(payload, position_rows)
+    return {**payload, "risk_summary": warn_data["summary"], "warnings": warn_data["warnings"]}
+

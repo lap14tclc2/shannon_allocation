@@ -220,7 +220,8 @@ def test_high_quality_holding_is_hold_when_no_explicit_rule_triggers():
     )
     assert decision.action == "HOLD"
     assert "NO_SUPERIOR_REPLACEMENT" in decision.reason_codes
-    assert decision.target_mid == 0.15
+    assert decision.post_action_target_weight == 0.28
+    assert decision.new_position_guidance["mid_weight"] == 0.15
 
 
 def test_lower_rank_holding_not_reduced_solely_due_to_rank():

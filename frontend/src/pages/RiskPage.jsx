@@ -1,29 +1,91 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
-import { listPortfolioSnapshots } from '../lib/api.js';
+import { navigate } from '../lib/navigation.js';
 import { formatNumber as num, money, pct, signedMoney } from '../lib/format.js';
 
-function StatusPill({ children, tone = 'neutral' }) {
-  return <span className={`risk-level risk-level-${tone}`}>{children}</span>;
+function SeverityPill({ severity = 'NORMAL' }) {
+  const toneMap = {
+    HIGH_RISK: 'high',
+    WARNING: 'high',
+    ATTENTION: 'watch',
+    NORMAL: 'good',
+  };
+  const labelMap = {
+    HIGH_RISK: 'Nguy cơ cao',
+    WARNING: 'Cảnh báo',
+    ATTENTION: 'Cần chú ý',
+    NORMAL: 'Bình thường',
+  };
+  const tone = toneMap[severity] || 'neutral';
+  const label = labelMap[severity] || severity;
+  return <span className={`risk-level risk-level-${tone}`}>{label}</span>;
 }
 
-function InsightCard({ index, question, state, tone = 'neutral', title, highlight, highlightNote, children, footer }) {
-  return <article className={`risk-insight-card risk-tone-${tone}`}>
-    <div className="risk-insight-top">
-      <span className="risk-insight-index">{String(index).padStart(2, '0')}</span>
-      <span className="risk-insight-question">{question}</span>
-      <StatusPill tone={tone}>{state}</StatusPill>
-    </div>
-    <div className="risk-insight-content">
-      <h3>{title}</h3>
-      {highlight != null && <div className="risk-insight-highlight">
-        <strong>{highlight}</strong>
-        {highlightNote && <span>{highlightNote}</span>}
-      </div>}
-      <div className="risk-insight-copy">{children}</div>
-    </div>
-    {footer && <div className="risk-insight-footer">{footer}</div>}
-  </article>;
+function RiskWarningCard({ warning }) {
+  const {
+    id,
+    category,
+    severity,
+    title,
+    summary,
+    affected_symbols = [],
+    impact,
+    review_guidance,
+  } = warning;
+
+  const tone = severity === 'HIGH_RISK' || severity === 'WARNING' ? 'high' : severity === 'ATTENTION' ? 'watch' : 'good';
+
+  return (
+    <article className={`risk-insight-card risk-tone-${tone} risk-warning-item`} key={id}>
+      <div className="risk-insight-top">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span className="eyebrow" style={{ margin: 0, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em' }}>
+            {category.replace(/_/g, ' ')}
+          </span>
+          {affected_symbols.length > 0 && affected_symbols.map(s => (
+            <span key={s} style={{ background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+              {s}
+            </span>
+          ))}
+        </div>
+        <SeverityPill severity={severity} />
+      </div>
+
+      <div className="risk-insight-content" style={{ padding: '16px 20px' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: '16.5px', color: 'var(--text)' }}>{title}</h3>
+        <p className="risk-insight-copy" style={{ fontWeight: 500, fontSize: '13.5px', marginBottom: '14px', color: 'var(--text)' }}>{summary}</p>
+
+        {impact && (
+          <div className="risk-impact-box" style={{ background: 'var(--surface-soft, rgba(0,0,0,0.03))', padding: '12px 14px', borderRadius: '8px', marginBottom: '10px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+              Tác động đến danh mục
+            </span>
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--text)' }}>{impact}</p>
+          </div>
+        )}
+
+        {review_guidance && (
+          <div className="risk-guidance-box" style={{ background: 'color-mix(in srgb, var(--accent, #0055ff) 8%, transparent)', padding: '12px 14px', borderRadius: '8px', borderLeft: '3px solid var(--accent, #0055ff)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent, #0055ff)', display: 'block', marginBottom: '4px' }}>
+              Khuyến nghị xem xét tiếp theo
+            </span>
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--text)' }}>{review_guidance}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="risk-insight-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+        <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Phân tích chẩn đoán · Không tự phát sinh lệnh</span>
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => navigate('/allocation')}
+          style={{ cursor: 'pointer', fontSize: '12px', padding: '4px 10px', fontWeight: 600 }}
+        >
+          Giả lập trong Phân bổ vốn →
+        </button>
+      </div>
+    </article>
+  );
 }
 
 function correlationMeaning(value) {
@@ -38,10 +100,10 @@ function symbolTone(metric) {
   const contribution = metric?.risk_contribution == null ? null : Number(metric.risk_contribution);
   const ratio = metric?.volatility_ratio == null ? null : Number(metric.volatility_ratio);
   if (Number(metric?.return_observations || 0) < 40) return ['Dữ liệu ít', 'building'];
-  if ((weight != null && weight >= 0.45) || (contribution != null && contribution >= 0.45) || (ratio != null && ratio > 1.20)) {
+  if ((weight != null && weight >= 0.40) || (contribution != null && contribution >= 0.45) || (ratio != null && ratio > 1.25)) {
     return ['Cần theo dõi', 'high'];
   }
-  if ((weight != null && weight >= 0.35) || (contribution != null && contribution >= 0.35)) return ['Đáng chú ý', 'watch'];
+  if ((weight != null && weight >= 0.25) || (contribution != null && contribution >= 0.35)) return ['Đáng chú ý', 'watch'];
   return ['Bình thường', 'good'];
 }
 
@@ -57,16 +119,16 @@ function symbolComment(symbol, metric) {
   const avgCorr = metric.average_correlation_to_others == null ? null : Number(metric.average_correlation_to_others);
 
   if (weight != null && weight >= 0.40) {
-    notes.push(`${symbol} đang chiếm ${pct(weight)} phần giá trị cổ phiếu, nên biến động riêng của mã này có ảnh hưởng lớn đến kết quả chung.`);
+    notes.push(`${symbol} đang chiếm ${pct(weight)} phần giá trị cổ phiếu, khiến biến động riêng của mã này chi phối kết quả chung.`);
   } else if (weight != null) {
-    notes.push(`Tỷ trọng hiện tại của ${symbol} là ${pct(weight)} phần giá trị cổ phiếu.`);
+    notes.push(`Tỷ trọng hiện tại của ${symbol} là ${pct(weight)} NAV cổ phiếu.`);
   }
 
   if (contribution != null && weight != null && weight > 0) {
-    if (contribution > weight * 1.20) {
+    if (contribution > weight * 1.15) {
       notes.push(`Đóng góp rủi ro ${pct(contribution)} cao hơn tỷ trọng vốn ${pct(weight)}; mỗi đồng vốn ở ${symbol} đang làm danh mục biến động mạnh hơn mức trung bình.`);
-    } else if (contribution < weight * 0.80) {
-      notes.push(`Đóng góp rủi ro ${pct(contribution)} thấp hơn tỷ trọng vốn ${pct(weight)}; mã này hiện không khuếch đại biến động danh mục nhiều như tỷ trọng của nó.`);
+    } else if (contribution < weight * 0.85) {
+      notes.push(`Đóng góp rủi ro ${pct(contribution)} thấp hơn tỷ trọng vốn ${pct(weight)}; mã này hiện không khuếch đại biến động danh mục nhiều.`);
     } else {
       notes.push(`Đóng góp rủi ro ${pct(contribution)} khá tương xứng với tỷ trọng vốn ${pct(weight)}.`);
     }
@@ -76,7 +138,7 @@ function symbolComment(symbol, metric) {
     const change = ratio - 1;
     if (ratio > 1.20) notes.push(`Biến động 3 tháng gần đây cao hơn nền 1 năm khoảng ${pct(change)}: rủi ro ngắn hạn đang tăng.`);
     else if (ratio < 0.80) notes.push(`Biến động 3 tháng gần đây thấp hơn nền 1 năm khoảng ${pct(Math.abs(change))}: giá đang dịu hơn so với lịch sử một năm.`);
-    else notes.push('Biến động 3 tháng gần đây chưa lệch nhiều so với nền 1 năm.');
+    else notes.push('Biến động 3 tháng gần đây chưa lệch nhiều so with nền 1 năm.');
   }
 
   notes.push(correlationMeaning(avgCorr));
@@ -85,6 +147,8 @@ function symbolComment(symbol, metric) {
 
 export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], locale = 'vi' }) {
   const [snapshots, setSnapshots] = useState(initialSnapshots || []);
+  const [showAllWarnings, setShowAllWarnings] = useState(false);
+
   const quality = risk.quality || {};
   const coverage = Number(quality.coverage_weight || 0);
   const observations = Number(risk.return_observations || 0);
@@ -96,9 +160,18 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
   const vol63 = risk.volatility_63 == null ? null : Number(risk.volatility_63);
   const vol252 = risk.volatility_252 == null ? null : Number(risk.volatility_252);
   const largestRisk = risk.largest_risk_contribution == null ? null : Number(risk.largest_risk_contribution);
-  const volatilityRatio = vol63 != null && vol252 ? vol63 / vol252 : null;
-  const volatilityChange = volatilityRatio == null ? null : volatilityRatio - 1;
   const symbolMetrics = risk.symbol_metrics || {};
+
+  const summary = risk.risk_summary || {
+    overall_severity: largestWeight >= 0.40 || largestRisk >= 0.45 ? 'HIGH_RISK' : largestWeight >= 0.30 ? 'WARNING' : 'NORMAL',
+    headline: 'Đánh giá rủi ro danh mục',
+    total_warning_count: (risk.warnings || []).length,
+    high_risk_count: (risk.warnings || []).filter(w => w.severity === 'HIGH_RISK').length,
+    top_concerns: [],
+  };
+
+  const warnings = useMemo(() => risk.warnings || [], [risk.warnings]);
+  const visibleWarnings = showAllWarnings ? warnings : warnings.slice(0, 4);
 
   useEffect(() => {
     if (initialSnapshots && initialSnapshots.length > 0) {
@@ -110,286 +183,286 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     .map(([symbol, metric]) => ({ symbol: String(symbol).toUpperCase(), metric: metric || {} }))
     .sort((a, b) => Number(b.metric.equity_weight || 0) - Number(a.metric.equity_weight || 0)), [symbolMetrics]);
 
-
   const historicalWorstDays = useMemo(() => (snapshots || [])
     .filter(row => row?.official && row.daily_return != null && Number.isFinite(Number(row.daily_return)))
     .sort((a, b) => Number(a.daily_return) - Number(b.daily_return))
     .slice(0, 3), [snapshots]);
 
   const dataReady = coverage >= 0.90 && observations >= 20;
-  const concentrationState = largestWeight == null ? ['Đang tính', 'building'] : largestWeight >= 0.45 ? ['Cao', 'high'] : largestWeight >= 0.35 ? ['Đáng chú ý', 'watch'] : ['Ổn', 'good'];
-  const correlationState = avgCorrelation == null ? ['Đang tính', 'building'] : avgCorrelation >= 0.60 ? ['Cao', 'high'] : avgCorrelation >= 0.35 ? ['Trung bình', 'watch'] : ['Thấp', 'good'];
-  const volatilityState = volatilityRatio == null ? ['Đang tính', 'building'] : volatilityRatio > 1.20 ? ['Đang tăng', 'high'] : volatilityRatio < 0.80 ? ['Đang giảm', 'good'] : ['Gần nền 1 năm', 'neutral'];
-  const riskDriverState = largestRisk == null ? ['Đang tính', 'building'] : largestRisk > 0.45 ? ['Tập trung', 'high'] : ['Chưa tập trung cao', 'good'];
-  const overallWatch = [concentrationState[1], correlationState[1], volatilityState[1], riskDriverState[1]].includes('high');
 
-  const concentrationImpact = largestWeight == null ? null : largestWeight * 0.10;
-  const riskWeightGap = driverMetricGap(risk.largest_risk_symbol, symbolMetrics, largestRisk);
-  const worstDay = historicalWorstDays[0] || null;
+  return (
+    <div className="page risk-readable-page">
+      <AppNav active="risk" locale={locale} />
 
-  return <div className="page risk-readable-page">
-    <AppNav active="risk" locale={locale} />
-
-    <header className="risk-page-hero">
-      <div>
-        <div className="eyebrow">Phân tích danh mục</div>
-        <h1>Rủi ro hiện tại của danh mục</h1>
-        <p>Nhìn nhanh mã nào đang chi phối kết quả, các cổ phiếu có thường giảm cùng nhau không và mức rung lắc gần đây đang thay đổi thế nào.</p>
-      </div>
-    </header>
-
-    <section className="risk-overview-card">
-      <div className="risk-overview-summary">
+      <header className="risk-page-hero">
         <div>
-          <span className="risk-overview-label">Đánh giá tổng quan</span>
-          <h2>{!dataReady ? 'Dữ liệu đang hoàn thiện' : overallWatch ? 'Có điểm cần theo dõi' : 'Chưa có cảnh báo lớn'}</h2>
-          <p>{dataReady
-            ? `Phân tích dựa trên ${observations} phiên lợi suất, độ phủ ${pct(coverage)}.`
-            : `Hiện có ${observations} phiên lợi suất, độ phủ ${pct(coverage)}. Chỉ số thiếu dữ liệu sẽ để trống.`}</p>
+          <div className="eyebrow">Giải thích rủi ro định lượng</div>
+          <h1>Chẩn đoán & Cảnh báo rủi ro danh mục</h1>
+          <p>Nhận biết rủi ro nghĩa là gì, vì sao đáng quan tâm, mức độ nghiêm trọng và những điểm nên kiểm tra tiếp theo.</p>
         </div>
-        <StatusPill tone={!dataReady ? 'building' : overallWatch ? 'watch' : 'good'}>
-          {!dataReady ? 'Đang hoàn thiện' : overallWatch ? 'Cần theo dõi' : 'Ổn định'}
-        </StatusPill>
-      </div>
+      </header>
 
-      <div className="risk-overview-metrics">
-        <div className="risk-overview-metric">
-          <span>Mã lớn nhất</span>
-          <strong>{largestPositionSymbol || '-'}</strong>
-          <small>{pct(largestWeight)} phần cổ phiếu</small>
-        </div>
-        <div className="risk-overview-metric">
-          <span>Tương quan trung bình</span>
-          <strong>{num(avgCorrelation)}</strong>
-          <small>{correlationState[0]}</small>
-        </div>
-        <div className="risk-overview-metric">
-          <span>Biến động ~3 tháng</span>
-          <strong>{pct(vol63)}</strong>
-          <small>nền 1 năm {pct(vol252)}</small>
-        </div>
-        <div className="risk-overview-metric">
-          <span>Kéo rủi ro nhiều nhất</span>
-          <strong>{risk.largest_risk_symbol || '-'}</strong>
-          <small>{pct(largestRisk)} rủi ro ước tính</small>
-        </div>
-      </div>
-
-      {missing.length > 0 && <div className="risk-missing-note">Thiếu hoặc chưa đủ lịch sử: <b>{missing.join(', ')}</b></div>}
-    </section>
-
-    <section className="risk-section-block">
-      <div className="risk-section-heading">
-        <div><span className="eyebrow">Điểm cần hiểu</span><h2>Bốn góc nhìn quan trọng</h2></div>
-        <p>Ưu tiên tác động thực tế lên danh mục thay vì chỉ hiển thị chỉ số kỹ thuật.</p>
-      </div>
-
-      <div className="risk-insight-grid">
-        <InsightCard
-          index={1}
-          question="Một mã có đang quá lớn không?"
-          state={concentrationState[0]}
-          tone={concentrationState[1]}
-          title="Tác động của mã lớn nhất"
-          highlight={largestPositionSymbol ? `${largestPositionSymbol} · ${pct(largestWeight)}` : '-'}
-          highlightNote={concentrationImpact == null ? null : `Nếu mã này giảm 10% → phần cổ phiếu của danh mục có thể giảm khoảng ${pct(concentrationImpact)}`}
-          footer="Mức tập trung đo tác động của một mã đơn lẻ; không có nghĩa danh mục phải chia đều tỷ trọng."
-        >
-          {largestWeight == null
-            ? 'Chưa đủ dữ liệu để đánh giá mức tập trung.'
-            : <>Tỷ trọng hiện tại khiến <b>{largestPositionSymbol || 'mã lớn nhất'}</b> có khả năng ảnh hưởng rõ đến kết quả chung. Ví dụ 10% ở trên chỉ để hình dung độ nhạy, không phải dự báo giá.</>}
-        </InsightCard>
-
-        <InsightCard
-          index={2}
-          question="Các mã có thường tăng/giảm cùng nhau?"
-          state={correlationState[0]}
-          tone={correlationState[1]}
-          title="Khả năng đa dạng hóa"
-          highlight={num(avgCorrelation)}
-          highlightNote="Tương quan trung bình giữa các mã"
-          footer="Gần 1: thường cùng hướng · Gần 0: ít quan hệ ổn định · Âm: thường có xu hướng ngược hướng."
-        >
-          {avgCorrelation == null
-            ? 'Chưa đủ lịch sử giao nhau giữa các mã để đánh giá.'
-            : avgCorrelation >= 0.60
-              ? <>Mức tương quan khá cao. Khi thị trường xấu, nhiều mã có thể giảm cùng lúc nên việc nắm nhiều mã chưa chắc giúp giảm rủi ro nhiều.</>
-              : avgCorrelation >= 0.35
-                ? <>Mức tương quan vừa. Các mã có liên hệ nhất định nhưng vẫn còn khả năng bù trừ khi một mã biến động khác hướng.</>
-                : <>Mức tương quan tương đối thấp. Đây thường là điểm có lợi: khi một mã giảm, các mã khác ít có xu hướng giảm cùng mức và cùng thời điểm hơn.</>}
-        </InsightCard>
-
-        <InsightCard
-          index={3}
-          question="Gần đây danh mục rung lắc hơn hay ít hơn?"
-          state={volatilityState[0]}
-          tone={volatilityState[1]}
-          title="3 tháng gần đây so với nền 1 năm"
-          footer="Hai số là độ biến động quy đổi theo năm, không phải mức lợi nhuận."
-        >
-          {volatilityRatio == null ? 'Chưa đủ dữ liệu để so sánh biến động gần đây với nền một năm.' : <>
-            <div className="risk-volatility-compare">
-              <div><span>~3 tháng</span><strong>{pct(vol63)}</strong><small>63 phiên</small></div>
-              <span className="risk-compare-arrow">→</span>
-              <div><span>Nền ~1 năm</span><strong>{pct(vol252)}</strong><small>252 phiên</small></div>
-              <div className={`risk-volatility-delta ${volatilityRatio > 1.20 ? 'neg' : volatilityRatio < 0.80 ? 'pos' : ''}`}>
-                <span>Chênh lệch</span><strong>{pct(volatilityChange)}</strong>
-              </div>
-            </div>
-            <p className="risk-insight-explain">
-              {volatilityRatio > 1.20 && 'Rủi ro ngắn hạn đang tăng: danh mục rung lắc mạnh hơn đáng kể so với nền một năm.'}
-              {volatilityRatio < 0.80 && 'Biến động gần đây đang dịu hơn đáng kể so với nền một năm.'}
-              {volatilityRatio >= 0.80 && volatilityRatio <= 1.20 && 'Mức rung lắc gần đây chưa khác đáng kể so với nền một năm.'}
-            </p>
-          </>}
-        </InsightCard>
-
-        <InsightCard
-          index={4}
-          question="Mã nào đang kéo rủi ro nhiều nhất?"
-          state={riskDriverState[0]}
-          tone={riskDriverState[1]}
-          title="Ảnh hưởng rủi ro theo mã"
-          highlight={risk.largest_risk_symbol ? `${risk.largest_risk_symbol} · ${pct(largestRisk)}` : '-'}
-          highlightNote={riskWeightGap == null ? null : `Cao hơn tỷ trọng vốn khoảng ${pct(riskWeightGap, 2)} điểm % theo thang tỷ lệ`}
-          footer="Đóng góp rủi ro đo mức ảnh hưởng đến biến động chung; không phải lãi/lỗ và không phải khuyến nghị bán."
-        >
-          {largestRisk == null
-            ? 'Chưa đủ dữ liệu để xác định mã ảnh hưởng rủi ro nhiều nhất.'
-            : <>{risk.largest_risk_symbol} đang tạo ra phần biến động lớn nhất trong danh mục. {riskWeightGap != null && riskWeightGap > 0.05 ? 'Rủi ro của mã này cao hơn tỷ trọng vốn một khoảng đáng chú ý, nên đây là mã nên theo dõi kỹ hơn.' : 'Đóng góp rủi ro hiện không lệch quá xa tỷ trọng vốn.'}</>}
-        </InsightCard>
-      </div>
-    </section>
-
-    <section className="risk-correlation-card">
-      <div className="risk-section-heading">
-        <div><span className="eyebrow">Đa dạng hóa</span><h2>Ma trận tương quan</h2></div>
-        <p>Mức độ biến động cùng chiều giữa các cặp mã cổ phiếu trong danh mục.</p>
-      </div>
-      <div className="risk-correlation-scroll">
-        <table className="risk-correlation-matrix">
-          <thead>
-            <tr>
-              <th>Mã</th>
-              {symbolRows.map(r => <th key={r.symbol}>{r.symbol}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {symbolRows.map(rowA => <tr key={rowA.symbol}>
-              <th>{rowA.symbol}</th>
-              {symbolRows.map(rowB => {
-                const isSame = rowA.symbol === rowB.symbol;
-                const corrVal = isSame ? 1.0 : (rowA.metric?.average_correlation_to_others ?? 0.35);
-                return <td key={rowB.symbol} className={isSame ? 'corr-high' : corrVal > 0.6 ? 'corr-very-high' : corrVal > 0.3 ? 'corr-mid' : 'corr-low'}>
-                  {Number(corrVal).toFixed(2)}
-                </td>;
-              })}
-            </tr>)}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section className="risk-history-card">
-      <div className="risk-section-heading risk-history-heading">
-        <div><span className="eyebrow">Lịch sử thực tế</span><h2>Những phiên giảm mạnh đã xảy ra</h2></div>
-        <StatusPill tone={worstDay ? 'neutral' : 'building'}>{worstDay ? 'Có dữ liệu' : 'Chưa đủ snapshot'}</StatusPill>
-      </div>
-
-      {worstDay ? <>
-        <div className="risk-worst-hero">
+      {/* 1. PORTFOLIO RISK SUMMARY BANNER */}
+      <section className="risk-overview-card" style={{ marginBottom: '24px' }}>
+        <div className="risk-overview-summary">
           <div>
-            <span>Phiên xấu nhất đã ghi nhận</span>
-            <strong>{worstDay.snapshot_date}</strong>
+            <span className="risk-overview-label">Tổng quan mức độ rủi ro</span>
+            <h2>{summary.headline || (summary.overall_severity === 'HIGH_RISK' ? 'Có cảnh báo rủi ro cao' : 'Rủi ro ở mức kiểm soát')}</h2>
+            <p>
+              {dataReady
+                ? `Phân tích dựa trên ${observations} phiên lịch sử, độ phủ dữ liệu ${pct(coverage)}.`
+                : `Dữ liệu hiện đạt độ phủ ${pct(coverage)} trên ${observations} phiên. Các mã thiếu dữ liệu sẽ hiển thị cảnh báo chất lượng.`}
+            </p>
           </div>
-          <div><span>Mức giảm</span><strong className="neg">{pct(worstDay.daily_return)}</strong></div>
-          <div><span>Lãi/lỗ trong ngày</span><strong data-sensitive="pnl" className="neg">{signedMoney(worstDay.daily_pnl, locale)}</strong></div>
-          <div><span>NAV cuối ngày</span><strong data-sensitive="money">{money(worstDay.nav, locale)}</strong></div>
+          <SeverityPill severity={summary.overall_severity} />
         </div>
-        <div className="risk-worst-days">
-          {historicalWorstDays.map((day, index) => <div className="risk-worst-day-row" key={day.snapshot_date}>
-            <span className="risk-worst-rank">{index + 1}</span>
-            <div><span>Ngày</span><b>{day.snapshot_date}</b></div>
-            <div><span>Mức giảm</span><strong className={Number(day.daily_return) < 0 ? 'neg' : ''}>{pct(day.daily_return)}</strong></div>
-            <div><span>Lãi/lỗ</span><strong data-sensitive="pnl">{signedMoney(day.daily_pnl, locale)}</strong></div>
-            <div><span>NAV cuối ngày</span><strong data-sensitive="money">{money(day.nav, locale)}</strong></div>
-          </div>)}
-        </div>
-      </> : <div className="risk-history-empty">
-        <div className="risk-history-empty-mark">—</div>
-        <div>
-          <h3>Chưa có đủ lịch sử để gắn mức giảm với ngày cụ thể</h3>
-          <p>QPort cần các snapshot chính thức có lợi suất ngày. Khi dữ liệu hình thành, phần này sẽ hiển thị ngày, mức giảm, số tiền lỗ và NAV cuối ngày thay vì chỉ đưa ra một tỷ lệ ước tính.</p>
-        </div>
-      </div>}
-      <p className="risk-history-footnote">VaR/CVaR được giữ riêng trong phần Nâng cao vì đó là thống kê mô hình, không phải một phiên giao dịch thực tế.</p>
-    </section>
 
-    <section className="risk-symbol-review-card">
-      <div className="risk-section-heading">
-        <div><span className="eyebrow">Nhận xét từng mã</span><h2>Mỗi mã đang ảnh hưởng danh mục như thế nào?</h2></div>
-        <p>So sánh tỷ trọng vốn, đóng góp rủi ro, xu hướng biến động và mức liên hệ với các mã còn lại.</p>
-      </div>
-      {symbolRows.length === 0 ? <div className="empty-state compact-empty">Chưa đủ lịch sử giá để tạo nhận xét riêng cho từng mã.</div> : <div className="risk-symbol-grid">
-        {symbolRows.map(({ symbol, metric }) => {
-          const tone = symbolTone(metric);
-          const gap = metric.risk_contribution != null && metric.equity_weight != null
-            ? Number(metric.risk_contribution) - Number(metric.equity_weight)
-            : null;
-          return <article className={`risk-symbol-card risk-tone-${tone[1]}`} key={symbol}>
-            <div className="risk-symbol-head">
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <strong>{symbol}</strong>
-                  {metric.current_price != null && (
-                    <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--retro-text, #2a251d)', background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px' }}>
-                      {money(metric.current_price, locale)}
-                    </span>
-                  )}
+        <div className="risk-overview-metrics">
+          <div className="risk-overview-metric">
+            <span>Biến động danh mục (quy đổi năm)</span>
+            <strong>{vol252 == null ? '-' : `${pct(vol252)} / năm`}</strong>
+            <small>{vol63 != null ? `~3 tháng: ${pct(vol63)}` : 'Tính từ 252 phiên gần nhất'}</small>
+          </div>
+          <div className="risk-overview-metric">
+            <span>Mã tập trọng vốn lớn nhất</span>
+            <strong>{largestPositionSymbol || '-'}</strong>
+            <small>{pct(largestWeight)} NAV cổ phiếu</small>
+          </div>
+          <div className="risk-overview-metric">
+            <span>Tương quan trung bình</span>
+            <strong>{avgCorrelation == null ? 'Chưa đủ dữ liệu' : num(avgCorrelation, 2)}</strong>
+            <small>
+              {avgCorrelation == null
+                ? (symbolRows.length < 2 ? 'Cần ít nhất 2 mã cổ phiếu' : 'Chưa đủ 40 phiên giao nhau')
+                : avgCorrelation >= 0.60
+                  ? 'Tương quan cao'
+                  : avgCorrelation >= 0.35
+                    ? 'Tương quan vừa'
+                    : 'Tương quan thấp'}
+            </small>
+          </div>
+          <div className="risk-overview-metric">
+            <span>Số vị thế hiệu dụng</span>
+            <strong>{effectivePositions == null ? '-' : num(effectivePositions, 1)}</strong>
+            <small>trên {symbolRows.length} mã nắm giữ</small>
+          </div>
+          <div className="risk-overview-metric">
+            <span>Nguồn kéo rủi ro chính</span>
+            <strong>{risk.largest_risk_symbol || '-'}</strong>
+            <small>{largestRisk == null ? '-' : `${pct(largestRisk)} biến động`}</small>
+          </div>
+        </div>
+
+
+        {missing.length > 0 && (
+          <div className="risk-missing-note">
+            Thiếu hoặc chưa đủ lịch sử giá: <b>{missing.join(', ')}</b> (UNKNOWN != SAFE - dữ liệu thiếu không được coi là an toàn).
+          </div>
+        )}
+      </section>
+
+      {/* 3. FOUR IMPORTANT INSIGHTS SECTION */}
+      <section className="risk-section-block" style={{ marginBottom: '32px' }}>
+        <div className="risk-section-heading">
+          <div>
+            <span className="eyebrow">Điểm cần hiểu</span>
+            <h2>Bốn góc nhìn quan trọng</h2>
+          </div>
+          <p>Tác động thực tế lên danh mục thay vì chỉ hiển thị chỉ số kỹ thuật thuần túy.</p>
+        </div>
+
+        {warnings.length > 0 && (
+          <div className="risk-insight-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+            {visibleWarnings.map(w => (
+              <RiskWarningCard key={w.id} warning={w} />
+            ))}
+          </div>
+        )}
+
+        {warnings.length > 4 && (
+          <div style={{ textAlign: 'center', marginTop: '12px', marginBottom: '20px' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowAllWarnings(!showAllWarnings)}
+              style={{ cursor: 'pointer', padding: '8px 18px', fontSize: '13px' }}
+            >
+              {showAllWarnings ? 'Thu gọn danh sách cảnh báo' : `Xem thêm ${warnings.length - 4} cảnh báo rủi ro khác ↓`}
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* 4. SYMBOL RISK REVIEW & DRIVERS */}
+      <section className="risk-symbol-review-card" style={{ marginBottom: '32px' }}>
+        <div className="risk-section-heading">
+          <div>
+            <span className="eyebrow">Nhận xét từng mã</span>
+            <h2>Mỗi mã đang ảnh hưởng danh mục như thế nào?</h2>
+          </div>
+          <p>Tác động của mã lớn nhất và so sánh giữa tỷ trọng tiền đầu tư và mức độ đóng góp rủi ro thực tế của từng mã.</p>
+        </div>
+
+
+        {symbolRows.length === 0 ? (
+          <div className="empty-state compact-empty">Chưa đủ lịch sử giá để tạo nhận xét riêng cho từng mã.</div>
+        ) : (
+          <div className="risk-symbol-grid">
+            {symbolRows.map(({ symbol, metric }) => {
+              const tone = symbolTone(metric);
+              const gap = metric.risk_contribution != null && metric.equity_weight != null
+                ? Number(metric.risk_contribution) - Number(metric.equity_weight)
+                : null;
+              return (
+                <article className={`risk-symbol-card risk-tone-${tone[1]}`} key={symbol}>
+                  <div className="risk-symbol-head">
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong>{symbol}</strong>
+                        {metric.current_price != null && (
+                          <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px' }}>
+                            {money(metric.current_price, locale)}
+                          </span>
+                        )}
+                      </div>
+                      <span>{Number(metric.return_observations || 0)} phiên dữ liệu</span>
+                    </div>
+                    <span className={`risk-level risk-level-${tone[1]}`}>{tone[0]}</span>
+                  </div>
+                  <div className="risk-symbol-keyline">
+                    <div><span>Tỷ trọng vốn</span><strong>{pct(metric.equity_weight)}</strong></div>
+                    <div><span>Đóng góp rủi ro</span><strong>{pct(metric.risk_contribution)}</strong></div>
+                    <div><span>Chênh lệch</span><strong className={gap != null && gap > 0.05 ? 'neg' : ''}>{gap == null ? '-' : pct(gap)}</strong></div>
+                  </div>
+                  <div className="risk-symbol-metrics">
+                    <div><span>Biến động ~3 tháng</span><b>{pct(metric.volatility_63)}</b></div>
+                    <div><span>Nền ~1 năm</span><b>{pct(metric.volatility_252)}</b></div>
+                    <div><span>Tương quan trung bình</span><b>{num(metric.average_correlation_to_others)}</b></div>
+                    <div><span>Phiên giảm lớn nhất</span><b>{pct(metric.worst_daily_return)}</b></div>
+                  </div>
+                  <p>{symbolComment(symbol, metric)}</p>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 4. DIVERSIFICATION & CORRELATION MATRIX */}
+      <section className="risk-correlation-card" style={{ marginBottom: '32px' }}>
+        <div className="risk-section-heading">
+          <div>
+            <span className="eyebrow">Đa dạng hóa</span>
+            <h2>Ma trận tương quan</h2>
+          </div>
+          <p>Tương quan phản ánh mức độ cùng tăng/giảm giữa các cặp mã trong điều kiện bình thường.</p>
+        </div>
+        <div className="risk-correlation-scroll">
+          <table className="risk-correlation-matrix">
+            <thead>
+              <tr>
+                <th>Mã</th>
+                {symbolRows.map(r => <th key={r.symbol}>{r.symbol}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {symbolRows.map(rowA => (
+                <tr key={rowA.symbol}>
+                  <th>{rowA.symbol}</th>
+                  {symbolRows.map(rowB => {
+                    const isSame = rowA.symbol === rowB.symbol;
+                    const corrVal = isSame ? 1.0 : (risk.correlation_matrix?.[rowA.symbol]?.[rowB.symbol] ?? rowA.metric?.average_correlation_to_others ?? 0.35);
+                    return (
+                      <td key={rowB.symbol} className={isSame ? 'corr-high' : corrVal > 0.7 ? 'corr-very-high' : corrVal > 0.4 ? 'corr-mid' : 'corr-low'}>
+                        {Number(corrVal).toFixed(2)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* 5. TAIL RISK & HISTORICAL DOWNSIDE */}
+      <section className="risk-history-card" style={{ marginBottom: '32px' }}>
+        <div className="risk-section-heading risk-history-heading">
+          <div>
+            <span className="eyebrow">Lịch sử thực tế</span>
+            <h2>Những phiên giảm mạnh đã xảy ra</h2>
+          </div>
+          <span className="risk-level risk-level-neutral">Mô hình thống kê</span>
+        </div>
+
+        <div className="metric-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          <div className="metric-card">
+            <div className="metric-label">VaR ngày 95%</div>
+            <div className="metric-value">{pct(risk.daily_var_95)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">CVaR ngày 95%</div>
+            <div className="metric-value">{pct(risk.daily_cvar_95)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Biến động sụt giảm (Downside Volatility)</div>
+            <div className="metric-value">{pct(risk.downside_volatility)}</div>
+          </div>
+        </div>
+
+        <div className="risk-impact-box" style={{ background: 'var(--surface-soft, rgba(0,0,0,0.03))', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+          <strong style={{ fontSize: '13px', color: 'var(--text)', display: 'block', marginBottom: '4px' }}>
+            Lưu ý quan trọng về VaR / CVaR:
+          </strong>
+          <p style={{ margin: 0, fontSize: '12.5px', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+            VaR/CVaR là thống kê định lượng dựa trên phân phối dữ liệu lịch sử, <b>không phải mức lỗ tối đa có thể xảy ra</b>. Khi xuất hiện các biến cố thiên nga đen hoặc khủng hoảng thị trường bất ngờ, tổn thất thực tế trong ngày có thể vượt xa con số ước tính này.
+          </p>
+        </div>
+
+        {historicalWorstDays.length > 0 && (
+          <>
+            <div style={{ marginTop: '16px', marginBottom: '10px', fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
+              Các phiên sụt giảm mạnh thực tế đã ghi nhận trong nhật ký:
+            </div>
+            <div className="risk-worst-days">
+              {historicalWorstDays.map((day, index) => (
+                <div className="risk-worst-day-row" key={day.snapshot_date}>
+                  <span className="risk-worst-rank">{index + 1}</span>
+                  <div><span>Ngày</span><b>{day.snapshot_date}</b></div>
+                  <div><span>Mức giảm</span><strong className={Number(day.daily_return) < 0 ? 'neg' : ''}>{pct(day.daily_return)}</strong></div>
+                  <div><span>Lãi/lỗ</span><strong data-sensitive="pnl">{signedMoney(day.daily_pnl, locale)}</strong></div>
+                  <div><span>NAV cuối ngày</span><strong data-sensitive="money">{money(day.nav, locale)}</strong></div>
                 </div>
-                <span>{Number(metric.return_observations || 0)} phiên dữ liệu</span>
-              </div>
-              <StatusPill tone={tone[1]}>{tone[0]}</StatusPill>
+              ))}
             </div>
-            <div className="risk-symbol-keyline">
-              <div><span>Tỷ trọng vốn</span><strong>{pct(metric.equity_weight)}</strong></div>
-              <div><span>Đóng góp rủi ro</span><strong>{pct(metric.risk_contribution)}</strong></div>
-              <div><span>Chênh lệch</span><strong className={gap != null && gap > 0.05 ? 'neg' : ''}>{gap == null ? '-' : pct(gap)}</strong></div>
-            </div>
-            <div className="risk-symbol-metrics">
-              <div><span>Biến động ~3 tháng</span><b>{pct(metric.volatility_63)}</b></div>
-              <div><span>Nền ~1 năm</span><b>{pct(metric.volatility_252)}</b></div>
-              <div><span>Tương quan với mã khác</span><b>{num(metric.average_correlation_to_others)}</b></div>
-              <div><span>Phiên giảm mạnh nhất</span><b>{pct(metric.worst_daily_return)}</b></div>
-            </div>
-            <p>{symbolComment(symbol, metric)}</p>
-          </article>;
-        })}
-      </div>}
-    </section>
+          </>
+        )}
+      </section>
 
-    <details className="risk-technical-details">
-      <summary><div><span className="eyebrow">Nâng cao</span><b>Chỉ số kỹ thuật và phương pháp tính</b><small>Dành cho người muốn kiểm tra sâu mô hình rủi ro.</small></div><span className="risk-details-toggle">+</span></summary>
-      <div className="risk-technical-body">
-        <div className="metric-grid risk-technical-metrics">
-          <div className="metric-card"><div className="metric-label">Biến động 63 phiên</div><div className="metric-value">{pct(risk.volatility_63)}</div></div>
-          <div className="metric-card"><div className="metric-label">Biến động 252 phiên</div><div className="metric-value">{pct(risk.volatility_252)}</div></div>
-          <div className="metric-card"><div className="metric-label">Tương quan trung bình / cao nhất</div><div className="metric-value">{num(risk.average_correlation)} / {num(risk.max_correlation)}</div></div>
-          <div className="metric-card"><div className="metric-label">Số vị thế hiệu dụng</div><div className="metric-value">{num(effectivePositions)}</div></div>
-          <div className="metric-card"><div className="metric-label">Tỷ lệ đa dạng hóa</div><div className="metric-value">{num(risk.diversification_ratio)}</div></div>
-          <div className="metric-card"><div className="metric-label">VaR ngày 95%</div><div className="metric-value">{pct(risk.daily_var_95)}</div></div>
-          <div className="metric-card"><div className="metric-label">CVaR ngày 95%</div><div className="metric-value">{pct(risk.daily_cvar_95)}</div></div>
-          <div className="metric-card"><div className="metric-label">Phiên xấu nhất của mô hình</div><div className="metric-value">{pct(risk.max_daily_loss)}</div><div className="metric-note">{risk.max_daily_loss_date || '-'}</div></div>
+      {/* 6. ADVANCED TECHNICAL DETAILS */}
+      <details className="risk-technical-details">
+        <summary>
+          <div>
+            <span className="eyebrow">Nâng cao</span>
+            <b>Chỉ số kỹ thuật & Phương pháp tính</b>
+            <small>Dành cho nhà đầu tư muốn kiểm tra sâu cấu trúc ma trận rủi ro.</small>
+          </div>
+          <span className="risk-details-toggle">+</span>
+        </summary>
+        <div className="risk-technical-body">
+          <div className="metric-grid risk-technical-metrics">
+            <div className="metric-card"><div className="metric-label">Biến động 63 phiên</div><div className="metric-value">{pct(risk.volatility_63)}</div></div>
+            <div className="metric-card"><div className="metric-label">Biến động 252 phiên</div><div className="metric-value">{pct(risk.volatility_252)}</div></div>
+            <div className="metric-card"><div className="metric-label">Tương quan trung bình / cao nhất</div><div className="metric-value">{num(risk.average_correlation)} / {num(risk.max_correlation)}</div></div>
+            <div className="metric-card"><div className="metric-label">Số vị thế hiệu dụng (Effective N)</div><div className="metric-value">{num(effectivePositions)}</div></div>
+            <div className="metric-card"><div className="metric-label">Tỷ lệ đa dạng hóa (Diversification Ratio)</div><div className="metric-value">{num(risk.diversification_ratio)}</div></div>
+            <div className="metric-card"><div className="metric-label">Chỉ số HHI đóng góp rủi ro</div><div className="metric-value">{num(risk.risk_contribution_hhi)}</div></div>
+          </div>
+          <p className="muted" style={{ marginTop: '12px' }}>
+            <b>Phương pháp tính:</b> Chuỗi lợi suất log 252 phiên với ma trận hiệp phương sở được điều chỉnh co ngót (shrinkage 10%). Đóng góp rủi ro biên (ERC) được giải bằng thuật toán lặp chẩn đoán. Mọi phép tính đều có tính tư vấn diagnostic và không can thiệp vào tài khoản hay tạo lệnh tự động.
+          </p>
         </div>
-        <p className="muted"><b>63 phiên</b> tương đương khoảng 3 tháng giao dịch; <b>252 phiên</b> tương đương khoảng 1 năm. Volatility là độ rung lắc quy đổi theo năm, không phải lợi nhuận. VaR/CVaR chỉ mô tả phân phối lịch sử và không phải giới hạn lỗ được đảm bảo.</p>
-      </div>
-    </details>
-  </div>;
-}
+      </details>
 
-function driverMetricGap(symbol, symbolMetrics, largestRisk) {
-  if (!symbol || largestRisk == null) return null;
-  const metric = symbolMetrics?.[symbol];
-  if (!metric || metric.equity_weight == null) return null;
-  return Number(largestRisk) - Number(metric.equity_weight);
+    </div>
+  );
 }
