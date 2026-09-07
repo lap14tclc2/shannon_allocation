@@ -18,6 +18,7 @@ SEVERITY_ORDER = {
     "WARNING": 3,
     "ATTENTION": 2,
     "NORMAL": 1,
+    "INSUFFICIENT_DATA": 0,
 }
 
 SEVERITY_VIETNAMESE = {
@@ -25,6 +26,7 @@ SEVERITY_VIETNAMESE = {
     "WARNING": "Cảnh báo",
     "ATTENTION": "Cần chú ý",
     "NORMAL": "Bình thường",
+    "INSUFFICIENT_DATA": "Chưa đủ dữ liệu",
 }
 
 
@@ -50,6 +52,10 @@ def generate_risk_warnings(
     quality = risk_data.get("quality") or {}
     missing_symbols = quality.get("missing_symbols") or []
     coverage_weight = float(quality.get("coverage_weight") or 0.0)
+    coverage_status = risk_data.get("risk_coverage_status", "COMPLETE")
+    eligible_nav_weight = float(risk_data.get("risk_eligible_nav_weight") or 0.0)
+    eligible_count = int(risk_data.get("risk_eligible_count") or 0)
+    total_symbols = int(risk_data.get("risk_total_symbols") or len(rows))
 
     max_pos_weight = float(risk_data.get("max_position_weight") or 0.0)
     largest_pos_symbol = risk_data.get("largest_position_symbol")
@@ -77,35 +83,35 @@ def generate_risk_warnings(
     symbol_metrics = risk_data.get("symbol_metrics") or {}
 
     # Category 1: DATA QUALITY
-    if status == "UNAVAILABLE":
+    if status == "UNAVAILABLE" or coverage_status == "INSUFFICIENT":
         warnings.append({
             "id": "RISK_DATA_QUALITY_UNAVAILABLE",
             "category": "DATA_QUALITY",
             "severity": "HIGH_RISK",
-            "title": "Độ tin cậy phân tích rủi ro rất thấp",
-            "summary": "Không đủ dữ liệu lịch sử giá để tính toán ma trận biến động và tương quan.",
-            "metric_name": "status",
-            "metric_value": status,
-            "threshold": "VALID",
+            "title": "Chưa đủ dữ liệu để đánh giá rủi ro toàn danh mục",
+            "summary": f"Chỉ {eligible_count}/{total_symbols} cổ phiếu ({_format_pct(eligible_nav_weight)} NAV) có đủ dữ liệu 40+ phiên giá.",
+            "metric_name": "coverage_status",
+            "metric_value": coverage_status,
+            "threshold": "COMPLETE",
             "affected_symbols": missing_symbols,
-            "evidence": {"status": status, "missing_symbols": missing_symbols, "coverage_weight": coverage_weight},
-            "impact": "Mọi đánh giá biến động và đóng góp rủi ro hiện tại đều thiếu cơ sở định lượng. Dữ liệu chưa rõ không có nghĩa là an toàn (UNKNOWN != SAFE).",
-            "review_guidance": "Nên kiểm tra nguồn dữ liệu giá hoặc chờ thêm dữ liệu giao dịch trước khi đưa ra kết luận.",
-            "reason_codes": ["DATA_QUALITY_UNAVAILABLE"],
+            "evidence": {"status": status, "missing_symbols": missing_symbols, "coverage_weight": coverage_weight, "eligible_nav_weight": eligible_nav_weight},
+            "impact": f"Các mã chưa đủ dữ liệu ({', '.join(missing_symbols)}) không thể tính ma trận rủi ro và tương quan. Dữ liệu chưa rõ không có nghĩa là an toàn (UNKNOWN != SAFE).",
+            "review_guidance": "QPort chưa đưa ra kết luận biến động toàn danh mục. Cần cập nhật thêm lịch sử giá cho các mã thiếu.",
+            "reason_codes": ["DATA_QUALITY_INSUFFICIENT"],
         })
     elif status == "PARTIAL" or len(missing_symbols) > 0:
         warnings.append({
             "id": "RISK_DATA_QUALITY_PARTIAL",
             "category": "DATA_QUALITY",
             "severity": "WARNING",
-            "title": "Phân tích rủi ro chưa đầy đủ dữ liệu",
+            "title": "Phân tích rủi ro chưa đầy đủ dữ liệu toàn danh mục",
             "summary": f"Có {len(missing_symbols)} mã thiếu lịch sử giá: {', '.join(missing_symbols)}.",
             "metric_name": "missing_symbols",
             "metric_value": len(missing_symbols),
             "threshold": 0,
             "affected_symbols": missing_symbols,
-            "evidence": {"missing_symbols": missing_symbols, "coverage_weight": coverage_weight},
-            "impact": f"Tỷ lệ dữ liệu hiện đạt {_format_pct(coverage_weight)}. Dữ liệu bị thiếu làm giảm độ chính xác của ma trận rủi ro. Dữ liệu chưa có không có nghĩa là an toàn (UNKNOWN != SAFE).",
+            "evidence": {"missing_symbols": missing_symbols, "coverage_weight": coverage_weight, "eligible_nav_weight": eligible_nav_weight},
+            "impact": f"Tỷ lệ dữ liệu hiện đạt {_format_pct(eligible_nav_weight)} NAV. Dữ liệu chưa có không có nghĩa là an toàn (UNKNOWN != SAFE).",
             "review_guidance": "Nên cập nhật thêm lịch sử giá cho các mã bị thiếu để có bức tranh rủi ro đầy đủ hơn.",
             "reason_codes": ["DATA_QUALITY_PARTIAL"],
         })
@@ -117,25 +123,37 @@ def generate_risk_warnings(
         if not sym or sym == "CASH":
             continue
         weight = float(p.get("weight") or 0.0)
-        rc = float(risk_contribs.get(sym) or 0.0)
-        if weight >= 0.20 or rc >= 0.35:
+        raw_rc = risk_contribs.get(sym)
+        rc = float(raw_rc) if raw_rc is not None else None
+        if weight >= 0.20 or (rc is not None and rc >= 0.35):
             symbol_concentrations[sym] = {"weight": weight, "risk_contribution": rc}
 
     for sym, data in symbol_concentrations.items():
         w = data["weight"]
         rc = data["risk_contribution"]
 
-        if w >= 0.40 or rc >= 0.45:
+        if w >= 0.40 or (rc is not None and rc >= 0.45):
             sev = "HIGH_RISK"
-        elif w >= 0.30 or rc >= 0.38:
+        elif w >= 0.30 or (rc is not None and rc >= 0.38):
             sev = "WARNING"
         else:
             sev = "ATTENTION"
 
-        title = f"Rủi ro đang tập trung vào {sym}" if (rc > w * 1.15) else f"Tỷ trọng lớn ở vị thế {sym}"
-        summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} tổng biến động danh mục."
-        impact = f"Biến động lớn tại {sym} có thể chi phối kết quả toàn danh mục dù các vị thế khác ổn định."
-        review_guidance = f"Nên kiểm tra tỷ trọng {sym}, tương quan với các mã khác và thử nghiệm kết quả giả lập trên trang Phân bổ vốn."
+        title = f"Rủi ro biến động đang tập trung vào {sym}" if (rc is not None and rc > w * 1.15) else f"Tỷ trọng lớn ở vị thế {sym}"
+        if rc is None:
+            summary = f"{sym} chiếm {_format_pct(w)} NAV. Chưa đủ dữ liệu để tính đóng góp biến động."
+        elif coverage_status != "COMPLETE":
+            summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} biến động trong phần danh mục có đủ dữ liệu."
+        else:
+            summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} tổng biến động danh mục."
+
+        if rc is None:
+            impact = f"{sym} chiếm {_format_pct(w)} NAV nhưng chưa có đủ lịch sử giá 40+ phiên. Chưa có dữ liệu biến động không có nghĩa là vị thế này an toàn (UNKNOWN != SAFE)."
+        elif coverage_status != "COMPLETE":
+            impact = f"Trong phần danh mục có đủ dữ liệu ({_format_pct(eligible_nav_weight)} NAV), {sym} chiếm {_format_pct(rc)} đóng góp biến động đo lường được. Con số này không đại diện cho 100% rủi ro toàn danh mục."
+        else:
+            impact = f"{sym} đang tạo ra khoảng {_format_pct(rc)} biến động tổng thể của danh mục. NAV có thể biến động mạnh nếu giá {sym} thay đổi đáng kể. Đây là rủi ro biến động giá, không phải kết luận về chất lượng doanh nghiệp {sym}."
+        review_guidance = f"Nên kiểm tra tỷ trọng {sym}, tương quan với các mã khác và tham khảo kịch bản giả định sụt giảm giá."
 
         warnings.append({
             "id": f"RISK_CONCENTRATION_{sym}",
@@ -143,8 +161,8 @@ def generate_risk_warnings(
             "severity": sev,
             "title": title,
             "summary": summary,
-            "metric_name": "risk_contribution" if rc > w else "equity_weight",
-            "metric_value": max(w, rc),
+            "metric_name": "risk_contribution" if (rc is not None and rc > w) else "equity_weight",
+            "metric_value": max(w, rc) if rc is not None else w,
             "threshold": 0.30 if sev in ("WARNING", "HIGH_RISK") else 0.20,
             "affected_symbols": [sym],
             "evidence": {"equity_weight": w, "risk_contribution": rc},
@@ -196,15 +214,15 @@ def generate_risk_warnings(
                 "id": "RISK_DIVERSIFICATION_LOW",
                 "category": "DIVERSIFICATION",
                 "severity": sev,
-                "title": "Chưa đa dạng hóa thực tế như số lượng mã",
-                "summary": f"Bạn đang nắm {n_positions} cổ phiếu, nhưng mức độ tập trung thực tế chỉ tương đương khoảng {eff_pos:.1f} vị thế độc lập.",
+                "title": "Tập trung vốn cao theo tỷ trọng",
+                "summary": f"Danh mục có {n_positions} mã, nhưng do phân bổ vốn không đều, mức độ tập trung tương đương khoảng {eff_pos:.2f} vị thế có tỷ trọng bằng nhau.",
                 "metric_name": "effective_positions",
                 "metric_value": eff_pos,
                 "threshold": min(3.5, n_positions * 0.6),
                 "affected_symbols": [largest_pos_symbol] if largest_pos_symbol else [],
                 "evidence": {"n_positions": n_positions, "effective_positions": eff_pos, "hhi": hhi},
-                "impact": "Mức tập trung tỷ trọng hoặc sự biến động cùng chiều khiến tác động giảm thiểu rủi ro của việc chia nhỏ danh mục bị hạn chế.",
-                "review_guidance": "Kiểm tra lại số vị thế hiệu dụng, cụm tương quan và phân bổ vốn giữa các nhóm tài sản.",
+                "impact": "Mức tập trung vốn cao khiến kết quả danh mục phụ thuộc nhiều vào một số ít vị thế.",
+                "review_guidance": "Kiểm tra lại phân bổ vốn giữa các cổ phiếu và nhóm tài sản.",
                 "reason_codes": ["EFFECTIVE_POSITIONS_LOW"],
             })
 
@@ -335,10 +353,10 @@ def generate_risk_warnings(
         if SEVERITY_ORDER.get(w["severity"], 0) > SEVERITY_ORDER.get(highest_sev, 0):
             highest_sev = w["severity"]
 
-    high_risk_count = sum(1 for w in warnings if w["severity"] == "HIGH_RISK")
-    warning_count = sum(1 for w in warnings if w["severity"] == "WARNING")
-
-    if highest_sev == "HIGH_RISK":
+    if coverage_status == "INSUFFICIENT":
+        highest_sev = "INSUFFICIENT_DATA"
+        headline = "Chưa đủ dữ liệu để ước tính đáng tin cậy biến động toàn danh mục"
+    elif highest_sev == "HIGH_RISK":
         headline = "Danh mục có yếu tố rủi ro cao cần chú ý kỹ"
     elif highest_sev == "WARNING":
         headline = "Cần chú ý các điểm rủi ro tập trung"
@@ -350,6 +368,9 @@ def generate_risk_warnings(
     top_concerns = [w["title"] for w in warnings if w["severity"] in ("HIGH_RISK", "WARNING")][:3]
     if not top_concerns and warnings:
         top_concerns = [w["title"] for w in warnings[:3]]
+
+    high_risk_count = sum(1 for w in warnings if w.get("severity") == "HIGH_RISK")
+    warning_count = sum(1 for w in warnings if w.get("severity") == "WARNING")
 
     risk_summary = {
         "overall_severity": highest_sev,

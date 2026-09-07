@@ -223,7 +223,16 @@ class PortfolioService:
         symbols = sorted(state.positions)
         prices = self.store.latest_prices(symbols, on_or_before=as_of)
         base_rows, _ = self._mark_to_market(state, prices)
-        result = portfolio_risk(base_rows, self._histories(symbols, end=as_of))
+
+        valuation_signals = {}
+        try:
+            from .screener import compute_all_screener_scores
+            scored = compute_all_screener_scores()
+            valuation_signals = {item["symbol"].upper(): item for item in scored if item.get("symbol")}
+        except Exception:
+            valuation_signals = {}
+
+        result = portfolio_risk(base_rows, self._histories(symbols, end=as_of), valuation_signals=valuation_signals)
         return {
             **result,
             "as_of": as_of or max((p.get("trading_date") for p in prices.values()), default=None),
@@ -236,6 +245,7 @@ class PortfolioService:
                 "var": "historical_5pct_quantile",
                 "concentration_basis": "equity_normalized",
                 "erc": "diagnostic_reference_only",
+                "permanent_loss_model": "buffett_munger_deterministic_business_risk",
             },
         }
 
