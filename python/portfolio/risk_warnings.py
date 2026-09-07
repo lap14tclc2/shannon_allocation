@@ -357,7 +357,7 @@ def generate_risk_warnings(
         highest_sev = "INSUFFICIENT_DATA"
         headline = "Chưa đủ dữ liệu để ước tính đáng tin cậy biến động toàn danh mục"
     elif highest_sev == "HIGH_RISK":
-        headline = "Danh mục có yếu tố rủi ro cao cần chú ý kỹ"
+        headline = "Nguy cơ cao chủ yếu do tập trung vốn/risk contribution (không tự động là rủi ro kinh doanh)"
     elif highest_sev == "WARNING":
         headline = "Cần chú ý các điểm rủi ro tập trung"
     elif highest_sev == "ATTENTION":

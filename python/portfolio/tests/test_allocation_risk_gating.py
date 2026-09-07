@@ -354,7 +354,8 @@ def test_16_reliable_full_coverage_rc_breach_causes_reduce():
         equal_risk=0.20,
         risk_actionable=True,
     )
-    assert dec.action == "REDUCE"
+    assert dec.action == "HOLD"
+    assert "REVIEW_REQUIRED" in dec.reason_codes
     assert "RISK_CONTRIBUTION_HIGH" in dec.reason_codes
 
 

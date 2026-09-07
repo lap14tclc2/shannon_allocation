@@ -25,7 +25,10 @@ const VERDICT_LABEL_VI = {
   SELECTIVE_ACTION: 'Hành động chọn lọc',
 };
 
-function ActionPill({ action }) {
+function ActionPill({ action, decision }) {
+  if (action === 'HOLD' && decision?.reason_codes?.includes('REVIEW_REQUIRED')) {
+    return <span className="allocation-action-pill allocation-action-watch">GIỮ · CẦN RÀ SOÁT</span>;
+  }
   const tone = ACTION_TONE[action] || 'hold';
   return <span className={`allocation-action-pill allocation-action-${tone}`}>{ACTION_LABEL_VI[action] || action}</span>;
 }
@@ -65,7 +68,7 @@ function HoldingRow({ decision }) {
           </button>
         </td>
         <td data-sensitive>{formatWeight(currentWeight)}</td>
-        <td><ActionPill action={decision.action} /></td>
+        <td><ActionPill action={decision.action} decision={decision} /></td>
         <td data-sensitive><strong>{postText}</strong></td>
         <td>{CONFIDENCE_LABEL_VI[decision.confidence] || decision.confidence}</td>
         <td className="allocation-reasons">
@@ -78,6 +81,26 @@ function HoldingRow({ decision }) {
         <tr className="allocation-detail-row">
           <td colSpan={6}>
             <div className="allocation-detail-box">
+              <div className="allocation-holding-buffett-grid">
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">1 · Vì sao sở hữu</div>
+                  <div>Chất lượng: <strong>{decision.bands?.business_quality_tier || 'Đầu tư được'}</strong></div>
+                  <div>Thesis: <strong>Chưa thấy dấu hiệu gãy</strong></div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">2 · Định giá (MOS)</div>
+                  <div>Biên an toàn ròng: <strong>{decision.bands?.valuation_safety_pp != null ? `${decision.bands.valuation_safety_pp > 0 ? '+' : ''}${decision.bands.valuation_safety_pp.toFixed(1)}pp` : '—'}</strong></div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">3 · Tập trung vốn</div>
+                  <div>Tỷ trọng NAV: <strong data-sensitive>{formatWeight(currentWeight)}</strong> {currentWeight >= 0.20 ? '(Tập trung cao)' : '(An toàn)'}</div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">4 · Rủi ro thị trường</div>
+                  <div>Phù hợp danh mục: <strong>{FIT_LABEL_VI[decision.bands?.portfolio_fit] || decision.bands?.portfolio_fit || '—'}</strong></div>
+                  <div>Vai trò: <em>Rà soát & Sizing overlay (không tự động bán)</em></div>
+                </div>
+              </div>
               <div className="allocation-guidance-inline">
                 <strong>{NEW_POSITION_GUIDANCE_LABEL_VI}:</strong>{' '}
                 <span className="allocation-guidance-badge">{newBandText}</span>
@@ -241,6 +264,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
   const [allocation, setAllocation] = useState(initialAllocation || null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [showRejected, setShowRejected] = useState(false);
+  const [showWatchlist, setShowWatchlist] = useState(true);
   const [simSymbol, setSimSymbol] = useState('');
   const [simWeight, setSimWeight] = useState('');
   const [simResult, setSimResult] = useState(null);
@@ -433,18 +457,31 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
         </section>
 
         <section className="allocation-section">
-          <h2 className="allocation-section-title">
-            4 · Gần đạt / Cần theo dõi (Watchlist)
-            <span className="allocation-badge-count allocation-count-watch">{watchlistCount}</span>
-          </h2>
+          <div className="allocation-section-header-row">
+            <h2 className="allocation-section-title">
+              4 · Gần đạt / Cần theo dõi (Watchlist)
+              <span className="allocation-badge-count allocation-count-watch">{watchlistCount}</span>
+            </h2>
+            {watchlist.length > 0 && (
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={() => setShowWatchlist(!showWatchlist)}
+              >
+                {showWatchlist ? 'Thu gọn theo dõi ▲' : `Xem ${watchlistCount} mã theo dõi ▼`}
+              </button>
+            )}
+          </div>
           {watchlist.length === 0 ? (
             <p className="muted">Không có mã nào thuộc nhóm theo dõi.</p>
           ) : (
-            <div className="allocation-opportunity-grid">
-              {watchlist.map(opp => (
-                <WatchlistCard key={opp.symbol} opportunity={opp} onViewValuation={setSelectedSymbol} />
-              ))}
-            </div>
+            showWatchlist && (
+              <div className="allocation-opportunity-grid">
+                {watchlist.map(opp => (
+                  <WatchlistCard key={opp.symbol} opportunity={opp} onViewValuation={setSelectedSymbol} />
+                ))}
+              </div>
+            )
           )}
         </section>
 

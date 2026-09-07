@@ -26,6 +26,11 @@ NO_PUBLIC_VALUATION = "NO_PUBLIC_VALUATION"
 
 # Risk / concentration
 POSITION_CONCENTRATED = "POSITION_CONCENTRATED"
+CONCENTRATED_THESIS_RISK = "CONCENTRATED_THESIS_RISK"
+CYCLICAL_EARNINGS = "CYCLICAL_EARNINGS"
+BALANCE_SHEET_REVIEW = "BALANCE_SHEET_REVIEW"
+VOLATILITY_HIGH = "VOLATILITY_HIGH"
+PERMANENT_LOSS_DATA_INSUFFICIENT = "PERMANENT_LOSS_DATA_INSUFFICIENT"
 RISK_CONTRIBUTION_HIGH = "RISK_CONTRIBUTION_HIGH"
 CORRELATION_HIGH = "CORRELATION_HIGH"
 PORTFOLIO_FIT_WEAK = "PORTFOLIO_FIT_WEAK"
@@ -73,6 +78,11 @@ ALL_REASON_CODES: frozenset[str] = frozenset({
     VALUATION_SAFETY_IMPROVES,
     NO_PUBLIC_VALUATION,
     POSITION_CONCENTRATED,
+    CONCENTRATED_THESIS_RISK,
+    CYCLICAL_EARNINGS,
+    BALANCE_SHEET_REVIEW,
+    VOLATILITY_HIGH,
+    PERMANENT_LOSS_DATA_INSUFFICIENT,
     RISK_CONTRIBUTION_HIGH,
     CORRELATION_HIGH,
     PORTFOLIO_FIT_WEAK,
@@ -112,6 +122,11 @@ REASON_CODE_VI: dict[str, str] = {
     VALUATION_SAFETY_IMPROVES: "Biên an toàn của ứng viên tốt hơn rõ rệt vị thế hiện tại.",
     NO_PUBLIC_VALUATION: "Chưa có định giá công khai.",
     POSITION_CONCENTRATED: "Tỷ trọng nắm giữ đang quá tập trung.",
+    CONCENTRATED_THESIS_RISK: "Tỷ trọng lớn — nếu luận điểm đầu tư sai sót, mức độ ảnh hưởng đến NAV sẽ rất đáng kể.",
+    CYCLICAL_EARNINGS: "Lợi nhuận ròng mang tính chu kỳ ngành, không phải tổn thất kinh doanh vĩnh viễn.",
+    BALANCE_SHEET_REVIEW: "Chỉ số an toàn nợ vay / bảng cân đối tài chính cần được rà soát định kỳ.",
+    VOLATILITY_HIGH: "Mức độ biến động giá ngắn hạn cao hơn nền trung bình.",
+    PERMANENT_LOSS_DATA_INSUFFICIENT: "Chưa đủ dữ liệu canonical để khẳng định độ an toàn chống mất vốn vĩnh viễn.",
     RISK_CONTRIBUTION_HIGH: "Mã này đóng góp rủi ro quá lớn cho danh mục.",
     CORRELATION_HIGH: "Tương quan cao với các vị thế hiện tại.",
     PORTFOLIO_FIT_WEAK: "Mức độ phù hợp với danh mục kém.",

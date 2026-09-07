@@ -29,11 +29,15 @@ from __future__ import annotations
 
 from .models import AllocationDecision, CandidateOpportunity, EligibilityResult
 from .reason_codes import (
+    BALANCE_SHEET_REVIEW,
     CASH_PREFERRED,
+    CONCENTRATED_THESIS_RISK,
     CORRELATION_HIGH,
+    CYCLICAL_EARNINGS,
     DATA_INSUFFICIENT,
     HARD_REJECT,
     NO_SUPERIOR_REPLACEMENT,
+    PERMANENT_LOSS_DATA_INSUFFICIENT,
     PORTFOLIO_FIT_IMPROVES,
     PORTFOLIO_FIT_WEAK,
     POSITION_CONCENTRATED,
@@ -47,6 +51,9 @@ from .reason_codes import (
     THESIS_BROKEN,
     VALUATION_SAFETY_IMPROVES,
     VALUATION_SAFETY_INSUFFICIENT,
+    VALUATION_SAFETY_NEGATIVE,
+    VALUATION_SAFETY_POSITIVE,
+    VOLATILITY_HIGH,
 )
 
 # ---------------------------------------------------------------------------
@@ -154,15 +161,18 @@ def decide_holding(
     current_fit: str = "UNAVAILABLE",
     technical: bool | None = None,
     risk_actionable: bool = True,
+    permanent_loss_context: dict[str, Any] | None = None,
 ) -> AllocationDecision:
-    """Advisory decision for a current holding — explicit gates, no score.
+    """Advisory decision for a current holding — Buffett-first precedence.
 
     Hierarchy:
-    A. Destructive hard reject / thesis break -> SELL (target 0%)
-    B. Confirmed LOW_QUALITY                 -> REDUCE (positive target > 0)
-    C. Excessive risk contribution           -> REDUCE (positive risk-capped target, requires actionable market risk)
-    D. Incomplete data / low confidence      -> HOLD + REVIEW_REQUIRED (no fabricated target)
-    E. Otherwise                             -> HOLD (default)
+    1. THESIS STATUS / DESTRUCTIVE HARD REJECT -> SELL (target 0%)
+    2. CONFIRMED FUNDAMENTAL DETERIORATION / SEVERE PERMANENT LOSS -> REDUCE (target > 0)
+    3. REVIEW SIGNALS (Concentration, RC breach, UNKNOWN risk data, MOS shortfall) -> HOLD + REVIEW_REQUIRED
+    4. NORMAL INTACT HOLDING -> HOLD (default, target = current_weight)
+
+    Market risk metrics (volatility, correlation, risk contribution) refine sizing
+    and review priority. They CANNOT trigger standalone REDUCE actions.
     """
     weight = max(0.0, float(current_weight))
     rc = risk_contribution if risk_contribution is not None else None
@@ -175,8 +185,38 @@ def decide_holding(
     }
     guidance = _build_guidance(sizing, target_min, target_mid, target_max)
 
-    # A. Destructive hard reject / thesis break -> SELL (target 0%).
-    if eligibility.hard_rejects:
+    perm_loss = permanent_loss_context or {}
+    perm_severity = perm_loss.get("severity") or "UNKNOWN"
+    perm_evidence_strength = perm_loss.get("evidence_strength") or "INSUFFICIENT"
+    perm_thesis_status = perm_loss.get("thesis_status") or "UNKNOWN"
+    perm_balance_sheet = perm_loss.get("balance_sheet") or "UNKNOWN"
+    perm_earnings = perm_loss.get("earnings_durability") or "UNKNOWN"
+
+    is_concentrated = (weight >= POSITION_CONCENTRATED_WEIGHT) or (weight >= hard_cap)
+    risk_breach = bool(
+        risk_actionable
+        and rc is not None and equal_risk is not None and equal_risk > 0
+        and rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
+    )
+
+    if is_concentrated:
+        reasons.extend([POSITION_CONCENTRATED, CONCENTRATED_THESIS_RISK])
+    if risk_breach:
+        reasons.append(RISK_CONTRIBUTION_HIGH)
+    if perm_earnings == "CYCLICAL":
+        reasons.append(CYCLICAL_EARNINGS)
+    if perm_balance_sheet in ("HIGH_RISK", "ATTENTION"):
+        reasons.append(BALANCE_SHEET_REVIEW)
+    if perm_severity == "UNKNOWN" or eligibility.data_quality in ("DATA_INSUFFICIENT", "WATCH"):
+        reasons.append(PERMANENT_LOSS_DATA_INSUFFICIENT)
+
+    # Gate 1: Destructive hard reject / thesis break -> SELL (target 0%).
+    is_thesis_broken = (
+        bool(eligibility.hard_rejects)
+        or perm_thesis_status == "BROKEN"
+        or (THESIS_BROKEN in eligibility.reason_codes)
+    )
+    if is_thesis_broken:
         reasons.extend([HARD_REJECT, THESIS_BROKEN])
         return AllocationDecision(
             symbol=eligibility.symbol, action="SELL", kind="HOLDING",
@@ -186,29 +226,31 @@ def decide_holding(
             new_position_guidance=guidance,
         )
 
-    # B. Confirmed fundamental deterioration (LOW_QUALITY) -> REDUCE (target > 0).
-    if eligibility.quality_tier == "LOW_QUALITY" or (eligibility.status == "INELIGIBLE" and not eligibility.hard_rejects):
-        reasons.append(QUALITY_DETERIORATING)
-        low, mid, high = _reduce_target(weight, cap=0.05)
-        return AllocationDecision(
-            symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
-            current_weight=weight, post_action_target_weight=mid,
-            target_min=low, target_mid=mid, target_max=high, confidence="MEDIUM",
-            reason_codes=_dedupe(reasons), bands=bands,
-            new_position_guidance=guidance,
-        )
-
-    # C. Excessive risk contribution -> REDUCE (positive risk-capped target).
-    # Requires risk_actionable == True (partial covariance metrics CANNOT trigger REDUCE!)
-    risk_breach = bool(
-        risk_actionable
-        and rc is not None and equal_risk is not None and equal_risk > 0
-        and rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
+    # Gate 2: Confirmed fundamental deterioration or severe confirmed permanent loss -> REDUCE (target > 0).
+    is_deteriorating_quality = (
+        eligibility.quality_tier == "LOW_QUALITY"
+        or (eligibility.status == "INELIGIBLE" and not eligibility.hard_rejects)
+        or (QUALITY_DETERIORATING in eligibility.reason_codes)
     )
-    if weight >= POSITION_CONCENTRATED_WEIGHT:
-        reasons.append(POSITION_CONCENTRATED)
-    if risk_breach:
-        reasons.append(RISK_CONTRIBUTION_HIGH)
+    is_confirmed_severe_permanent_loss = (
+        (perm_severity == "HIGH" and perm_evidence_strength == "CONFIRMED")
+        or (perm_severity == "ELEVATED" and perm_evidence_strength == "CONFIRMED" and perm_thesis_status in ("WATCH", "DETERIORATING"))
+    )
+    is_concentrated_deteriorating = (
+        is_concentrated and (
+            perm_thesis_status in ("DETERIORATING", "BROKEN")
+            or (QUALITY_DETERIORATING in eligibility.reason_codes)
+            or eligibility.quality_tier == "LOW_QUALITY"
+        )
+    )
+    is_hard_cap_governance_breach = (
+        is_concentrated and weight > (hard_cap * 1.5) and risk_breach
+        and (eligibility.valuation_safety is not None and eligibility.valuation_safety < -10.0)
+    )
+
+    if is_deteriorating_quality or is_confirmed_severe_permanent_loss or is_concentrated_deteriorating or is_hard_cap_governance_breach:
+        if is_deteriorating_quality:
+            reasons.append(QUALITY_DETERIORATING)
         low, mid, high = _reduce_target(weight, cap=min(0.15, hard_cap * 0.75))
         return AllocationDecision(
             symbol=eligibility.symbol, action="REDUCE", kind="HOLDING",
@@ -218,32 +260,47 @@ def decide_holding(
             new_position_guidance=guidance,
         )
 
-    # D. Missing evidence / low valuation confidence -> HOLD + REVIEW_REQUIRED.
-    # UNKNOWN != BAD: Insufficient data does NOT cause forced sell or reduction.
-    if (
-        eligibility.status == "WATCHLIST"
-        or DATA_INSUFFICIENT in eligibility.reason_codes
-        or eligibility.valuation_confidence == "LOW"
-        or eligibility.data_quality in ("DATA_INSUFFICIENT", "NO_PUBLIC_VALUATION", "WATCH")
-    ):
+    # Gate 3: Review Signals (Concentration, RC breach, indicative permanent loss, UNKNOWN risk data) -> HOLD + REVIEW_REQUIRED.
+    requires_review = (
+        is_concentrated
+        or risk_breach
+        or (perm_severity in ("ELEVATED", "HIGH"))
+        or (eligibility.status == "WATCHLIST")
+        or (DATA_INSUFFICIENT in eligibility.reason_codes)
+        or (eligibility.valuation_confidence == "LOW")
+        or (eligibility.valuation_safety is not None and eligibility.valuation_safety < 0.0)
+        or (not risk_actionable)
+    )
+    if requires_review:
         reasons.append(REVIEW_REQUIRED)
+        if eligibility.valuation_safety is not None and eligibility.valuation_safety > 0.0:
+            reasons.append(VALUATION_SAFETY_POSITIVE)
+        elif eligibility.valuation_safety is not None and eligibility.valuation_safety < 0.0:
+            reasons.append(VALUATION_SAFETY_NEGATIVE)
+        if NO_SUPERIOR_REPLACEMENT not in reasons:
+            reasons.append(NO_SUPERIOR_REPLACEMENT)
+
         return AllocationDecision(
             symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
             current_weight=weight, post_action_target_weight=weight,
-            target_min=None, target_mid=None, target_max=None,
-            confidence="LOW", reason_codes=_dedupe(reasons), bands=bands,
+            target_min=None, target_mid=weight, target_max=None,
+            confidence="MEDIUM" if (eligibility.valuation_confidence or "MEDIUM") != "LOW" else "LOW",
+            reason_codes=_dedupe(reasons), bands=bands,
             new_position_guidance=guidance,
         )
 
-    # E. Normal good holding -> HOLD (default).
+    # Gate 4: Normal intact holding -> HOLD (default).
     if eligibility.quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
         reasons.append(QUALITY_STRONG)
     if eligibility.status == "INVESTABLE":
         reasons.append(NO_SUPERIOR_REPLACEMENT)
+    if eligibility.valuation_safety is not None and eligibility.valuation_safety >= 0.0:
+        reasons.append(VALUATION_SAFETY_POSITIVE)
     if technical is False:
         reasons.append(TECHNICAL_DETERIORATION)
     elif technical is True:
         reasons.append(TECHNICAL_CONFIRMATION)
+
     return AllocationDecision(
         symbol=eligibility.symbol, action="HOLD", kind="HOLDING",
         current_weight=weight, post_action_target_weight=weight,
