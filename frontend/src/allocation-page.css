@@ -750,3 +750,28 @@
   color: var(--alloc-muted);
   line-height: 1.4;
 }
+
+.allocation-holding-buffett-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--alloc-border) 40%, transparent);
+}
+
+.allocation-buffett-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.allocation-buffett-label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--alloc-accent);
+  font-weight: 700;
+  margin-bottom: 2px;
+}

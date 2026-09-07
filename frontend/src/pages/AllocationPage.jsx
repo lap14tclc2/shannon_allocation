@@ -81,6 +81,26 @@ function HoldingRow({ decision }) {
         <tr className="allocation-detail-row">
           <td colSpan={6}>
             <div className="allocation-detail-box">
+              <div className="allocation-holding-buffett-grid">
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">1 · Vì sao sở hữu</div>
+                  <div>Chất lượng: <strong>{decision.bands?.business_quality_tier || 'Đầu tư được'}</strong></div>
+                  <div>Thesis: <strong>Chưa thấy dấu hiệu gãy</strong></div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">2 · Định giá (MOS)</div>
+                  <div>Biên an toàn ròng: <strong>{decision.bands?.valuation_safety_pp != null ? `${decision.bands.valuation_safety_pp > 0 ? '+' : ''}${decision.bands.valuation_safety_pp.toFixed(1)}pp` : '—'}</strong></div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">3 · Tập trung vốn</div>
+                  <div>Tỷ trọng NAV: <strong data-sensitive>{formatWeight(currentWeight)}</strong> {currentWeight >= 0.20 ? '(Tập trung cao)' : '(An toàn)'}</div>
+                </div>
+                <div className="allocation-buffett-col">
+                  <div className="allocation-buffett-label">4 · Rủi ro thị trường</div>
+                  <div>Phù hợp danh mục: <strong>{FIT_LABEL_VI[decision.bands?.portfolio_fit] || decision.bands?.portfolio_fit || '—'}</strong></div>
+                  <div>Vai trò: <em>Rà soát & Sizing overlay (không tự động bán)</em></div>
+                </div>
+              </div>
               <div className="allocation-guidance-inline">
                 <strong>{NEW_POSITION_GUIDANCE_LABEL_VI}:</strong>{' '}
                 <span className="allocation-guidance-badge">{newBandText}</span>
