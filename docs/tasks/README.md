@@ -82,6 +82,8 @@
 | [TASK-20260906-103](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-103-frontend-css-typography-aesthetic-responsive-overhaul.md) | Frontend CSS Typography, Aesthetic Polish & Responsive Overhaul | completed | high | 2026-09-06 |
 | [TASK-20260906-104](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260906-104-expand-allocation-candidate-discovery-tiers.md) | Expand Allocation Discovery into Buy-Ready, Watchlist, and Rejected Candidate Tiers | completed | high | 2026-09-06 |
 | [TASK-20260907-105](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-105-clarify-allocation-position-band-and-existing-holding-target-semantics.md) | Clarify Allocation Position-Band and Existing-Holding Target Semantics | completed | high | 2026-09-07 |
+| [TASK-20260907-106](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-106-add-deterministic-risk-warnings-and-plain-language-risk-interpretation.md) | Add Deterministic Risk Warnings and Plain-Language Risk Interpretation | completed | high | 2026-09-07 |
+
 
 
 
