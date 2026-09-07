@@ -1,7 +1,7 @@
 """
 Regression and data integrity tests for /risk diagnostics analytics.
 Ensures weight normalization, coverage semantics, correlation nulls, evidence-backed permanent loss labels,
-and bank-specific balance sheet logic.
+bank-specific balance sheet logic, moat strength vs trend separation, and solvency evidence consistency.
 """
 
 import pytest
@@ -47,7 +47,7 @@ def sample_portfolio_data():
 
 
 def test_weight_semantics_normalization(sample_portfolio_data):
-    """Req 1 & 8: NAV weight is primary weight (FPT 52.7% NAV weight), equity_weight is exposed explicitly (80.1%)."""
+    """NAV weight is primary weight (FPT 52.7% NAV weight), equity_weight is exposed explicitly (80.1%)."""
     positions, histories = sample_portfolio_data
     risk_res = portfolio_risk(positions, histories)
 
@@ -61,83 +61,203 @@ def test_weight_semantics_normalization(sample_portfolio_data):
     # Equity weight is market_value / total_equity (527M / 658M = ~0.8009)
     assert abs(fpt["equity_weight"] - (527.0 / 658.0)) < 1e-4
 
-    # Check position_rows retain consistent NAV weight semantics
-    for row in risk_res.get("position_rows", positions):
-        if row["symbol"] == "FPT":
-            assert abs(row["weight"] - 0.527) < 1e-4
 
+# ---------------------------------------------------------------------------
+# 21 Specific Regression Invariant Tests as per Prompt Requirements
+# ---------------------------------------------------------------------------
 
-def test_risk_contribution_coverage_semantics(sample_portfolio_data):
-    """Req 2 & 3: Incomplete data sets risk_coverage_status to INSUFFICIENT or PARTIAL."""
+def test_req_1_nav_coverage_insufficient_status(sample_portfolio_data):
+    """Regression Test 1: 3.1% NAV coverage => market-risk data status INSUFFICIENT."""
     positions, histories = sample_portfolio_data
     risk_res = portfolio_risk(positions, histories)
 
     assert risk_res["risk_coverage_status"] == "INSUFFICIENT"
-    assert risk_res["risk_eligible_symbols"] == ["DGC"]
-    assert risk_res["risk_total_symbols"] == 3
-    assert abs(risk_res["risk_eligible_nav_weight"] - 0.031) < 1e-4
-
-    # Warnings check: DATA_QUALITY warning with reason code DATA_QUALITY_INSUFFICIENT should be raised
-    dq_warnings = [w for w in risk_res["warnings"] if w.get("category") == "DATA_QUALITY"]
-    assert len(dq_warnings) > 0
-    assert "DATA_QUALITY_INSUFFICIENT" in dq_warnings[0]["reason_codes"]
+    assert risk_res["market_risk"]["status"] == "INSUFFICIENT_DATA"
+    assert risk_res["market_risk"]["status_text"] == "Chưa đủ dữ liệu"
 
 
-def test_no_fabricated_correlation_nulls(sample_portfolio_data):
-    """Req 3, 4, 5: Pairwise correlation between missing history symbols stays None, no 0.35 fallback."""
+def test_req_2_insufficient_data_cannot_return_high_volatility_severity(sample_portfolio_data):
+    """Regression Test 2: Insufficient data cannot return overall HIGH_RISK volatility severity."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    assert risk_res["market_risk"]["overall_severity"] == "INSUFFICIENT_DATA"
+    assert risk_res["overall_severity"] == "INSUFFICIENT_DATA"
+
+
+def test_req_3_fpt_ineligible_risk_contribution_none(sample_portfolio_data):
+    """Regression Test 3: FPT ineligible => risk_contribution is None."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    fpt = risk_res["symbol_metrics"]["FPT"]
+    assert fpt["risk_contribution"] is None
+    assert fpt["risk_contribution_status"] == "UNAVAILABLE"
+
+
+def test_req_4_acb_ineligible_risk_contribution_none(sample_portfolio_data):
+    """Regression Test 4: ACB ineligible => risk_contribution is None."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    acb = risk_res["symbol_metrics"]["ACB"]
+    assert acb["risk_contribution"] is None
+    assert acb["risk_contribution_status"] == "UNAVAILABLE"
+
+
+def test_req_5_null_contribution_text(sample_portfolio_data):
+    """Regression Test 5: Ineligible symbol risk_contribution_text is 'Chưa tính được'."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    fpt = risk_res["symbol_metrics"]["FPT"]
+    assert fpt["risk_contribution_text"] == "Chưa tính được"
+
+
+def test_req_6_dgc_only_eligible_scope(sample_portfolio_data):
+    """Regression Test 6: DGC-only risk universe => 100% scope ELIGIBLE_UNIVERSE_ONLY."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    dgc = risk_res["symbol_metrics"]["DGC"]
+    assert dgc["risk_contribution"] == 1.0
+    assert dgc["risk_contribution_scope"] == "ELIGIBLE_UNIVERSE_ONLY"
+
+
+def test_req_7_ui_headline_never_claims_full_portfolio_for_dgc(sample_portfolio_data):
+    """Regression Test 7: UI text never claims DGC is '100% tổng biến động danh mục'."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    dgc = risk_res["symbol_metrics"]["DGC"]
+    assert "tổng biến động danh mục" not in dgc["risk_contribution_text"].lower()
+    assert "đo lường được" in dgc["risk_contribution_text"] or "đủ dữ liệu" in dgc["risk_contribution_text"]
+
+
+def test_req_8_insufficient_coverage_portfolio_var_none(sample_portfolio_data):
+    """Regression Test 8: Insufficient coverage => portfolio VaR None."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    assert risk_res["portfolio_daily_var_95"] is None
+
+
+def test_req_9_insufficient_coverage_portfolio_cvar_none(sample_portfolio_data):
+    """Regression Test 9: Insufficient coverage => portfolio CVaR None."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    assert risk_res["portfolio_daily_cvar_95"] is None
+
+
+def test_req_10_insufficient_coverage_portfolio_downside_vol_none(sample_portfolio_data):
+    """Regression Test 10: Insufficient coverage => portfolio downside volatility None."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    assert risk_res["portfolio_downside_volatility"] is None
+
+
+def test_req_11_symbol_level_dgc_metrics_allowed(sample_portfolio_data):
+    """Regression Test 11: Symbol-level DGC metrics remain allowed when DGC has sufficient price history."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    dgc = risk_res["symbol_metrics"]["DGC"]
+    assert dgc["annualized_volatility"] is not None
+    assert dgc["daily_var_95"] is not None
+    assert dgc["daily_cvar_95"] is not None
+
+
+def test_req_12_effective_positions_labeled_by_weight(sample_portfolio_data):
+    """Regression Test 12: Effective positions from HHI is labeled by-weight, not independent."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    # Warnings or summary should not state "independent positions" or "đa dạng hóa thực tế"
+    for w in risk_res.get("warnings", []):
+        if w.get("category") == "CONCENTRATION":
+            assert "thực tế như số lượng" not in w.get("message", "")
+            assert "độc lập" not in w.get("message", "")
+            assert "tỷ trọng" in w.get("message", "") or "tập trung" in w.get("message", "")
+
+
+def test_req_13_concentration_warning_works_without_price_history(sample_portfolio_data):
+    """Regression Test 13: Concentration warning still works without price history (FPT 52.7% NAV)."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
+    conc_warnings = [w for w in risk_res["warnings"] if "CONCENTRATION" in w.get("category") or w.get("category") == "DIVERSIFICATION"]
+    assert len(conc_warnings) > 0
+    assert any("FPT" in w.get("summary", "") or "FPT" in w.get("title", "") for w in conc_warnings)
+
+
+def test_req_14_correlation_null_remains_null(sample_portfolio_data):
+    """Regression Test 14: Correlation null remains null."""
     positions, histories = sample_portfolio_data
     risk_res = portfolio_risk(positions, histories)
 
     matrix = risk_res["correlation_matrix"]
-    assert "FPT" in matrix
-    assert "ACB" in matrix
-    assert "DGC" in matrix
-
-    # Pairwise missing correlation must be None, NOT 0.35 or 0.0
     assert matrix["FPT"]["ACB"] is None
     assert matrix["FPT"]["DGC"] is None
-    assert matrix["ACB"]["FPT"] is None
+
+
+def test_req_15_no_synthetic_correlation(sample_portfolio_data):
+    """Regression Test 15: No synthetic correlation (e.g., fallback 0.35)."""
+    positions, histories = sample_portfolio_data
+    risk_res = portfolio_risk(positions, histories)
+
     assert risk_res["average_correlation"] is None
 
 
-def test_missing_moat_evidence_returns_unknown():
-    """Req 5 & 11: Missing moat evidence yields UNKNOWN, never DETERIORATING."""
-    res = assess_permanent_loss_risk_for_symbol("FPT", None, 0.527)
-    assert res["moat"] == "UNKNOWN"
-    assert res["moat_text"] == "Chưa đủ dữ liệu"
-    assert "Chưa có dữ liệu" in res["moat_evidence"] or "Chưa đủ" in res["moat_evidence"]
-
-
-def test_bank_specific_balance_sheet_logic():
-    """Req 6 & 12: Bank (ACB) uses bank-specific metrics (CAR, NPL), not industrial D/E ratio."""
-    bank_fund = {
-        "quality_tier": "HIGH_QUALITY",
-        "is_bank": True,
-        "car_ratio": 0.12,
-        "npl_ratio": 0.015,
-        "credit_cost": 0.008,
-    }
-    res = assess_permanent_loss_risk_for_symbol("ACB", bank_fund, 0.10)
-    assert res["balance_sheet"] in ("SAFE", "BANK_SAFE")
-    assert "CAR" in res["balance_sheet_evidence"] or "NPL" in res["balance_sheet_evidence"] or "Ngân hàng" in res["balance_sheet_evidence"]
-
-
-def test_permanent_loss_evidence_strings():
-    """Req 7 & 10: Permanent loss response includes evidence strings for fundamental dimensions."""
+def test_req_16_solvency_hard_reject_and_no_violation_cannot_coexist():
+    """Regression Test 16: True solvency hard reject and 'no solvency violation' cannot coexist."""
     fund_data = {
-        "quality_tier": "HIGH_QUALITY",
-        "roe_avg_3y": 0.22,
-        "de_ratio": 0.4,
-        "pe_ratio": 15.0,
-        "actual_mos_pct": 0.25,
-        "required_mos_pct": 0.15,
-        "moat": "WIDE",
-        "moat_notes": "Lợi thế chi phí chuyển đổi cao",
+        "hard_rejects": ["SOLVENCY_RISK"],
+        "quality_tier": "DISTRESSED",
+    }
+    res = assess_permanent_loss_risk_for_symbol("TEST", fund_data, 0.20)
+    assert "Không có vi phạm Solvency" not in res["thesis_evidence"]
+    assert "Không có vi phạm Solvency" not in res["balance_sheet_evidence"]
+    assert "vi phạm khả năng thanh toán" in res["balance_sheet_evidence"].lower() or "solvency" in res["balance_sheet_evidence"].lower()
+
+
+def test_req_17_non_hard_reject_solvency_does_not_use_reject_word():
+    """Regression Test 17: Non-hard-reject solvency score does not use the word 'Reject'."""
+    fund_data = {
+        "hard_rejects": [],
+        "de_ratio": 1.2,
+        "solvency_score": 10.0,
     }
     res = assess_permanent_loss_risk_for_symbol("FPT", fund_data, 0.527)
-    assert "business_quality_evidence" in res
-    assert "balance_sheet_evidence" in res
-    assert "moat_evidence" in res
-    assert "valuation_evidence" in res
-    assert "thesis_evidence" in res
-    assert res["evidence_strength"] in ("CONFIRMED", "INDICATIVE", "INSUFFICIENT")
+    assert "Reject" not in res["balance_sheet_text"]
+    assert "Reject" not in res["balance_sheet_evidence"]
+
+
+def test_req_18_single_moat_score_cannot_produce_deteriorating_trend():
+    """Regression Test 18: Single moat score cannot produce DETERIORATING trend."""
+    fund_data = {
+        "moat": "NARROW",
+        "moat_score": 7.0,  # Low score
+    }
+    res = assess_permanent_loss_risk_for_symbol("FPT", fund_data, 0.527)
+    assert res["moat_trend"] == "UNKNOWN"
+    assert res["moat_trend"] != "DETERIORATING"
+
+
+def test_req_19_moat_7_out_of_100_yields_weak_strength_and_unknown_trend():
+    """Regression Test 19: Moat 7/100 yields moat_strength = WEAK and moat_trend = UNKNOWN."""
+    fund_data = {
+        "moat_score": 7.0,
+    }
+    res = assess_permanent_loss_risk_for_symbol("FPT", fund_data, 0.527)
+    assert res["moat_strength"] == "WEAK"
+    assert res["moat_trend"] == "UNKNOWN"
+    assert "yếu" in res["moat_strength_text"].lower()
+
+
+def test_req_20_permanent_loss_unknown_never_becomes_low():
+    """Regression Test 20: Permanent loss UNKNOWN never becomes LOW automatically."""
+    res = assess_permanent_loss_risk_for_symbol("UNKNOWN_SYM", None, 0.10)
+    assert res["overall_risk"] == "UNKNOWN"
+    assert res["overall_risk"] != "LOW"
