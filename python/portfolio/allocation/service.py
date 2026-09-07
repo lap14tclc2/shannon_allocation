@@ -298,6 +298,7 @@ class AllocationService:
                 current_weight=weight,
                 risk_contribution=rc,
                 equal_risk=baseline.get("equal_risk_contribution"),
+                sizing=sizing,
                 target_min=sizing.target_min,
                 target_mid=sizing.target_mid,
                 target_max=sizing.target_max,
@@ -399,6 +400,7 @@ class AllocationService:
                 holding_decisions[idx] = replace(
                     decision,
                     action="SELL",
+                    post_action_target_weight=0.0,
                     target_min=0.0,
                     target_mid=0.0,
                     target_max=0.0,
