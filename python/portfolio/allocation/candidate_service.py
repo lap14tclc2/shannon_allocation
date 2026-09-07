@@ -168,8 +168,13 @@ def classify_candidate(
     valuation_available = (actual_mos is not None and required_mos is not None and valuation_safety is not None)
     valuation_safety_pass = (valuation_available and valuation_safety >= min_valuation_safety)
 
-    fit_level = portfolio_fit.fit if portfolio_fit else "UNAVAILABLE"
-    fit_pass = (fit_level in ("GOOD", "MODERATE", "UNAVAILABLE"))
+    if portfolio_fit is None:
+        fit_level = "UNAVAILABLE"
+        fit_pass = True
+    else:
+        fit_level = portfolio_fit.fit if portfolio_fit else "UNAVAILABLE"
+        fit_pass = bool(portfolio_fit.risk_available and fit_level in ("GOOD", "MODERATE"))
+
     confidence = eligibility.valuation_confidence
     confidence_pass = (confidence in ("HIGH", "MEDIUM", None))
 
@@ -191,7 +196,7 @@ def classify_candidate(
     elif not valuation_safety_pass:
         failed_gates_list.append("VALUATION_SAFETY_INSUFFICIENT")
     if portfolio_fit and not fit_pass:
-        failed_gates_list.append("PORTFOLIO_FIT_WEAK")
+        failed_gates_list.append("PORTFOLIO_FIT_WEAK" if fit_level == "WEAK" else "PORTFOLIO_FIT_UNAVAILABLE")
 
     # 1. REJECTED: hard rejects, LOW_QUALITY, unsupported security, liquidity < 3B
     if not sec_pass or not no_hard_rejects or is_low_quality or not liquidity_research_pass:
@@ -250,7 +255,7 @@ def classify_candidate(
     if confidence == "LOW":
         watch_reasons_list.append(WATCH_LOW_VALUATION_CONFIDENCE)
     if portfolio_fit and not fit_pass:
-        watch_reasons_list.append(WATCH_PORTFOLIO_FIT_WEAK)
+        watch_reasons_list.append(WATCH_PORTFOLIO_FIT_WEAK if fit_level == "WEAK" else WATCH_DATA_INCOMPLETE)
     if liquidity_research_pass and not liquidity_buy_pass:
         watch_reasons_list.append(WATCH_LIQUIDITY_BELOW_BUY_THRESHOLD)
     if not watch_reasons_list:

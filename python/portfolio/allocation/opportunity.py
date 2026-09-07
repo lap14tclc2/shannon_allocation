@@ -153,13 +153,14 @@ def decide_holding(
     hard_cap: float = 0.20,
     current_fit: str = "UNAVAILABLE",
     technical: bool | None = None,
+    risk_actionable: bool = True,
 ) -> AllocationDecision:
     """Advisory decision for a current holding — explicit gates, no score.
 
     Hierarchy:
     A. Destructive hard reject / thesis break -> SELL (target 0%)
     B. Confirmed LOW_QUALITY                 -> REDUCE (positive target > 0)
-    C. Excessive risk contribution           -> REDUCE (positive risk-capped target)
+    C. Excessive risk contribution           -> REDUCE (positive risk-capped target, requires actionable market risk)
     D. Incomplete data / low confidence      -> HOLD + REVIEW_REQUIRED (no fabricated target)
     E. Otherwise                             -> HOLD (default)
     """
@@ -198,8 +199,10 @@ def decide_holding(
         )
 
     # C. Excessive risk contribution -> REDUCE (positive risk-capped target).
+    # Requires risk_actionable == True (partial covariance metrics CANNOT trigger REDUCE!)
     risk_breach = bool(
-        rc is not None and equal_risk is not None and equal_risk > 0
+        risk_actionable
+        and rc is not None and equal_risk is not None and equal_risk > 0
         and rc > max(RISK_CONTRIBUTION_ABSOLUTE_BREACH, RISK_CONTRIBUTION_BREACH_MULTIPLIER * equal_risk)
     )
     if weight >= POSITION_CONCENTRATED_WEIGHT:

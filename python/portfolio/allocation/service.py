@@ -42,6 +42,7 @@ RISK_KEY_FIELDS = (
     "equal_risk_contribution", "risk_concentration_ratio",
     "daily_var_95", "daily_cvar_95", "downside_volatility",
     "positive_day_ratio", "return_observations", "status",
+    "market_risk_actionable", "risk_coverage_status", "risk_context", "market_risk_data_status",
 )
 
 
@@ -105,7 +106,13 @@ class AllocationService:
     def _risk_summary(risk: dict) -> dict[str, Any]:
         if not risk:
             return {"status": "NO_POSITIONS"}
-        return {key: risk.get(key) for key in RISK_KEY_FIELDS if key in risk}
+        res = {key: risk.get(key) for key in RISK_KEY_FIELDS if key in risk}
+        if "market_risk" in risk and isinstance(risk["market_risk"], dict):
+            for mk, mv in risk["market_risk"].items():
+                if mk in RISK_KEY_FIELDS or mk in ("status", "overall_severity", "volatility_252", "volatility_63"):
+                    res.setdefault(mk, mv)
+            res["market_risk"] = risk["market_risk"]
+        return res
 
     @staticmethod
     def _current_fit(
@@ -115,6 +122,13 @@ class AllocationService:
         hard_cap: float,
     ) -> str:
         if not risk or risk.get("status") in ("NO_POSITIONS", "UNAVAILABLE"):
+            return "UNAVAILABLE"
+        is_actionable = risk.get("market_risk_actionable")
+        if is_actionable is None:
+            is_actionable = risk.get("risk_context", {}).get("actionable")
+        if is_actionable is None:
+            is_actionable = risk.get("status") in ("VALID", "COMPLETE")
+        if not is_actionable:
             return "UNAVAILABLE"
         rc = (risk.get("risk_contributions") or {}).get(symbol)
         if rc is None:
@@ -126,8 +140,11 @@ class AllocationService:
             return "WEAK"
         if avg_corr is not None and float(avg_corr) >= 0.70:
             return "WEAK"
-        if equal_risk and rc <= 1.20 * float(equal_risk) and (avg_corr is None or float(avg_corr) <= 0.50):
-            return "GOOD"
+        if equal_risk and rc <= 1.20 * float(equal_risk):
+            if avg_corr is None:
+                return "MODERATE"
+            if float(avg_corr) <= 0.50:
+                return "GOOD"
         return "MODERATE"
 
     def _clone_apply_weight(self, rows: list[dict], nav: float, symbol: str, target_weight: float) -> list[dict] | None:
@@ -200,7 +217,13 @@ class AllocationService:
         avg_corr = _number(after_metric.get("average_correlation_to_others"))
         max_corr = _number(after_metric.get("max_correlation_to_others"))
 
-        risk_available = bool(after_risk) and after_risk.get("status") not in ("NO_POSITIONS", "UNAVAILABLE") and after_vol is not None
+        is_actionable_after = after_risk.get("market_risk_actionable")
+        if is_actionable_after is None:
+            is_actionable_after = after_risk.get("risk_context", {}).get("actionable")
+        if is_actionable_after is None:
+            is_actionable_after = after_risk.get("status") in ("VALID", "COMPLETE")
+
+        risk_available = bool(after_risk) and after_risk.get("status") not in ("NO_POSITIONS", "UNAVAILABLE") and after_vol is not None and bool(is_actionable_after)
         if not risk_available:
             return PortfolioFitResult(
                 symbol=str(symbol).upper(),
@@ -229,9 +252,13 @@ class AllocationService:
             fit = "WEAK"
         elif vol_change is not None and vol_change >= 0.10:
             fit = "WEAK"
+        elif avg_corr is None:
+            fit = "MODERATE"
+        elif vol_change is not None and vol_change <= -0.02 and avg_corr <= 0.50:
+            fit = "GOOD"
         elif (
             (vol_change is None or vol_change <= 0.02)
-            and (avg_corr is None or avg_corr <= 0.50)
+            and avg_corr <= 0.50
             and (before_div is None or after_div is None or after_div >= before_div * 0.95)
         ):
             fit = "GOOD"
@@ -280,6 +307,7 @@ class AllocationService:
             rows, simulated_cash, _ = self._apply_changes(rows, nav, cash, changes)
 
         baseline = self._baseline_risk(rows, histories)
+        risk_actionable = bool(baseline.get("market_risk_actionable") or (baseline.get("risk_context") or {}).get("actionable"))
         holdings = sorted(rows, key=lambda r: float(r.get("weight") or 0.0), reverse=True)
         holding_symbols = {str(r.get("symbol") or "").upper() for r in holdings}
 
@@ -304,6 +332,7 @@ class AllocationService:
                 target_max=sizing.target_max,
                 hard_cap=self._hard_cap,
                 current_fit=current_fit,
+                risk_actionable=risk_actionable,
             )
             holding_decisions.append(decision)
             holding_context.append({
