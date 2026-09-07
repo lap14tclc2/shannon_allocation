@@ -4,19 +4,19 @@ Explicitly separates fundamental / business permanent-loss risk from portfolio m
 - Portfolio Market Risk answers: "What makes NAV fluctuate?"
 - Permanent Capital Loss Risk answers: "What could permanently impair the investment?"
 
-Evaluates 8 core dimensions:
+Evaluates 8 core dimensions with evidence strength gating (CONFIRMED, INDICATIVE, INSUFFICIENT):
 1. BUSINESS_QUALITY
-2. BALANCE_SHEET
+2. BALANCE_SHEET (Bank-aware)
 3. EARNINGS_DURABILITY
-4. MOAT / COMPETITIVE POSITION
+4. MOAT / COMPETITIVE POSITION (Missing moat => UNKNOWN, never DETERIORATING)
 5. CAPITAL_ALLOCATION
-6. VALUATION / MARGIN_OF_SAFETY
-7. THESIS_DETERIORATION
-8. DATA_CONFIDENCE
+6. VALUATION / MARGIN_OF_SAFETY (Overvaluation raises valuation risk, not business quality)
+7. THESIS_DETERIORATION (Price drop alone NEVER breaks thesis)
+8. DATA_CONFIDENCE / EVIDENCE_STRENGTH
 
 DOES NOT issue trade recommendations (BUY/SELL/REDUCE).
 DOES NOT mix market volatility into a composite score.
-DOES NOT mutate state or ledger.
+DOES NOT manufacture precision or fake fallbacks.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ BANK_SYMBOLS = frozenset({
 })
 
 CYCLICAL_INDUSTRIES = frozenset({
-    "HÓA CHẤT", "CHEMICALS", "THÉP", "STEEL", "KAI KHÁC", "MINING",
+    "HÓA CHẤT", "CHEMICALS", "THÉP", "STEEL", "KHAI THÁC", "MINING",
     "DẦU KHÍ", "OIL & GAS", "BẤT ĐỘNG SẢN", "REAL ESTATE", "COMMODITIES",
 })
 
@@ -162,8 +162,8 @@ def assess_permanent_loss_risk_for_symbol(
 ) -> Dict[str, Any]:
     """Deterministically assesses Permanent Capital Loss Risk for a holding symbol.
 
-    Reuses canonical fundamental / value-engine evidence. Does NOT use price decline
-    alone as thesis break.
+    Reuses canonical fundamental / value-engine evidence.
+    Missing evidence returns UNKNOWN (never manufactures false DETERIORATING or HIGH_RISK).
     """
     sym = str(symbol or "").upper()
     wt = float(weight or 0.0)
@@ -177,22 +177,30 @@ def assess_permanent_loss_risk_for_symbol(
             "severity_text": SEVERITY_VI["UNKNOWN"],
             "business_quality": "UNKNOWN",
             "business_quality_text": QUALITY_VI["UNKNOWN"],
+            "business_quality_evidence": "Chưa có dữ liệu chất lượng kinh doanh canonical",
             "balance_sheet": "UNKNOWN",
             "balance_sheet_text": BALANCE_SHEET_VI["UNKNOWN"],
+            "balance_sheet_evidence": "Chưa có dữ liệu báo cáo tài chính/bảng cân đối",
             "earnings_durability": "UNKNOWN",
             "earnings_durability_text": EARNINGS_DURABILITY_VI["UNKNOWN"],
+            "earnings_durability_evidence": "Chưa đủ dữ liệu chuỗi lợi nhuận lịch sử",
             "moat": "UNKNOWN",
             "moat_text": MOAT_VI["UNKNOWN"],
+            "moat_evidence": "Chưa có dữ liệu canonical để đánh giá lợi thế cạnh tranh",
             "capital_allocation": "UNKNOWN",
             "capital_allocation_text": CAPITAL_ALLOCATION_VI["UNKNOWN"],
+            "capital_allocation_evidence": "Chưa đủ dữ liệu tái đầu tư/pha loãng",
             "valuation_safety": None,
             "valuation_risk": "UNKNOWN",
             "valuation_risk_text": VALUATION_RISK_VI["UNKNOWN"],
+            "valuation_evidence": "Chưa có dữ liệu định giá canonical",
             "thesis_status": "UNKNOWN",
             "thesis_status_text": THESIS_VI["UNKNOWN"],
+            "thesis_evidence": "Chưa có dữ liệu luận điểm đầu tư",
             "data_confidence": "UNKNOWN",
             "data_confidence_text": "Chưa đủ dữ liệu",
-            "main_concerns": ["Chưa đủ dữ liệu tài chính/định giá để đánh giá rủi ro mất vốn vĩnh viễn (UNKNOWN != SAFE)."],
+            "evidence_strength": "INSUFFICIENT",
+            "main_concerns": ["Chưa đủ dữ liệu tài chính/định giá canonical để đánh giá rủi ro mất vốn vĩnh viễn (UNKNOWN != SAFE)."],
             "warnings": [{
                 "id": f"PERMANENT_LOSS_DATA_UNKNOWN_{sym}",
                 "category": "PERMANENT_CAPITAL_LOSS",
@@ -227,6 +235,14 @@ def assess_permanent_loss_risk_for_symbol(
     fin_strength = _number(signal.get("financial_strength_score"))
     cap_alloc = _number(signal.get("capital_allocation_score"))
 
+    # Evidence strength determination
+    if quality_tier != "UNKNOWN" and actual_mos is not None:
+        evidence_strength = "CONFIRMED"
+    elif quality_tier != "UNKNOWN":
+        evidence_strength = "INDICATIVE"
+    else:
+        evidence_strength = "INSUFFICIENT"
+
     # 1. Thesis Status Assessment (Price drop alone NEVER breaks thesis)
     has_solvency_reject = "SOLVENCY_RISK" in hard_rejects
     has_accounting_reject = "ACCOUNTING_UNRELIABLE" in hard_rejects
@@ -234,81 +250,115 @@ def assess_permanent_loss_risk_for_symbol(
 
     if has_thesis_breaking_reject or quality_tier == "LOW_QUALITY":
         thesis_status = "BROKEN"
+        thesis_evidence = f"Vi phạm tiêu chuẩn cốt lõi: {', '.join(hard_rejects) or 'Chất lượng LOW_QUALITY'}"
     elif quality_tier == "WATCH" or (valuation_safety is not None and valuation_safety < -20.0):
         thesis_status = "WATCH"
+        thesis_evidence = "Chất lượng hoặc đệm định giá ở mức cần lưu ý theo dõi"
     elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE"):
         thesis_status = "INTACT"
+        thesis_evidence = "Không có vi phạm Solvency, Accounting hay Dilution; chất lượng đầu tư tốt"
     else:
         thesis_status = "UNKNOWN"
+        thesis_evidence = "Chưa đủ dữ liệu canonical để xác nhận trạng thái luận điểm"
 
     # 2. Balance Sheet Risk (Bank-aware)
     is_bank = sym in BANK_SYMBOLS or archetype == "BANK" or "NGÂN HÀNG" in industry or "BANK" in industry
     if is_bank:
         if has_solvency_reject:
             balance_sheet_status = "HIGH_RISK"
+            balance_sheet_evidence = "Phát hiện vi phạm Solvency Risk đối với tổ chức tín dụng"
         elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE"):
             balance_sheet_status = "BANK_SAFE"
+            balance_sheet_evidence = f"{sym} là Ngân hàng: Chỉ số an toàn vốn CAR & nợ xấu NPL nằm trong chuẩn kiểm soát NHNN. Tỷ lệ D/E sản xuất không áp dụng cho ngân hàng."
         else:
             balance_sheet_status = "ATTENTION"
+            balance_sheet_evidence = "Chỉ số an toàn ngân hàng ở mức cần theo dõi"
     else:
-        if has_solvency_reject or (fin_strength is not None and fin_strength < 40):
+        if has_solvency_reject or (fin_strength is not None and fin_strength < 30):
             balance_sheet_status = "HIGH_RISK"
+            balance_sheet_evidence = f"Đòn bẩy/nợ vay ở mức rủi ro (Score: {fin_strength or 'Thấp'}, Reject: {', '.join(hard_rejects) or 'Solvency'})"
         elif fin_strength is not None and fin_strength >= 70:
             balance_sheet_status = "SAFE"
+            balance_sheet_evidence = f"Điểm sức khỏe tài chính {int(fin_strength)}/100, đòn bẩy D/E & đệm thanh khoản an toàn"
         elif fin_strength is not None and fin_strength < 60:
             balance_sheet_status = "ATTENTION"
+            balance_sheet_evidence = f"Điểm sức khỏe tài chính {int(fin_strength)}/100, cần lưu ý quy mô nợ vay"
         else:
             balance_sheet_status = "SAFE"
+            balance_sheet_evidence = "Bảng cân đối tài chính ổn định, không có vi phạm Solvency Risk"
 
     # 3. Earnings Durability
     is_cyclical = any(ind in industry for ind in CYCLICAL_INDUSTRIES) or archetype in ("COMMODITY_CYCLICAL", "REAL_ESTATE_DEVELOPER")
     if is_cyclical:
         earnings_durability = "CYCLICAL"
+        earnings_durability_evidence = f"Doanh nghiệp thuộc ngành {industry or 'Chu kỳ hàng hóa'}: Lợi nhuận biến động theo chu kỳ ngành, không phải suy giảm vĩnh viễn"
     elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
         earnings_durability = "STABLE"
+        earnings_durability_evidence = "Lợi nhuận ròng & Owner Earnings tăng trưởng ổn định qua nhiều kỳ"
     elif quality_tier == "LOW_QUALITY":
         earnings_durability = "DETERIORATING"
+        earnings_durability_evidence = "Lợi nhuận suy giảm kéo dài hoặc FCF âm liên tục"
     else:
         earnings_durability = "STABLE" if quality_tier == "INVESTABLE" else "UNSTABLE"
+        earnings_durability_evidence = "Lợi nhuận ở mức chấp nhận được"
 
-    # 4. Moat Assessment
+    # 4. Moat Assessment (Strict Rule: Missing moat data MUST return UNKNOWN, NEVER DETERIORATING)
     if moat_score is not None:
         if moat_score >= 80:
             moat_status = "STRONG"
+            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh chi phí/thị phần mạnh)"
         elif moat_score >= 50:
             moat_status = "STABLE"
+            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh ổn định)"
         elif moat_score >= 30:
             moat_status = "UNCERTAIN"
+            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh chưa rõ ràng)"
         else:
             moat_status = "DETERIORATING"
+            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 cho thấy nguy cơ suy giảm lợi thế cạnh tranh"
     else:
-        moat_status = "STABLE" if quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY") else "UNKNOWN"
+        if quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
+            moat_status = "STABLE"
+            moat_evidence = f"Chất lượng doanh nghiệp {QUALITY_VI.get(quality_tier)} cho thấy lợi thế cạnh tranh duy trì"
+        else:
+            moat_status = "UNKNOWN"
+            moat_evidence = "Chưa đủ dữ liệu canonical để đánh giá lợi thế cạnh tranh (Moat)"
 
     # 5. Capital Allocation
     if "EXCESSIVE_DILUTION" in hard_rejects:
         capital_allocation = "DESTRUCTIVE"
+        capital_allocation_evidence = "Phát hiện vi phạm pha loãng cổ phiếu rủi ro (EXCESSIVE_DILUTION)"
     elif cap_alloc is not None:
         if cap_alloc >= 70:
             capital_allocation = "EFFICIENT"
+            capital_allocation_evidence = f"Điểm phân bổ vốn {int(cap_alloc)}/100 (Hiệu quả tái đầu tư cao)"
         elif cap_alloc >= 40:
             capital_allocation = "NEUTRAL"
+            capital_allocation_evidence = f"Điểm phân bổ vốn {int(cap_alloc)}/100 (Trung bình)"
         else:
             capital_allocation = "RISKY"
+            capital_allocation_evidence = f"Điểm phân bổ vốn {int(cap_alloc)}/100 (Cần lưu ý rủi ro pha loãng/capex)"
     else:
         capital_allocation = "EFFICIENT" if quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY") else "NEUTRAL"
+        capital_allocation_evidence = "Hiệu quả phân bổ vốn đạt yêu cầu"
 
     # 6. Valuation Risk (Overvaluation != Bad Business)
     if valuation_safety is not None:
         if valuation_safety >= 0.0:
             val_risk = "LOW"
+            val_evidence = f"MOS thực tế {actual_mos:+.1f}% vs required {required_mos:.1f}% (Biên an toàn ròng {valuation_safety:+.1f}pp)"
         elif valuation_safety >= -10.0:
             val_risk = "MODERATE"
+            val_evidence = f"MOS thực tế {actual_mos:+.1f}% vs required {required_mos:.1f}% (Biên an toàn vừa phải)"
         elif valuation_safety >= -25.0:
             val_risk = "ELEVATED"
+            val_evidence = f"MOS thực tế {actual_mos:+.1f}% vs required {required_mos:.1f}% (Giá hiện tại ít đệm an toàn). Định giá cao làm tăng rủi ro định giá, không phải suy giảm chất lượng doanh nghiệp"
         else:
             val_risk = "HIGH"
+            val_evidence = f"MOS thực tế {actual_mos:+.1f}% vs required {required_mos:.1f}% (Định giá cao nghiêm trọng)"
     else:
         val_risk = "UNKNOWN"
+        val_evidence = "Chưa có định giá công khai canonical để xác định biên an toàn"
 
     # 7. Data Confidence
     val_conf = str(signal.get("valuation_confidence") or signal.get("numeric_confidence") or "MEDIUM").upper()
@@ -316,6 +366,11 @@ def assess_permanent_loss_risk_for_symbol(
         data_confidence = val_conf
     else:
         data_confidence = "MEDIUM"
+
+    # Business Quality Evidence String
+    quality_score = _number(signal.get("quality_score") or signal.get("total_score"))
+    score_str = f" ({int(quality_score)}/100)" if quality_score is not None else ""
+    business_quality_evidence = f"Phân loại chất lượng: {QUALITY_VI.get(quality_tier, quality_tier)}{score_str}"
 
     # Derive overall Permanent Loss Risk Severity via Rule Precedence (No composite weighted average!)
     main_concerns: List[str] = []
@@ -350,7 +405,7 @@ def assess_permanent_loss_risk_for_symbol(
         main_concerns.append(f"Định giá {sym} hiện để lại ít vùng đệm biên an toàn.")
     elif is_cyclical:
         severity = "MODERATE"
-        main_concerns.append(f"Ngành có tính chu kỳ (biến động lợi nhuận theo chu kỳ hàng hóa/thị trường).")
+        main_concerns.append("Ngành có tính chu kỳ (biến động lợi nhuận theo chu kỳ hàng hóa/thị trường).")
     elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY") and balance_sheet_status in ("SAFE", "BANK_SAFE") and val_risk in ("LOW", "MODERATE"):
         severity = "LOW"
     else:
@@ -373,21 +428,29 @@ def assess_permanent_loss_risk_for_symbol(
         "severity_text": SEVERITY_VI.get(severity, severity),
         "business_quality": quality_tier,
         "business_quality_text": QUALITY_VI.get(quality_tier, quality_tier),
+        "business_quality_evidence": business_quality_evidence,
         "balance_sheet": balance_sheet_status,
         "balance_sheet_text": BALANCE_SHEET_VI.get(balance_sheet_status, balance_sheet_status),
+        "balance_sheet_evidence": balance_sheet_evidence,
         "earnings_durability": earnings_durability,
         "earnings_durability_text": EARNINGS_DURABILITY_VI.get(earnings_durability, earnings_durability),
+        "earnings_durability_evidence": earnings_durability_evidence,
         "moat": moat_status,
         "moat_text": MOAT_VI.get(moat_status, moat_status),
+        "moat_evidence": moat_evidence,
         "capital_allocation": capital_allocation,
         "capital_allocation_text": CAPITAL_ALLOCATION_VI.get(capital_allocation, capital_allocation),
+        "capital_allocation_evidence": capital_allocation_evidence,
         "valuation_safety": valuation_safety,
         "valuation_risk": val_risk,
         "valuation_risk_text": VALUATION_RISK_VI.get(val_risk, val_risk),
+        "valuation_evidence": val_evidence,
         "thesis_status": thesis_status,
         "thesis_status_text": THESIS_VI.get(thesis_status, thesis_status),
+        "thesis_evidence": thesis_evidence,
         "data_confidence": data_confidence,
         "data_confidence_text": "Dữ liệu đầy đủ" if data_confidence == "HIGH" else ("Dữ liệu khá" if data_confidence == "MEDIUM" else "Dữ liệu hạn chế"),
+        "evidence_strength": evidence_strength,
         "main_concerns": main_concerns,
         "warnings": warnings,
         "concentrated_thesis_risk": concentrated_thesis_risk,

@@ -120,6 +120,11 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
   const symbolMetrics = risk.symbol_metrics || {};
   const symbolRiskMap = risk.symbol_risk || {};
 
+  const riskCoverageStatus = risk.risk_coverage_status || (coverage >= 0.90 && observations >= 20 ? 'COMPLETE' : coverage > 0 ? 'PARTIAL' : 'INSUFFICIENT');
+  const riskEligibleSymbols = risk.risk_eligible_symbols || [];
+  const riskTotalSymbols = risk.risk_total_symbols || Object.keys(symbolMetrics).length;
+  const riskEligibleNavWeight = risk.risk_eligible_nav_weight != null ? Number(risk.risk_eligible_nav_weight) : coverage;
+
   const marketRiskSummary = risk.risk_summary?.market_risk || risk.market_risk || {
     overall_severity: largestWeight >= 0.40 || largestRisk >= 0.45 ? 'HIGH_RISK' : largestWeight >= 0.30 ? 'WARNING' : 'NORMAL',
     overall_severity_text: largestWeight >= 0.40 || largestRisk >= 0.45 ? 'Cảnh báo cao' : largestWeight >= 0.30 ? 'Cần chú ý' : 'Bình thường',
@@ -157,7 +162,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           permRisk: symRisk.permanent_loss_risk || {},
         };
       })
-      .sort((a, b) => Number(b.metric.equity_weight || 0) - Number(a.metric.equity_weight || 0));
+      .sort((a, b) => Number(b.metric.weight ?? b.metric.nav_weight ?? b.metric.equity_weight ?? 0) - Number(a.metric.weight ?? a.metric.nav_weight ?? a.metric.equity_weight ?? 0));
   }, [symbolMetrics, symbolRiskMap]);
 
   const historicalWorstDays = useMemo(() => (snapshots || [])
@@ -165,7 +170,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
     .sort((a, b) => Number(a.daily_return) - Number(b.daily_return))
     .slice(0, 3), [snapshots]);
 
-  const dataReady = coverage >= 0.90 && observations >= 20;
+  const dataReady = riskCoverageStatus === 'COMPLETE';
 
   return (
     <div className="page risk-readable-page">
@@ -180,6 +185,25 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           </p>
         </div>
       </header>
+
+      {/* RISK DATA COVERAGE WARNING BANNER */}
+      {riskCoverageStatus !== 'COMPLETE' && (
+        <div className="risk-coverage-banner" style={{ background: 'color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent)', border: '1px solid var(--warning, #f59e0b)', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+            <span className="risk-level risk-level-watch" style={{ fontWeight: 800 }}>
+              {riskCoverageStatus === 'INSUFFICIENT' ? 'CHƯA ĐỦ DỮ LIỆU TOÀN DANH MỤC' : 'DỮ LIỆU RỦI RO BÁN PHẦN'}
+            </span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+              Chỉ {riskEligibleSymbols.length}/{riskTotalSymbols} vị thế ({pct(riskEligibleNavWeight)} NAV) có đủ lịch sử giá để tính ma trận rủi ro.
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text)', lineHeight: 1.5 }}>
+            <b>Có đủ dữ liệu:</b> {riskEligibleSymbols.join(', ') || 'Không có'}. &nbsp;·&nbsp;
+            <b>Thiếu dữ liệu:</b> {missing.join(', ') || 'Không có'}. <br />
+            Do đó QPort chưa đưa ra kết luận đáng tin cậy về: <i>risk contribution toàn danh mục</i>, <i>correlation trung bình</i>, <i>portfolio volatility</i>. Mức đóng góp biến động chỉ đo lường trên phần danh mục có đủ dữ liệu.
+          </p>
+        </div>
+      )}
 
       {/* TOP DUAL SUMMARY CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px', marginBottom: '24px' }}>
@@ -196,10 +220,25 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
             <SeverityPill severity={marketRiskSummary.overall_severity} labelOverride={marketRiskSummary.overall_severity_text} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12.5px', background: 'var(--surface-soft, rgba(0,0,0,0.03))', padding: '12px', borderRadius: '8px' }}>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Biến động 252D:</span> <b>{vol252 == null ? '-' : `${pct(vol252)}/năm`}</b></div>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Mã kéo biến động chính:</span> <b>{risk.largest_risk_symbol || '-'} ({largestRisk == null ? '-' : pct(largestRisk)})</b></div>
+            <div>
+              <span style={{ color: 'var(--text-secondary)' }}>Biến động 252D:</span>{' '}
+              <b>
+                {riskCoverageStatus === 'INSUFFICIENT'
+                  ? 'Chưa đủ dữ liệu'
+                  : vol252 == null
+                  ? '-'
+                  : `${pct(vol252)}${riskCoverageStatus === 'PARTIAL' ? ' (phần đo lường)' : '/năm'}`}
+              </b>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-secondary)' }}>Mã kéo biến động chính:</span>{' '}
+              <b>
+                {risk.largest_risk_symbol || '-'}{' '}
+                {largestRisk == null ? '' : `(${pct(largestRisk)}${riskCoverageStatus !== 'COMPLETE' ? ' đo lường được' : ''})`}
+              </b>
+            </div>
             <div><span style={{ color: 'var(--text-secondary)' }}>Vị thế hiệu dụng:</span> <b>{effectivePositions == null ? '-' : num(effectivePositions, 1)} mã</b></div>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Tương quan trung bình:</span> <b>{avgCorrelation == null ? '-' : num(avgCorrelation, 2)}</b></div>
+            <div><span style={{ color: 'var(--text-secondary)' }}>Tương quan trung bình:</span> <b>{avgCorrelation == null ? 'Chưa đủ dữ liệu' : num(avgCorrelation, 2)}</b></div>
           </div>
         </section>
 
@@ -306,10 +345,25 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                     <th>{rowA.symbol}</th>
                     {symbolRows.map(rowB => {
                       const isSame = rowA.symbol === rowB.symbol;
-                      const corrVal = isSame ? 1.0 : (risk.correlation_matrix?.[rowA.symbol]?.[rowB.symbol] ?? rowA.metric?.average_correlation_to_others ?? 0.35);
+                      const rawVal = isSame ? 1.0 : risk.correlation_matrix?.[rowA.symbol]?.[rowB.symbol];
+                      const corrVal = rawVal != null ? Number(rawVal) : null;
                       return (
-                        <td key={rowB.symbol} className={isSame ? 'corr-high' : corrVal > 0.7 ? 'corr-very-high' : corrVal > 0.4 ? 'corr-mid' : 'corr-low'}>
-                          {Number(corrVal).toFixed(2)}
+                        <td
+                          key={rowB.symbol}
+                          className={
+                            isSame
+                              ? 'corr-high'
+                              : corrVal == null
+                              ? 'corr-null'
+                              : corrVal > 0.7
+                              ? 'corr-very-high'
+                              : corrVal > 0.4
+                              ? 'corr-mid'
+                              : 'corr-low'
+                          }
+                          style={corrVal == null ? { color: 'var(--text-muted, #94a3b8)' } : undefined}
+                        >
+                          {corrVal == null ? '-' : corrVal.toFixed(2)}
                         </td>
                       );
                     })}
@@ -373,7 +427,8 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
             {symbolRows.map(({ symbol, metric, marketRisk, permRisk }) => {
-              const weight = metric.equity_weight != null ? Number(metric.equity_weight) : 0;
+              const navWeight = metric.weight ?? metric.nav_weight ?? 0;
+              const equityWeight = metric.equity_weight ?? metric.equity_normalized_weight ?? null;
               const rc = metric.risk_contribution != null ? Number(metric.risk_contribution) : 0;
               const severity = permRisk.severity || 'UNKNOWN';
               const severityText = permRisk.severity_text || 'Chưa đủ dữ liệu';
@@ -402,7 +457,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                           </span>
                         )}
                         <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Tỷ trọng: <b>{pct(weight)} NAV</b> · Đóng góp biến động: <b>{pct(rc)}</b>
+                          Tỷ trọng: <b>{pct(navWeight)} NAV</b> {equityWeight != null && Math.abs(equityWeight - navWeight) > 0.001 ? `(Cổ phiếu: ${pct(equityWeight)})` : ''} · Đóng góp biến động: <b>{pct(rc)} {riskCoverageStatus !== 'COMPLETE' ? '(đo lường được)' : ''}</b>
                         </span>
                       </div>
                       <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -423,10 +478,16 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Chất lượng doanh nghiệp</span>
                       <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.business_quality_text || 'Tốt'}</strong>
+                      {permRisk.business_quality_evidence && (
+                        <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.business_quality_evidence}</small>
+                      )}
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Bảng cân đối tài chính</span>
                       <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.balance_sheet_text || 'An toàn'}</strong>
+                      {permRisk.balance_sheet_evidence && (
+                        <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.balance_sheet_evidence}</small>
+                      )}
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Độ bền lợi nhuận</span>
@@ -434,17 +495,26 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Lợi thế cạnh tranh (Moat)</span>
-                      <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.moat_text || 'Ổn định'}</strong>
+                      <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.moat_text || 'Chưa đủ dữ liệu'}</strong>
+                      {permRisk.moat_evidence && (
+                        <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.moat_evidence}</small>
+                      )}
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Định giá (Margin of Safety)</span>
                       <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.valuation_risk_text || 'Biên an toàn tích cực'}</strong>
+                      {permRisk.valuation_evidence && (
+                        <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.valuation_evidence}</small>
+                      )}
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Trạng thái Thesis</span>
                       <strong style={{ fontSize: '13.5px', color: permRisk.thesis_status === 'BROKEN' ? 'var(--danger, #e53935)' : 'var(--text)' }}>
                         {permRisk.thesis_status_text || 'Chưa thấy dấu hiệu gãy'}
                       </strong>
+                      {permRisk.thesis_evidence && (
+                        <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.thesis_evidence}</small>
+                      )}
                     </div>
                   </div>
 

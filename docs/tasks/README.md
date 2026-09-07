@@ -85,6 +85,7 @@
 | [TASK-20260907-106](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-106-add-deterministic-risk-warnings-and-plain-language-risk-interpretation.md) | Add Deterministic Risk Warnings and Plain-Language Risk Interpretation | completed | high | 2026-09-07 |
 | [TASK-20260907-107](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-107-fix-missing-risk-summary-metrics-and-empty-portfolio-risk-card.md) | Fix Missing Risk Summary Metrics and Empty Portfolio Risk Card | completed | high | 2026-09-07 |
 | [TASK-20260907-108](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-108-separate-portfolio-market-risk-from-permanent-capital-loss-risk.md) | Separate Portfolio Market Risk from Permanent Capital Loss Risk | completed | high | 2026-09-07 |
+| [TASK-20260907-109](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-109-audit-and-fix-risk-data-integrity-and-semantics.md) | Audit and Fix Risk Data Integrity and Semantics | completed | high | 2026-09-07 |
 
 
 
