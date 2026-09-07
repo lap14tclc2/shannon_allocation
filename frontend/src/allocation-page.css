@@ -691,3 +691,62 @@
 .allocation-rejected-table {
   margin-top: 8px;
 }
+
+/* New position guidance detail box */
+.allocation-symbol-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--alloc-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.allocation-symbol-toggle-btn:hover {
+  background: color-mix(in srgb, var(--alloc-accent) 15%, transparent);
+  color: var(--alloc-accent);
+}
+
+.allocation-row-expanded {
+  background: color-mix(in srgb, var(--alloc-accent) 5%, transparent);
+}
+
+.allocation-detail-row td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--alloc-border);
+}
+
+.allocation-detail-box {
+  padding: 10px 16px 14px 16px;
+  background: color-mix(in srgb, var(--alloc-border) 12%, transparent);
+  border-top: 1px dashed var(--alloc-border);
+}
+
+.allocation-guidance-inline {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--alloc-text);
+}
+
+.allocation-guidance-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--alloc-accent) 15%, transparent);
+  color: var(--alloc-accent);
+  border: 1px solid color-mix(in srgb, var(--alloc-accent) 30%, transparent);
+}
+
+.allocation-guidance-help {
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--alloc-muted);
+  line-height: 1.4;
+}

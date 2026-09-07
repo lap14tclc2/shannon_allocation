@@ -86,6 +86,16 @@ export const CONVICTION_LABEL_VI = {
   HIGH_CONVICTION: 'Vị thế tin cậy cao',
 };
 
+export const CURRENT_WEIGHT_LABEL_VI = 'Tỷ trọng hiện tại';
+export const POST_ACTION_WEIGHT_LABEL_VI = 'Tỷ trọng sau đề xuất';
+export const NEW_POSITION_GUIDANCE_LABEL_VI = 'Mức vốn gợi ý khi mở vị thế mới';
+
+export const ALLOCATION_TOOLTIPS_VI = {
+  CURRENT_WEIGHT: 'Phần trăm giá trị danh mục đang nằm ở mã này.',
+  POST_ACTION_WEIGHT: 'Tỷ trọng ước tính nếu làm theo khuyến nghị hiện tại.',
+  NEW_POSITION_GUIDANCE: 'Mức vốn QPort gợi ý khi bắt đầu xây vị thế mới theo chất lượng, định giá và giới hạn rủi ro hiện tại. Không phải mức bắt buộc cho vị thế đang có.',
+};
+
 export const ELIGIBILITY_LABEL_VI = {
   INVESTABLE: 'Đầu tư được',
   WATCHLIST: 'Theo dõi',
