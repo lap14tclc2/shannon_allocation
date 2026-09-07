@@ -219,26 +219,40 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
 
         <div className="risk-overview-metrics">
           <div className="risk-overview-metric">
+            <span>Biến động danh mục (quy đổi năm)</span>
+            <strong>{vol252 == null ? '-' : `${pct(vol252)} / năm`}</strong>
+            <small>{vol63 != null ? `~3 tháng: ${pct(vol63)}` : 'Tính từ 252 phiên gần nhất'}</small>
+          </div>
+          <div className="risk-overview-metric">
             <span>Mã tập trọng vốn lớn nhất</span>
             <strong>{largestPositionSymbol || '-'}</strong>
             <small>{pct(largestWeight)} NAV cổ phiếu</small>
           </div>
           <div className="risk-overview-metric">
             <span>Tương quan trung bình</span>
-            <strong>{num(avgCorrelation)}</strong>
-            <small>{avgCorrelation >= 0.60 ? 'Tương quan cao' : avgCorrelation >= 0.35 ? 'Tương quan vừa' : 'Tương quan thấp'}</small>
+            <strong>{avgCorrelation == null ? 'Chưa đủ dữ liệu' : num(avgCorrelation, 2)}</strong>
+            <small>
+              {avgCorrelation == null
+                ? (symbolRows.length < 2 ? 'Cần ít nhất 2 mã cổ phiếu' : 'Chưa đủ 40 phiên giao nhau')
+                : avgCorrelation >= 0.60
+                  ? 'Tương quan cao'
+                  : avgCorrelation >= 0.35
+                    ? 'Tương quan vừa'
+                    : 'Tương quan thấp'}
+            </small>
           </div>
           <div className="risk-overview-metric">
             <span>Số vị thế hiệu dụng</span>
-            <strong>{num(effectivePositions)}</strong>
+            <strong>{effectivePositions == null ? '-' : num(effectivePositions, 1)}</strong>
             <small>trên {symbolRows.length} mã nắm giữ</small>
           </div>
           <div className="risk-overview-metric">
             <span>Nguồn kéo rủi ro chính</span>
             <strong>{risk.largest_risk_symbol || '-'}</strong>
-            <small>{pct(largestRisk)} biến động danh mục</small>
+            <small>{largestRisk == null ? '-' : `${pct(largestRisk)} biến động`}</small>
           </div>
         </div>
+
 
         {missing.length > 0 && (
           <div className="risk-missing-note">

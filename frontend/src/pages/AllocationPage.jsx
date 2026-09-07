@@ -131,7 +131,8 @@ function OpportunityCard({ opportunity, onViewValuation }) {
           <span>Phù hợp danh mục</span><strong>{FIT_LABEL_VI[fit.fit] || fit.fit}</strong>
           <span>Tỷ trọng sau đề xuất</span><strong data-sensitive>{postTradeWeightText}</strong>
           <span>Gợi ý mở vị thế mới</span><strong data-sensitive>{guidanceText}</strong>
-          <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? '—' : pct(fit.average_correlation_to_portfolio)}</strong>
+          <span>Tương quan</span><strong data-sensitive>{fit.average_correlation_to_portfolio == null ? 'Chưa đủ dữ liệu' : formatNumber(fit.average_correlation_to_portfolio, 2)}</strong>
+
         </div>
 
         {showQtyPlan && (
@@ -316,7 +317,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
   const afterRisk = simAllocation?.simulation?.risk_after || {};
 
   const fmtWeight = value => (value == null ? '—' : formatWeight(value));
-  const fmtCorr = value => (value == null ? '—' : pct(value));
+  const fmtCorr = value => (value == null ? 'Chưa đủ dữ liệu' : formatNumber(value, 2));
 
   if (!report) {
     return (
@@ -367,7 +368,17 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
             <MetricCard label="Tư thế danh mục" value={POSTURE_LABEL_VI[posture] || posture} note={VERDICT_LABEL_VI[report.verdict] || report.verdict} dataSensitive={false} />
             <MetricCard label="Tiền mặt hiện tại" value={formatWeight(report.cash_current)} note={`Khuyến nghị giữ ${formatWeight((report.cash_suggested_range || [0, 0])[0])} – ${formatWeight((report.cash_suggested_range || [0, 0])[1])}`} dataSensitive />
             <MetricCard label="Độ tin cậy" value={CONFIDENCE_LABEL_VI[report.confidence] || report.confidence} note="Dựa trên mức đủ dữ liệu định giá & rủi ro" dataSensitive={false} />
-            <MetricCard label="Rủi ro danh mục (252D)" value={fmtWeight(risk.volatility_252)} note={`Tương quan TB ${fmtCorr(risk.average_correlation)}`} dataSensitive />
+            <MetricCard
+              label="Biến động danh mục (quy đổi năm)"
+              value={risk.volatility_252 == null ? '—' : `${formatWeight(risk.volatility_252)} / năm`}
+              note={
+                risk.average_correlation == null
+                  ? (risk.n_positions < 2 ? 'Tương quan: cần ≥2 mã cổ phiếu' : 'Tương quan: chưa đủ 40 phiên giao nhau')
+                  : `Tương quan TB: ${formatNumber(risk.average_correlation, 2)} · Vị thế hiệu quả: ${formatNumber(risk.effective_positions, 1)}`
+              }
+              dataSensitive
+            />
+
           </div>
         </section>
 

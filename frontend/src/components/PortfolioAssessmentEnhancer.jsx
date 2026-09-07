@@ -116,7 +116,8 @@ export default function PortfolioAssessmentEnhancer({ dashboard = {}, locale = '
             <h4>{text('Market co-movement & volatility', 'Đồng biến & biến động')}</h4>
             <div className="diag-row"><span>{text('63D / 252D volatility', 'Biến động 63D / 252D')}</span><b>{pct(risk.volatility_63)} / {pct(risk.volatility_252)}</b></div>
             <div className="diag-row"><span>{text('Volatility regime ratio', 'Tỷ lệ regime biến động')}</span><b>{num(risk.volatility_ratio)}×</b></div>
-            <div className="diag-row"><span>{text('Average correlation', 'Tương quan trung bình')}</span><b>{num(risk.average_correlation)}</b></div>
+            <div className="diag-row"><span>{text('Average correlation', 'Tương quan trung bình')}</span><b>{risk.average_correlation == null ? text('Insufficient data', 'Chưa đủ dữ liệu') : num(risk.average_correlation, 2)}</b></div>
+
             <div className="diag-row"><span>{text('Maximum pair correlation', 'Tương quan cặp lớn nhất')}</span><b>{num(risk.max_correlation)}</b></div>
             <div className="diag-row"><span>{text('Downside volatility', 'Biến động phía giảm')}</span><b>{pct(risk.downside_volatility)}</b></div>
             <div className="diag-row"><span>{text('Positive-day ratio', 'Tỷ lệ ngày tăng')}</span><b>{pct(risk.positive_day_ratio)}</b></div>
