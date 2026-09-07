@@ -123,24 +123,33 @@ def generate_risk_warnings(
         if not sym or sym == "CASH":
             continue
         weight = float(p.get("weight") or 0.0)
-        rc = float(risk_contribs.get(sym) or 0.0)
-        if weight >= 0.20 or rc >= 0.35:
+        raw_rc = risk_contribs.get(sym)
+        rc = float(raw_rc) if raw_rc is not None else None
+        if weight >= 0.20 or (rc is not None and rc >= 0.35):
             symbol_concentrations[sym] = {"weight": weight, "risk_contribution": rc}
 
     for sym, data in symbol_concentrations.items():
         w = data["weight"]
         rc = data["risk_contribution"]
 
-        if w >= 0.40 or rc >= 0.45:
+        if w >= 0.40 or (rc is not None and rc >= 0.45):
             sev = "HIGH_RISK"
-        elif w >= 0.30 or rc >= 0.38:
+        elif w >= 0.30 or (rc is not None and rc >= 0.38):
             sev = "WARNING"
         else:
             sev = "ATTENTION"
 
-        title = f"Rủi ro biến động đang tập trung vào {sym}" if (rc > w * 1.15) else f"Tỷ trọng lớn ở vị thế {sym}"
-        summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} tổng biến động danh mục."
-        if coverage_status != "COMPLETE":
+        title = f"Rủi ro biến động đang tập trung vào {sym}" if (rc is not None and rc > w * 1.15) else f"Tỷ trọng lớn ở vị thế {sym}"
+        if rc is None:
+            summary = f"{sym} chiếm {_format_pct(w)} NAV. Chưa đủ dữ liệu để tính đóng góp biến động."
+        elif coverage_status != "COMPLETE":
+            summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} biến động trong phần danh mục có đủ dữ liệu."
+        else:
+            summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} tổng biến động danh mục."
+
+        if rc is None:
+            impact = f"{sym} chiếm {_format_pct(w)} NAV nhưng chưa có đủ lịch sử giá 40+ phiên. Chưa có dữ liệu biến động không có nghĩa là vị thế này an toàn (UNKNOWN != SAFE)."
+        elif coverage_status != "COMPLETE":
             impact = f"Trong phần danh mục có đủ dữ liệu ({_format_pct(eligible_nav_weight)} NAV), {sym} chiếm {_format_pct(rc)} đóng góp biến động đo lường được. Con số này không đại diện cho 100% rủi ro toàn danh mục."
         else:
             impact = f"{sym} đang tạo ra khoảng {_format_pct(rc)} biến động tổng thể của danh mục. NAV có thể biến động mạnh nếu giá {sym} thay đổi đáng kể. Đây là rủi ro biến động giá, không phải kết luận về chất lượng doanh nghiệp {sym}."
@@ -152,8 +161,8 @@ def generate_risk_warnings(
             "severity": sev,
             "title": title,
             "summary": summary,
-            "metric_name": "risk_contribution" if rc > w else "equity_weight",
-            "metric_value": max(w, rc),
+            "metric_name": "risk_contribution" if (rc is not None and rc > w) else "equity_weight",
+            "metric_value": max(w, rc) if rc is not None else w,
             "threshold": 0.30 if sev in ("WARNING", "HIGH_RISK") else 0.20,
             "affected_symbols": [sym],
             "evidence": {"equity_weight": w, "risk_contribution": rc},
@@ -212,7 +221,7 @@ def generate_risk_warnings(
                 "threshold": min(3.5, n_positions * 0.6),
                 "affected_symbols": [largest_pos_symbol] if largest_pos_symbol else [],
                 "evidence": {"n_positions": n_positions, "effective_positions": eff_pos, "hhi": hhi},
-                "impact": "Mức tập trung vốn cao khiến biến động của các vị thế chính ảnh hưởng chi phối đến NAV.",
+                "impact": "Mức tập trung vốn cao khiến kết quả danh mục phụ thuộc nhiều vào một số ít vị thế.",
                 "review_guidance": "Kiểm tra lại phân bổ vốn giữa các cổ phiếu và nhóm tài sản.",
                 "reason_codes": ["EFFECTIVE_POSITIONS_LOW"],
             })

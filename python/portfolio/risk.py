@@ -435,6 +435,12 @@ def portfolio_risk(
     else:
         contrib_scope = "UNAVAILABLE"
 
+    market_risk_actionable = bool(
+        coverage_status == "COMPLETE"
+        and eligible_nav_weight >= MIN_PORTFOLIO_RISK_NAV_COVERAGE_COMPLETE
+        and eligible_count >= min(total_equity_symbols, MIN_PORTFOLIO_RISK_SYMBOLS)
+    )
+
     corr_metrics = _correlation_metrics(returns, requested_symbols)
 
     if cov is None:
@@ -546,13 +552,13 @@ def portfolio_risk(
         "volatility_ratio": (vol63_measured / vol252_measured) if vol63_measured is not None and vol252_measured and vol252_measured > 0 else None,
         "risk_contributions": risk_contrib,
         "symbol_metrics": symbol_metrics,
-        "risk_contribution_hhi": rc_hhi,
+        "risk_contribution_hhi": rc_hhi if (coverage_status == "COMPLETE" and market_risk_actionable) else None,
         "largest_risk_symbol": largest_risk_symbol,
         "largest_risk_contribution": largest_risk_contribution,
         "equal_risk_contribution": equal_risk,
         "risk_concentration_ratio": risk_concentration_ratio,
         "erc_reference_weights": erc_weights,
-        "diversification_ratio": diversification_ratio,
+        "diversification_ratio": diversification_ratio if (coverage_status == "COMPLETE" and market_risk_actionable) else None,
         "risk_eligible_symbols": eligible,
         "risk_total_symbols": total_equity_symbols,
         "risk_eligible_count": eligible_count,

@@ -334,6 +334,7 @@ def assess_permanent_loss_risk_for_symbol(
 
     has_temporal_decline = bool(signal.get("moat_trend_deteriorating") or signal.get("multi_period_roic_decline") or signal.get("persistent_margin_erosion"))
     has_temporal_improvement = bool(signal.get("moat_trend_improving") or signal.get("multi_period_roic_expansion"))
+    has_temporal_stable = bool(signal.get("moat_trend_stable") or signal.get("multi_period_roic_stable"))
 
     if has_temporal_decline:
         moat_trend = "DETERIORATING"
@@ -343,13 +344,13 @@ def assess_permanent_loss_risk_for_symbol(
         moat_trend = "IMPROVING"
         moat_trend_text = "Mở rộng theo chuỗi thời gian"
         moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text}; có bằng chứng mở rộng qua các kỳ."
-    elif moat_strength != "UNKNOWN" and quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
+    elif has_temporal_stable:
         moat_trend = "STABLE"
         moat_trend_text = "Ổn định"
-        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text} (Score: {int(moat_score) if moat_score is not None else 'N/A'}); chưa thấy bằng chứng suy giảm."
+        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text} (Score: {int(moat_score) if moat_score is not None else 'N/A'}); có bằng chứng ổn định qua các kỳ."
     else:
         moat_trend = "UNKNOWN"
-        moat_trend_text = "Chưa đủ dữ liệu chuỗi thời gian"
+        moat_trend_text = "Chưa đủ dữ liệu xu hướng"
         moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text}. Chưa đủ bằng chứng chuỗi thời gian để xác định xu hướng Moat."
 
     moat_status = moat_strength if moat_trend == "UNKNOWN" else (f"{moat_strength}_{moat_trend}")
@@ -575,7 +576,24 @@ def assess_portfolio_permanent_loss_risk(
             top_concerns.append(f"{sym}: Thesis hoặc chất lượng có vi phạm ({assessment['business_quality_text']})")
         elif sev == "ELEVATED":
             elevated_count += 1
-            top_concerns.append(f"{sym}: Đệm an toàn tài chính/định giá hạn chế")
+            bs_status = assessment.get("balance_sheet")
+            val_safety = assessment.get("valuation_safety")
+            parts = []
+            if bs_status == "HIGH_RISK":
+                parts.append("rủi ro bảng cân đối cao")
+            elif bs_status == "ATTENTION":
+                parts.append("bảng cân đối cần chú ý")
+            elif bs_status == "BANK_SAFE":
+                parts.append("chỉ số an toàn ngân hàng phù hợp")
+            if assessment.get("earnings_durability") == "CYCLICAL":
+                parts.append("lợi nhuận mang tính chu kỳ")
+            if val_safety is not None:
+                if val_safety < 0:
+                    parts.append(f"MOS thấp hơn yêu cầu {abs(val_safety):.1f} điểm %")
+                else:
+                    parts.append("MOS hiện đạt yêu cầu")
+            concern_str = f"{sym}: {'; '.join(parts)}" if parts else f"{sym}: Đệm an toàn hạn chế"
+            top_concerns.append(concern_str)
         elif sev == "MODERATE":
             moderate_count += 1
         elif sev == "LOW":
