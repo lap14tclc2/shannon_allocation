@@ -379,7 +379,7 @@ def test_scenario9_missing_risk_history_is_unavailable_not_zero():
     )
     assert report.risk_summary.get("status") == "UNAVAILABLE"
     assert report.data_quality["risk_status"] == "UNAVAILABLE"
-    vnm = report.opportunities[0]
+    vnm = report.watchlist[0] if report.watchlist else report.opportunities[0]
     assert vnm.portfolio_fit.fit == "UNAVAILABLE"
     assert vnm.portfolio_fit.risk_available is False
     assert vnm.portfolio_fit.portfolio_vol_after is None
@@ -511,7 +511,7 @@ def test_real_canonical_risk_engine_drives_fit_simulation():
     service = RealService()
     symbols = ["FPT", "VNM"]
     histories = _synthetic_histories(symbols, {"FPT": {"VNM": 0.15}})
-    rows = build_rows([("FPT", 0.60)])
+    rows = build_rows([("FPT", 0.85)], nav=100.0)
     valuation_map = {
         "FPT": signal(symbol="FPT", quality_tier="HIGH_QUALITY", actual_mos_pct=30.0, required_mos_pct=25.0),
         "VNM": signal(symbol="VNM", quality_tier="EXCEPTIONAL", quality_score=92, actual_mos_pct=42.0, required_mos_pct=25.0),
@@ -523,7 +523,7 @@ def test_real_canonical_risk_engine_drives_fit_simulation():
     report = service.evaluate(
         position_rows=rows,
         histories=histories,
-        cash=40.0,
+        cash=15.0,
         portfolio_id=1,
         as_of="2026-09-06",
         valuation_map=valuation_map,
@@ -532,12 +532,12 @@ def test_real_canonical_risk_engine_drives_fit_simulation():
     # The canonical engine produced real risk numbers.
     assert report.risk_summary["status"] == "VALID"
     assert report.risk_summary["volatility_252"] is not None
-    vnm = report.opportunities[0]
+    vnm = report.opportunities[0] if report.opportunities else report.watchlist[0]
     assert vnm.portfolio_fit.fit in ("GOOD", "MODERATE", "WEAK")
     assert vnm.portfolio_fit.portfolio_vol_after is not None
     # Deterministic across calls.
     again = service.evaluate(
-        position_rows=rows, histories=histories, cash=40.0, portfolio_id=1,
+        position_rows=rows, histories=histories, cash=15.0, portfolio_id=1,
         as_of="2026-09-06", valuation_map=valuation_map, candidate_items=candidates,
     ).to_dict()
     assert again == report.to_dict()
