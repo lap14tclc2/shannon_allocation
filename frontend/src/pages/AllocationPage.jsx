@@ -3,7 +3,7 @@ import AppNav from '../components/AppNav.jsx';
 import MetricCard from '../components/MetricCard.jsx';
 import ValuationDetailOverlay from '../components/ValuationDetailOverlay.jsx';
 import { simulatePortfolioAllocation } from '../lib/api.js';
-import { formatWeight, pct } from '../lib/format.js';
+import { formatNumber, formatWeight, pct } from '../lib/format.js';
 import {
   ACTION_LABEL_VI,
   ACTION_TONE,
