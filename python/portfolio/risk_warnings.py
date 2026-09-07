@@ -132,10 +132,10 @@ def generate_risk_warnings(
         else:
             sev = "ATTENTION"
 
-        title = f"Rủi ro đang tập trung vào {sym}" if (rc > w * 1.15) else f"Tỷ trọng lớn ở vị thế {sym}"
+        title = f"Rủi ro biến động đang tập trung vào {sym}" if (rc > w * 1.15) else f"Tỷ trọng biến động lớn ở vị thế {sym}"
         summary = f"{sym} chiếm {_format_pct(w)} NAV và đóng góp {_format_pct(rc)} tổng biến động danh mục."
-        impact = f"Biến động lớn tại {sym} có thể chi phối kết quả toàn danh mục dù các vị thế khác ổn định."
-        review_guidance = f"Nên kiểm tra tỷ trọng {sym}, tương quan với các mã khác và thử nghiệm kết quả giả lập trên trang Phân bổ vốn."
+        impact = f"{sym} đang tạo ra khoảng {_format_pct(rc)} biến động tổng thể của danh mục. NAV có thể biến động mạnh nếu giá {sym} thay đổi đáng kể. Đây là rủi ro biến động giá, không phải kết luận về chất lượng doanh nghiệp {sym}."
+        review_guidance = f"Nên kiểm tra tỷ trọng {sym}, tương quan với các mã khác và tham khảo kịch bản giả định sụt giảm giá."
 
         warnings.append({
             "id": f"RISK_CONCENTRATION_{sym}",
