@@ -173,6 +173,7 @@ def assess_permanent_loss_risk_for_symbol(
         return {
             "symbol": sym,
             "weight": wt,
+            "overall_risk": "UNKNOWN",
             "severity": "UNKNOWN",
             "severity_text": SEVERITY_VI["UNKNOWN"],
             "business_quality": "UNKNOWN",
@@ -274,9 +275,12 @@ def assess_permanent_loss_risk_for_symbol(
             balance_sheet_status = "ATTENTION"
             balance_sheet_evidence = "Chỉ số an toàn ngân hàng ở mức cần theo dõi"
     else:
-        if has_solvency_reject or (fin_strength is not None and fin_strength < 30):
+        if has_solvency_reject:
             balance_sheet_status = "HIGH_RISK"
-            balance_sheet_evidence = f"Đòn bẩy/nợ vay ở mức rủi ro (Score: {fin_strength or 'Thấp'}, Reject: {', '.join(hard_rejects) or 'Solvency'})"
+            balance_sheet_evidence = "Phát hiện vi phạm Solvency Risk (Hard Reject: Solvency)"
+        elif fin_strength is not None and fin_strength < 30:
+            balance_sheet_status = "HIGH_RISK"
+            balance_sheet_evidence = f"Đòn bẩy/nợ vay ở mức rủi ro (Điểm sức khỏe tài chính: {int(fin_strength)}/100)"
         elif fin_strength is not None and fin_strength >= 70:
             balance_sheet_status = "SAFE"
             balance_sheet_evidence = f"Điểm sức khỏe tài chính {int(fin_strength)}/100, đòn bẩy D/E & đệm thanh khoản an toàn"
@@ -302,27 +306,53 @@ def assess_permanent_loss_risk_for_symbol(
         earnings_durability = "STABLE" if quality_tier == "INVESTABLE" else "UNSTABLE"
         earnings_durability_evidence = "Lợi nhuận ở mức chấp nhận được"
 
-    # 4. Moat Assessment (Strict Rule: Missing moat data MUST return UNKNOWN, NEVER DETERIORATING)
+    # 4. Moat Assessment (Refactored into Moat Strength vs Moat Trend)
     if moat_score is not None:
-        if moat_score >= 80:
-            moat_status = "STRONG"
-            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh chi phí/thị phần mạnh)"
-        elif moat_score >= 50:
-            moat_status = "STABLE"
-            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh ổn định)"
-        elif moat_score >= 30:
-            moat_status = "UNCERTAIN"
-            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 (Lợi thế cạnh tranh chưa rõ ràng)"
+        if moat_score >= 70:
+            moat_strength = "STRONG"
+            moat_strength_text = "Lợi thế cạnh tranh mạnh"
+        elif moat_score >= 40:
+            moat_strength = "MODERATE"
+            moat_strength_text = "Lợi thế cạnh tranh vừa phải"
         else:
-            moat_status = "DETERIORATING"
-            moat_evidence = f"Điểm Moat canonical {int(moat_score)}/100 cho thấy nguy cơ suy giảm lợi thế cạnh tranh"
+            moat_strength = "WEAK"
+            moat_strength_text = "Lợi thế cạnh tranh yếu / đệm moat hạn chế"
     else:
-        if quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
-            moat_status = "STABLE"
-            moat_evidence = f"Chất lượng doanh nghiệp {QUALITY_VI.get(quality_tier)} cho thấy lợi thế cạnh tranh duy trì"
+        raw_moat = str(signal.get("moat") or signal.get("moat_tier") or "").upper()
+        if raw_moat in ("WIDE", "STRONG"):
+            moat_strength = "STRONG"
+            moat_strength_text = "Lợi thế cạnh tranh mạnh"
+        elif raw_moat in ("NARROW", "MODERATE"):
+            moat_strength = "MODERATE"
+            moat_strength_text = "Lợi thế cạnh tranh vừa phải"
+        elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
+            moat_strength = "MODERATE"
+            moat_strength_text = "Chất lượng doanh nghiệp cao (ngầm định moat ổn định)"
         else:
-            moat_status = "UNKNOWN"
-            moat_evidence = "Chưa đủ dữ liệu canonical để đánh giá lợi thế cạnh tranh (Moat)"
+            moat_strength = "UNKNOWN"
+            moat_strength_text = "Chưa đủ dữ liệu"
+
+    has_temporal_decline = bool(signal.get("moat_trend_deteriorating") or signal.get("multi_period_roic_decline") or signal.get("persistent_margin_erosion"))
+    has_temporal_improvement = bool(signal.get("moat_trend_improving") or signal.get("multi_period_roic_expansion"))
+
+    if has_temporal_decline:
+        moat_trend = "DETERIORATING"
+        moat_trend_text = "Suy giảm theo chuỗi thời gian"
+        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text}; có bằng chứng suy giảm qua các kỳ."
+    elif has_temporal_improvement:
+        moat_trend = "IMPROVING"
+        moat_trend_text = "Mở rộng theo chuỗi thời gian"
+        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text}; có bằng chứng mở rộng qua các kỳ."
+    elif moat_strength != "UNKNOWN" and quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY"):
+        moat_trend = "STABLE"
+        moat_trend_text = "Ổn định"
+        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text} (Score: {int(moat_score) if moat_score is not None else 'N/A'}); chưa thấy bằng chứng suy giảm."
+    else:
+        moat_trend = "UNKNOWN"
+        moat_trend_text = "Chưa đủ dữ liệu chuỗi thời gian"
+        moat_evidence = f"Lợi thế cạnh tranh: {moat_strength_text}. Chưa đủ bằng chứng chuỗi thời gian để xác định xu hướng Moat."
+
+    moat_status = moat_strength if moat_trend == "UNKNOWN" else (f"{moat_strength}_{moat_trend}")
 
     # 5. Capital Allocation
     if "EXCESSIVE_DILUTION" in hard_rejects:
@@ -376,7 +406,9 @@ def assess_permanent_loss_risk_for_symbol(
     main_concerns: List[str] = []
     warnings: List[Dict[str, Any]] = []
 
-    if thesis_status == "BROKEN" or has_solvency_reject or has_accounting_reject:
+    if signal is None or quality_tier == "UNKNOWN":
+        severity = "UNKNOWN"
+    elif thesis_status == "BROKEN" or has_solvency_reject or has_accounting_reject:
         severity = "HIGH"
         main_concerns.append(f"Thesis kinh doanh bị đe dọa nghiêm trọng do vi phạm tiêu chuẩn ({', '.join(hard_rejects) or 'LOW_QUALITY'}).")
         warnings.append({
@@ -408,6 +440,7 @@ def assess_permanent_loss_risk_for_symbol(
         main_concerns.append("Ngành có tính chu kỳ (biến động lợi nhuận theo chu kỳ hàng hóa/thị trường).")
     elif quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY") and balance_sheet_status in ("SAFE", "BANK_SAFE") and val_risk in ("LOW", "MODERATE"):
         severity = "LOW"
+        main_concerns.append("Chất lượng kinh doanh cao và bảng cân đối an toàn.")
     else:
         severity = "MODERATE"
 
@@ -424,6 +457,7 @@ def assess_permanent_loss_risk_for_symbol(
     return {
         "symbol": sym,
         "weight": wt,
+        "overall_risk": severity,
         "severity": severity,
         "severity_text": SEVERITY_VI.get(severity, severity),
         "business_quality": quality_tier,
@@ -436,7 +470,11 @@ def assess_permanent_loss_risk_for_symbol(
         "earnings_durability_text": EARNINGS_DURABILITY_VI.get(earnings_durability, earnings_durability),
         "earnings_durability_evidence": earnings_durability_evidence,
         "moat": moat_status,
-        "moat_text": MOAT_VI.get(moat_status, moat_status),
+        "moat_strength": moat_strength,
+        "moat_strength_text": moat_strength_text,
+        "moat_trend": moat_trend,
+        "moat_trend_text": moat_trend_text,
+        "moat_text": f"{moat_strength_text} · {moat_trend_text}",
         "moat_evidence": moat_evidence,
         "capital_allocation": capital_allocation,
         "capital_allocation_text": CAPITAL_ALLOCATION_VI.get(capital_allocation, capital_allocation),
@@ -451,6 +489,44 @@ def assess_permanent_loss_risk_for_symbol(
         "data_confidence": data_confidence,
         "data_confidence_text": "Dữ liệu đầy đủ" if data_confidence == "HIGH" else ("Dữ liệu khá" if data_confidence == "MEDIUM" else "Dữ liệu hạn chế"),
         "evidence_strength": evidence_strength,
+        "business_quality_detail": {
+            "status": quality_tier,
+            "status_text": QUALITY_VI.get(quality_tier, quality_tier),
+            "evidence": business_quality_evidence,
+            "evidence_strength": "CONFIRMED" if quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE", "LOW_QUALITY") else "INSUFFICIENT",
+        },
+        "balance_sheet_detail": {
+            "status": balance_sheet_status,
+            "status_text": BALANCE_SHEET_VI.get(balance_sheet_status, balance_sheet_status),
+            "evidence": balance_sheet_evidence,
+            "evidence_strength": "CONFIRMED" if is_bank or fin_strength is not None or has_solvency_reject else "INSUFFICIENT",
+        },
+        "earnings_durability_detail": {
+            "status": earnings_durability,
+            "status_text": EARNINGS_DURABILITY_VI.get(earnings_durability, earnings_durability),
+            "evidence": earnings_durability_evidence,
+            "evidence_strength": "CONFIRMED" if is_cyclical or quality_tier != "UNKNOWN" else "INSUFFICIENT",
+        },
+        "moat_detail": {
+            "strength": moat_strength,
+            "strength_text": moat_strength_text,
+            "trend": moat_trend,
+            "trend_text": moat_trend_text,
+            "evidence": moat_evidence,
+            "evidence_strength": "CONFIRMED" if (moat_score is not None and moat_trend != "UNKNOWN") else ("INDICATIVE" if moat_strength != "UNKNOWN" else "INSUFFICIENT"),
+        },
+        "valuation_detail": {
+            "status": val_risk,
+            "status_text": VALUATION_RISK_VI.get(val_risk, val_risk),
+            "evidence": val_evidence,
+            "evidence_strength": "CONFIRMED" if valuation_safety is not None else "INSUFFICIENT",
+        },
+        "thesis_detail": {
+            "status": thesis_status,
+            "status_text": THESIS_VI.get(thesis_status, thesis_status),
+            "evidence": thesis_evidence,
+            "evidence_strength": "CONFIRMED" if thesis_status != "UNKNOWN" else "INSUFFICIENT",
+        },
         "main_concerns": main_concerns,
         "warnings": warnings,
         "concentrated_thesis_risk": concentrated_thesis_risk,
