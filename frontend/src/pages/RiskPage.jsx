@@ -237,7 +237,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                 {largestRisk == null ? '' : `(${pct(largestRisk)}${riskCoverageStatus !== 'COMPLETE' ? ' đo lường được' : ''})`}
               </b>
             </div>
-            <div><span style={{ color: 'var(--text-secondary)' }}>Vị thế hiệu dụng:</span> <b>{effectivePositions == null ? '-' : num(effectivePositions, 1)} mã</b></div>
+            <div><span style={{ color: 'var(--text-secondary)' }}>Vị thế hiệu dụng (theo tỷ trọng):</span> <b>{effectivePositions == null ? '-' : `${num(effectivePositions, 2)} mã`}</b></div>
             <div><span style={{ color: 'var(--text-secondary)' }}>Tương quan trung bình:</span> <b>{avgCorrelation == null ? 'Chưa đủ dữ liệu' : num(avgCorrelation, 2)}</b></div>
           </div>
         </section>
@@ -387,15 +387,15 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
           <div className="metric-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
             <div className="metric-card">
               <div className="metric-label">VaR ngày 95%</div>
-              <div className="metric-value">{pct(risk.daily_var_95)}</div>
+              <div className="metric-value">{risk.daily_var_95 != null ? pct(risk.daily_var_95) : 'Chưa đủ dữ liệu toàn danh mục'}</div>
             </div>
             <div className="metric-card">
               <div className="metric-label">CVaR ngày 95%</div>
-              <div className="metric-value">{pct(risk.daily_cvar_95)}</div>
+              <div className="metric-value">{risk.daily_cvar_95 != null ? pct(risk.daily_cvar_95) : 'Chưa đủ dữ liệu toàn danh mục'}</div>
             </div>
             <div className="metric-card">
               <div className="metric-label">Biến động sụt giảm</div>
-              <div className="metric-value">{pct(risk.downside_volatility)}</div>
+              <div className="metric-value">{risk.downside_volatility != null ? pct(risk.downside_volatility) : 'Chưa đủ dữ liệu toàn danh mục'}</div>
             </div>
           </div>
 
@@ -404,7 +404,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
               Lưu ý quan trọng về VaR / CVaR:
             </strong>
             <p style={{ margin: 0, fontSize: '12px', lineHeight: 1.4, color: 'var(--text-secondary)' }}>
-              VaR/CVaR mô tả mẫu dữ liệu lịch sử, <b>không phải hạn mức tổn thất tối đa</b> hay dự báo thiên nga đen. Mức lỗ thực tế trong ngày xấu có thể lớn hơn.
+              VaR/CVaR mô tả mẫu dữ liệu lịch sử toàn danh mục, <b>không phải hạn mức tổn thất tối đa</b> hay dự báo thiên nga đen. Khi dữ liệu chưa đủ coverage toàn danh mục, chỉ số VaR/CVaR danh mục được tạm ẩn để tránh kết luận sai lệch.
             </p>
           </div>
         </div>
@@ -429,7 +429,9 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
             {symbolRows.map(({ symbol, metric, marketRisk, permRisk }) => {
               const navWeight = metric.weight ?? metric.nav_weight ?? 0;
               const equityWeight = metric.equity_weight ?? metric.equity_normalized_weight ?? null;
-              const rc = metric.risk_contribution != null ? Number(metric.risk_contribution) : 0;
+              const rawRc = metric.risk_contribution;
+              const rc = rawRc != null ? Number(rawRc) : null;
+              const rcScope = metric.risk_contribution_scope || (riskCoverageStatus === 'COMPLETE' ? 'FULL_PORTFOLIO' : 'ELIGIBLE_UNIVERSE_ONLY');
               const severity = permRisk.severity || 'UNKNOWN';
               const severityText = permRisk.severity_text || 'Chưa đủ dữ liệu';
               const stressTest = permRisk.stress_test;
@@ -457,11 +459,20 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                           </span>
                         )}
                         <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Tỷ trọng: <b>{pct(navWeight)} NAV</b> {equityWeight != null && Math.abs(equityWeight - navWeight) > 0.001 ? `(Cổ phiếu: ${pct(equityWeight)})` : ''} · Đóng góp biến động: <b>{pct(rc)} {riskCoverageStatus !== 'COMPLETE' ? '(đo lường được)' : ''}</b>
+                          Tỷ trọng: <b>{pct(navWeight)} NAV</b> {equityWeight != null && Math.abs(equityWeight - navWeight) > 0.001 ? `(Cổ phiếu: ${pct(equityWeight)})` : ''} · Đóng góp biến động:{' '}
+                          <b>
+                            {rc == null
+                              ? 'Chưa tính được'
+                              : `${pct(rc)}${rcScope === 'ELIGIBLE_UNIVERSE_ONLY' ? ' (đo lường được)' : ''}`}
+                          </b>
                         </span>
                       </div>
                       <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {marketRisk.explanation || `${symbol} đang đóng góp ${pct(rc)} vào biến động chung của danh mục.`}
+                        {rc == null
+                          ? `Chưa đủ tối thiểu 40 phiên dữ liệu giá lịch sử để tính đóng góp rủi ro của ${symbol} (Chưa tính được).`
+                          : rcScope === 'ELIGIBLE_UNIVERSE_ONLY'
+                          ? `${symbol} chiếm ${pct(navWeight)} NAV và đóng góp ${pct(rc)} biến động trong phần danh mục có đủ dữ liệu (${pct(riskEligibleNavWeight)} NAV). Không thể suy rộng con số này thành rủi ro toàn danh mục.`
+                          : marketRisk.explanation || `${symbol} đang đóng góp ${pct(rc)} vào tổng biến động danh mục.`}
                       </p>
                     </div>
 
@@ -495,7 +506,14 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                     </div>
                     <div style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))', padding: '10px 12px', borderRadius: '8px' }}>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Lợi thế cạnh tranh (Moat)</span>
-                      <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{permRisk.moat_text || 'Chưa đủ dữ liệu'}</strong>
+                      <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
+                        {permRisk.moat_strength_text || permRisk.moat_text || 'Chưa đủ dữ liệu'}
+                      </strong>
+                      {permRisk.moat_trend_text && (
+                        <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '1px' }}>
+                          Xu hướng: <b>{permRisk.moat_trend_text}</b>
+                        </span>
+                      )}
                       {permRisk.moat_evidence && (
                         <small style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{permRisk.moat_evidence}</small>
                       )}
@@ -517,6 +535,7 @@ export default function RiskPage({ risk = {}, snapshots: initialSnapshots = [], 
                       )}
                     </div>
                   </div>
+
 
                   {/* Main Concerns / Warnings */}
                   {permRisk.main_concerns && permRisk.main_concerns.length > 0 && (
