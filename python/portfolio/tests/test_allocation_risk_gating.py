@@ -509,3 +509,68 @@ def test_26_kelly_remains_disabled(partial_portfolio_setup):
 
     report_dict = report.to_dict() if hasattr(report, "to_dict") else {}
     assert "kelly_fraction" not in report_dict
+
+
+def test_27_dgc_headline_scope_under_partial_coverage(partial_portfolio_setup):
+    """Part A1: DGC warning summary specifies measurable subset under partial risk coverage."""
+    positions, histories, _ = partial_portfolio_setup
+    risk_res = portfolio_risk(positions, histories)
+    dgc_warn = next((w for w in risk_res["warnings"] if "DGC" in w.get("affected_symbols", [])), None)
+    assert dgc_warn is not None
+    assert "biến động trong phần danh mục có đủ dữ liệu" in dgc_warn["summary"]
+    assert "tổng biến động danh mục" not in dgc_warn["summary"]
+
+
+def test_28_fpt_missing_risk_contribution_summary(partial_portfolio_setup):
+    """Part A2: FPT missing risk contribution states UNKNOWN / insufficient, not 0.0%."""
+    positions, histories, _ = partial_portfolio_setup
+    risk_res = portfolio_risk(positions, histories)
+    fpt_warn = next((w for w in risk_res["warnings"] if "FPT" in w.get("affected_symbols", [])), None)
+    assert fpt_warn is not None
+    assert "Chưa đủ dữ liệu để tính đóng góp biến động" in fpt_warn["summary"]
+    assert "0.0%" not in fpt_warn["summary"]
+
+
+def test_29_hhi_and_diversification_ratio_suppressed_when_not_actionable(partial_portfolio_setup):
+    """Part A5: RC-HHI and diversification ratio are hidden when market risk is not actionable."""
+    positions, histories, _ = partial_portfolio_setup
+    risk_res = portfolio_risk(positions, histories)
+    assert risk_res["market_risk_actionable"] is False
+    assert risk_res["diversification_ratio"] is None
+    assert risk_res["risk_contribution_hhi"] is None
+
+
+def test_30_moat_trend_defaults_to_unknown_without_temporal_evidence():
+    """Part A6: Snapshot moat score yields strength but moat_trend defaults to UNKNOWN."""
+    from portfolio.permanent_loss_risk import assess_permanent_loss_risk_for_symbol
+    sig = {
+        "quality_tier": "HIGH_QUALITY",
+        "moat_score": 80,
+        "actual_mos_pct": 20.0,
+        "required_mos_pct": 15.0,
+    }
+    res = assess_permanent_loss_risk_for_symbol("FPT", sig, 0.50)
+    assert res["moat_strength"] == "STRONG"
+    assert res["moat_trend"] == "UNKNOWN"
+    assert "Chưa đủ dữ liệu xu hướng" in res["moat_trend_text"]
+
+
+def test_31_permanent_loss_top_concerns_separate_balance_sheet_and_valuation():
+    """Part A7: Permanent loss summary separates balance sheet and valuation MOS concerns."""
+    from portfolio.permanent_loss_risk import assess_portfolio_permanent_loss_risk
+    rows = [{"symbol": "FPT", "weight": 0.50}]
+    val_signals = {
+        "FPT": {
+            "quality_tier": "WATCH",
+            "financial_strength_score": 25,
+            "actual_mos_pct": 13.7,
+            "required_mos_pct": 15.0,
+        }
+    }
+    res = assess_portfolio_permanent_loss_risk(rows, val_signals)
+    assert len(res["top_concerns"]) > 0
+    fpt_concern = res["top_concerns"][0]
+    assert "FPT:" in fpt_concern
+    assert "rủi ro bảng cân đối cao" in fpt_concern
+    assert "MOS thấp hơn yêu cầu 1.3 điểm %" in fpt_concern
+    assert "tài chính/định giá" not in fpt_concern
