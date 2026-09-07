@@ -18,6 +18,7 @@ SEVERITY_ORDER = {
     "WARNING": 3,
     "ATTENTION": 2,
     "NORMAL": 1,
+    "INSUFFICIENT_DATA": 0,
 }
 
 SEVERITY_VIETNAMESE = {
@@ -25,6 +26,7 @@ SEVERITY_VIETNAMESE = {
     "WARNING": "Cảnh báo",
     "ATTENTION": "Cần chú ý",
     "NORMAL": "Bình thường",
+    "INSUFFICIENT_DATA": "Chưa đủ dữ liệu",
 }
 
 
@@ -203,15 +205,15 @@ def generate_risk_warnings(
                 "id": "RISK_DIVERSIFICATION_LOW",
                 "category": "DIVERSIFICATION",
                 "severity": sev,
-                "title": "Chưa đa dạng hóa thực tế như số lượng mã",
-                "summary": f"Bạn đang nắm {n_positions} cổ phiếu, nhưng mức độ tập trung thực tế chỉ tương đương khoảng {eff_pos:.1f} vị thế độc lập.",
+                "title": "Tập trung vốn cao theo tỷ trọng",
+                "summary": f"Danh mục có {n_positions} mã, nhưng do phân bổ vốn không đều, mức độ tập trung tương đương khoảng {eff_pos:.2f} vị thế có tỷ trọng bằng nhau.",
                 "metric_name": "effective_positions",
                 "metric_value": eff_pos,
                 "threshold": min(3.5, n_positions * 0.6),
                 "affected_symbols": [largest_pos_symbol] if largest_pos_symbol else [],
                 "evidence": {"n_positions": n_positions, "effective_positions": eff_pos, "hhi": hhi},
-                "impact": "Mức tập trung tỷ trọng hoặc sự biến động cùng chiều khiến tác động giảm thiểu rủi ro của việc chia nhỏ danh mục bị hạn chế.",
-                "review_guidance": "Kiểm tra lại số vị thế hiệu dụng, cụm tương quan và phân bổ vốn giữa các nhóm tài sản.",
+                "impact": "Mức tập trung vốn cao khiến biến động của các vị thế chính ảnh hưởng chi phối đến NAV.",
+                "review_guidance": "Kiểm tra lại phân bổ vốn giữa các cổ phiếu và nhóm tài sản.",
                 "reason_codes": ["EFFECTIVE_POSITIONS_LOW"],
             })
 
@@ -342,10 +344,10 @@ def generate_risk_warnings(
         if SEVERITY_ORDER.get(w["severity"], 0) > SEVERITY_ORDER.get(highest_sev, 0):
             highest_sev = w["severity"]
 
-    high_risk_count = sum(1 for w in warnings if w["severity"] == "HIGH_RISK")
-    warning_count = sum(1 for w in warnings if w["severity"] == "WARNING")
-
-    if highest_sev == "HIGH_RISK":
+    if coverage_status == "INSUFFICIENT":
+        highest_sev = "INSUFFICIENT_DATA"
+        headline = "Chưa đủ dữ liệu để ước tính đáng tin cậy biến động toàn danh mục"
+    elif highest_sev == "HIGH_RISK":
         headline = "Danh mục có yếu tố rủi ro cao cần chú ý kỹ"
     elif highest_sev == "WARNING":
         headline = "Cần chú ý các điểm rủi ro tập trung"
@@ -357,6 +359,9 @@ def generate_risk_warnings(
     top_concerns = [w["title"] for w in warnings if w["severity"] in ("HIGH_RISK", "WARNING")][:3]
     if not top_concerns and warnings:
         top_concerns = [w["title"] for w in warnings[:3]]
+
+    high_risk_count = sum(1 for w in warnings if w.get("severity") == "HIGH_RISK")
+    warning_count = sum(1 for w in warnings if w.get("severity") == "WARNING")
 
     risk_summary = {
         "overall_severity": highest_sev,
