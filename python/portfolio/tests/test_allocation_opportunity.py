@@ -207,7 +207,8 @@ def test_excessive_risk_contribution_is_reduce():
         current_weight=0.5, risk_contribution=0.80, equal_risk=0.5,
         hard_cap=0.20, current_fit="WEAK",
     )
-    assert decision.action == "REDUCE"
+    assert decision.action == "HOLD"
+    assert "REVIEW_REQUIRED" in decision.reason_codes
     assert RISK_CONTRIBUTION_HIGH in decision.reason_codes
 
 
@@ -363,7 +364,7 @@ def test_data_insufficient_alone_produces_hold_review():
     elig = eligibility_from_signal(sig)
     dec = decide_holding(elig, current_weight=0.15, risk_contribution=None, equal_risk=None)
     assert dec.action == "HOLD"
-    assert dec.target_mid is None
+    assert dec.target_mid == 0.15
     assert "REVIEW_REQUIRED" in dec.reason_codes
     assert "DATA_INSUFFICIENT" in dec.reason_codes
 
@@ -379,7 +380,7 @@ def test_missing_public_valuation_alone_produces_hold_review():
     elig = eligibility_from_signal(sig)
     dec = decide_holding(elig, current_weight=0.10, risk_contribution=None, equal_risk=None)
     assert dec.action == "HOLD"
-    assert dec.target_mid is None
+    assert dec.target_mid == 0.10
     assert "REVIEW_REQUIRED" in dec.reason_codes
 
 
@@ -395,7 +396,7 @@ def test_low_valuation_confidence_alone_produces_hold_review():
     elig = eligibility_from_signal(sig)
     dec = decide_holding(elig, current_weight=0.08, risk_contribution=None, equal_risk=None)
     assert dec.action == "HOLD"
-    assert dec.target_mid is None
+    assert dec.target_mid == 0.08
     assert "REVIEW_REQUIRED" in dec.reason_codes
 
 
@@ -441,7 +442,7 @@ def test_accounting_unreliable_produces_sell():
 
 
 def test_excessive_risk_contribution_produces_reduce_positive():
-    """Requirement 9: Excessive risk contribution -> REDUCE with target > 0."""
+    """Requirement 9: Excessive risk contribution -> HOLD + REVIEW, not REDUCE."""
     sig = {
         "symbol": "VGI",
         "quality_tier": "HIGH_QUALITY",
@@ -455,10 +456,9 @@ def test_excessive_risk_contribution_produces_reduce_positive():
         risk_contribution=0.50,
         equal_risk=0.20,
     )
-    assert dec.action == "REDUCE"
-    assert dec.target_mid is not None
-    assert dec.target_mid > 0.0
-    assert dec.target_mid < 0.35
+    assert dec.action == "HOLD"
+    assert dec.target_mid == 0.35
+    assert "REVIEW_REQUIRED" in dec.reason_codes
     assert "RISK_CONTRIBUTION_HIGH" in dec.reason_codes
 
 
@@ -473,12 +473,12 @@ def test_reported_symbols_synthetic_fixtures_regression():
         # 2. Missing data (VJC) -> HOLD / REVIEW
         (
             {"symbol": "VJC", "quality_tier": "WATCH", "hard_rejects": ["DATA_INSUFFICIENT"]},
-            0.08, "HOLD", None,
+            0.08, "HOLD", 0.08,
         ),
         # 3. Low confidence (KSV) -> HOLD / REVIEW
         (
             {"symbol": "KSV", "quality_tier": "INVESTABLE", "actual_mos_pct": 15.0, "required_mos_pct": 10.0, "valuation_confidence": "LOW"},
-            0.05, "HOLD", None,
+            0.05, "HOLD", 0.05,
         ),
         # 4. Confirmed Low Quality (REE) -> REDUCE > 0
         (
@@ -488,7 +488,7 @@ def test_reported_symbols_synthetic_fixtures_regression():
         # 5. Data Insufficient (GAS) -> HOLD / REVIEW
         (
             {"symbol": "GAS", "quality_tier": None, "hard_rejects": ["DATA_INSUFFICIENT"]},
-            0.15, "HOLD", None,
+            0.15, "HOLD", 0.15,
         ),
     ]
 
@@ -500,8 +500,8 @@ def test_reported_symbols_synthetic_fixtures_regression():
             assert dec.target_mid == 0.0
         elif expected_target_type == "POSITIVE":
             assert dec.target_mid is not None and 0.0 < dec.target_mid < weight
-        elif expected_target_type is None:
-            assert dec.target_mid is None
+        elif isinstance(expected_target_type, float):
+            assert dec.target_mid == expected_target_type
             assert "REVIEW_REQUIRED" in dec.reason_codes
 
 

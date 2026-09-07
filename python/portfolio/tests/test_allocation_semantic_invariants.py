@@ -66,13 +66,13 @@ def test_acb_hold_example_semantic_invariant():
     assert decision.new_position_guidance["max_weight"] == 0.05
 
 
-def test_dgc_reduce_example_semantic_invariant():
-    """2. DGC-like REDUCE example:
+def test_dgc_hold_review_example_semantic_invariant():
+    """2. DGC-like HOLD + REVIEW example (Hard Invariant 3):
 
     current = 42.2% (0.422)
     new_position_band = 12-18%
-    action = REDUCE
-    post_action_weight = ~18% (0.18)
+    action = HOLD (with REVIEW_REQUIRED)
+    post_action_weight = 42.2% (0.422)
     """
     signal = {
         "symbol": "DGC",
@@ -93,7 +93,7 @@ def test_dgc_reduce_example_semantic_invariant():
         target_max=0.18,
     )
 
-    # Risk contribution breach triggers REDUCE
+    # Risk contribution breach alone does NOT trigger REDUCE; returns HOLD + REVIEW_REQUIRED
     decision = decide_holding(
         eligibility,
         current_weight=0.422,
@@ -104,10 +104,13 @@ def test_dgc_reduce_example_semantic_invariant():
         current_fit="WEAK",
     )
 
-    assert decision.action == "REDUCE"
+    assert decision.action == "HOLD"
     assert decision.current_weight == 0.422
-    assert decision.post_action_target_weight is not None
-    assert 0.0 < decision.post_action_target_weight < 0.422
+    assert decision.post_action_target_weight == 0.422
+    assert "REVIEW_REQUIRED" in decision.reason_codes
+    assert "POSITION_CONCENTRATED" in decision.reason_codes
+    assert "CONCENTRATED_THESIS_RISK" in decision.reason_codes
+    assert "RISK_CONTRIBUTION_HIGH" in decision.reason_codes
     assert decision.new_position_guidance["tier"] == "HIGH_CONVICTION"
     assert decision.new_position_guidance["min_weight"] == 0.12
     assert decision.new_position_guidance["max_weight"] == 0.18
