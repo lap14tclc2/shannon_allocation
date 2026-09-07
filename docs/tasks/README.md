@@ -89,6 +89,7 @@
 | [TASK-20260907-110](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-110-fix-risk-data-contract-semantics-and-evidence.md) | Fix Risk Data Contract Semantics and Evidence | completed | high | 2026-09-07 |
 | [TASK-20260907-111](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-111-gate-allocation-decisions-on-reliable-risk-coverage-and-permanent-loss-evidence.md) | Gate Allocation Decisions on Reliable Risk Coverage and Permanent-Loss Evidence | completed | high | 2026-09-07 |
 | [TASK-20260907-112](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-112-finalize-risk-semantics-and-gate-allocation-on-reliable-market-risk-evidence.md) | Finalize Risk Semantics and Gate Allocation on Reliable Market-Risk Evidence | completed | high | 2026-09-07 |
+| [TASK-20260907-113](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-113-make-allocation-buffett-first-and-demote-market-risk-to-sizing-overlay.md) | Make Allocation Buffett-First and Demote Market Risk to Sizing Overlay | in-progress | high | 2026-09-07 |
 
 
 
