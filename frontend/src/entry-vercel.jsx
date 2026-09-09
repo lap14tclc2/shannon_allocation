@@ -6,6 +6,10 @@ import AdminPage from './pages/AdminPage.jsx';
 import AdminAuthPage from './pages/AdminAuthPage.jsx';
 import FinanceDataPage from './pages/FinanceDataPage.jsx';
 import AdminUserPortfolioPage from './pages/AdminUserPortfolioPage.jsx';
+import TerminalPage from './pages/TerminalPage.jsx';
+import BusinessPage from './pages/BusinessPage.jsx';
+import CapitalPage from './pages/CapitalPage.jsx';
+import HistoryPage from './pages/HistoryPage.jsx';
 import PortfolioPage from './pages/PortfolioPage.jsx';
 import PortfoliosPage from './pages/PortfoliosPage.jsx';
 import TransactionsPage from './pages/TransactionsPage.jsx';
@@ -22,50 +26,15 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import { applyStoredTheme } from './lib/appearance.js';
 import { NAVIGATION_EVENT, navigate } from './lib/navigation.js';
-import {
-  bootstrapApp,
-  loadRoute,
-  selectBootError,
-  selectBootStatus,
-  selectRegistry,
-  selectRouteState,
-  selectUser,
-  store,
-} from './lib/store.js';
-import './styles.css';
-import './buyhold.css';
-import './responsive.css';
-import './portfolio-insights.css';
-import './received-dividends.css';
-import './table-alignment.css';
-import './auth.css';
-import './ui-polish.css';
-import './quick-import.css';
-import './performance-interactive.css';
-import './insight-depth.css';
-import './holding-info-row.css';
-import './accessibility-polish.css';
-import './appearance-controls.css';
-import './risk-readable.css';
-import './valuation-page.css';
-import './screener-page.css';
-import './allocation-page.css';
-import './guide-friendly.css';
-import './dividend-history.css';
-import './settings-friendly.css';
-import './portfolio-manager.css';
-import './spa-state.css';
-import './mobile-iphone.css';
-import './mobile-scroll-fix.css';
-import './design-system-v1.css';
-import './header-v2.css';
-import './japanese-retro-theme.css';
-import './cyber-fantasy-theme.css';
 
 const APP_LOCALE = 'vi';
 
 const ROUTES = {
-  '/': PortfolioPage,
+  '/': TerminalPage,
+  '/terminal': TerminalPage,
+  '/business': BusinessPage,
+  '/capital': CapitalPage,
+  '/history': HistoryPage,
   '/portfolios': PortfoliosPage,
   '/transactions': TransactionsPage,
   '/performance': PerformancePage,
@@ -120,8 +89,10 @@ function ErrorScreen({ error, onRetry }) {
 function resolveRoute(pathname) {
   const adminUserMatch = pathname.match(/^\/admin\/users\/\d+$/);
   if (adminUserMatch) return AdminUserPortfolioPage;
+  if (pathname.startsWith('/business')) return BusinessPage;
   return ROUTES[pathname] || null;
 }
+
 
 function App() {
   const dispatch = useDispatch();

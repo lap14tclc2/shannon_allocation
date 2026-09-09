@@ -2047,18 +2047,207 @@ def portfolio_update_security(
 def portfolio_activity(
     body: dict = Body(default_factory=dict),
     qport_session: str | None = Cookie(default=None),
-):
-    return JSONResponse(
-        status_code=201,
-        content=portfolio(require_portfolio_user(qport_session)).log_client_activity(
-            body.get("action"), body.get("details") or {}
-        ),
+# ---------------------------------------------------------------------------
+# Buffett-Munger Workspaces API Routes (Terminal, Business, Capital, History)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/portfolio/terminal")
+def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
+    """Buffett-Munger Terminal Homepage aggregate data endpoint."""
+    from portfolio.personal_finance.models import PersonalBalanceSheetInput
+    from portfolio.personal_finance.service import calculate_capital_durability
+    from portfolio.personal_finance.stress import run_crash_job_loss_stress_engine
+    from portfolio.policy.context_builder import build_decision_context
+    from portfolio.policy.engine import evaluate_decision
+    from portfolio.value_engine.business_review import evaluate_business_review
+    from portfolio.value_engine.value_trap import evaluate_value_trap
+
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    dash = svc.dashboard()
+    positions = dash.get("positions") or []
+    cash = float(dash.get("cash") or 0.0)
+    equity = float(dash.get("equity_value") or 0.0)
+
+    # Personal Fortress
+    pb_input = PersonalBalanceSheetInput(
+        monthly_net_income=50_000_000,
+        monthly_essential_spending=20_000_000,
+        safe_liquid_assets=240_000_000,
+        near_term_liabilities=0.0,
     )
+    durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+
+    largest_pos = max([float(p.get("market_value") or 0.0) for p in positions], default=0.0)
+    stress_results = run_crash_job_loss_stress_engine(pb_input, equity, cash, largest_pos)
+
+    # Decision Matrix & Exceptions
+    decision_items = []
+    exceptions = []
+
+    for pos in positions:
+        sym = pos.get("symbol")
+        val_rep = svc.valuation(sym) if hasattr(svc, "valuation") else {}
+        b_rev = evaluate_business_review(sym, valuation_report=val_rep).to_dict()
+        v_trap = evaluate_value_trap(sym, valuation_report=val_rep).to_dict()
+        pf_status = durability.to_dict()
+
+        ctx = build_decision_context(
+            symbol=sym,
+            holding=pos,
+            valuation=val_rep,
+            personal_finance=pf_status,
+            business_review=b_rev,
+            value_trap=v_trap,
+        )
+        evidence = evaluate_decision(ctx).to_dict()
+
+        item = {
+            "symbol": sym,
+            "weight": pos.get("weight"),
+            "market_value": pos.get("market_value"),
+            "quality_tier": val_rep.get("quality_tier") or "UNKNOWN",
+            "price": pos.get("price"),
+            "bear_iv": val_rep.get("bear_iv"),
+            "base_iv": val_rep.get("base_iv"),
+            "actual_mos_pct": val_rep.get("actual_mos_pct"),
+            "value_trap_status": v_trap.get("status"),
+            "decision": evidence.get("decision"),
+            "evidence": evidence,
+        }
+        decision_items.append(item)
+
+        if evidence.get("decision") in ("BUILD_RESERVE_FIRST", "REVIEW_BUSINESS", "WAIT_FOR_MOS", "SELL_REVIEW", "SELL"):
+            exceptions.append(item)
+
+    # Coach Summary
+    if durability.survival_reserve_status == "UNSAFE":
+        coach_summary = "CẢNH BÁO PHÁO ĐÀI: Quỹ dự phòng cá nhân dưới mức an toàn. Hãy ưu tiên tích lũy dự phòng trước khi mua thêm cổ phiếu."
+    elif exceptions:
+        coach_summary = f"Hệ thống phát hiện {len(exceptions)} mục cần chú ý (Xem danh sách Cần Chú Ý bên dưới)."
+    else:
+        coach_summary = "KHÔNG CẦN HÀNH ĐỘNG (NO ACTION REQUIRED). Danh mục đang hoạt động lành mạnh. Không có cơ hội đạt Biên an toàn để giải ngân mới."
+
+    return {
+        "ok": True,
+        "fortress": durability.to_dict(),
+        "stress_scenarios": [s.to_dict() for s in stress_results],
+        "holdings_matrix": decision_items,
+        "exceptions": exceptions,
+        "coach_summary": coach_summary,
+    }
+
+
+@app.get("/api/portfolio/business/{symbol}")
+def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(default=None)):
+    """Buffett-Munger Business Workspace detail endpoint."""
+    from portfolio.policy.context_builder import build_decision_context
+    from portfolio.policy.engine import evaluate_decision
+    from portfolio.value_engine.business_review import evaluate_business_review
+    from portfolio.value_engine.value_trap import evaluate_value_trap
+
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    ticker = str(symbol or "").strip().upper()
+
+    dash = svc.dashboard()
+    positions = dash.get("positions") or []
+    holding = next((p for p in positions if p.get("symbol") == ticker), None)
+
+    val_rep = svc.valuation(ticker) if hasattr(svc, "valuation") else {}
+    b_rev = evaluate_business_review(ticker, valuation_report=val_rep).to_dict()
+    v_trap = evaluate_value_trap(ticker, valuation_report=val_rep).to_dict()
+
+    ctx = build_decision_context(
+        symbol=ticker,
+        holding=holding,
+        valuation=val_rep,
+        business_review=b_rev,
+        value_trap=v_trap,
+    )
+    evidence = evaluate_decision(ctx).to_dict()
+
+    munger_checklist = [
+        {"question": "Tại sao luận điểm đầu tư này có thể sai?", "key": "thesis_failure"},
+        {"question": "Điều gì có thể làm suy yếu vĩnh viễn Moat của doanh nghiệp?", "key": "moat_erosion"},
+        {"question": "Chuyện gì xảy ra nếu lợi nhuận bình thường giảm 30–50%?", "key": "earnings_drop"},
+        {"question": "Nếu giá trị nội tại bị ước tính cao hơn 30% thì sao?", "key": "iv_overestimate"},
+        {"question": "Tôi có thể tiếp tục nắm giữ nếu giá cổ phiếu giảm tiếp 50%?", "key": "price_drop_holding"},
+        {"question": "Tôi có tiếp tục sở hữu nếu thị trường đóng cửa 5 năm?", "key": "market_closure"},
+        {"question": "Tôi đang mua giá trị hay chỉ phản ứng với giá sập?", "key": "value_vs_reaction"},
+        {"question": "Bằng chứng thực tế nào sẽ chứng minh tôi đã sai?", "key": "falsification_evidence"},
+    ]
+
+    return {
+        "ok": True,
+        "symbol": ticker,
+        "holding": holding,
+        "valuation": val_rep,
+        "business_review": b_rev,
+        "value_trap": v_trap,
+        "decision": evidence,
+        "munger_checklist": munger_checklist,
+    }
+
+
+@app.get("/api/portfolio/capital")
+def api_portfolio_capital(qport_session: str | None = Cookie(default=None)):
+    """Buffett-Munger Capital Workspace endpoint."""
+    from portfolio.personal_finance.models import PersonalBalanceSheetInput
+    from portfolio.personal_finance.service import calculate_capital_durability
+
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    dash = svc.dashboard()
+    cash = float(dash.get("cash") or 0.0)
+    equity = float(dash.get("equity_value") or 0.0)
+
+    pb_input = PersonalBalanceSheetInput(
+        monthly_net_income=50_000_000,
+        monthly_essential_spending=20_000_000,
+        safe_liquid_assets=240_000_000,
+        near_term_liabilities=0.0,
+    )
+    durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+
+    return {
+        "ok": True,
+        "personal_finance_input": pb_input.to_dict(),
+        "durability": durability.to_dict(),
+        "buckets": {
+            "survival_reserve": pb_input.safe_liquid_assets,
+            "compounding_asset": equity,
+            "near_term_liability_fund": pb_input.near_term_liabilities,
+            "opportunity_cash": durability.opportunity_cash,
+            "available_long_term_capital": durability.available_long_term_capital,
+        },
+    }
+
+
+@app.get("/api/portfolio/history")
+def api_portfolio_history(qport_session: str | None = Cookie(default=None)):
+    """Buffett-Munger Compounding History Workspace endpoint."""
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    dash = svc.dashboard()
+
+    return {
+        "ok": True,
+        "nav_history": dash.get("history") or [],
+        "transactions": svc.store.list_activity(limit=100),
+        "summary": {
+            "total_nav": dash.get("nav"),
+            "total_cost": dash.get("cost_basis"),
+            "unrealized_pnl": dash.get("unrealized_pnl"),
+            "return_pct": dash.get("unrealized_return_pct"),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
 # Vercel Cron: once per day on Hobby. Schedule it after VN market close.
 # ---------------------------------------------------------------------------
+
 def _require_cron_authorization(request: Request) -> None:
     """Fail closed so a missing deployment secret can never expose a global sync."""
     secret = str(os.environ.get("CRON_SECRET") or "").strip()

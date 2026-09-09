@@ -1,0 +1,172 @@
+"""Buffett-Munger Core Deterministic Decision Policy Engine (T08)."""
+
+from __future__ import annotations
+
+from typing import Any
+from portfolio.policy.models import InvestmentDecisionContext
+from portfolio.policy.evidence import DecisionEvidence, DecisionRuleTrigger
+
+DECISION_STATES = (
+    "BUY",
+    "BUY_MORE",
+    "HOLD",
+    "HOLD_NO_NEW_CAPITAL",
+    "WAIT_FOR_MOS",
+    "BUILD_RESERVE_FIRST",
+    "REVIEW_BUSINESS",
+    "AVOID",
+    "SELL_REVIEW",
+    "SELL",
+)
+
+
+def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
+    """Evaluate canonical InvestmentDecisionContext through strict Buffett-Munger precedence rules."""
+    reasons: list[str] = []
+    rules: list[DecisionRuleTrigger] = []
+    what_would_change: list[str] = []
+    is_existing_holding = ctx.current_weight > 0 or ctx.shares_held > 0
+
+    # Gate 1: Personal Balance Sheet / Survival Reserve Check
+    if ctx.survival_reserve_status in ("UNSAFE", "UNSATISFACTORY"):
+        decision = "BUILD_RESERVE_FIRST"
+        confidence = "HIGH"
+        summary = "Doanh nghiệp hấp dẫn nhưng quỹ dự phòng cá nhân chưa an toàn. Cần xây dựng dự phòng trước khi phân bổ vốn cổ phần."
+        reasons.append("Quỹ dự phòng an toàn cá nhân dưới mức mục tiêu chính sách.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-01-SURVIVAL-RESERVE",
+                metric="survival_reserve_status",
+                value=ctx.survival_reserve_status,
+                threshold="SAFE",
+                status="TRIGGERED",
+                source="personal_finance",
+                description="Trạng thái quỹ dự phòng cá nhân yếu.",
+            )
+        )
+        what_would_change.append("Gia tăng tài sản thanh khoản an toàn để khôi phục quỹ dự phòng về mức SAFE.")
+
+    # Gate 2: Accounting Reliability or Data Integrity Conflict
+    elif ctx.accounting_reliability == "FAIL" or "ACCOUNTING_UNRELIABLE" in ctx.hard_rejects:
+        decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
+        confidence = "HIGH"
+        summary = "Báo cáo tài chính không đáng tin cậy. Tối quan trọng bảo vệ vốn."
+        reasons.append("Báo cáo tài chính vi phạm tính tin cậy.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-02-ACCOUNTING-RELIABILITY",
+                metric="accounting_reliability",
+                value=ctx.accounting_reliability,
+                threshold="PASS",
+                status="TRIGGERED",
+                source="business_review",
+                description="Báo cáo tài chính không đạt chuẩn tin cậy.",
+            )
+        )
+        what_would_change.append("Báo cáo tài chính được kiểm toán độc lập xác nhận minh bạch.")
+
+    # Gate 3: Solvency Failure / Solvency Risk
+    elif ctx.financial_strength == "FAIL" or "SOLVENCY_RISK" in ctx.hard_rejects:
+        decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
+        confidence = "HIGH"
+        summary = "Rủi ro nợ và khả năng thanh toán nghiêm trọng."
+        reasons.append("Doanh nghiệp đối mặt với rủi ro tài chính / kiệt quệ thanh khoản.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-03-SOLVENCY-RISK",
+                metric="financial_strength",
+                value=ctx.financial_strength,
+                threshold="PASS/WATCH",
+                status="TRIGGERED",
+                source="financial_data",
+                description="Khả năng thanh toán nợ không đạt.",
+            )
+        )
+        what_would_change.append("Doanh nghiệp tái cơ cấu nợ và tái lập dòng tiền kinh doanh dương.")
+
+    # Gate 4: Business Review Quality Failure
+    elif ctx.business_review_status == "BUSINESS_FAIL":
+        decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
+        confidence = "HIGH"
+        summary = "Mô hình kinh doanh không đạt tiêu chí chất lượng tối thiểu."
+        reasons.append("Chất lượng kinh doanh yếu kém hoặc xói mòn lợi thế cạnh tranh.")
+        what_would_change.append("Doanh nghiệp tái lập biên lợi nhuận và lợi thế cạnh tranh bền vững.")
+
+    # Gate 5: Value Trap High Risk
+    elif ctx.value_trap_status == "HIGH_RISK":
+        decision = "REVIEW_BUSINESS" if is_existing_holding else "AVOID"
+        confidence = "HIGH"
+        summary = "Cổ phiếu có dấu hiệu bẫy giá trị (Value Trap) do suy giảm nội tại cấu trúc."
+        reasons.append("Giá rẻ nhưng lợi nhuận suy giảm cấu trúc hoặc dòng tiền phân kỳ nghiêm trọng.")
+        what_would_change.append("Dòng tiền CFO phục hồi xác nhận lợi nhuận thực tế.")
+
+    # Gate 6: Invalid Valuation or Base IV Unavailable
+    elif ctx.model_status != "VALID" or ctx.base_iv is None or ctx.base_iv <= 0:
+        decision = "WAIT_FOR_MOS" if not is_existing_holding else "HOLD"
+        confidence = "LOW"
+        summary = "Mô hình định giá chưa hoàn chỉnh hoặc chưa đủ dữ liệu giá trị nội tại."
+        reasons.append("Thiếu định giá Base IV hợp lệ.")
+        what_would_change.append("Cập nhật đầy đủ BCTC để tính toán định giá Base IV.")
+
+    # Gate 7: Price above acceptable MOS Entry Value
+    elif (
+        ctx.current_price > 0
+        and ctx.base_iv is not None
+        and ctx.base_iv > 0
+        and ctx.current_price > (ctx.base_iv * (1.0 - (ctx.required_mos if ctx.required_mos is not None else 15.0) / 100.0))
+    ):
+        decision = "WAIT_FOR_MOS"
+        confidence = "HIGH" if ctx.valuation_confidence == "HIGH" else "MEDIUM"
+        summary = "Doanh nghiệp tốt nhưng giá thị trường chưa tiệm cận Biên an toàn (Margin of Safety) yêu cầu."
+        reasons.append(f"Giá thị trường ({ctx.current_price:,.0f}) cao hơn mức mua an toàn (Base IV: {ctx.base_iv:,.0f}).")
+        what_would_change.append("Thị trường điều chỉnh về mức Biên an toàn yêu cầu hoặc IV tăng trưởng.")
+
+
+
+    # Gate 8: Position Capacity Exceeded
+    elif is_existing_holding and ctx.current_weight >= 0.35:
+        decision = "HOLD_NO_NEW_CAPITAL"
+        confidence = "HIGH"
+        summary = "Doanh nghiệp tốt và định giá hợp lý, nhưng vị thế đã đạt ngưỡng giới hạn tỷ trọng danh mục (35%)."
+        reasons.append("Tỷ trọng vị thế hiện tại đã đạt trần chính sách danh mục.")
+        what_would_change.append("Tỷ trọng vị thế giảm xuống dưới 30% NAV do biến động hoặc tăng NAV.")
+
+    # Gate 9: Fully Qualified BUY / BUY_MORE
+    elif (
+        ctx.business_review_status in ("BUSINESS_PASS", "PASS")
+        and ctx.value_trap_status in ("CLEAR", "WATCH")
+        and ctx.available_long_term_capital > 0
+    ):
+        decision = "BUY_MORE" if is_existing_holding else "BUY"
+        confidence = "HIGH" if ctx.valuation_confidence == "HIGH" else "MEDIUM"
+        summary = "Doanh nghiệp chất lượng cao, Biên an toàn hấp dẫn, vốn cá nhân bền vững."
+        reasons.append("Hội đủ tất cả các điều kiện chất lượng, định giá và nguồn vốn dài hạn.")
+        what_would_change.append("Giá thị trường tăng vượt Base IV hoặc vị thế đạt trần tỷ trọng.")
+
+    # Default Gate: HOLD / NO ACTION REQUIRED
+    else:
+        decision = "HOLD"
+        confidence = "MEDIUM"
+        summary = "Tài sản lành mạnh. Chưa có cơ hội mở rộng vị thế mới. Không cần hành động."
+        reasons.append("Doanh nghiệp hoạt động bình thường, không có dấu hiệu suy thoái.")
+        what_would_change.append("Giá cổ phiếu chiết khấu sâu hơn hoặc có biến động фундаментаl.")
+
+    return DecisionEvidence(
+        symbol=ctx.symbol,
+        decision=decision,
+        confidence=confidence,
+        summary=summary,
+        reasons=reasons,
+        facts=[
+            {"metric": "current_price", "value": ctx.current_price},
+            {"metric": "base_iv", "value": ctx.base_iv},
+            {"metric": "bear_iv", "value": ctx.bear_iv},
+            {"metric": "quality_tier", "value": ctx.quality_tier},
+            {"metric": "available_capital", "value": ctx.available_long_term_capital},
+        ],
+        rules_triggered=rules,
+        warnings=ctx.warnings,
+        missing_data=ctx.missing_data,
+        what_changed=[],
+        what_would_change_decision=what_would_change,
+    )

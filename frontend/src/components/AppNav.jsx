@@ -13,21 +13,21 @@ import {
 import AppearanceControls from './AppearanceControls.jsx';
 
 const LINKS = [
-  ['/', 'portfolio', 'Tổng quan'],
-  ['/transactions', 'transactions', 'Giao dịch'],
-  ['/performance', 'performance', 'Hiệu quả'],
-  ['/valuation', 'valuation', 'Định giá'],
-  ['/screener', 'screener', 'Bộ lọc'],
-  ['/allocation', 'allocation', 'Phân bổ vốn'],
-  ['/risk', 'risk', 'Phân tích'],
+  ['/terminal', 'portfolio', 'Terminal'],
+  ['/business', 'valuation', 'Doanh nghiệp'],
+  ['/capital', 'allocation', 'Vốn cá nhân'],
+  ['/history', 'performance', 'Lịch sử tích sản'],
 ];
 
 const NAVIGATION_LINKS = [
-  ...LINKS.map(item => [...item, item[2] === 'Tổng quan' ? 'Tài sản và vị thế hiện tại' : item[2] === 'Giao dịch' ? 'Ghi nhận hoạt động danh mục' : item[2] === 'Hiệu quả' ? 'Lợi nhuận và lịch sử NAV' : item[2] === 'Định giá' ? 'BCTC và giá trị nội tại' : item[2] === 'Phân bổ vốn' ? 'Khuyến nghị phân bổ vốn dài hạn' : 'Rủi ro và mức độ tập trung']),
-  ['/dividends', 'dividends', 'Cổ tức', 'Sự kiện và khoản thực nhận'],
-  ['/snapshots', 'snapshots', 'Nhật ký NAV', 'Các mốc dữ liệu chính thức'],
-  ['/guide', 'guide', 'Hướng dẫn', 'Cách sử dụng QPort'],
+  ['/terminal', 'portfolio', 'Terminal', 'Pháo đài cá nhân và ma trận quyết định'],
+  ['/business', 'valuation', 'Doanh nghiệp', 'Phân tích 7 chiều, Moat và Bẫy giá trị'],
+  ['/capital', 'allocation', 'Vốn cá nhân', 'Dự phòng sinh tồn và Vốn khả dụng dài hạn'],
+  ['/history', 'performance', 'Lịch sử tích sản', 'Lợi nhuận TWR/XIRR và nhật ký giao dịch'],
+  ['/risk', 'risk', 'Phân tích rủi ro', 'Chẩn đoán biến động nâng cao'],
+  ['/guide', 'guide', 'Hướng dẫn', 'Triết lý và cách dùng QPort'],
 ];
+
 
 function anchoredPopoverStyle(trigger, preferredWidth) {
   if (!trigger || typeof window === 'undefined') return undefined;

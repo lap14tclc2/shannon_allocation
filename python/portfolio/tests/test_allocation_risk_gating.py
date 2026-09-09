@@ -575,3 +575,75 @@ def test_31_permanent_loss_top_concerns_separate_balance_sheet_and_valuation():
     assert "rủi ro bảng cân đối cao" in fpt_concern
     assert "MOS thấp hơn yêu cầu 1.3 điểm %" in fpt_concern
     assert "tài chính/định giá" not in fpt_concern
+
+
+def test_32_high_volatility_and_high_risk_contribution_do_not_cause_sell_or_reduce():
+    """T02 Invariant: High risk contribution and volatility CANNOT cause SELL or REDUCE for an intact business."""
+    from portfolio.allocation.opportunity import decide_holding
+    from portfolio.allocation.models import EligibilityResult
+
+    eligibility = EligibilityResult(
+        symbol="FPT",
+        status="BUY_READY",
+        quality_tier="HIGH_QUALITY",
+        quality_score=85,
+        actual_mos_pct=25.0,
+        required_mos_pct=15.0,
+        valuation_safety=10.0,
+        data_quality="READY",
+        reason_codes=("QUALIFIED",),
+        hard_rejects=(),
+    )
+
+    # Extreme risk contribution (80% of portfolio risk) and high volatility
+    decision = decide_holding(
+        eligibility=eligibility,
+        current_weight=0.15,
+        target_min=0.05,
+        target_mid=0.20,
+        target_max=0.35,
+        risk_contribution=0.80,
+        equal_risk=0.25,
+        risk_actionable=True,
+    )
+
+    # Must NOT be SELL or REDUCE
+    assert decision.action not in ("SELL", "REDUCE")
+    assert decision.action in ("HOLD", "BUY_MORE")
+
+
+def test_33_drawdown_does_not_cause_automatic_sell():
+    """T02 Invariant: Drawdown or price drop does not trigger SELL for an intact thesis."""
+    from portfolio.allocation.opportunity import decide_holding
+    from portfolio.allocation.models import EligibilityResult
+
+    eligibility = EligibilityResult(
+        symbol="ACB",
+        status="BUY_READY",
+        quality_tier="HIGH_QUALITY",
+        quality_score=80,
+        actual_mos_pct=35.0,  # Price dropped, MOS increased
+        required_mos_pct=15.0,
+        valuation_safety=20.0,
+        data_quality="READY",
+        reason_codes=("QUALIFIED",),
+        hard_rejects=(),
+    )
+
+    decision = decide_holding(
+        eligibility=eligibility,
+        current_weight=0.10,
+        target_min=0.05,
+        target_mid=0.20,
+        target_max=0.35,
+        risk_contribution=None,
+        equal_risk=None,
+        risk_actionable=True,
+    )
+
+
+    assert decision.action != "SELL"
+    assert decision.action in ("HOLD", "BUY_MORE")
+
+
+

@@ -91,6 +91,16 @@
 | [TASK-20260907-112](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-112-finalize-risk-semantics-and-gate-allocation-on-reliable-market-risk-evidence.md) | Finalize Risk Semantics and Gate Allocation on Reliable Market-Risk Evidence | completed | high | 2026-09-07 |
 | [TASK-20260907-113](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-113-make-allocation-buffett-first-and-demote-market-risk-to-sizing-overlay.md) | Make Allocation Buffett-First and Demote Market Risk to Sizing Overlay | completed | high | 2026-09-07 |
 | [TASK-20260907-114](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260907-114-align-allocation-with-buffett-first-thesis-concentration-and-risk-overlay-semantics.md) | Align Allocation with Buffett-First Thesis, Concentration, and Risk-Overlay Semantics | ready | high | 2026-09-07 |
+| [TASK-20260909-115](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-115-qport-buffett-terminal-audit.md) | QPort Buffett Terminal Architecture Audit (T00) | completed | high | 2026-09-09 |
+| [TASK-20260909-116](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-116-qport-buffett-munger-investment-policy.md) | Canonical Buffett-Munger Investment Policy (T01) | completed | high | 2026-09-09 |
+| [TASK-20260909-117](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-117-remove-risk-driven-allocation-decisions.md) | Remove Risk-Driven Allocation Decisions (T02) | completed | high | 2026-09-09 |
+| [TASK-20260909-118](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-118-canonical-investment-decision-context.md) | Canonical InvestmentDecisionContext (T03) | completed | high | 2026-09-09 |
+| [TASK-20260909-119](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-119-qport-personal-balance-sheet-and-stress-engine.md) | Personal Balance Sheet Domain & Stress Engine (T04-T06) | completed | high | 2026-09-09 |
+| [TASK-20260909-120](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-120-business-review-and-value-trap-gate.md) | Buffett-Munger Business Review & Value Trap Gate (T07, T07A-T07J) | completed | high | 2026-09-09 |
+| [TASK-20260909-121](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-121-core-decision-engine-and-evidence-contract.md) | Buffett-Munger Core Decision Engine & Evidence Contract (T08, T09) | completed | high | 2026-09-09 |
+| [TASK-20260909-122](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-122-qport-buffett-terminal-workspaces-and-navigation.md) | QPort Buffett Workspaces, API Endpoints & Navigation (T10-T16) | completed | high | 2026-09-09 |
+| [TASK-20260909-123](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-123-golden-baseline-regression-and-system-invariants.md) | Golden Baseline Regression & System Invariants Test Suite (T17, T20) | completed | high | 2026-09-09 |
+
 
 
 
