@@ -136,6 +136,31 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         reasons.append("Thiếu dữ liệu để xác nhận Value Trap CLEAR.")
         what_would_change.append("Bổ sung dữ liệu tài chính lịch sử để hoàn thiện đánh giá Value Trap.")
 
+    # Gate 5D: Data Readiness Blocked Gate (P0-1)
+    elif (
+        ctx.data_readiness.get("financial_core") == "BLOCKED"
+        or ctx.data_readiness.get("valuation") == "BLOCKED"
+        or ctx.data_readiness.get("personal_finance") == "BLOCKED"
+        or ctx.data_readiness.get("business_review") == "BLOCKED"
+        or ctx.data_readiness.get("value_trap") == "BLOCKED"
+    ):
+        decision = "HOLD" if is_existing_holding else "WAIT_FOR_MOS"
+        confidence = "LOW"
+        summary = "Dữ liệu chưa đạt trạng thái sẵn sàng (Data Readiness BLOCKED). Mua mới / mua thêm bị cấm."
+        reasons.append("Trạng thái sẵn sàng dữ liệu bị khóa (BLOCKED). Mua mới bị cấm.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-00-DATA-READINESS-BLOCKED",
+                metric="data_readiness",
+                value=str(ctx.data_readiness),
+                threshold="READY",
+                status="TRIGGERED",
+                source="context_builder",
+                description="Trạng thái sẵn sàng dữ liệu chưa đạt yêu cầu.",
+            )
+        )
+        what_would_change.append("Hoàn thiện dữ liệu báo cáo tài chính và định giá để đưa readiness về READY.")
+
     # Gate 6: Invalid Valuation or Base IV Unavailable
     elif ctx.model_status not in ("VALID", "VERIFIED", "MODEL_VERIFIED") or ctx.base_iv is None or ctx.base_iv <= 0:
         decision = "WAIT_FOR_MOS" if not is_existing_holding else "HOLD"
@@ -171,6 +196,11 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         and ctx.value_trap_status == "CLEAR"
         and ctx.survival_reserve_status == "SAFE"
         and ctx.available_long_term_capital > 0
+        and ctx.data_readiness.get("financial_core", "READY") != "BLOCKED"
+        and ctx.data_readiness.get("valuation", "READY") != "BLOCKED"
+        and ctx.data_readiness.get("personal_finance", "READY") != "BLOCKED"
+        and ctx.data_readiness.get("business_review", "READY") != "BLOCKED"
+        and ctx.data_readiness.get("value_trap", "READY") != "BLOCKED"
     ):
         decision = "BUY_MORE" if is_existing_holding else "BUY"
         confidence = "HIGH" if ctx.valuation_confidence == "HIGH" else "MEDIUM"

@@ -2117,37 +2117,10 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
 
     for pos in positions:
         sym = pos.get("symbol")
-        val_rep = svc.valuation(sym) if hasattr(svc, "valuation") else {}
-        b_rev = evaluate_business_review(sym, valuation_report=val_rep).to_dict()
-        v_trap = evaluate_value_trap(sym, valuation_report=val_rep).to_dict()
-        pf_status = durability.to_dict() if pb_data else None
-
-        ctx = build_decision_context(
-            symbol=sym,
-            holding=pos,
-            valuation=val_rep,
-            personal_finance=pf_status,
-            business_review=b_rev,
-            value_trap=v_trap,
-        )
-        evidence = evaluate_decision(ctx).to_dict()
-
-        item = {
-            "symbol": sym,
-            "weight": pos.get("weight"),
-            "market_value": pos.get("market_value"),
-            "quality_tier": val_rep.get("quality_tier") or "UNKNOWN",
-            "price": pos.get("price"),
-            "bear_iv": val_rep.get("bear_iv"),
-            "base_iv": val_rep.get("base_iv"),
-            "actual_mos_pct": val_rep.get("actual_mos_pct"),
-            "value_trap_status": v_trap.get("status"),
-            "decision": evidence.get("decision"),
-            "evidence": evidence,
-        }
+        item = svc.runtime_decision(sym)
         decision_items.append(item)
 
-        if evidence.get("decision") in ("BUILD_RESERVE_FIRST", "REVIEW_BUSINESS", "WAIT_FOR_MOS", "SELL_REVIEW", "SELL"):
+        if item.get("decision") in ("BUILD_RESERVE_FIRST", "REVIEW_BUSINESS", "WAIT_FOR_MOS", "SELL_REVIEW", "SELL"):
             exceptions.append(item)
 
     # Coach Summary
@@ -2173,31 +2146,11 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
 @app.get("/api/portfolio/business/{symbol}")
 def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Business Workspace detail endpoint."""
-    from portfolio.policy.context_builder import build_decision_context
-    from portfolio.policy.engine import evaluate_decision
-    from portfolio.value_engine.business_review import evaluate_business_review
-    from portfolio.value_engine.value_trap import evaluate_value_trap
-
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     ticker = str(symbol or "").strip().upper()
 
-    dash = svc.dashboard()
-    positions = dash.get("positions") or []
-    holding = next((p for p in positions if p.get("symbol") == ticker), None)
-
-    val_rep = svc.valuation(ticker) if hasattr(svc, "valuation") else {}
-    b_rev = evaluate_business_review(ticker, valuation_report=val_rep).to_dict()
-    v_trap = evaluate_value_trap(ticker, valuation_report=val_rep).to_dict()
-
-    ctx = build_decision_context(
-        symbol=ticker,
-        holding=holding,
-        valuation=val_rep,
-        business_review=b_rev,
-        value_trap=v_trap,
-    )
-    evidence = evaluate_decision(ctx).to_dict()
+    runtime_data = svc.runtime_decision(ticker)
 
     munger_checklist = [
         {"question": "Tại sao luận điểm đầu tư này có thể sai?", "key": "thesis_failure"},
@@ -2213,11 +2166,11 @@ def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(defau
     return {
         "ok": True,
         "symbol": ticker,
-        "holding": holding,
-        "valuation": val_rep,
-        "business_review": b_rev,
-        "value_trap": v_trap,
-        "decision": evidence,
+        "holding": runtime_data["holding"],
+        "valuation": runtime_data["valuation"],
+        "business_review": runtime_data["business_review"],
+        "value_trap": runtime_data["value_trap"],
+        "decision": runtime_data["evidence"],
         "munger_checklist": munger_checklist,
     }
 

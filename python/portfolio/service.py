@@ -104,6 +104,89 @@ class PortfolioService:
         self.store.set_meta("personal_balance_sheet_json", json.dumps(clean_dict, ensure_ascii=False))
         return {"ok": True, "personal_balance_sheet": clean_dict}
 
+    def valuation(self, symbol: str) -> dict:
+        ticker = str(symbol or "").strip().upper()
+        if not ticker:
+            return {}
+        try:
+            from .screener import compute_all_screener_scores
+            scored = compute_all_screener_scores()
+            val = next((item for item in scored if str(item.get("symbol") or "").upper() == ticker), None)
+            if val:
+                return val
+        except Exception:
+            pass
+        try:
+            from .finance_catalog import valuation_snapshot_from_catalog
+            snap = valuation_snapshot_from_catalog(ticker)
+            if snap.get("ok"):
+                return snap
+        except Exception:
+            pass
+        return {}
+
+    def runtime_decision(self, symbol: str) -> dict:
+        from portfolio.personal_finance.models import PersonalBalanceSheetInput
+        from portfolio.personal_finance.service import calculate_capital_durability
+        from portfolio.policy.context_builder import build_decision_context
+        from portfolio.policy.engine import evaluate_decision
+        from portfolio.value_engine.business_review import evaluate_business_review
+        from portfolio.value_engine.value_trap import evaluate_value_trap
+
+        ticker = str(symbol or "").strip().upper()
+        dash = self.dashboard()
+        positions = dash.get("positions") or []
+        holding = next((p for p in positions if str(p.get("symbol") or "").upper() == ticker), None)
+        cash = float(dash.get("cash") or 0.0)
+        equity = float(dash.get("equity_value") or 0.0)
+
+        val_rep = self.valuation(ticker)
+        b_rev = evaluate_business_review(ticker, valuation_report=val_rep).to_dict()
+
+        fin_history = val_rep.get("financial_history") or val_rep.get("history") or []
+        v_trap = evaluate_value_trap(ticker, valuation_report=val_rep, financial_history=fin_history).to_dict()
+
+        pb_data = self.get_personal_balance_sheet()
+        if pb_data:
+            pb_input = PersonalBalanceSheetInput.from_dict(pb_data)
+            durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+            pf_status = durability.to_dict()
+        else:
+            pf_status = None
+
+        ctx = build_decision_context(
+            symbol=ticker,
+            holding=holding,
+            valuation=val_rep,
+            personal_finance=pf_status,
+            business_review=b_rev,
+            value_trap=v_trap,
+        )
+        evidence = evaluate_decision(ctx).to_dict()
+
+        weight = holding.get("weight") if holding else 0.0
+        market_value = holding.get("market_value") if holding else 0.0
+
+        return {
+            "symbol": ticker,
+            "holding": holding,
+            "weight": weight,
+            "market_value": market_value,
+            "quality_tier": val_rep.get("quality_tier") or "UNKNOWN",
+            "price": val_rep.get("price") or (holding.get("price") if holding else None),
+            "bear_iv": val_rep.get("bear_iv"),
+            "base_iv": val_rep.get("base_iv"),
+            "actual_mos_pct": val_rep.get("actual_mos_pct"),
+            "valuation": val_rep,
+            "business_review": b_rev,
+            "value_trap": v_trap,
+            "personal_finance": pf_status,
+            "decision_context": ctx.to_dict(),
+            "value_trap_status": v_trap.get("status"),
+            "decision": evidence.get("decision"),
+            "evidence": evidence,
+        }
+
     @staticmethod
     def _position_status(weight: float, reference: float | None) -> str:
         if reference is None or reference <= 0:
