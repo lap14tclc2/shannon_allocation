@@ -163,7 +163,9 @@ export async function removePortfolio(portfolioId, confirmation) {
 }
 
 export const getPortfolioDashboard = () => getJSON('/api/portfolio');
+export const getBuffettTerminalData = () => getJSON('/api/portfolio/terminal');
 export async function getPortfolioHoldingSymbols() {
+
   const data = await getJSON('/api/portfolio/holding-symbols');
   return data.symbols || [];
 }

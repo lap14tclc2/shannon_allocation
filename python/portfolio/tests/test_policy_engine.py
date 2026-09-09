@@ -140,3 +140,87 @@ def test_golden_8_price_above_acceptable_mos_causes_wait_for_mos():
 
     ev = evaluate_decision(ctx)
     assert ev.decision == "WAIT_FOR_MOS"
+
+
+def test_golden_9_model_verified_allows_buy():
+    """Invariant: MODEL_VERIFIED status is accepted as READY valuation status and allows BUY."""
+    ctx = InvestmentDecisionContext(
+        symbol="ACB",
+        current_weight=0.0,
+        current_price=20000,
+        base_iv=35000,
+        bear_iv=28000,
+        required_mos=15.0,
+        actual_mos=42.8,
+        model_status="MODEL_VERIFIED",
+        valuation_confidence="HIGH",
+        business_review_status="BUSINESS_PASS",
+        value_trap_status="CLEAR",
+        survival_reserve_status="SAFE",
+        available_long_term_capital=500_000_000,
+    )
+
+    ev = evaluate_decision(ctx)
+    assert ev.decision == "BUY"
+
+
+def test_golden_10_valuetrap_watch_prohibits_buy():
+    """Invariant: ValueTrap WATCH status prohibits BUY and BUY_MORE even when MOS is satisfied."""
+    ctx = InvestmentDecisionContext(
+        symbol="WATCH_SYM",
+        current_weight=0.0,
+        current_price=10000,
+        base_iv=30000,
+        required_mos=15.0,
+        model_status="MODEL_VERIFIED",
+        business_review_status="BUSINESS_PASS",
+        value_trap_status="WATCH",
+        survival_reserve_status="SAFE",
+        available_long_term_capital=500_000_000,
+    )
+
+    ev = evaluate_decision(ctx)
+    assert ev.decision != "BUY"
+    assert ev.decision != "BUY_MORE"
+    assert ev.decision in ("WAIT_FOR_MOS", "REVIEW_BUSINESS", "HOLD")
+
+
+def test_golden_11_valuetrap_insufficient_data_prohibits_buy():
+    """Invariant: ValueTrap INSUFFICIENT_DATA status prohibits BUY and BUY_MORE."""
+    ctx = InvestmentDecisionContext(
+        symbol="NODATA_SYM",
+        current_weight=0.0,
+        current_price=10000,
+        base_iv=30000,
+        required_mos=15.0,
+        model_status="MODEL_VERIFIED",
+        business_review_status="BUSINESS_PASS",
+        value_trap_status="INSUFFICIENT_DATA",
+        survival_reserve_status="SAFE",
+        available_long_term_capital=500_000_000,
+    )
+
+    ev = evaluate_decision(ctx)
+    assert ev.decision != "BUY"
+    assert ev.decision != "BUY_MORE"
+
+
+def test_golden_12_personal_finance_unknown_prohibits_buy():
+    """Invariant: Personal finance UNKNOWN status forces BUILD_RESERVE_FIRST and prohibits BUY."""
+    ctx = InvestmentDecisionContext(
+        symbol="FPT",
+        current_weight=0.0,
+        current_price=100000,
+        base_iv=150000,
+        required_mos=15.0,
+        model_status="MODEL_VERIFIED",
+        business_review_status="BUSINESS_PASS",
+        value_trap_status="CLEAR",
+        survival_reserve_status="UNKNOWN",
+        available_long_term_capital=0.0,
+    )
+
+    ev = evaluate_decision(ctx)
+    assert ev.decision == "BUILD_RESERVE_FIRST"
+    assert ev.decision != "BUY"
+

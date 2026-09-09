@@ -515,3 +515,17 @@ def test_reduce_small_holding_weight_never_targets_zero():
         assert dec.target_mid is not None
         assert 0.0 < dec.target_mid < small_w
         assert 0.0 < dec.target_min <= dec.target_mid <= dec.target_max
+
+
+def test_circle_of_competence_fail_does_not_sell():
+    """Invariant: CIRCLE_OF_COMPETENCE_FAIL is non-destructive evidence and must NOT cause SELL."""
+    sig = {
+        "symbol": "TECH_STARTUP",
+        "quality_tier": "WATCH",
+        "hard_rejects": ["CIRCLE_OF_COMPETENCE_FAIL"],
+    }
+    elig = eligibility_from_signal(sig)
+    dec = decide_holding(elig, current_weight=0.10, risk_contribution=None, equal_risk=None)
+    assert dec.action != "SELL"
+    assert dec.action == "HOLD"
+    assert dec.target_mid == 0.10

@@ -92,12 +92,17 @@ def build_decision_context(
     ctx.missing_data = list(dict.fromkeys(missing_fields))
     ctx.warnings = list(dict.fromkeys(warnings))
 
+    eq_status = value_trap.get("earnings_quality", "UNKNOWN") if value_trap else "UNKNOWN"
+    arch_status = valuation.get("archetype_readiness", "NOT_APPLICABLE") if valuation else "NOT_APPLICABLE"
+
     ctx.data_readiness = {
         "financial_core": "READY" if valuation else "BLOCKED",
-        "valuation": "READY" if ctx.model_status in ("VALID", "VERIFIED") else "PARTIAL" if valuation else "BLOCKED",
-        "business_review": "READY" if business_review else "PARTIAL",
-        "value_trap": "READY" if value_trap else "PARTIAL",
-        "personal_finance": "READY" if personal_finance else "BLOCKED",
+        "valuation": "READY" if ctx.model_status in ("VALID", "VERIFIED", "MODEL_VERIFIED") else "PARTIAL" if valuation else "BLOCKED",
+        "business_review": "READY" if (business_review and ctx.business_review_status in ("BUSINESS_PASS", "PASS", "BUSINESS_FAIL", "FAIL")) else "PARTIAL" if business_review else "BLOCKED",
+        "earnings_quality": "READY" if eq_status in ("CONFIRMED", "PASS", "GOOD") else "PARTIAL" if eq_status == "PARTIAL" else "BLOCKED",
+        "value_trap": "READY" if value_trap and ctx.value_trap_status in ("CLEAR", "WATCH", "HIGH_RISK") else "PARTIAL" if value_trap else "BLOCKED",
+        "personal_finance": "READY" if (personal_finance and ctx.survival_reserve_status in ("SAFE", "ATTENTION", "UNSAFE")) else "BLOCKED",
+        "archetype_specific": arch_status,
     }
 
     return ctx

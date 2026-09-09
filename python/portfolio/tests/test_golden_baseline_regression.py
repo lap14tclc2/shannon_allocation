@@ -43,6 +43,7 @@ def test_golden_scenario_1_buy():
         model_status="VALID",
         business_review_status="BUSINESS_PASS",
         value_trap_status="CLEAR",
+        survival_reserve_status="SAFE",
         available_long_term_capital=100_000_000,
     )
     ev = evaluate_decision(ctx)
@@ -62,6 +63,7 @@ def test_golden_scenario_2_buy_more():
         model_status="VALID",
         business_review_status="BUSINESS_PASS",
         value_trap_status="CLEAR",
+        survival_reserve_status="SAFE",
         available_long_term_capital=100_000_000,
     )
     ev = evaluate_decision(ctx)
@@ -97,6 +99,7 @@ def test_golden_scenario_4_high_volatility_not_sell():
         model_status="VALID",
         business_review_status="BUSINESS_PASS",
         value_trap_status="CLEAR",
+        survival_reserve_status="SAFE",
     )
     ev = evaluate_decision(ctx)
     assert ev.decision not in ("SELL", "SELL_REVIEW")
@@ -111,6 +114,7 @@ def test_golden_scenario_5_value_trap_high_risk_not_buy():
         base_iv=25000,
         model_status="VALID",
         value_trap_status="HIGH_RISK",
+        survival_reserve_status="SAFE",
     )
     ev = evaluate_decision(ctx)
     assert ev.decision in ("AVOID", "REVIEW_BUSINESS")
@@ -161,7 +165,9 @@ def test_golden_scenario_9_no_material_issue_hold():
         model_status="VALID",
         business_review_status="BUSINESS_PASS",
         value_trap_status="CLEAR",
+        survival_reserve_status="SAFE",
     )
     ev = evaluate_decision(ctx)
     assert ev.decision == "HOLD"
+
 

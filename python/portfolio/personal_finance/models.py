@@ -16,14 +16,17 @@ class PersonalBalanceSheetInput:
 
     safe_liquid_assets: float = 0.0  # Cash, savings deposits, short T-bills outside equity portfolio
     near_term_liabilities: float = 0.0  # Debt / commitments due in near_term_horizon_months
-    near_term_horizon_months: int = 12
+    near_term_horizon_months: int = 36
+
+    expected_new_contributions: float = 0.0  # Anticipated capital additions
+    reinvestable_dividends: float = 0.0  # Dividends to be reinvested into equity
 
     consumer_debt: float = 0.0
     personal_debt: float = 0.0
     margin_debt: float = 0.0
     monthly_debt_service: float = 0.0
 
-    lifecycle_stage: str = "EARNING_ACCUMULATION"  # EARNING_ACCUMULATION, MID_CAREER, PRE_RETIREMENT, RETIREMENT
+    lifecycle_stage: str = "SINGLE_ACCUMULATION"  # SINGLE_ACCUMULATION, PRE_MARRIAGE, FAMILY_NO_CHILD, FAMILY_WITH_CHILDREN, SEMI_FI, FI
     target_survival_months: float = 12.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -33,7 +36,17 @@ class PersonalBalanceSheetInput:
     def from_dict(cls, data: dict[str, Any]) -> PersonalBalanceSheetInput:
         valid_fields = cls.__dataclass_fields__.keys()
         filtered = {k: v for k, v in data.items() if k in valid_fields}
+        # Deterministic mapping for legacy lifecycle stages
+        legacy_map = {
+            "EARNING_ACCUMULATION": "SINGLE_ACCUMULATION",
+            "MID_CAREER": "FAMILY_WITH_CHILDREN",
+            "PRE_RETIREMENT": "SEMI_FI",
+            "RETIREMENT": "FI",
+        }
+        if filtered.get("lifecycle_stage") in legacy_map:
+            filtered["lifecycle_stage"] = legacy_map[filtered["lifecycle_stage"]]
         return cls(**filtered)
+
 
 
 @dataclass

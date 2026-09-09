@@ -67,15 +67,21 @@ def calculate_capital_durability(
 
 
     # 4. Available Long-Term Capital calculation (Strict Invariant)
-    # Total available liquid assets (safe liquid + portfolio cash) minus reserve target and debt/liabilities
-    total_liquid = safe_assets + portfolio_cash
-    required_reservations = reserve_target_amount + near_term_due + float(input_data.margin_debt)
+    # Available Long-Term Capital = Deployable Cash + New Contributions + Reinvestable Dividends - Survival Reserve Deficit - Near-Term Liabilities - Margin Debt
+    total_deployable_sources = (
+        portfolio_cash
+        + max(0.0, float(input_data.expected_new_contributions))
+        + max(0.0, float(input_data.reinvestable_dividends))
+    )
+    reserve_shortfall = max(0.0, reserve_target_amount - safe_assets)
+    required_reservations = reserve_shortfall + near_term_due + float(input_data.margin_debt)
 
-    raw_deployable = total_liquid - required_reservations
+    raw_deployable = total_deployable_sources - required_reservations
     available_long_term_capital = max(0.0, raw_deployable)
 
     # Opportunity Cash = portfolio cash portion available after reservations
-    opportunity_cash = max(0.0, portfolio_cash - max(0.0, reserve_target_amount - safe_assets))
+    opportunity_cash = max(0.0, portfolio_cash - reserve_shortfall)
+
 
     # Overall Status
     if survival_reserve_status == "UNSAFE" or near_term_status == "UNCOVERED":

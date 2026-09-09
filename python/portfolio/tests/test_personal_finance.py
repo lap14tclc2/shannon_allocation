@@ -76,3 +76,25 @@ def test_crash_job_loss_stress_engine_scenarios():
     # In JOB_LOSS, safe assets 180M covers 12 months annual burn (180M), so forced sale is False
     job_loss_res = next(s for s in st if s.scenario_name == "JOB_LOSS")
     assert job_loss_res.forced_equity_sale_required is False
+
+
+def test_personal_finance_lifecycle_mapping_and_new_contributions():
+    """Invariant: Legacy lifecycle stages map deterministically and new contributions add to available capital."""
+    data = {
+        "monthly_net_income": 50_000_000,
+        "monthly_essential_spending": 20_000_000,
+        "safe_liquid_assets": 240_000_000,
+        "near_term_liabilities": 40_000_000,
+        "expected_new_contributions": 50_000_000,
+        "reinvestable_dividends": 10_000_000,
+        "lifecycle_stage": "MID_CAREER",  # Legacy label
+    }
+
+    pb = PersonalBalanceSheetInput.from_dict(data)
+    assert pb.lifecycle_stage == "FAMILY_WITH_CHILDREN"
+    assert pb.near_term_horizon_months == 36
+
+    res = calculate_capital_durability(pb, portfolio_equity_value=500_000_000, deployable_portfolio_cash=100_000_000)
+    # Available long term capital = 60M base + 50M new contributions + 10M reinvestable dividends = 120M
+    assert res.available_long_term_capital == 120_000_000
+

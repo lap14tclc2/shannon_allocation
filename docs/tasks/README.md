@@ -100,6 +100,8 @@
 | [TASK-20260909-121](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-121-core-decision-engine-and-evidence-contract.md) | Buffett-Munger Core Decision Engine & Evidence Contract (T08, T09) | completed | high | 2026-09-09 |
 | [TASK-20260909-122](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-122-qport-buffett-terminal-workspaces-and-navigation.md) | QPort Buffett Workspaces, API Endpoints & Navigation (T10-T16) | completed | high | 2026-09-09 |
 | [TASK-20260909-123](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-123-golden-baseline-regression-and-system-invariants.md) | Golden Baseline Regression & System Invariants Test Suite (T17, T20) | completed | high | 2026-09-09 |
+| [TASK-20260909-124](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-124-fix-buffett-munger-refactor-semantic-blockers.md) | Fix Buffett/Munger Refactor Semantic Blockers | completed | high | 2026-09-09 |
+
 
 
 

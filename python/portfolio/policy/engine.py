@@ -27,27 +27,8 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
     what_would_change: list[str] = []
     is_existing_holding = ctx.current_weight > 0 or ctx.shares_held > 0
 
-    # Gate 1: Personal Balance Sheet / Survival Reserve Check
-    if ctx.survival_reserve_status in ("UNSAFE", "UNSATISFACTORY"):
-        decision = "BUILD_RESERVE_FIRST"
-        confidence = "HIGH"
-        summary = "Doanh nghiệp hấp dẫn nhưng quỹ dự phòng cá nhân chưa an toàn. Cần xây dựng dự phòng trước khi phân bổ vốn cổ phần."
-        reasons.append("Quỹ dự phòng an toàn cá nhân dưới mức mục tiêu chính sách.")
-        rules.append(
-            DecisionRuleTrigger(
-                rule_id="R-01-SURVIVAL-RESERVE",
-                metric="survival_reserve_status",
-                value=ctx.survival_reserve_status,
-                threshold="SAFE",
-                status="TRIGGERED",
-                source="personal_finance",
-                description="Trạng thái quỹ dự phòng cá nhân yếu.",
-            )
-        )
-        what_would_change.append("Gia tăng tài sản thanh khoản an toàn để khôi phục quỹ dự phòng về mức SAFE.")
-
-    # Gate 2: Accounting Reliability or Data Integrity Conflict
-    elif ctx.accounting_reliability == "FAIL" or "ACCOUNTING_UNRELIABLE" in ctx.hard_rejects:
+    # Gate 1: Accounting Reliability or Data Integrity Conflict
+    if ctx.accounting_reliability == "FAIL" or "ACCOUNTING_UNRELIABLE" in ctx.hard_rejects:
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
         confidence = "HIGH"
         summary = "Báo cáo tài chính không đáng tin cậy. Tối quan trọng bảo vệ vốn."
@@ -65,7 +46,7 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
         what_would_change.append("Báo cáo tài chính được kiểm toán độc lập xác nhận minh bạch.")
 
-    # Gate 3: Solvency Failure / Solvency Risk
+    # Gate 2: Solvency Failure / Solvency Risk
     elif ctx.financial_strength == "FAIL" or "SOLVENCY_RISK" in ctx.hard_rejects:
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
         confidence = "HIGH"
@@ -84,6 +65,26 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
         what_would_change.append("Doanh nghiệp tái cơ cấu nợ và tái lập dòng tiền kinh doanh dương.")
 
+    # Gate 3: Personal Balance Sheet / Survival Reserve Check
+    elif ctx.survival_reserve_status in ("UNSAFE", "UNSATISFACTORY", "UNKNOWN"):
+        decision = "BUILD_RESERVE_FIRST"
+        confidence = "HIGH"
+        summary = "Doanh nghiệp hấp dẫn nhưng tài chính cá nhân chưa an toàn hoặc thiếu dữ liệu. Cần hoàn thiện dự phòng."
+        reasons.append("Quỹ dự phòng an toàn cá nhân / dữ liệu tài chính chưa đạt tiêu chí an toàn.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-01-SURVIVAL-RESERVE",
+                metric="survival_reserve_status",
+                value=ctx.survival_reserve_status,
+                threshold="SAFE",
+                status="TRIGGERED",
+                source="personal_finance",
+                description="Trạng thái quỹ dự phòng cá nhân không an toàn.",
+            )
+        )
+        what_would_change.append("Gia tăng tài sản thanh khoản an toàn để khôi phục quỹ dự phòng về mức SAFE.")
+
+
     # Gate 4: Business Review Quality Failure
     elif ctx.business_review_status == "BUSINESS_FAIL":
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
@@ -100,8 +101,24 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         reasons.append("Giá rẻ nhưng lợi nhuận suy giảm cấu trúc hoặc dòng tiền phân kỳ nghiêm trọng.")
         what_would_change.append("Dòng tiền CFO phục hồi xác nhận lợi nhuận thực tế.")
 
+    # Gate 5B: Value Trap Watch
+    elif ctx.value_trap_status == "WATCH":
+        decision = "REVIEW_BUSINESS" if is_existing_holding else "WAIT_FOR_MOS"
+        confidence = "MEDIUM"
+        summary = "Cổ phiếu thuộc danh sách theo dõi bẫy giá trị (ValueTrap WATCH). Không cho phép mở vị thế mua mới."
+        reasons.append("Trạng thái bẫy giá trị ở mức WATCH (theo dõi). Mua mới bị cấm.")
+        what_would_change.append("Xác nhận dòng tiền kinh doanh và đưa trạng thái bẫy giá trị về CLEAR.")
+
+    # Gate 5C: Value Trap Insufficient Data
+    elif ctx.value_trap_status == "INSUFFICIENT_DATA":
+        decision = "HOLD" if is_existing_holding else "WAIT_FOR_MOS"
+        confidence = "LOW"
+        summary = "Dữ liệu chưa đủ để kết luận bẫy giá trị (INSUFFICIENT_DATA). Mua mới mặc định bị cấm."
+        reasons.append("Thiếu dữ liệu để xác nhận Value Trap CLEAR.")
+        what_would_change.append("Bổ sung dữ liệu tài chính lịch sử để hoàn thiện đánh giá Value Trap.")
+
     # Gate 6: Invalid Valuation or Base IV Unavailable
-    elif ctx.model_status != "VALID" or ctx.base_iv is None or ctx.base_iv <= 0:
+    elif ctx.model_status not in ("VALID", "VERIFIED", "MODEL_VERIFIED") or ctx.base_iv is None or ctx.base_iv <= 0:
         decision = "WAIT_FOR_MOS" if not is_existing_holding else "HOLD"
         confidence = "LOW"
         summary = "Mô hình định giá chưa hoàn chỉnh hoặc chưa đủ dữ liệu giá trị nội tại."
@@ -121,8 +138,6 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         reasons.append(f"Giá thị trường ({ctx.current_price:,.0f}) cao hơn mức mua an toàn (Base IV: {ctx.base_iv:,.0f}).")
         what_would_change.append("Thị trường điều chỉnh về mức Biên an toàn yêu cầu hoặc IV tăng trưởng.")
 
-
-
     # Gate 8: Position Capacity Exceeded
     elif is_existing_holding and ctx.current_weight >= 0.35:
         decision = "HOLD_NO_NEW_CAPITAL"
@@ -134,7 +149,8 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
     # Gate 9: Fully Qualified BUY / BUY_MORE
     elif (
         ctx.business_review_status in ("BUSINESS_PASS", "PASS")
-        and ctx.value_trap_status in ("CLEAR", "WATCH")
+        and ctx.value_trap_status == "CLEAR"
+        and ctx.survival_reserve_status == "SAFE"
         and ctx.available_long_term_capital > 0
     ):
         decision = "BUY_MORE" if is_existing_holding else "BUY"
@@ -149,7 +165,8 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         confidence = "MEDIUM"
         summary = "Tài sản lành mạnh. Chưa có cơ hội mở rộng vị thế mới. Không cần hành động."
         reasons.append("Doanh nghiệp hoạt động bình thường, không có dấu hiệu suy thoái.")
-        what_would_change.append("Giá cổ phiếu chiết khấu sâu hơn hoặc có biến động фундаментаl.")
+        what_would_change.append("Giá cổ phiếu chiết khấu sâu hơn hoặc có biến động nội tại.")
+
 
     return DecisionEvidence(
         symbol=ctx.symbol,

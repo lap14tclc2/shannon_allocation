@@ -2047,6 +2047,9 @@ def portfolio_update_security(
 def portfolio_activity(
     body: dict = Body(default_factory=dict),
     qport_session: str | None = Cookie(default=None),
+):
+    return portfolio(require_portfolio_user(qport_session)).record_activity(body)
+
 # ---------------------------------------------------------------------------
 # Buffett-Munger Workspaces API Routes (Terminal, Business, Capital, History)
 # ---------------------------------------------------------------------------

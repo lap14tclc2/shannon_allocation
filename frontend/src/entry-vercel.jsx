@@ -26,8 +26,12 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import { applyStoredTheme } from './lib/appearance.js';
 import { NAVIGATION_EVENT, navigate } from './lib/navigation.js';
+import './accessibility-polish.css';
+import './appearance-controls.css';
 
 const APP_LOCALE = 'vi';
+
+
 
 const ROUTES = {
   '/': TerminalPage,

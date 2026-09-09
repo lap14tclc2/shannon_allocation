@@ -210,11 +210,31 @@ def decide_holding(
     if perm_severity == "UNKNOWN" or eligibility.data_quality in ("DATA_INSUFFICIENT", "WATCH"):
         reasons.append(PERMANENT_LOSS_DATA_INSUFFICIENT)
 
-    # Gate 1: Destructive hard reject / thesis break -> SELL (target 0%).
+    DESTRUCTIVE_HARD_REJECTS = {
+        "ACCOUNTING_UNRELIABLE",
+        "SOLVENCY_RISK",
+        "INSOLVENCY",
+        "PERMANENT_IMPAIRMENT",
+        "DESTRUCTIVE_DILUTION",
+        "THESIS_BROKEN",
+        "BROKEN_THESIS",
+    }
+
+
+    has_destructive_reject = any(
+        r in DESTRUCTIVE_HARD_REJECTS
+        or "ACCOUNTING" in r
+        or "SOLVENCY" in r
+        or "INSOLVENCY" in r
+        for r in (eligibility.hard_rejects or [])
+    )
+
+    # Gate 1: Destructive hard reject / confirmed thesis break -> SELL (target 0%).
+    # NON_DESTRUCTIVE rejects (DATA_INSUFFICIENT, CIRCLE_OF_COMPETENCE_FAIL, UNNORMALIZABLE_EARNINGS) MUST NOT automatically trigger SELL.
     is_thesis_broken = (
-        bool(eligibility.hard_rejects)
+        has_destructive_reject
         or perm_thesis_status == "BROKEN"
-        or (THESIS_BROKEN in eligibility.reason_codes)
+        or (THESIS_BROKEN in eligibility.reason_codes and has_destructive_reject)
     )
     if is_thesis_broken:
         reasons.extend([HARD_REJECT, THESIS_BROKEN])
@@ -227,9 +247,10 @@ def decide_holding(
         )
 
     # Gate 2: Confirmed fundamental deterioration or severe confirmed permanent loss -> REDUCE (target > 0).
+    # Market risk metrics (risk_breach, volatility) CANNOT trigger standalone REDUCE actions.
     is_deteriorating_quality = (
         eligibility.quality_tier == "LOW_QUALITY"
-        or (eligibility.status == "INELIGIBLE" and not eligibility.hard_rejects)
+        or (eligibility.status == "INELIGIBLE" and has_destructive_reject)
         or (QUALITY_DETERIORATING in eligibility.reason_codes)
     )
     is_confirmed_severe_permanent_loss = (
@@ -244,9 +265,11 @@ def decide_holding(
         )
     )
     is_hard_cap_governance_breach = (
-        is_concentrated and weight > (hard_cap * 1.5) and risk_breach
-        and (eligibility.valuation_safety is not None and eligibility.valuation_safety < -10.0)
+        is_concentrated and weight > (hard_cap * 1.5)
+        and (eligibility.valuation_safety is not None and eligibility.valuation_safety < -20.0)
+        and (perm_thesis_status in ("WATCH", "DETERIORATING") or eligibility.quality_tier == "LOW_QUALITY")
     )
+
 
     if is_deteriorating_quality or is_confirmed_severe_permanent_loss or is_concentrated_deteriorating or is_hard_cap_governance_breach:
         if is_deteriorating_quality:

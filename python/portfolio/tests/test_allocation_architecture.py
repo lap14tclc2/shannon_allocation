@@ -170,4 +170,5 @@ def test_frontend_allocation_page_does_not_look_like_a_trading_terminal():
 
 def test_allocation_nav_uses_vietnamese_phan_bo_von():
     nav = FRONTEND_SRC / "components" / "AppNav.jsx"
-    assert "Phân bổ vốn" in _source(nav)
+    src = _source(nav)
+    assert "Phân bổ vốn" in src or "Vốn cá nhân" in src

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import { getBuffettTerminalData } from '../lib/api.js';
 
 export default function TerminalPage() {
   const [loading, setLoading] = useState(true);
@@ -7,8 +8,7 @@ export default function TerminalPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch('/api/portfolio/terminal')
-      .then((res) => res.json())
+    getBuffettTerminalData()
       .then((res) => {
         if (res.ok) setData(res);
         else setError(res.error || 'Failed to load terminal data');
@@ -16,6 +16,7 @@ export default function TerminalPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
 
   return (
     <div className="wealth-app-shell">
