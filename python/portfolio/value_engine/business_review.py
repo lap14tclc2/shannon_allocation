@@ -100,14 +100,21 @@ def evaluate_business_review(
     # 4. Earnings Durability
     dur = qual.get("earnings_durability") or val.get("earnings_durability")
     owner_earnings = val.get("owner_earnings") or val.get("normalized_owner_earnings")
-    if dur in ("PASS", "HIGH", "DURABLE") or (dur is None and owner_earnings is not None and owner_earnings > 0):
+    history = val.get("normalized_earnings_history") or val.get("earnings_history") or []
+
+    if dur in ("PASS", "HIGH", "DURABLE"):
         earnings_durability = "PASS"
-    elif dur in ("WATCH", "MODERATE") or (dur is None and owner_earnings is not None and owner_earnings <= 0):
-        earnings_durability = "WATCH"
-        reasons.append("Lợi nhuận chủ sở hữu chưa dương hoặc biến động.")
+    elif dur is None and len(history) >= 3 and all(float(h.get("owner_earnings") or h.get("net_income") or 0) > 0 for h in history):
+        earnings_durability = "PASS"
     elif dur in ("FAIL", "LOW", "UNSTABLE"):
         earnings_durability = "FAIL"
         reasons.append("Khả năng duy trì lợi nhuận không đạt tiêu chí.")
+    elif owner_earnings is not None and owner_earnings > 0:
+        earnings_durability = "WATCH"
+        reasons.append("Chỉ có 1 kỳ Lợi nhuận chủ sở hữu dương, chưa đủ bằng chứng độ bền đa năm.")
+    elif dur in ("WATCH", "MODERATE") or (dur is None and owner_earnings is not None and owner_earnings <= 0):
+        earnings_durability = "WATCH"
+        reasons.append("Lợi nhuận chủ sở hữu chưa dương hoặc biến động.")
     else:
         earnings_durability = "UNKNOWN"
         missing.append("EARNINGS_DURABILITY")

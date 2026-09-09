@@ -95,3 +95,25 @@ def test_build_decision_context_missing_reports_degrades_gracefully():
     assert ctx.available_long_term_capital == 0.0
     assert "VALUATION_REPORT" in ctx.missing_data
     assert "PERSONAL_FINANCE" in ctx.missing_data
+
+
+def test_business_review_result_to_decision_context_contract_integration():
+    """BLOCKER 2: Integration test proving real BusinessReviewResult.to_dict() maps field names into InvestmentDecisionContext."""
+    from portfolio.value_engine.business_review import evaluate_business_review
+    val = {
+        "understandability": "PASS",
+        "quality_tier": "HIGH_QUALITY",
+        "financial_strength_score": 85,
+        "owner_earnings": 100_000_000_000,
+        "earnings_durability": "PASS",
+        "moat_strength": "WIDE",
+        "management_capital_allocation": "PASS",
+        "accounting_reliability": "PASS",
+    }
+    b_rev = evaluate_business_review("FPT", valuation_report=val).to_dict()
+    ctx = build_decision_context("FPT", business_review=b_rev)
+
+    assert ctx.business_review_status == "BUSINESS_PASS"
+    assert ctx.moat_assessment == "PASS"
+    assert ctx.capital_allocation_quality == "PASS"
+    assert ctx.accounting_reliability == "PASS"

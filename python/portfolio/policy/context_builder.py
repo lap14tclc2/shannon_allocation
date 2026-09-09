@@ -56,13 +56,25 @@ def build_decision_context(
 
     # 3. Business Review Integration
     if business_review:
-        ctx.circle_of_competence = business_review.get("circle_of_competence", "UNKNOWN")
+        ctx.circle_of_competence = (
+            business_review.get("understandability")
+            or business_review.get("circle_of_competence", "UNKNOWN")
+        )
         ctx.accounting_reliability = business_review.get("accounting_reliability", "UNKNOWN")
         ctx.financial_strength = business_review.get("financial_strength", "UNKNOWN")
         ctx.earnings_durability = business_review.get("earnings_durability", "UNKNOWN")
-        ctx.capital_allocation_quality = business_review.get("capital_allocation_quality", "UNKNOWN")
-        ctx.moat_assessment = business_review.get("moat_assessment", "UNKNOWN")
-        ctx.business_review_status = business_review.get("status", "UNKNOWN")
+        ctx.capital_allocation_quality = (
+            business_review.get("management_capital_allocation")
+            or business_review.get("capital_allocation_quality", "UNKNOWN")
+        )
+        ctx.moat_assessment = (
+            business_review.get("moat")
+            or business_review.get("moat_assessment", "UNKNOWN")
+        )
+        ctx.business_review_status = (
+            business_review.get("overall_status")
+            or business_review.get("status", "UNKNOWN")
+        )
     else:
         missing_fields.append("BUSINESS_REVIEW")
         ctx.business_review_status = "UNKNOWN"
@@ -95,13 +107,39 @@ def build_decision_context(
     eq_status = value_trap.get("earnings_quality", "UNKNOWN") if value_trap else "UNKNOWN"
     arch_status = valuation.get("archetype_readiness", "NOT_APPLICABLE") if valuation else "NOT_APPLICABLE"
 
+    val_data_status = (
+        valuation.get("data_status")
+        or valuation.get("model_status")
+        or valuation.get("status")
+        if valuation else None
+    )
+
+    if not valuation or val_data_status in ("CONFLICTED", "INSUFFICIENT", "BLOCKED", "INVALID"):
+        fin_readiness = "BLOCKED"
+        val_readiness = "BLOCKED"
+    elif ctx.model_status in ("VALID", "VERIFIED", "MODEL_VERIFIED") and val_data_status in ("READY", "VALID", "VERIFIED", "MODEL_VERIFIED", None):
+        fin_readiness = "READY"
+        val_readiness = "READY"
+    elif ctx.model_status in ("MODEL_PARTIAL", "FALLBACK", "PARTIAL"):
+        fin_readiness = "PARTIAL"
+        val_readiness = "PARTIAL"
+    else:
+        fin_readiness = "PARTIAL" if valuation else "BLOCKED"
+        val_readiness = "PARTIAL" if valuation else "BLOCKED"
+
+    pf_readiness = (
+        "READY"
+        if (personal_finance and ctx.survival_reserve_status in ("SAFE", "ATTENTION", "UNSAFE"))
+        else "BLOCKED"
+    )
+
     ctx.data_readiness = {
-        "financial_core": "READY" if valuation else "BLOCKED",
-        "valuation": "READY" if ctx.model_status in ("VALID", "VERIFIED", "MODEL_VERIFIED") else "PARTIAL" if valuation else "BLOCKED",
+        "financial_core": fin_readiness,
+        "valuation": val_readiness,
         "business_review": "READY" if (business_review and ctx.business_review_status in ("BUSINESS_PASS", "PASS", "BUSINESS_FAIL", "FAIL")) else "PARTIAL" if business_review else "BLOCKED",
         "earnings_quality": "READY" if eq_status in ("CONFIRMED", "PASS", "GOOD") else "PARTIAL" if eq_status == "PARTIAL" else "BLOCKED",
         "value_trap": "READY" if value_trap and ctx.value_trap_status in ("CLEAR", "WATCH", "HIGH_RISK") else "PARTIAL" if value_trap else "BLOCKED",
-        "personal_finance": "READY" if (personal_finance and ctx.survival_reserve_status in ("SAFE", "ATTENTION", "UNSAFE")) else "BLOCKED",
+        "personal_finance": pf_readiness,
         "archetype_specific": arch_status,
     }
 

@@ -98,3 +98,66 @@ def test_personal_finance_lifecycle_mapping_and_new_contributions():
     # Available long term capital = 60M base + 50M new contributions + 10M reinvestable dividends = 120M
     assert res.available_long_term_capital == 120_000_000
 
+
+def test_multi_user_personal_finance_isolation(tmp_path):
+    """BLOCKER 1: Two users with different Personal Balance Sheets receive different capital durability results."""
+    from portfolio.service import PortfolioService
+    from portfolio.storage import PortfolioStore
+
+    db1 = tmp_path / "u1.sqlite3"
+    db2 = tmp_path / "u2.sqlite3"
+
+    svc1 = PortfolioService(store=PortfolioStore(db1))
+    svc2 = PortfolioService(store=PortfolioStore(db2))
+
+    # User 1 has strong fortress
+    svc1.set_personal_balance_sheet({
+        "monthly_net_income": 100_000_000,
+        "monthly_essential_spending": 20_000_000,
+        "safe_liquid_assets": 500_000_000,
+        "near_term_liabilities": 0.0,
+    })
+
+    # User 2 has weak fortress
+    svc2.set_personal_balance_sheet({
+        "monthly_net_income": 20_000_000,
+        "monthly_essential_spending": 20_000_000,
+        "safe_liquid_assets": 10_000_000,
+        "near_term_liabilities": 50_000_000,
+    })
+
+    pb1 = svc1.get_personal_balance_sheet()
+    pb2 = svc2.get_personal_balance_sheet()
+
+    assert pb1 != pb2
+    assert pb1["safe_liquid_assets"] == 500_000_000
+    assert pb2["safe_liquid_assets"] == 10_000_000
+
+    from portfolio.personal_finance.models import PersonalBalanceSheetInput
+    eq_val, cash_val = 100_000_000, 50_000_000
+    dur1 = calculate_capital_durability(PersonalBalanceSheetInput.from_dict(pb1), eq_val, cash_val)
+    dur2 = calculate_capital_durability(PersonalBalanceSheetInput.from_dict(pb2), eq_val, cash_val)
+
+    assert dur1.survival_reserve_status == "SAFE"
+    assert dur2.survival_reserve_status == "UNSAFE"
+    assert dur1.available_long_term_capital > dur2.available_long_term_capital
+
+
+def test_missing_personal_finance_blocks_buy_and_attention_policy_gate():
+    """BLOCKER 1 & 8: Missing personal finance blocks BUY; ATTENTION prohibits BUY."""
+    from portfolio.policy.context_builder import build_decision_context
+    from portfolio.policy.engine import evaluate_decision
+
+    # 1. Missing personal finance
+    ctx_missing = build_decision_context("FPT", personal_finance=None)
+    ev_missing = evaluate_decision(ctx_missing)
+    assert ev_missing.decision == "BUILD_RESERVE_FIRST"
+    assert ev_missing.decision not in ("BUY", "BUY_MORE")
+
+    # 2. ATTENTION status
+    pf_att = {"survival_reserve_status": "ATTENTION", "available_long_term_capital": 10_000_000}
+    ctx_att = build_decision_context("FPT", personal_finance=pf_att)
+    ev_att = evaluate_decision(ctx_att)
+    assert ev_att.decision == "BUILD_RESERVE_FIRST"
+    assert ev_att.decision not in ("BUY", "BUY_MORE")
+

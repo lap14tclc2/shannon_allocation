@@ -179,18 +179,37 @@ def evaluate_value_trap(
     if history and len(history) >= 2 and not is_bank:
         latest = history[-1]
         prev = history[0]
-        rev_growth = (float(latest.get("revenue", 0)) - float(prev.get("revenue", 0))) / max(1.0, float(prev.get("revenue", 1)))
-        rec_growth = (float(latest.get("receivables", 0)) - float(prev.get("receivables", 0))) / max(1.0, float(prev.get("receivables", 1)))
-        inv_growth = (float(latest.get("inventory", 0)) - float(prev.get("inventory", 0))) / max(1.0, float(prev.get("inventory", 1)))
 
-        if rec_growth > rev_growth + 0.15 and rec_growth > 0.10:
-            cyclical_flags.append("Phải thu tăng trưởng nhanh hơn đáng kể so với doanh thu.")
-            if earnings_quality == "CONFIRMED":
-                earnings_quality = "PARTIAL"
-        if inv_growth > rev_growth + 0.15 and inv_growth > 0.10:
-            cyclical_flags.append("Tồn kho tích tụ nhanh hơn tốc độ tăng trưởng doanh thu.")
-            if earnings_quality == "CONFIRMED":
-                earnings_quality = "PARTIAL"
+        rev_latest = latest.get("revenue")
+        rev_prev = prev.get("revenue")
+        rec_latest = latest.get("receivables")
+        rec_prev = prev.get("receivables")
+        inv_latest = latest.get("inventory")
+        inv_prev = prev.get("inventory")
+
+        if rev_latest is None or rev_prev is None:
+            missing.append("REVENUE_HISTORY")
+        if rec_latest is None or rec_prev is None:
+            missing.append("RECEIVABLES_HISTORY")
+        if inv_latest is None or inv_prev is None:
+            missing.append("INVENTORY_HISTORY")
+
+        if rev_latest is not None and rev_prev is not None and float(rev_prev) > 0:
+            rev_growth = (float(rev_latest) - float(rev_prev)) / float(rev_prev)
+
+            if rec_latest is not None and rec_prev is not None and float(rec_prev) > 0:
+                rec_growth = (float(rec_latest) - float(rec_prev)) / float(rec_prev)
+                if rec_growth > rev_growth + 0.15 and rec_growth > 0.10:
+                    cyclical_flags.append("Phải thu tăng trưởng nhanh hơn đáng kể so với doanh thu.")
+                    if earnings_quality == "CONFIRMED":
+                        earnings_quality = "PARTIAL"
+
+            if inv_latest is not None and inv_prev is not None and float(inv_prev) > 0:
+                inv_growth = (float(inv_latest) - float(inv_prev)) / float(inv_prev)
+                if inv_growth > rev_growth + 0.15 and inv_growth > 0.10:
+                    cyclical_flags.append("Tồn kho tích tụ nhanh hơn tốc độ tăng trưởng doanh thu.")
+                    if earnings_quality == "CONFIRMED":
+                        earnings_quality = "PARTIAL"
 
     # 7. Bear Case Protection Gate
     if bear_iv is not None and price > 0:
@@ -223,9 +242,17 @@ def evaluate_value_trap(
         capital_allocation_status = "WATCH"
 
     # 10. Deterioration Classification
-    if len(structural_flags) >= 2 or accounting_status == "FAIL" or balance_sheet_status == "SOLVENCY_RISK" or earnings_quality == "FAIL":
+    has_confirmed_hard_structural = (
+        accounting_status == "FAIL"
+        or balance_sheet_status == "SOLVENCY_RISK"
+        or dilution_status == "DESTRUCTIVE"
+        or val.get("confirmed_permanent_impairment") is True
+        or val.get("confirmed_hard_structural") is True
+    )
+
+    if has_confirmed_hard_structural:
         deterioration_classification = "STRUCTURAL_EVIDENCE"
-    elif len(structural_flags) == 1:
+    elif len(structural_flags) >= 1 or earnings_quality == "FAIL":
         deterioration_classification = "POSSIBLY_STRUCTURAL"
     elif len(cyclical_flags) > 0:
         deterioration_classification = "LIKELY_CYCLICAL"
@@ -233,12 +260,17 @@ def evaluate_value_trap(
         deterioration_classification = "UNKNOWN"
 
     # 11. Final Status Determination
-    if accounting_status == "FAIL" or balance_sheet_status == "SOLVENCY_RISK" or deterioration_classification == "STRUCTURAL_EVIDENCE":
+    critical_missing = [
+        m for m in missing
+        if m in ("HISTORICAL_EARNINGS_SERIES", "CFO_NET_INCOME_RATIO", "BEAR_CASE_IV", "ACCOUNTING_RELIABILITY", "SOLVENCY_RISK")
+    ]
+
+    if has_confirmed_hard_structural or deterioration_classification == "STRUCTURAL_EVIDENCE":
         status = "HIGH_RISK"
-    elif len(structural_flags) > 0 or len(cyclical_flags) >= 2:
+    elif len(structural_flags) > 0 or len(cyclical_flags) >= 2 or earnings_quality == "FAIL":
         status = "WATCH"
-    elif len(missing) >= 2 or bear_case_protection == "UNKNOWN" or accounting_status == "UNKNOWN" or balance_sheet_status == "UNKNOWN":
-        status = "INSUFFICIENT_DATA" if len(missing) >= 2 else "WATCH"
+    elif len(critical_missing) >= 2 or accounting_status == "UNKNOWN" or balance_sheet_status == "UNKNOWN":
+        status = "INSUFFICIENT_DATA"
     else:
         status = "CLEAR"
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -84,7 +85,24 @@ class PortfolioService:
             "cash_reserve_configured": raw_reserve is not None,
             "cash_reserve": float(raw_reserve) if raw_reserve is not None else None,
             "reference_weights": self.store.get_reference_weights(),
+            "personal_balance_sheet_configured": self.get_personal_balance_sheet() is not None,
         }
+
+    def get_personal_balance_sheet(self) -> dict | None:
+        raw = self.store.get_meta("personal_balance_sheet_json")
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
+
+    def set_personal_balance_sheet(self, payload: dict) -> dict:
+        from portfolio.personal_finance.models import PersonalBalanceSheetInput
+        pb_input = PersonalBalanceSheetInput.from_dict(payload)
+        clean_dict = pb_input.to_dict()
+        self.store.set_meta("personal_balance_sheet_json", json.dumps(clean_dict, ensure_ascii=False))
+        return {"ok": True, "personal_balance_sheet": clean_dict}
 
     @staticmethod
     def _position_status(weight: float, reference: float | None) -> str:

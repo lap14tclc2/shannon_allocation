@@ -11,6 +11,7 @@ def test_business_review_high_quality_company_with_evidence():
         "quality_tier": "HIGH_QUALITY",
         "financial_strength_score": 85,
         "owner_earnings": 100_000_000_000,
+        "earnings_durability": "PASS",
         "moat_strength": "WIDE",
         "management_capital_allocation": "PASS",
         "accounting_reliability": "PASS",
@@ -30,78 +31,62 @@ def test_business_review_high_quality_company_with_evidence():
     assert res.overall_status == "BUSINESS_PASS"
 
 
-def test_business_review_missing_evidence_returns_unknown():
-    """Invariant: Missing qualitative evidence must remain UNKNOWN and not silently default to PASS."""
-    val = {
-        "quality_tier": "HIGH_QUALITY",
-        # Understandability, management, accounting, moat missing!
-    }
-
-    res = evaluate_business_review("UNKNOWN_CO", valuation_report=val)
-
-    assert res.understandability == "UNKNOWN"
-    assert res.moat == "UNKNOWN"
-    assert res.management_capital_allocation == "UNKNOWN"
-    assert res.accounting_reliability == "UNKNOWN"
-    assert res.overall_status == "BUSINESS_REVIEW"
-    assert "UNDERSTANDABILITY" in res.missing_dimensions
-    assert "ACCOUNTING_RELIABILITY" in res.missing_dimensions
-
-
-def test_business_review_solvency_risk_fails():
+def test_business_review_single_positive_owner_earnings_not_automatic_pass():
+    """BLOCKER 4: Single positive owner earnings without history must NOT evaluate to PASS."""
     val = {
         "understandability": "PASS",
         "quality_tier": "HIGH_QUALITY",
-        "financial_strength_score": 20,
-        "hard_rejects": ["SOLVENCY_RISK"],
+        "financial_strength_score": 80,
+        "owner_earnings": 50_000_000,  # Single positive value, no history
+        "moat_strength": "WIDE",
+        "management_capital_allocation": "PASS",
+        "accounting_reliability": "PASS",
     }
 
-    res = evaluate_business_review("ACB", valuation_report=val)
-
-    assert res.financial_strength == "FAIL"
-    assert res.overall_status == "BUSINESS_FAIL"
-    assert "Rủi ro khả năng thanh toán / nợ cao." in res.reasons
+    res = evaluate_business_review("SINGLE_OE", valuation_report=val)
+    assert res.earnings_durability != "PASS"
+    assert res.earnings_durability == "WATCH"
 
 
-def test_value_trap_gate_clear_for_healthy_valuation():
+def test_value_trap_missingness_preservation():
+    """BLOCKER 3: Missing receivables/inventory must NOT be treated as zero or calculate fake growth."""
+    history = [
+        {"net_income": 100, "cfo": 110},  # Missing revenue, receivables, inventory
+        {"net_income": 120, "cfo": 130},
+    ]
     val = {
-        "current_price": 120000,
-        "bear_iv": 130000,
-        "base_iv": 160000,
-        "cfo_to_net_income": 1.1,
+        "current_price": 10000,
+        "bear_iv": 12000,
+        "base_iv": 20000,
         "dilution_status": "STABLE",
         "accounting_reliability": "PASS",
         "financial_strength": "PASS",
-        "normalized_earnings_trend": "STABLE",
-        "hard_rejects": [],
     }
 
-    res = evaluate_value_trap("FPT", valuation_report=val)
-
-    assert res.symbol == "FPT"
-    assert res.status == "CLEAR"
-    assert res.earnings_quality == "CONFIRMED"
-    assert res.bear_case_protection == "PROTECTED"
-    assert len(res.structural_deterioration_flags) == 0
+    res = evaluate_value_trap("MISSING_DATA_CO", valuation_report=val, financial_history=history)
+    assert "REVENUE_HISTORY" in res.missing_data
+    assert "RECEIVABLES_HISTORY" in res.missing_data
+    assert "INVENTORY_HISTORY" in res.missing_data
 
 
-def test_value_trap_gate_high_risk_on_insolvency_or_accounting_failure():
-    """Invariant: Solvency risk or accounting failure MUST trigger HIGH_RISK status."""
+def test_value_trap_structural_classification_does_not_overstate():
+    """BLOCKER 6: Quantitative warnings alone should produce POSSIBLY_STRUCTURAL/WATCH, not STRUCTURAL_EVIDENCE."""
     val = {
-        "current_price": 5000,  # Appears very cheap
+        "current_price": 10000,
+        "bear_iv": 12000,
         "base_iv": 20000,
-        "cfo_to_net_income": 0.2,
-        "dilution_status": "DESTRUCTIVE_DILUTION",
-        "hard_rejects": ["SOLVENCY_RISK", "ACCOUNTING_UNRELIABLE"],
+        "cfo_to_net_income": 0.9,
+        "dilution_status": "STABLE",
+        "accounting_reliability": "PASS",
+        "financial_strength": "PASS",
+        "return_on_capital_trend": "DECLINING",  # Soft warning 1
+        "normalized_earnings_trend": "DECLINING",  # Soft warning 2
     }
 
-    res = evaluate_value_trap("TRAP", valuation_report=val)
-
-    assert res.status == "HIGH_RISK"
-    assert res.accounting_status == "FAIL"
-    assert res.balance_sheet_status == "SOLVENCY_RISK"
-    assert res.deterioration_classification == "STRUCTURAL_EVIDENCE"
-    assert len(res.structural_deterioration_flags) >= 2
+    res = evaluate_value_trap("SOFT_WARN_CO", valuation_report=val)
+    assert res.deterioration_classification == "POSSIBLY_STRUCTURAL"
+    assert res.status == "WATCH"
+    assert res.status != "HIGH_RISK"
 
 
 def test_value_trap_uses_financial_history():

@@ -84,6 +84,25 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
         what_would_change.append("Gia tăng tài sản thanh khoản an toàn để khôi phục quỹ dự phòng về mức SAFE.")
 
+    # Gate 3B: Personal Balance Sheet ATTENTION
+    elif ctx.survival_reserve_status == "ATTENTION":
+        decision = "HOLD_NO_NEW_CAPITAL" if is_existing_holding else "BUILD_RESERVE_FIRST"
+        confidence = "HIGH"
+        summary = "Tài chính cá nhân ở trạng thái Cảnh Báo (ATTENTION). Cấm mở vị thế mua mới / giải ngân thêm vốn."
+        reasons.append("Quỹ dự phòng cá nhân ở mức ATTENTION (cảnh báo). Cấm mua mới / mua thêm.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-01B-SURVIVAL-RESERVE-ATTENTION",
+                metric="survival_reserve_status",
+                value="ATTENTION",
+                threshold="SAFE",
+                status="TRIGGERED",
+                source="personal_finance",
+                description="Trạng thái quỹ dự phòng cá nhân ở mức ATTENTION.",
+            )
+        )
+        what_would_change.append("Tích lũy quỹ dự phòng an toàn về mức SAFE.")
+
 
     # Gate 4: Business Review Quality Failure
     elif ctx.business_review_status == "BUSINESS_FAIL":

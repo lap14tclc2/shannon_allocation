@@ -2054,10 +2054,31 @@ def portfolio_activity(
 # Buffett-Munger Workspaces API Routes (Terminal, Business, Capital, History)
 # ---------------------------------------------------------------------------
 
+@app.get("/api/portfolio/personal-finance")
+def api_portfolio_personal_finance_get(qport_session: str | None = Cookie(default=None)):
+    """Retrieve persisted personal balance sheet for current user/portfolio."""
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    pb_data = svc.get_personal_balance_sheet()
+    return {
+        "ok": True,
+        "configured": pb_data is not None,
+        "personal_balance_sheet": pb_data,
+    }
+
+
+@app.post("/api/portfolio/personal-finance")
+def api_portfolio_personal_finance_post(body: dict, qport_session: str | None = Cookie(default=None)):
+    """Persist personal balance sheet for current user/portfolio."""
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    return svc.set_personal_balance_sheet(body)
+
+
 @app.get("/api/portfolio/terminal")
 def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Terminal Homepage aggregate data endpoint."""
-    from portfolio.personal_finance.models import PersonalBalanceSheetInput
+    from portfolio.personal_finance.models import CapitalDurabilityMetrics, PersonalBalanceSheetInput
     from portfolio.personal_finance.service import calculate_capital_durability
     from portfolio.personal_finance.stress import run_crash_job_loss_stress_engine
     from portfolio.policy.context_builder import build_decision_context
@@ -2073,16 +2094,22 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
     equity = float(dash.get("equity_value") or 0.0)
 
     # Personal Fortress
-    pb_input = PersonalBalanceSheetInput(
-        monthly_net_income=50_000_000,
-        monthly_essential_spending=20_000_000,
-        safe_liquid_assets=240_000_000,
-        near_term_liabilities=0.0,
-    )
-    durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+    pb_data = svc.get_personal_balance_sheet()
+    if pb_data:
+        pb_input = PersonalBalanceSheetInput.from_dict(pb_data)
+        durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+        stress_input = pb_input
+    else:
+        pb_input = None
+        durability = CapitalDurabilityMetrics(
+            survival_reserve_status="UNKNOWN",
+            status="UNKNOWN",
+            available_long_term_capital=0.0,
+        )
+        stress_input = PersonalBalanceSheetInput()
 
     largest_pos = max([float(p.get("market_value") or 0.0) for p in positions], default=0.0)
-    stress_results = run_crash_job_loss_stress_engine(pb_input, equity, cash, largest_pos)
+    stress_results = run_crash_job_loss_stress_engine(stress_input, equity, cash, largest_pos)
 
     # Decision Matrix & Exceptions
     decision_items = []
@@ -2093,7 +2120,7 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
         val_rep = svc.valuation(sym) if hasattr(svc, "valuation") else {}
         b_rev = evaluate_business_review(sym, valuation_report=val_rep).to_dict()
         v_trap = evaluate_value_trap(sym, valuation_report=val_rep).to_dict()
-        pf_status = durability.to_dict()
+        pf_status = durability.to_dict() if pb_data else None
 
         ctx = build_decision_context(
             symbol=sym,
@@ -2126,6 +2153,8 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
     # Coach Summary
     if durability.survival_reserve_status == "UNSAFE":
         coach_summary = "CẢNH BÁO PHÁO ĐÀI: Quỹ dự phòng cá nhân dưới mức an toàn. Hãy ưu tiên tích lũy dự phòng trước khi mua thêm cổ phiếu."
+    elif durability.survival_reserve_status == "UNKNOWN":
+        coach_summary = "CẢNH BÁO THIẾU DỮ LIỆU: Chưa cấu hình Bảng Cân Đối Cá Nhân. Mọi hành động MUA bị cấm."
     elif exceptions:
         coach_summary = f"Hệ thống phát hiện {len(exceptions)} mục cần chú ý (Xem danh sách Cần Chú Ý bên dưới)."
     else:
@@ -2196,7 +2225,7 @@ def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(defau
 @app.get("/api/portfolio/capital")
 def api_portfolio_capital(qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Capital Workspace endpoint."""
-    from portfolio.personal_finance.models import PersonalBalanceSheetInput
+    from portfolio.personal_finance.models import CapitalDurabilityMetrics, PersonalBalanceSheetInput
     from portfolio.personal_finance.service import calculate_capital_durability
 
     user = require_portfolio_user(qport_session)
@@ -2205,16 +2234,21 @@ def api_portfolio_capital(qport_session: str | None = Cookie(default=None)):
     cash = float(dash.get("cash") or 0.0)
     equity = float(dash.get("equity_value") or 0.0)
 
-    pb_input = PersonalBalanceSheetInput(
-        monthly_net_income=50_000_000,
-        monthly_essential_spending=20_000_000,
-        safe_liquid_assets=240_000_000,
-        near_term_liabilities=0.0,
-    )
-    durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+    pb_data = svc.get_personal_balance_sheet()
+    if pb_data:
+        pb_input = PersonalBalanceSheetInput.from_dict(pb_data)
+        durability = calculate_capital_durability(pb_input, portfolio_equity_value=equity, deployable_portfolio_cash=cash)
+    else:
+        pb_input = PersonalBalanceSheetInput()
+        durability = CapitalDurabilityMetrics(
+            survival_reserve_status="UNKNOWN",
+            status="UNKNOWN",
+            available_long_term_capital=0.0,
+        )
 
     return {
         "ok": True,
+        "configured": pb_data is not None,
         "personal_finance_input": pb_input.to_dict(),
         "durability": durability.to_dict(),
         "buckets": {
