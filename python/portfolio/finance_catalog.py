@@ -217,6 +217,45 @@ def initialize_finance_schema() -> None:
             observed_at TEXT NOT NULL,
             UNIQUE(source_document_id)
         );
+
+        CREATE TABLE IF NOT EXISTS ssi_import_files (
+            id BIGSERIAL PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            statement_type TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            raw_file_sha256 TEXT NOT NULL,
+            semantic_hash TEXT NOT NULL,
+            export_date TEXT,
+            extraction_timestamp TEXT,
+            source_system TEXT NOT NULL DEFAULT 'SSI',
+            upstream_provider TEXT DEFAULT 'FiinTrade',
+            import_status TEXT NOT NULL CHECK(import_status IN ('SUCCESS', 'PARSE_ERROR', 'SKIPPED', 'CONFLICT')),
+            imported_at TEXT NOT NULL,
+            error TEXT,
+            UNIQUE(raw_file_sha256)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ssi_files_symbol ON ssi_import_files(symbol, statement_type);
+        CREATE INDEX IF NOT EXISTS idx_ssi_files_semantic ON ssi_import_files(semantic_hash);
+
+        CREATE TABLE IF NOT EXISTS ssi_raw_financial_observations (
+            id BIGSERIAL PRIMARY KEY,
+            import_file_id BIGINT REFERENCES ssi_import_files(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            statement_type TEXT NOT NULL,
+            raw_line_code TEXT,
+            raw_line_name TEXT NOT NULL,
+            period TEXT NOT NULL,
+            fiscal_year INTEGER,
+            fiscal_quarter INTEGER,
+            value NUMERIC,
+            unit TEXT DEFAULT 'VND',
+            source_system TEXT NOT NULL DEFAULT 'SSI',
+            mapping_status TEXT NOT NULL DEFAULT 'UNMAPPED' CHECK(mapping_status IN ('MAPPED', 'UNMAPPED', 'IGNORED')),
+            canonical_code TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ssi_obs_symbol ON ssi_raw_financial_observations(symbol, statement_type, fiscal_year);
+        CREATE INDEX IF NOT EXISTS idx_ssi_obs_mapping ON ssi_raw_financial_observations(mapping_status, raw_line_name);
         """)
         db.execute(
             """
@@ -1216,7 +1255,12 @@ def valuation_readiness_audit(symbol: str, market_price: float | None = None) ->
                 })
                 continue
             if candidates:
-                selected_facts[code] = sorted(candidates, key=lambda row: str(row.get("provider") or ""))[0]
+                def _prank(p: Any) -> int:
+                    pl = str(p or "").lower()
+                    if pl == "ssi": return 1
+                    if pl == "tcbs": return 2
+                    return 3
+                selected_facts[code] = sorted(candidates, key=lambda row: _prank(row.get("provider")))[0]
         for row in period_facts:
             code = str(row.get("line_item_code") or "")
             if code and code not in selected_facts and row.get("value") is not None and row.get("quality_status") not in {"CONFLICT", "QUARANTINED", "MISSING"}:

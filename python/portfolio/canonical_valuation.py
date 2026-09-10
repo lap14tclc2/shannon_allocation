@@ -235,10 +235,10 @@ def build_canonical_valuation(
     financial_history: list[dict[str, Any]] = []
     with _schema_connection(FINANCE_SCHEMA) as db:
         hist_rows = db.execute(
-            """SELECT fiscal_year, line_item_code, value
+            """SELECT fiscal_year, line_item_code, value, provider
                FROM canonical_facts
                WHERE symbol = ? AND period_type = 'FY' AND fiscal_quarter IS NULL
-               ORDER BY fiscal_year ASC""",
+               ORDER BY fiscal_year ASC, CASE WHEN lower(provider) = 'ssi' THEN 1 WHEN lower(provider) = 'tcbs' THEN 2 ELSE 3 END ASC""",
             (ticker,),
         ).fetchall()
         by_year: dict[int, dict[str, Decimal]] = {}
@@ -246,7 +246,10 @@ def build_canonical_valuation(
             y_int = int(r["fiscal_year"])
             code_str = str(r["line_item_code"])
             val_dec = Decimal(str(r["value"]))
-            by_year.setdefault(y_int, {})[code_str] = val_dec
+            
+            # Provider precedence: ssi first, then tcbs. Only set if code_str not yet present for that year.
+            if code_str not in by_year.setdefault(y_int, {}):
+                by_year[y_int][code_str] = val_dec
 
             if y_int != fiscal_year:
                 st_type = StatementType.INCOME_STATEMENT if code_str.startswith("IS.") else (StatementType.BALANCE_SHEET if code_str.startswith("BS.") else StatementType.CASH_FLOW)
