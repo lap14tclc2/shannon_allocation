@@ -136,9 +136,11 @@ def build_canonical_valuation(
     dividend_yield = number(field(ratios, "dividend_yield", "cash_dividend_yield"))
     shares = number(field(ratios, "outstanding_share", "outstanding_shares", "shares_outstanding"))
 
+    BANK_TICKERS = {"ACB", "VCB", "BID", "CTG", "MBB", "TCB", "VPB", "STB", "HDB", "TPB", "VIB", "MSB", "LPB", "EIB", "OCB", "SSB", "BAB", "NAB", "BVB", "ABB", "PGB", "SGB"}
     sector = field(profile, "industry", "industry_name", "sector", "icb_name3", "icb_name2")
     company_type = str(field(profile, "company_type", "type", "industry") or "")
-    is_bank = any(token in f"{sector or ''} {company_type}".lower() for token in ("bank", "ngân hàng"))
+    sec_str = f"{sector or ''} {company_type}".lower()
+    is_bank = ticker in BANK_TICKERS or any(token in sec_str for token in ("bank", "ngân hàng", "ngn hng", "ngan hang"))
     entity_type = EntityType.BANK if is_bank else EntityType.NORMAL_ENTERPRISE
 
     if current_price_dec is None or current_price_dec <= 0 or net_income is None or shares is None or shares <= 0:
@@ -518,6 +520,8 @@ def build_canonical_valuation(
     return {
         "ok": True,
         "symbol": ticker,
+        "is_bank": is_bank,
+        "archetype": "BANK" if is_bank else "ENTERPRISE",
         "current_price": curr_price_float,
         "price": curr_price_float,
         "bear_iv": bear_iv_val,

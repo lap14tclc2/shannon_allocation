@@ -54,6 +54,12 @@ def evaluate_business_review(
     reasons: list[str] = []
     missing: list[str] = []
 
+    pillars = val.get("value_investor_pillars") or val.get("report", {}).get("value_investor_pillars") or {}
+    fortress_pillar = pillars.get("financial_fortress") or {}
+    earnings_pillar = pillars.get("earnings_quality") or {}
+    cap_alloc_pillar = pillars.get("capital_allocation") or {}
+    history = val.get("financial_history") or val.get("financial_history_10y") or val.get("report", {}).get("financial_history") or []
+
     # 1. Understandability
     und = qual.get("understandability") or val.get("understandability")
     if und in ("PASS", "SIMPLE", "UNDERSTANDABLE"):
@@ -67,6 +73,7 @@ def evaluate_business_review(
     else:
         understandability = "UNKNOWN"
         missing.append("UNDERSTANDABILITY")
+        reasons.append("Chưa có đánh giá định tính về Vòng hiểu biết (Circle of Competence).")
 
     # 2. Business Quality
     quality_tier = val.get("quality_tier") or qual.get("quality_tier")
@@ -84,13 +91,14 @@ def evaluate_business_review(
 
     # 3. Financial Strength
     fin_score = val.get("financial_strength_score") or val.get("financial_strength")
+    fortress_status = fortress_pillar.get("status")
     hard_rejects = val.get("hard_rejects") or []
-    if "SOLVENCY_RISK" in hard_rejects or fin_score == "FAIL":
+    if "SOLVENCY_RISK" in hard_rejects or fin_score == "FAIL" or fortress_status in ("DANGER", "SOLVENCY_RISK"):
         financial_strength = "FAIL"
         reasons.append("Rủi ro khả năng thanh toán / nợ cao.")
-    elif fin_score == "PASS" or (isinstance(fin_score, (int, float)) and fin_score >= 60):
+    elif fin_score == "PASS" or fortress_status in ("FORTRESS", "STRONG", "SAFE", "GOOD", "MODERATE") or (isinstance(fin_score, (int, float)) and fin_score >= 50):
         financial_strength = "PASS"
-    elif fin_score == "WATCH" or (isinstance(fin_score, (int, float)) and fin_score >= 40):
+    elif fin_score == "WATCH" or fortress_status == "ATTENTION" or (isinstance(fin_score, (int, float)) and fin_score >= 40):
         financial_strength = "WATCH"
         reasons.append("Sức mạnh tài chính ở mức theo dõi.")
     else:
@@ -100,11 +108,29 @@ def evaluate_business_review(
     # 4. Earnings Durability
     dur = qual.get("earnings_durability") or val.get("earnings_durability")
     owner_earnings = val.get("owner_earnings") or val.get("normalized_owner_earnings")
-    history = val.get("normalized_earnings_history") or val.get("earnings_history") or []
+    cagr_5y = val.get("cagr_5y_net_profit")
+    avg_roe_5y = earnings_pillar.get("avg_roe_5y")
 
     if dur in ("PASS", "HIGH", "DURABLE"):
         earnings_durability = "PASS"
-    elif dur is None and len(history) >= 3 and all(float(h.get("owner_earnings") or h.get("net_income") or 0) > 0 for h in history):
+    elif dur is None and len(history) >= 3:
+        valid_history = []
+        for h in history:
+            val_ni = h.get("net_income") if h.get("net_income") is not None else (h.get("net_profit") if h.get("net_profit") is not None else h.get("owner_earnings"))
+            if val_ni is not None:
+                try:
+                    valid_history.append(float(val_ni))
+                except (ValueError, TypeError):
+                    pass
+        if len(valid_history) >= 3 and all(v > 0 for v in valid_history):
+            earnings_durability = "PASS"
+        elif len(valid_history) >= 3:
+            earnings_durability = "WATCH"
+            reasons.append("Lợi nhuận biến động qua các năm trong lịch sử tài chính.")
+        else:
+            earnings_durability = "UNKNOWN"
+            missing.append("EARNINGS_DURABILITY")
+    elif dur is None and (avg_roe_5y is not None and float(avg_roe_5y) >= 15.0):
         earnings_durability = "PASS"
     elif dur in ("FAIL", "LOW", "UNSTABLE"):
         earnings_durability = "FAIL"
@@ -132,26 +158,30 @@ def evaluate_business_review(
     else:
         moat = "UNKNOWN"
         missing.append("MOAT")
+        reasons.append("Chưa có bằng chứng định tính về Lợi thế cạnh tranh (Moat).")
 
     # 6. Management / Capital Allocation (Do NOT infer from quality tier alone)
     mgt_val = qual.get("management_capital_allocation") or qual.get("management_quality") or val.get("management_capital_allocation") or val.get("management_quality")
-    if val.get("dilution_status") == "DESTRUCTIVE_DILUTION" or mgt_val == "FAIL":
+    cap_alloc_status = cap_alloc_pillar.get("status")
+    dilution_class = cap_alloc_pillar.get("dilution_classification") or val.get("dilution_status")
+    if dilution_class == "DESTRUCTIVE_DILUTION" or mgt_val == "FAIL" or cap_alloc_status == "FAIL":
         management_capital_allocation = "FAIL"
         reasons.append("Pha loãng cổ phiếu hoặc quản trị phá hủy giá trị.")
-    elif mgt_val in ("EXCELLENT", "GOOD", "PASS", "STABLE", "OK"):
+    elif mgt_val in ("EXCELLENT", "GOOD", "PASS", "STABLE", "OK") or cap_alloc_status in ("EXCELLENT", "GOOD", "SAFE") or dilution_class in ("NON_ECONOMIC_SHARE_CHANGE", "NO_SHARE_CHANGE", "OK", "STABLE"):
         management_capital_allocation = "PASS"
-    elif mgt_val in ("WATCH", "MODERATE"):
+    elif mgt_val in ("WATCH", "MODERATE") or cap_alloc_status == "ATTENTION":
         management_capital_allocation = "WATCH"
     else:
         management_capital_allocation = "UNKNOWN"
         missing.append("MANAGEMENT_CAPITAL_ALLOCATION")
 
-    # 7. Accounting Reliability (Do NOT default to PASS without evidence)
+    # 7. Accounting Reliability (Separating quantitative accounting quality from qualitative governance)
     acct_val = qual.get("accounting_reliability") or val.get("accounting_reliability")
+    eq_status = earnings_pillar.get("status")
     if "ACCOUNTING_UNRELIABLE" in hard_rejects or acct_val == "FAIL":
         accounting_reliability = "FAIL"
         reasons.append("Báo cáo tài chính không tin cậy.")
-    elif acct_val == "PASS" or val.get("accounting_verified") is True:
+    elif acct_val == "PASS" or val.get("accounting_verified") is True or eq_status in ("EXCELLENT", "GOOD", "CONFIRMED"):
         accounting_reliability = "PASS"
     elif acct_val == "WATCH":
         accounting_reliability = "WATCH"
@@ -169,7 +199,6 @@ def evaluate_business_review(
         overall_status = "BUSINESS_PASS"
     else:
         overall_status = "UNKNOWN"
-
 
     return BusinessReviewResult(
         symbol=symbol_clean,

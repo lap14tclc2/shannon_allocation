@@ -107,6 +107,7 @@
 | [TASK-20260910-128](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-128-fix-terminal-portfolio-dictionary-nesting.md) | Fix Terminal Workspace Portfolio Dictionary Nesting | completed | high | 2026-09-10 |
 | [TASK-20260910-129](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-129-fix-buffett-terminal-runtime-data-contracts.md) | Fix Buffett Terminal Runtime Data Contracts & Valuation Canonicalization | completed | high | 2026-09-10 |
 | [TASK-20260910-130](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-130-fix-buffett-workspace-routing-and-navigation.md) | Fix Buffett/Munger workspace routing and navigation | completed | high | 2026-09-10 |
+| [TASK-20260910-131](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-131-runtime-evidence-data-completeness-audit.md) | Runtime evidence & data completeness audit for ACB, DGC, and FPT | completed | high | 2026-09-10 |
 
 
 
