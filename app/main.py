@@ -2089,9 +2089,10 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     dash = svc.dashboard()
-    positions = dash.get("positions") or []
-    cash = float(dash.get("cash") or 0.0)
-    equity = float(dash.get("equity_value") or 0.0)
+    pf = dash.get("portfolio") if isinstance(dash.get("portfolio"), dict) else dash
+    positions = pf.get("positions") or []
+    cash = float(pf.get("cash") or 0.0)
+    equity = float(pf.get("equity_value") or 0.0)
 
     # Personal Fortress
     pb_data = svc.get_personal_balance_sheet()
@@ -2184,8 +2185,9 @@ def api_portfolio_capital(qport_session: str | None = Cookie(default=None)):
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     dash = svc.dashboard()
-    cash = float(dash.get("cash") or 0.0)
-    equity = float(dash.get("equity_value") or 0.0)
+    pf = dash.get("portfolio") if isinstance(dash.get("portfolio"), dict) else dash
+    cash = float(pf.get("cash") or 0.0)
+    equity = float(pf.get("equity_value") or 0.0)
 
     pb_data = svc.get_personal_balance_sheet()
     if pb_data:
@@ -2220,16 +2222,17 @@ def api_portfolio_history(qport_session: str | None = Cookie(default=None)):
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     dash = svc.dashboard()
+    pf = dash.get("portfolio") if isinstance(dash.get("portfolio"), dict) else dash
 
     return {
         "ok": True,
-        "nav_history": dash.get("history") or [],
+        "nav_history": dash.get("history") or pf.get("history") or [],
         "transactions": svc.store.list_activity(limit=100),
         "summary": {
-            "total_nav": dash.get("nav"),
-            "total_cost": dash.get("cost_basis"),
-            "unrealized_pnl": dash.get("unrealized_pnl"),
-            "return_pct": dash.get("unrealized_return_pct"),
+            "total_nav": pf.get("nav"),
+            "total_cost": pf.get("cost_basis"),
+            "unrealized_pnl": pf.get("unrealized_pnl"),
+            "return_pct": pf.get("unrealized_return_pct"),
         },
     }
 

@@ -17,6 +17,34 @@
       "destination": "/"
     },
     {
+      "source": "/terminal",
+      "destination": "/"
+    },
+    {
+      "source": "/business",
+      "destination": "/"
+    },
+    {
+      "source": "/business/:path*",
+      "destination": "/"
+    },
+    {
+      "source": "/capital",
+      "destination": "/"
+    },
+    {
+      "source": "/history",
+      "destination": "/"
+    },
+    {
+      "source": "/allocation",
+      "destination": "/"
+    },
+    {
+      "source": "/operations",
+      "destination": "/"
+    },
+    {
       "source": "/admin",
       "destination": "/"
     },
@@ -235,6 +263,60 @@
     },
     {
       "source": "/guide",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/terminal",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/business",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/business/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/capital",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/history",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/allocation",
       "headers": [
         {
           "key": "Cache-Control",

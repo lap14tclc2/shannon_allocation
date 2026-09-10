@@ -103,6 +103,8 @@
 | [TASK-20260909-124](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-124-fix-buffett-munger-refactor-semantic-blockers.md) | Fix Buffett/Munger Refactor Semantic Blockers | completed | high | 2026-09-09 |
 | [TASK-20260909-125](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-125-fix-buffett-munger-runtime-integration-blockers.md) | Fix Buffett/Munger Refactor Runtime Integration Blockers | completed | high | 2026-09-09 |
 | [TASK-20260909-126](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-126-final-buffett-munger-runtime-readiness-fixes.md) | Final Buffett/Munger Runtime Readiness Fixes | completed | high | 2026-09-09 |
+| [TASK-20260910-127](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-127-fix-vercel-and-spa-route-rewrites.md) | Fix Vercel and SPA Route Rewrites for 404 Prevention | completed | high | 2026-09-10 |
+| [TASK-20260910-128](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-128-fix-terminal-portfolio-dictionary-nesting.md) | Fix Terminal Workspace Portfolio Dictionary Nesting | completed | high | 2026-09-10 |
 
 
 
