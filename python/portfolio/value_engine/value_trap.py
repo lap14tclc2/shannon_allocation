@@ -101,7 +101,7 @@ def evaluate_value_trap(
     earnings_series: list[float] = []
     if history:
         for p in history:
-            val_p = p.get("owner_earnings") or p.get("net_income") or p.get("operating_profit")
+            val_p = p.get("owner_earnings") or p.get("net_income") or p.get("net_profit") or p.get("operating_profit")
             if val_p is not None:
                 try:
                     earnings_series.append(float(val_p))
@@ -131,8 +131,8 @@ def evaluate_value_trap(
     cfo_ratios: list[float] = []
     if history:
         for p in history:
-            cfo = p.get("cfo") or p.get("cash_from_operations")
-            ni = p.get("net_income")
+            cfo = p.get("cfo") or p.get("cash_from_operations") or p.get("operating_cash_flow")
+            ni = p.get("net_income") or p.get("net_profit")
             if cfo is not None and ni is not None and float(ni) > 0:
                 try:
                     cfo_ratios.append(float(cfo) / float(ni))

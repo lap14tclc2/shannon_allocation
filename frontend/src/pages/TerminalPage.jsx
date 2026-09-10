@@ -70,6 +70,13 @@ export default function TerminalPage() {
                   <strong>{data.fortress.near_term_liability_status}</strong>
                 </div>
               </div>
+              {data.fortress.survival_reserve_status === 'UNKNOWN' && (
+                <div style={{ marginTop: '16px' }}>
+                  <a href="/capital" className="btn btn-primary" style={{ display: 'inline-block', padding: '8px 16px', background: '#0284c7', color: '#fff', borderRadius: '4px', textDecoration: 'none', fontWeight: 600 }}>
+                    [Cấu hình tài chính cá nhân]
+                  </a>
+                </div>
+              )}
             </section>
 
             {/* Section C: Attention Required Exceptions */}

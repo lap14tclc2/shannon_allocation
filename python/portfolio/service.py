@@ -109,21 +109,10 @@ class PortfolioService:
         if not ticker:
             return {}
         try:
-            from .screener import compute_all_screener_scores
-            scored = compute_all_screener_scores()
-            val = next((item for item in scored if str(item.get("symbol") or "").upper() == ticker), None)
-            if val:
-                return val
+            from portfolio.canonical_valuation import build_canonical_valuation
+            return build_canonical_valuation(ticker, store=self.store)
         except Exception:
-            pass
-        try:
-            from .finance_catalog import valuation_snapshot_from_catalog
-            snap = valuation_snapshot_from_catalog(ticker)
-            if snap.get("ok"):
-                return snap
-        except Exception:
-            pass
-        return {}
+            return {}
 
     def runtime_decision(self, symbol: str) -> dict:
         from portfolio.personal_finance.models import PersonalBalanceSheetInput
@@ -135,15 +124,22 @@ class PortfolioService:
 
         ticker = str(symbol or "").strip().upper()
         dash = self.dashboard()
-        positions = dash.get("positions") or []
+        pf = dash.get("portfolio") if isinstance(dash.get("portfolio"), dict) else dash
+
+        positions = pf.get("positions") or []
         holding = next((p for p in positions if str(p.get("symbol") or "").upper() == ticker), None)
-        cash = float(dash.get("cash") or 0.0)
-        equity = float(dash.get("equity_value") or 0.0)
+        cash = float(pf.get("cash") or 0.0)
+        equity = float(pf.get("equity_value") or 0.0)
 
         val_rep = self.valuation(ticker)
         b_rev = evaluate_business_review(ticker, valuation_report=val_rep).to_dict()
 
-        fin_history = val_rep.get("financial_history") or val_rep.get("history") or []
+        fin_history = (
+            val_rep.get("financial_history")
+            or val_rep.get("financial_history_10y")
+            or val_rep.get("history")
+            or []
+        )
         v_trap = evaluate_value_trap(ticker, valuation_report=val_rep, financial_history=fin_history).to_dict()
 
         pb_data = self.get_personal_balance_sheet()
@@ -166,6 +162,7 @@ class PortfolioService:
 
         weight = holding.get("weight") if holding else 0.0
         market_value = holding.get("market_value") if holding else 0.0
+        actual_price = val_rep.get("current_price") or val_rep.get("price") or (holding.get("price") if holding else None)
 
         return {
             "symbol": ticker,
@@ -173,7 +170,7 @@ class PortfolioService:
             "weight": weight,
             "market_value": market_value,
             "quality_tier": val_rep.get("quality_tier") or "UNKNOWN",
-            "price": val_rep.get("price") or (holding.get("price") if holding else None),
+            "price": actual_price,
             "bear_iv": val_rep.get("bear_iv"),
             "base_iv": val_rep.get("base_iv"),
             "actual_mos_pct": val_rep.get("actual_mos_pct"),
@@ -182,7 +179,7 @@ class PortfolioService:
             "value_trap": v_trap,
             "personal_finance": pf_status,
             "decision_context": ctx.to_dict(),
-            "value_trap_status": v_trap.get("status"),
+            "value_trap_status": v_trap.get("status") or "INSUFFICIENT_DATA",
             "decision": evidence.get("decision"),
             "evidence": evidence,
         }

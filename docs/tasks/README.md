@@ -105,6 +105,7 @@
 | [TASK-20260909-126](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260909-126-final-buffett-munger-runtime-readiness-fixes.md) | Final Buffett/Munger Runtime Readiness Fixes | completed | high | 2026-09-09 |
 | [TASK-20260910-127](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-127-fix-vercel-and-spa-route-rewrites.md) | Fix Vercel and SPA Route Rewrites for 404 Prevention | completed | high | 2026-09-10 |
 | [TASK-20260910-128](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-128-fix-terminal-portfolio-dictionary-nesting.md) | Fix Terminal Workspace Portfolio Dictionary Nesting | completed | high | 2026-09-10 |
+| [TASK-20260910-129](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-129-fix-buffett-terminal-runtime-data-contracts.md) | Fix Buffett Terminal Runtime Data Contracts & Valuation Canonicalization | completed | high | 2026-09-10 |
 
 
 
