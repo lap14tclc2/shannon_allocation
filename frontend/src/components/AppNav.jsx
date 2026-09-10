@@ -13,14 +13,14 @@ import {
 import AppearanceControls from './AppearanceControls.jsx';
 
 const LINKS = [
-  ['/terminal', 'portfolio', 'Terminal'],
+  ['/', 'portfolio', 'Terminal'],
   ['/business', 'valuation', 'Doanh nghiệp'],
   ['/capital', 'allocation', 'Vốn cá nhân'],
   ['/history', 'performance', 'Lịch sử tích sản'],
 ];
 
 const NAVIGATION_LINKS = [
-  ['/terminal', 'portfolio', 'Terminal', 'Pháo đài cá nhân và ma trận quyết định'],
+  ['/', 'portfolio', 'Terminal', 'Pháo đài cá nhân và ma trận quyết định'],
   ['/business', 'valuation', 'Doanh nghiệp', 'Phân tích 7 chiều, Moat và Bẫy giá trị'],
   ['/capital', 'allocation', 'Vốn cá nhân', 'Dự phòng sinh tồn và Vốn khả dụng dài hạn'],
   ['/history', 'performance', 'Lịch sử tích sản', 'Lợi nhuận TWR/XIRR và nhật ký giao dịch'],

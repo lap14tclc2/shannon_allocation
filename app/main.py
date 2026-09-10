@@ -1721,7 +1721,7 @@ def api_portfolio_history(qport_session: str | None = Cookie(default=None)):
     return {
         "ok": True,
         "nav_history": dash.get("history") or pf.get("history") or [],
-        "transactions": svc.store.list_activity(limit=100),
+        "transactions": svc.transactions()[:100],
         "summary": {
             "total_nav": pf.get("nav"),
             "total_cost": pf.get("cost_basis"),

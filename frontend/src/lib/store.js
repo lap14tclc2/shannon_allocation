@@ -61,9 +61,17 @@ async function fetchRoutePayload(pathname) {
     return { payload: await getAdminUserPortfolio(Number(adminUserMatch[1])) };
   }
 
+  if (pathname.startsWith('/business')) {
+    return {};
+  }
+
   switch (pathname) {
     case '/':
+    case '/terminal':
       return { dashboard: await getPortfolioDashboard() };
+    case '/capital':
+    case '/history':
+      return {};
     case '/portfolios':
       return { registry: await listPortfolios() };
     case '/transactions': {

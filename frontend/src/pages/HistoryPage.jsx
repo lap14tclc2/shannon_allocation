@@ -10,8 +10,11 @@ export default function HistoryPage() {
     fetch('/api/portfolio/history')
       .then((res) => res.json())
       .then((res) => {
-        if (res.ok) setData(res);
-        else setError(res.error || 'Failed to load compounding history');
+        if (res.ok) {
+          setData(res);
+        } else {
+          setError(res.error || 'Không thể tải lịch sử tích sản.');
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -41,19 +44,19 @@ export default function HistoryPage() {
               <div className="metric-grid">
                 <div className="metric-item">
                   <small>Tổng giá trị NAV hiện tại</small>
-                  <strong>{data.summary.total_nav ? `${Number(data.summary.total_nav).toLocaleString()} VND` : '—'}</strong>
+                  <strong>{data.summary?.total_nav != null ? `${Number(data.summary.total_nav).toLocaleString()} VND` : '—'}</strong>
                 </div>
                 <div className="metric-item">
                   <small>Tổng giá vốn tích lũy</small>
-                  <strong>{data.summary.total_cost ? `${Number(data.summary.total_cost).toLocaleString()} VND` : '—'}</strong>
+                  <strong>{data.summary?.total_cost != null ? `${Number(data.summary.total_cost).toLocaleString()} VND` : '—'}</strong>
                 </div>
                 <div className="metric-item">
                   <small>Lợi nhuận chưa thực hiện</small>
-                  <strong>{data.summary.unrealized_pnl ? `${Number(data.summary.unrealized_pnl).toLocaleString()} VND` : '—'}</strong>
+                  <strong>{data.summary?.unrealized_pnl != null ? `${Number(data.summary.unrealized_pnl).toLocaleString()} VND` : '—'}</strong>
                 </div>
                 <div className="metric-item">
                   <small>Tỷ lệ sinh lời %</small>
-                  <strong>{data.summary.return_pct != null ? `${Number(data.summary.return_pct).toFixed(2)}%` : '—'}</strong>
+                  <strong>{data.summary?.return_pct != null ? `${Number(data.summary.return_pct).toFixed(2)}%` : '—'}</strong>
                 </div>
               </div>
             </section>
@@ -73,13 +76,21 @@ export default function HistoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.transactions && data.transactions.map((tx) => (
-                      <tr key={tx.id}>
-                        <td>{tx.occurred_at || tx.created_at}</td>
-                        <td><strong>{tx.action || tx.category}</strong></td>
-                        <td>{JSON.stringify(tx.details || {})}</td>
+                    {data.transactions && data.transactions.length > 0 ? (
+                      data.transactions.map((tx) => (
+                        <tr key={tx.id || Math.random()}>
+                          <td>{tx.occurred_at || tx.created_at || '—'}</td>
+                          <td><strong>{tx.action || tx.category || 'GIAO DỊCH'}</strong></td>
+                          <td>{typeof tx.details === 'object' ? JSON.stringify(tx.details) : String(tx.details || '—')}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: 'center', padding: '16px' }} className="muted">
+                          Chưa có nhật ký giao dịch nào được ghi nhận.
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>

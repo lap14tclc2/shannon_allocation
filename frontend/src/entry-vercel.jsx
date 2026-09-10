@@ -127,7 +127,7 @@ function ErrorScreen({ error, onRetry }) {
 function resolveRoute(pathname) {
   const adminUserMatch = pathname.match(/^\/admin\/users\/\d+$/);
   if (adminUserMatch) return AdminUserPortfolioPage;
-  if (pathname.startsWith('/business')) return BusinessPage;
+  if (pathname === '/business' || pathname.startsWith('/business/')) return BusinessPage;
   return ROUTES[pathname] || null;
 }
 
@@ -189,7 +189,6 @@ function App() {
       return;
     }
     if (!resolveRoute(pathname)) {
-      navigate(user.role === 'ADMIN' ? '/admin' : '/', { replace: true });
       return;
     }
     dispatch(loadRoute({ pathname }));
@@ -206,7 +205,8 @@ function App() {
     return <ErrorScreen error={bootError} onRetry={() => dispatch(bootstrapApp())} />;
   }
 
-  if (!user || !Page) return <LoadingScreen />;
+  if (!user) return <LoadingScreen />;
+  if (!Page) return <ErrorScreen error="Trang không tồn tại." onRetry={() => navigate(user?.role === 'ADMIN' ? '/admin' : '/')} />;
 
   const common = { locale: APP_LOCALE, currentUser: user };
   const data = route.data || {};
