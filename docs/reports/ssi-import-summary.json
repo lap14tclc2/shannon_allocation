@@ -1,19 +1,19 @@
 {
-  "scanned_at": "2026-09-10T14:13:42.490430+00:00",
+  "scanned_at": "2026-09-10T14:58:07.916806+00:00",
   "source_directory": "F:\\DATA_BCTC",
-  "files_discovered": 10,
-  "files_parsed": 10,
+  "files_discovered": 9,
+  "files_parsed": 9,
   "parse_failures": 0,
   "unique_symbols": 1,
-  "balance_sheet_payloads": 2,
+  "balance_sheet_payloads": 3,
   "income_statement_payloads": 2,
-  "cash_flow_payloads": 6,
+  "cash_flow_payloads": 4,
   "same_payload_group_count": 3,
   "different_payload_conflicts": 0,
-  "raw_observations_count": 8400,
-  "canonical_facts_count": 720,
-  "unmapped_rows_count": 7680,
+  "raw_observations_count": 0,
+  "canonical_facts_count": 0,
+  "unmapped_rows_count": 0,
   "symbols": [
-    "AAA"
+    "VIX"
   ]
 }

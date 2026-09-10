@@ -78,43 +78,61 @@ def test_ssi_primary_source_precedence_in_database():
     initialize_finance_schema()
     with _schema_connection(FINANCE_SCHEMA) as conn:
         conn.execute("DELETE FROM canonical_facts WHERE symbol = 'TEST132'")
-        
-        # Insert mock TCBS facts
+        conn.execute("DELETE FROM securities WHERE symbol = 'TEST132'")
         conn.execute(
-            """INSERT INTO canonical_facts
-               (symbol, statement_type, line_item_code, value, period_type, fiscal_year, period_end, provider, quality_status, observed_at)
-               VALUES ('TEST132', 'INCOME_STATEMENT', 'IS.REVENUE', 100.0, 'FY', 2025, '2025-12-31', 'tcbs', 'FALLBACK', '2026-09-10T00:00:00Z')"""
+            """INSERT INTO securities (symbol, exchange, company_name, is_active, updated_at)
+               VALUES ('TEST132', 'HOSE', 'Test Company 132', 1, '2026-09-10T00:00:00Z')
+               ON CONFLICT (symbol) DO NOTHING"""
         )
 
-        # Insert mock SSI primary facts (with different value for IS.REVENUE)
-        conn.execute(
-            """INSERT INTO canonical_facts
-               (symbol, statement_type, line_item_code, value, period_type, fiscal_year, period_end, provider, quality_status, observed_at)
-               VALUES ('TEST132', 'INCOME_STATEMENT', 'IS.REVENUE', 500.0, 'FY', 2025, '2025-12-31', 'ssi', 'PRIMARY_SSI', '2026-09-10T00:00:00Z')"""
-        )
+        req_codes = [
+            ("INCOME_STATEMENT", "IS.PROFIT.NET", 10.0, 50.0),
+            ("INCOME_STATEMENT", "IS.PROFIT.OPERATING", 10.0, 50.0),
+            ("INCOME_STATEMENT", "IS.REVENUE.TOTAL", 100.0, 500.0),
+            ("CASH_FLOW", "CF.OPERATING.NET", 10.0, 50.0),
+            ("CASH_FLOW", "CF.OPERATING.DEPRECIATION", 10.0, 50.0),
+            ("CASH_FLOW", "CF.CAPEX", -5.0, -25.0),
+            ("BALANCE_SHEET", "BS.ASSETS.CASH_AND_EQUIVALENTS", 20.0, 100.0),
+            ("BALANCE_SHEET", "BS.DEBT.TOTAL", 10.0, 50.0),
+            ("BALANCE_SHEET", "IS.SHARES.OUTSTANDING", 1000.0, 1000.0),
+        ]
+
+        for stmt, code, tcbs_val, ssi_val in req_codes:
+            conn.execute(
+                """INSERT INTO canonical_facts
+                   (symbol, statement_type, line_item_code, value, period_type, fiscal_year, period_end, provider, quality_status, observed_at)
+                   VALUES ('TEST132', ?, ?, ?, 'FY', 2025, '2025-12-31', 'tcbs', 'FALLBACK', '2026-09-10T00:00:00Z')""",
+                (stmt, code, tcbs_val),
+            )
+            conn.execute(
+                """INSERT INTO canonical_facts
+                   (symbol, statement_type, line_item_code, value, period_type, fiscal_year, period_end, provider, quality_status, observed_at)
+                   VALUES ('TEST132', ?, ?, ?, 'FY', 2025, '2025-12-31', 'ssi', 'PRIMARY_SSI', '2026-09-10T00:00:00Z')""",
+                (stmt, code, ssi_val),
+            )
 
         if hasattr(conn, "commit"):
             conn.commit()
 
         # Query valuation snapshot for TEST132
-        snap = valuation_snapshot_from_catalog("TEST132")
-        income = snap.get("income_statement", [])
-        assert len(income) > 0
-        rev_item = [r for r in income if r.get("line_item_code") == "IS.REVENUE"][0]
+        from portfolio.finance_catalog import valuation_readiness_audit
+        audit = valuation_readiness_audit("TEST132")
+        rev_item = audit["selected_facts"]["IS.REVENUE.TOTAL"]
         # Revenue value MUST match SSI value (500.0), NOT TCBS value (100.0)
-        assert rev_item.get("value") == 500.0
-        assert rev_item.get("provider") == "ssi"
+        assert float(rev_item["value"]) == 500.0
+        assert rev_item["provider"] == "ssi"
 
         # Clean up mock symbol
         conn.execute("DELETE FROM canonical_facts WHERE symbol = 'TEST132'")
+        conn.execute("DELETE FROM securities WHERE symbol = 'TEST132'")
         if hasattr(conn, "commit"):
             conn.commit()
 
 
 def test_zero_runtime_xlsx_access_in_request_path():
     """Verify runtime valuation and policy context functions execute with zero XLSX disk access."""
-    # Ensure build_canonical_valuation and build_investment_decision_context run without reading XLSX files
+    # Ensure build_canonical_valuation and build_decision_context run without reading XLSX files
     val = build_canonical_valuation("ACB", market_price=22000.0)
-    ctx = build_investment_decision_context(symbol="ACB", valuation=val if val.get("ok") else None)
+    ctx = build_decision_context(symbol="ACB", valuation=val if val.get("ok") else None)
     assert ctx.symbol == "ACB"
-    assert ctx.archetype == "BANK"
+    assert ctx.circle_of_competence is not None

@@ -27,6 +27,15 @@ def generate_runtime_evidence_report(db_conn) -> str:
     ]
 
     for sym in GOLDEN_SYMBOLS:
+        facts = db_conn.execute(
+            """SELECT line_item_code, fiscal_year, value, provider, quality_status
+               FROM canonical_facts
+               WHERE symbol = ? AND provider = 'ssi'
+               ORDER BY fiscal_year DESC, line_item_code ASC
+               LIMIT 10""",
+            (sym,),
+        ).fetchall()
+
         # Build canonical valuation
         val = build_canonical_valuation(sym, market_price=50000.0)
         

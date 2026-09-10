@@ -7,6 +7,7 @@ payload hashes, preserves raw SSI evidence and lineage, and populates PostgreSQL
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -187,12 +188,23 @@ def parse_ssi_workbook(file_path: str) -> SSIParsedWorkbook:
     raw_file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     try:
-        wb = openpyxl.load_workbook(path, data_only=True)
+        wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
         ws = wb.active
+        sheet_rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        wb.close()
+
+        def get_val(r_1based: int, c_1based: int):
+            r_idx = r_1based - 1
+            c_idx = c_1based - 1
+            if 0 <= r_idx < len(sheet_rows):
+                row_data = sheet_rows[r_idx]
+                if 0 <= c_idx < len(row_data):
+                    return row_data[c_idx]
+            return None
 
         # Extract timestamp in row 6 column 2 if present
         extract_ts = None
-        cell_ts = ws.cell(6, 2).value
+        cell_ts = get_val(6, 2)
         if isinstance(cell_ts, datetime):
             extract_ts = cell_ts.isoformat()
         elif cell_ts:
@@ -204,7 +216,7 @@ def parse_ssi_workbook(file_path: str) -> SSIParsedWorkbook:
         period_col_map: dict[int, str] = {}
 
         for col in range(2, 50):
-            val = ws.cell(header_row_idx, col).value
+            val = get_val(header_row_idx, col)
             if val is not None and str(val).strip():
                 p_str = str(val).strip()
                 periods.append(p_str)
@@ -213,14 +225,14 @@ def parse_ssi_workbook(file_path: str) -> SSIParsedWorkbook:
         if not periods:
             # Fallback search for period row
             for r in range(1, 12):
-                row_vals = [ws.cell(r, c).value for c in range(2, 20)]
+                row_vals = [get_val(r, c) for c in range(2, 20)]
                 year_like = [str(v).strip() for v in row_vals if v and re.match(r"^(19|20)\d{2}", str(v).strip())]
                 if len(year_like) >= 2:
                     header_row_idx = r
                     periods = []
                     period_col_map = {}
                     for col in range(2, 50):
-                        v = ws.cell(r, col).value
+                        v = get_val(r, col)
                         if v is not None and str(v).strip():
                             p_str = str(v).strip()
                             periods.append(p_str)
@@ -243,14 +255,14 @@ def parse_ssi_workbook(file_path: str) -> SSIParsedWorkbook:
         observations: list[dict[str, Any]] = []
 
         # Read data rows starting after header row
-        for row in range(header_row_idx + 1, ws.max_row + 1):
-            line_name = ws.cell(row, 1).value
+        for row in range(header_row_idx + 1, len(sheet_rows) + 1):
+            line_name = get_val(row, 1)
             if line_name is None or not str(line_name).strip():
                 continue
             line_name_str = str(line_name).strip()
 
             for col, period_str in period_col_map.items():
-                cell_val = ws.cell(row, col).value
+                cell_val = get_val(row, col)
                 # Preserve NULL vs 0. Empty cell or None is None.
                 numeric_val = None
                 if cell_val is not None and cell_val != "":
@@ -329,6 +341,10 @@ def map_ssi_line_item(raw_line_name: str, statement_type: str) -> tuple[str | No
     return None, "UNMAPPED"
 
 
+def _parse_file_top(fp_str: str) -> SSIParsedWorkbook:
+    return parse_ssi_workbook(fp_str)
+
+
 @dataclass
 class ImportSummaryReport:
     scanned_at: str
@@ -365,10 +381,11 @@ class SSIBulkImporter:
         if not self.directory.exists():
             raise FileNotFoundError(f"Directory {self.directory} does not exist.")
 
-        all_files = sorted([f for f in self.directory.glob("*.xlsx")])
         if target_symbol:
             sym_clean = target_symbol.strip().upper()
-            all_files = [f for f in all_files if f"_{sym_clean}_" in f.name.upper()]
+            all_files = sorted([f for f in self.directory.glob(f"*{sym_clean}*.xlsx")])
+        else:
+            all_files = sorted([f for f in self.directory.glob("*.xlsx")])
 
         files_discovered = len(all_files)
         parsed_workbooks: list[SSIParsedWorkbook] = []
@@ -382,10 +399,21 @@ class SSIBulkImporter:
             existing_shas = self.db.execute("SELECT raw_file_sha256 FROM ssi_import_files WHERE import_status='SUCCESS'").fetchall()
             processed_shas = {r["raw_file_sha256"] for r in existing_shas}
 
-        for idx, file_path in enumerate(all_files, 1):
-            if file_path.name.startswith("~$"):
-                continue
-            parsed = parse_ssi_workbook(str(file_path))
+        files_to_parse = [f for f in all_files if not f.name.startswith("~$")]
+        print(f"Parsing {len(files_to_parse)} SSI XLSX workbooks using parallel workers...", flush=True)
+
+        def _parse_file(fp: Path) -> SSIParsedWorkbook:
+            return parse_ssi_workbook(str(fp))
+
+        parsed_results = []
+        with ThreadPoolExecutor(max_workers=min(16, (os.cpu_count() or 4) * 2)) as executor:
+            futures = [executor.submit(_parse_file, f) for f in files_to_parse]
+            for i, fut in enumerate(as_completed(futures), 1):
+                parsed_results.append(fut.result())
+                if i % 500 == 0 or i == len(files_to_parse):
+                    print(f"[{i}/{len(files_to_parse)}] Excel workbooks parsed...", flush=True)
+
+        for parsed in parsed_results:
             if not parsed.is_valid:
                 parse_failures += 1
                 parsed_workbooks.append(parsed)
@@ -394,6 +422,8 @@ class SSIBulkImporter:
             symbols_found.add(parsed.metadata.symbol)
             parsed_workbooks.append(parsed)
             semantic_groups.setdefault(parsed.semantic_hash, []).append(parsed)
+
+        print(f"Parsed {len(parsed_workbooks)} workbooks across {len(symbols_found)} symbols.", flush=True)
 
         bs_count = sum(1 for p in parsed_workbooks if p.metadata.statement_type == "BALANCE_SHEET" and p.is_valid)
         is_count = sum(1 for p in parsed_workbooks if p.metadata.statement_type == "INCOME_STATEMENT" and p.is_valid)
@@ -589,32 +619,29 @@ def main():
 
     is_dry_run = args.dry_run or not args.do_import
 
-    conn = None
     if not is_dry_run:
         from portfolio.finance_catalog import initialize_finance_schema
         initialize_finance_schema()
-        # Acquire schema connection context
-        conn = _schema_connection(FINANCE_SCHEMA).__enter__()
+        with _schema_connection(FINANCE_SCHEMA) as conn:
+            importer = SSIBulkImporter(directory=args.directory, db_connection=conn)
+            summary = importer.run(dry_run=is_dry_run, resume=args.resume, target_symbol=args.symbol)
+    else:
+        importer = SSIBulkImporter(directory=args.directory, db_connection=None)
+        summary = importer.run(dry_run=True, resume=args.resume, target_symbol=args.symbol)
 
-    try:
-        importer = SSIBulkImporter(directory=args.directory, db_connection=conn)
-        summary = importer.run(dry_run=is_dry_run, resume=args.resume, target_symbol=args.symbol)
-        print("=== SSI BULK INGESTION SUMMARY ===")
-        print(f"Directory: {summary.source_directory}")
-        print(f"Files Discovered: {summary.files_discovered}")
-        print(f"Files Parsed: {summary.files_parsed}")
-        print(f"Parse Failures: {summary.parse_failures}")
-        print(f"Unique Symbols: {summary.unique_symbols}")
-        print(f"Balance Sheet Payloads: {summary.balance_sheet_payloads}")
-        print(f"Income Statement Payloads: {summary.income_statement_payloads}")
-        print(f"Cash Flow Payloads: {summary.cash_flow_payloads}")
-        print(f"Same-Financial-Payload Groups: {summary.same_payload_group_count}")
-        print(f"Raw Observations Count: {summary.raw_observations_count}")
-        print(f"Canonical Facts Mapped: {summary.canonical_facts_count}")
-        print(f"Unmapped Line Items Count: {summary.unmapped_rows_count}")
-    finally:
-        if conn:
-            conn.__exit__(None, None, None)
+    print("=== SSI BULK INGESTION SUMMARY ===")
+    print(f"Directory: {summary.source_directory}")
+    print(f"Files Discovered: {summary.files_discovered}")
+    print(f"Files Parsed: {summary.files_parsed}")
+    print(f"Parse Failures: {summary.parse_failures}")
+    print(f"Unique Symbols: {summary.unique_symbols}")
+    print(f"Balance Sheet Payloads: {summary.balance_sheet_payloads}")
+    print(f"Income Statement Payloads: {summary.income_statement_payloads}")
+    print(f"Cash Flow Payloads: {summary.cash_flow_payloads}")
+    print(f"Same-Financial-Payload Groups: {summary.same_payload_group_count}")
+    print(f"Raw Observations Count: {summary.raw_observations_count}")
+    print(f"Canonical Facts Mapped: {summary.canonical_facts_count}")
+    print(f"Unmapped Line Items Count: {summary.unmapped_rows_count}")
 
 
 if __name__ == "__main__":
