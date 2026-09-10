@@ -254,6 +254,10 @@ class PostgresConnectionCompat:
             cursor = self.execute(statement)
         return cursor
 
+    def commit(self):
+        if hasattr(self._connection, "commit"):
+            self._connection.commit()
+
 
 class _PostgresConnectionPool:
     """Small process-local pool of validated PostgreSQL connections.

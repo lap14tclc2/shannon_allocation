@@ -440,7 +440,12 @@ class SSIBulkImporter:
 
         # Production Database Import Phase
         now_str = datetime.now(timezone.utc).isoformat()
-        for parsed in parsed_workbooks:
+        total_workbooks = len(parsed_workbooks)
+
+        for idx, parsed in enumerate(parsed_workbooks, 1):
+            if idx % 100 == 0 or idx == total_workbooks:
+                print(f"[{idx}/{total_workbooks}] Processing SSI database import: symbol={parsed.metadata.symbol} statement={parsed.metadata.statement_type}")
+
             if not parsed.is_valid:
                 self.db.execute(
                     """INSERT INTO ssi_import_files
@@ -501,19 +506,25 @@ class SSIBulkImporter:
                 )
 
             if canonical_batch:
-                for item in canonical_batch:
-                    self.db.execute(
-                        """DELETE FROM canonical_facts
-                           WHERE symbol = ? AND statement_type = ? AND line_item_code = ?
-                             AND period_type = 'FY' AND fiscal_year = ? AND provider = 'ssi'""",
-                        (item[0], item[1], item[2], item[4]),
-                    )
+                sym = canonical_batch[0][0]
+                st_type = canonical_batch[0][1]
+                self.db.execute(
+                    """DELETE FROM canonical_facts
+                       WHERE symbol = ? AND statement_type = ? AND provider = 'ssi'""",
+                    (sym, st_type),
+                )
                 self.db.executemany(
                     """INSERT INTO canonical_facts
                        (symbol, statement_type, line_item_code, value, period_type, fiscal_year, fiscal_quarter, period_end, provider, quality_status, observed_at)
                        VALUES (?, ?, ?, ?, 'FY', ?, NULL, ?, 'ssi', 'PRIMARY_SSI', ?)""",
                     canonical_batch,
                 )
+
+            if self.db and hasattr(self.db, "commit"):
+                self.db.commit()
+
+        if self.db and hasattr(self.db, "commit"):
+            self.db.commit()
 
         summary = ImportSummaryReport(
             scanned_at=now_str,

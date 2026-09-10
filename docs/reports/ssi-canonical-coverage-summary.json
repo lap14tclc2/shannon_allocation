@@ -1,0 +1,18 @@
+{
+  "scanned_symbols_total": 390,
+  "valuation_core_ready": 0,
+  "valuation_core_partial": 0,
+  "valuation_core_blocked": 390,
+  "history_deep_gt_10y": 0,
+  "history_strong_7_10y": 0,
+  "history_good_5_6y": 0,
+  "history_minimum_3_4y": 0,
+  "history_insufficient_lt_3y": 390,
+  "primary_provider": "ssi",
+  "secondary_providers": [
+    "tcbs",
+    "cafef"
+  ],
+  "quarterly_data_required": false,
+  "quarterly_data_used": false
+}

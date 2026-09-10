@@ -109,6 +109,7 @@
 | [TASK-20260910-130](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-130-fix-buffett-workspace-routing-and-navigation.md) | Fix Buffett/Munger workspace routing and navigation | completed | high | 2026-09-10 |
 | [TASK-20260910-131](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-131-runtime-evidence-data-completeness-audit.md) | Runtime evidence & data completeness audit for ACB, DGC, and FPT | completed | high | 2026-09-10 |
 | [TASK-20260910-131](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-131-ssi-bulk-financial-ingestion.md) | Bulk SSI XLSX Financial Ingestion & Canonical Fact Integration | completed | high | 2026-09-10 |
+| [TASK-20260910-132](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-132-ssi-coverage-canonical-cutover.md) | SSI Universe Coverage Audit & Primary Canonical Data Cutover | completed | high | 2026-09-10 |
 
 
 

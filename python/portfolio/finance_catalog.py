@@ -1197,7 +1197,7 @@ def valuation_readiness_audit(symbol: str, market_price: float | None = None) ->
                           period_type, fiscal_year, fiscal_quarter, period_end,
                           provider, source_document_id, quality_status, observed_at
                    FROM canonical_facts WHERE symbol=?
-                   ORDER BY fiscal_year DESC, fiscal_quarter DESC NULLS LAST, provider ASC""",
+                   ORDER BY fiscal_year DESC, fiscal_quarter DESC NULLS LAST, CASE provider WHEN 'ssi' THEN 1 WHEN 'tcbs' THEN 2 ELSE 3 END ASC""",
                 (ticker,),
             ).fetchall()
         ]
