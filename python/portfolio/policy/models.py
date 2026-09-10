@@ -23,11 +23,30 @@ class InvestmentDecisionContext:
     circle_of_competence: str = "UNKNOWN"
     quality_score: float | None = None
     quality_tier: str | None = None
+
+    # Accounting Reliability Split
+    accounting_numeric_quality: str = "UNKNOWN"
+    accounting_qualitative_reliability: str = "UNKNOWN"
     accounting_reliability: str = "UNKNOWN"
+
     financial_strength: str = "UNKNOWN"
     earnings_durability: str = "UNKNOWN"
+
+    # Management & Capital Allocation Split
+    numeric_capital_allocation: str = "UNKNOWN"
+    management_integrity: str = "UNKNOWN"
     capital_allocation_quality: str = "UNKNOWN"
+
+    # Moat & Falsification
     moat_assessment: str = "UNKNOWN"
+    moat_types: list[str] = field(default_factory=list)
+    moat_supporting_evidence: list[str] = field(default_factory=list)
+    moat_counter_evidence: list[str] = field(default_factory=list)
+
+    # Munger Checklist & Qualitative Evidence Summary
+    munger_checklist_status: str = "UNANSWERED"
+    munger_checklist_concerns: list[str] = field(default_factory=list)
+    qualitative_evidence_items: list[dict[str, Any]] = field(default_factory=list)
 
     # Valuation & MOS Context
     current_price: float = 0.0

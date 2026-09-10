@@ -65,8 +65,27 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
         what_would_change.append("Doanh nghiệp tái cơ cấu nợ và tái lập dòng tiền kinh doanh dương.")
 
-    # Gate 3: Personal Balance Sheet / Survival Reserve Check
-    elif ctx.survival_reserve_status in ("UNSAFE", "UNSATISFACTORY", "UNKNOWN"):
+    # Gate 3: Business Review Quality / Moat Failure
+    elif ctx.business_review_status in ("BUSINESS_FAIL", "FAIL") or ctx.moat_assessment == "FAIL" or "MOAT_DESTRUCTION" in ctx.hard_rejects:
+        decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
+        confidence = "HIGH"
+        summary = "Mô hình kinh doanh không đạt tiêu chí chất lượng tối thiểu hoặc suy giảm xói mòn moat."
+        reasons.append("Chất lượng kinh doanh yếu kém hoặc xói mòn lợi thế cạnh tranh.")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-04-BUSINESS-MOAT-FAILURE",
+                metric="moat_assessment",
+                value=ctx.moat_assessment,
+                threshold="PASS/WATCH",
+                status="TRIGGERED",
+                source="business_review",
+                description="Doanh nghiệp hoặc lợi thế cạnh tranh thất bại.",
+            )
+        )
+        what_would_change.append("Doanh nghiệp tái lập biên lợi nhuận và lợi thế cạnh tranh bền vững.")
+
+    # Gate 4: Personal Balance Sheet / Survival Reserve Check
+    elif ctx.survival_reserve_status in ("UNSAFE", "UNSATISFACTORY", "UNKNOWN", "UNCONFIGURED"):
         decision = "BUILD_RESERVE_FIRST"
         confidence = "HIGH"
         summary = "Doanh nghiệp hấp dẫn nhưng tài chính cá nhân chưa an toàn hoặc thiếu dữ liệu. Cần hoàn thiện dự phòng."
@@ -84,7 +103,7 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
         what_would_change.append("Gia tăng tài sản thanh khoản an toàn để khôi phục quỹ dự phòng về mức SAFE.")
 
-    # Gate 3B: Personal Balance Sheet ATTENTION
+    # Gate 4B: Personal Balance Sheet ATTENTION
     elif ctx.survival_reserve_status == "ATTENTION":
         decision = "HOLD_NO_NEW_CAPITAL" if is_existing_holding else "BUILD_RESERVE_FIRST"
         confidence = "HIGH"
@@ -102,15 +121,6 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
             )
         )
         what_would_change.append("Tích lũy quỹ dự phòng an toàn về mức SAFE.")
-
-
-    # Gate 4: Business Review Quality Failure
-    elif ctx.business_review_status == "BUSINESS_FAIL":
-        decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
-        confidence = "HIGH"
-        summary = "Mô hình kinh doanh không đạt tiêu chí chất lượng tối thiểu."
-        reasons.append("Chất lượng kinh doanh yếu kém hoặc xói mòn lợi thế cạnh tranh.")
-        what_would_change.append("Doanh nghiệp tái lập biên lợi nhuận và lợi thế cạnh tranh bền vững.")
 
     # Gate 5: Value Trap High Risk
     elif ctx.value_trap_status == "HIGH_RISK":

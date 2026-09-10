@@ -13,6 +13,8 @@ def build_decision_context(
     personal_finance: dict[str, Any] | None = None,
     business_review: dict[str, Any] | None = None,
     value_trap: dict[str, Any] | None = None,
+    qualitative_evidence: list[dict[str, Any]] | None = None,
+    munger_checklist: dict[str, Any] | None = None,
 ) -> InvestmentDecisionContext:
     """Build a unified InvestmentDecisionContext from component domain reports."""
     symbol_clean = symbol.strip().upper()
@@ -47,6 +49,12 @@ def build_decision_context(
         ctx.quality_score = valuation.get("quality_score")
         ctx.quality_tier = valuation.get("quality_tier")
 
+        cf_qual = valuation.get("cash_flow_quality")
+        if cf_qual in ("HIGH_QUALITY", "GOOD", "PASS"):
+            ctx.accounting_numeric_quality = "PASS"
+        elif cf_qual in ("LOW_QUALITY", "POOR", "FAIL"):
+            ctx.accounting_numeric_quality = "FAIL"
+
         if valuation.get("hard_rejects"):
             hard_rejects.extend(valuation["hard_rejects"])
     else:
@@ -54,23 +62,46 @@ def build_decision_context(
         ctx.model_status = "INVALID"
         ctx.valuation_confidence = "UNKNOWN"
 
-    # 3. Business Review Integration
+    # 3. Business Review & Qualitative Integration
     if business_review:
         ctx.circle_of_competence = (
             business_review.get("understandability")
             or business_review.get("circle_of_competence", "UNKNOWN")
         )
-        ctx.accounting_reliability = business_review.get("accounting_reliability", "UNKNOWN")
         ctx.financial_strength = business_review.get("financial_strength", "UNKNOWN")
         ctx.earnings_durability = business_review.get("earnings_durability", "UNKNOWN")
-        ctx.capital_allocation_quality = (
-            business_review.get("management_capital_allocation")
-            or business_review.get("capital_allocation_quality", "UNKNOWN")
+
+        # Accounting Reliability Split
+        ctx.accounting_numeric_quality = business_review.get("accounting_numeric_quality") if business_review else ctx.accounting_numeric_quality
+        ctx.accounting_qualitative_reliability = business_review.get("accounting_qualitative_reliability", "UNKNOWN") if business_review else ctx.accounting_qualitative_reliability
+
+        if ctx.accounting_qualitative_reliability == "FAIL" or ctx.accounting_numeric_quality == "FAIL":
+            ctx.accounting_reliability = "FAIL"
+        elif ctx.accounting_numeric_quality == "PASS" and ctx.accounting_qualitative_reliability == "UNKNOWN":
+            ctx.accounting_reliability = "WATCH"
+        elif ctx.accounting_numeric_quality == "PASS" and ctx.accounting_qualitative_reliability == "PASS":
+            ctx.accounting_reliability = "PASS"
+        else:
+            ctx.accounting_reliability = "UNKNOWN"
+
+        # Management & Capital Allocation Split
+        ctx.numeric_capital_allocation = (
+            business_review.get("numeric_capital_allocation")
+            or business_review.get("capital_allocation_quality")
+            or business_review.get("management_capital_allocation")
+            or "UNKNOWN"
         )
+        ctx.management_integrity = business_review.get("management_integrity", "UNKNOWN")
+
+        # Moat & Falsification
         ctx.moat_assessment = (
             business_review.get("moat")
             or business_review.get("moat_assessment", "UNKNOWN")
         )
+        ctx.moat_types = business_review.get("moat_types", [])
+        ctx.moat_supporting_evidence = business_review.get("moat_supporting_evidence", [])
+        ctx.moat_counter_evidence = business_review.get("moat_counter_evidence", [])
+
         ctx.business_review_status = (
             business_review.get("overall_status")
             or business_review.get("status", "UNKNOWN")
@@ -78,6 +109,52 @@ def build_decision_context(
     else:
         missing_fields.append("BUSINESS_REVIEW")
         ctx.business_review_status = "UNKNOWN"
+
+    if qualitative_evidence:
+        ctx.qualitative_evidence_items = qualitative_evidence
+        for item in qualitative_evidence:
+            dim = item.get("dimension")
+            st = item.get("status")
+            if dim == "MOAT":
+                ctx.moat_assessment = st
+                if item.get("supporting_evidence"):
+                    ctx.moat_supporting_evidence.extend(item["supporting_evidence"])
+                if item.get("counter_evidence"):
+                    ctx.moat_counter_evidence.extend(item["counter_evidence"])
+            elif dim == "MANAGEMENT_CAPITAL_ALLOCATION":
+                ctx.management_integrity = st
+            elif dim == "ACCOUNTING_RELIABILITY_QUALITATIVE":
+                ctx.accounting_qualitative_reliability = st
+                if st == "FAIL":
+                    ctx.accounting_reliability = "FAIL"
+                    hard_rejects.append("ACCOUNTING_UNRELIABLE")
+            elif dim == "CIRCLE_OF_COMPETENCE":
+                ctx.circle_of_competence = st
+
+    # Compute Accounting Reliability Aggregate
+    if ctx.accounting_qualitative_reliability == "FAIL" or ctx.accounting_numeric_quality == "FAIL":
+        ctx.accounting_reliability = "FAIL"
+    elif (business_review and business_review.get("accounting_reliability") == "PASS") or (ctx.accounting_numeric_quality == "PASS" and ctx.accounting_qualitative_reliability == "PASS"):
+        ctx.accounting_reliability = "PASS"
+    elif ctx.accounting_numeric_quality == "PASS" and ctx.accounting_qualitative_reliability == "UNKNOWN":
+        ctx.accounting_reliability = "WATCH"
+    else:
+        ctx.accounting_reliability = "UNKNOWN"
+
+    # Compute Capital Allocation Quality Aggregate
+    if ctx.management_integrity == "FAIL":
+        ctx.capital_allocation_quality = "FAIL"
+    elif ctx.numeric_capital_allocation == "PASS" or ctx.management_integrity == "PASS":
+        ctx.capital_allocation_quality = "PASS"
+    else:
+        ctx.capital_allocation_quality = ctx.numeric_capital_allocation if ctx.management_integrity == "UNKNOWN" else ctx.management_integrity
+
+    if munger_checklist:
+        q_objs = munger_checklist.get("questions", [])
+        concerns = [q.get("notes") for q in q_objs if q.get("status") == "CONCERN" and q.get("notes")]
+        unanswered = [q for q in q_objs if q.get("status") == "UNANSWERED"]
+        ctx.munger_checklist_concerns = concerns
+        ctx.munger_checklist_status = "CONCERN" if concerns else ("ANSWERED" if not unanswered else "UNANSWERED")
 
     # 4. Value Trap Gate Integration
     if value_trap:
