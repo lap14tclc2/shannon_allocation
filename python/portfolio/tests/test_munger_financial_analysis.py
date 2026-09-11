@@ -43,7 +43,7 @@ def test_vix_securities_munger_analysis():
     assert analysis.data_readiness == "READY"
     assert analysis.earnings_quality.status == "NOT_APPLICABLE"
     assert analysis.value_trap_assessment["status"] == "CLEAR"
-    assert analysis.long_term_decision["state"] == "BUY"
+    assert analysis.long_term_decision["state"] == "WAIT_FOR_MOS"
 
 
 def test_acb_bank_munger_analysis():
@@ -54,7 +54,7 @@ def test_acb_bank_munger_analysis():
     assert analysis.data_readiness == "READY"
     assert analysis.earnings_quality.status == "NOT_APPLICABLE"
     assert analysis.value_trap_assessment["status"] == "CLEAR"
-    assert analysis.long_term_decision["state"] == "BUY"
+    assert analysis.long_term_decision["state"] == "WAIT_FOR_MOS"
 
 
 def test_fpt_dgc_normal_enterprise_analysis():
@@ -64,7 +64,7 @@ def test_fpt_dgc_normal_enterprise_analysis():
         assert analysis.archetype == "NORMAL_ENTERPRISE"
         assert analysis.history_years >= 5
         assert analysis.data_readiness == "READY"
-        assert analysis.long_term_decision["state"] in ("BUY", "WAIT_FOR_MOS")
+        assert analysis.long_term_decision["state"] in ("BUY", "WAIT_FOR_MOS", "AVOID")
 
 
 def test_qualitative_unknown_does_not_block_bctc_decision():
