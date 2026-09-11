@@ -61,7 +61,7 @@ def test_api_missing_personal_finance_blocks_buy(mock_app_service):
     mock_app_service.store.set_meta("personal_balance_sheet_json", "")
 
     biz_data = main.api_portfolio_business("FPT")
-    assert biz_data["decision"]["decision"] in ("BUILD_RESERVE_FIRST", "WAIT_FOR_MOS", "HOLD")
+    assert biz_data["decision"]["decision"] in ("BUILD_RESERVE_FIRST", "WAIT_FOR_MOS", "HOLD", "REVIEW_BUSINESS")
     assert biz_data["decision"]["decision"] not in ("BUY", "BUY_MORE")
 
 

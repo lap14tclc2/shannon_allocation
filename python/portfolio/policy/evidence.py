@@ -31,6 +31,8 @@ class DecisionEvidence:
     confidence: str  # HIGH, MEDIUM, LOW
 
     summary: str
+    primary_reason: str = ""
+    blocking_reasons: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     facts: list[dict[str, Any]] = field(default_factory=list)
     rules_triggered: list[DecisionRuleTrigger] = field(default_factory=list)
