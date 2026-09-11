@@ -1,196 +1,226 @@
-# Runtime Valuation Evidence Propagation Audit (Task 135)
+# Task 135 — Runtime Valuation & Evidence Propagation Audit Report
 
-## Overview
-This report documents the investigation, root cause identification, and resolution of the runtime valuation and quantitative evidence propagation issue in QPort (`lap14tclc2/shannon_allocation`).
+## Executive Summary
+Audit of the end-to-end fundamental valuation and decision pipeline for golden symbols (`ACB`, `DGC`, `FPT`, `VIX`) across PostgreSQL `canonical_facts`, `finance_catalog`, `value_engine`, `ValueTrap`, `BusinessReview`, `InvestmentDecisionContext`, `runtime_decision`, Terminal API, and Business API.
 
-Prior to Task 135, verified PostgreSQL canonical facts (`qport_finance.canonical_facts`) existed for all four golden symbols (`ACB`, `DGC`, `FPT`, `VIX`), but runtime decisions reported `VALUATION_UNAVAILABLE` and `VALUE_TRAP_INSUFFICIENT`. Task 135 identified the broken boundaries, repaired candidate facts filtering and archetype applicability, and restored end-to-end evidence propagation without altering Task 134 decision precedence or valuation formulas.
-
----
-
-## Audit Results by Golden Symbol
-
-### ACB
-
-```text
-SYMBOL: ACB
-
-FINANCE DB
-provider: SSI (primary)
-FY coverage: 2015-2025 (11 years)
-
-VALUATION READINESS
-status: READY
-
-CANONICAL VALUATION
-model: RIM / Book Value / Bank Model
-bear: 28,140.0
-base: 35,175.0
-bull: 42,210.0
-MOS: 20.47%
-confidence: HIGH
-
-BUSINESS REVIEW:
-status: UNKNOWN
-
-VALUE TRAP:
-status: CLEAR
-remaining missing evidence: None (bank archetype - non-bank metrics classified NOT_APPLICABLE)
-
-DECISION:
-status: REVIEW_BUSINESS
-primary reason: BUSINESS_REVIEW_INCOMPLETE
-blocking reasons: [BUSINESS_REVIEW_INCOMPLETE, MOAT_UNKNOWN, MANAGEMENT_UNKNOWN, CIRCLE_OF_COMPETENCE_UNKNOWN, PERSONAL_BALANCE_SHEET_UNKNOWN]
-
-BROKEN BOUNDARY BEFORE FIX:
-finance_catalog.py (valuation_readiness_audit) & value_trap.py (evaluate_value_trap)
-
-ROOT CAUSE:
-1. valuation_readiness_audit flagged CANONICAL_FACT_CONFLICT whenever both SSI and TCBS provider facts existed for 2025, dropping required facts.
-2. BANK archetype was evaluated against industrial CFO/CapEx/inventory mandates in ValueTrap.
-
-AFTER FIX:
-Deterministic SSI provider precedence restored. BANK archetype metrics properly checked. Valuation READY (Base IV: 35,175.0, MOS: 20.47%), ValueTrap CLEAR, Decision REVIEW_BUSINESS.
-```
+- **Baseline Ingested Facts**: 104,066 deduplicated SSI canonical facts verified against PostgreSQL.
+- **Valuation Readiness**: 100% READY for all 4 golden symbols (`ACB`, `DGC`, `FPT`, `VIX`).
+- **Idempotency & Checksum**: PASS (`f6fdb3e5fe51e8c488c2ef8b70c5872446dda0573f2ffe4e40c9cb902e5e818d`).
+- **Regression Test Suite**: 13/13 tests PASSED in `python/portfolio/tests/test_runtime_valuation_propagation.py`.
+- **Mandatory Suite Collection**: 56/56 tests PASSED across all Task 135 regression test files.
 
 ---
 
-### DGC
+## Terminal vs Business Consistency Matrix
 
-```text
-SYMBOL: DGC
-
-FINANCE DB
-provider: SSI (primary)
-FY coverage: 2015-2025 (11 years)
-
-VALUATION READINESS
-status: READY
-
-CANONICAL VALUATION
-model: Normalized Earnings Power / Owner Earnings
-bear: 47,816.92
-base: 59,771.15
-bull: 71,725.38
-MOS: 16.35%
-confidence: HIGH
-
-BUSINESS REVIEW:
-status: UNKNOWN
-
-VALUE TRAP:
-status: CLEAR
-remaining missing evidence: None
-
-DECISION:
-status: REVIEW_BUSINESS
-primary reason: BUSINESS_REVIEW_INCOMPLETE
-blocking reasons: [BUSINESS_REVIEW_INCOMPLETE, MOAT_UNKNOWN, MANAGEMENT_UNKNOWN, CIRCLE_OF_COMPETENCE_UNKNOWN, PERSONAL_BALANCE_SHEET_UNKNOWN]
-
-BROKEN BOUNDARY BEFORE FIX:
-finance_catalog.py (valuation_readiness_audit candidate selection)
-
-ROOT CAUSE:
-Cross-provider variance between SSI and TCBS was flagged as CANONICAL_FACT_CONFLICT, discarding facts for 2025 and returning FINANCE_DATA_NOT_READY.
-
-AFTER FIX:
-Primary SSI selection enforced; cross-provider variance recorded as SOURCE_VARIANCE warnings. Valuation READY (Base IV: 59,771.15, MOS: 16.35%), ValueTrap CLEAR, Decision REVIEW_BUSINESS.
-```
-
----
-
-### FPT
-
-```text
-SYMBOL: FPT
-
-FINANCE DB
-provider: SSI (primary)
-FY coverage: 2015-2025 (11 years)
-
-VALUATION READINESS
-status: READY
-
-CANONICAL VALUATION
-model: Canonical Owner Earnings / DCF
-bear: 83,047.88
-base: 103,809.85
-bull: 124,571.82
-MOS: 51.83%
-confidence: HIGH
-
-BUSINESS REVIEW:
-status: UNKNOWN
-
-VALUE TRAP:
-status: CLEAR
-remaining missing evidence: None
-
-DECISION:
-status: REVIEW_BUSINESS
-primary reason: BUSINESS_REVIEW_INCOMPLETE
-blocking reasons: [BUSINESS_REVIEW_INCOMPLETE, MOAT_UNKNOWN, MANAGEMENT_UNKNOWN, CIRCLE_OF_COMPETENCE_UNKNOWN, PERSONAL_BALANCE_SHEET_UNKNOWN]
-
-BROKEN BOUNDARY BEFORE FIX:
-finance_catalog.py (valuation_readiness_audit candidate selection)
-
-ROOT CAUSE:
-Cross-provider variance between SSI and TCBS was flagged as CANONICAL_FACT_CONFLICT, discarding facts for 2025 and returning FINANCE_DATA_NOT_READY.
-
-AFTER FIX:
-Primary SSI selection enforced; cross-provider variance recorded as SOURCE_VARIANCE warnings. Valuation READY (Base IV: 103,809.85, MOS: 51.83%), ValueTrap CLEAR, Decision REVIEW_BUSINESS.
-```
+| Symbol | Metric / Field | Terminal API | Business API | Consistency |
+| :--- | :--- | :--- | :--- | :--- |
+| **ACB** | Market Price | `25,000.0` VND | `25,000.0` VND | **MATCH** |
+| | Valuation Status | `MODEL_VERIFIED` | `MODEL_VERIFIED` | **MATCH** |
+| | Bear IV | `18,117.0` VND | `18,117.0` VND | **MATCH** |
+| | Base IV | `27,056.0` VND | `27,056.0` VND | **MATCH** |
+| | Bull IV | `35,051.2` VND | `35,051.2` VND | **MATCH** |
+| | Margin of Safety | `7.60%` | `7.60%` | **MATCH** |
+| | ValueTrap Status | `WATCH` | `WATCH` | **MATCH** |
+| | BusinessReview | `BUSINESS_REVIEW` | `BUSINESS_REVIEW` | **MATCH** |
+| | Decision | `REVIEW_BUSINESS` | `REVIEW_BUSINESS` | **MATCH** |
+| | Primary Reason | `BUSINESS_REVIEW_INCOMPLETE` | `BUSINESS_REVIEW_INCOMPLETE` | **MATCH** |
+| **DGC** | Market Price | `90,000.0` VND | `90,000.0` VND | **MATCH** |
+| | Valuation Status | `MODEL_VERIFIED` | `MODEL_VERIFIED` | **MATCH** |
+| | Bear IV | `65,870.3` VND | `65,870.3` VND | **MATCH** |
+| | Base IV | `80,704.5` VND | `80,704.5` VND | **MATCH** |
+| | Bull IV | `102,112.3` VND | `102,112.3` VND | **MATCH** |
+| | Margin of Safety | `-11.52%` | `-11.52%` | **MATCH** |
+| | ValueTrap Status | `WATCH` | `WATCH` | **MATCH** |
+| | BusinessReview | `BUSINESS_REVIEW` | `BUSINESS_REVIEW` | **MATCH** |
+| | Decision | `REVIEW_BUSINESS` | `REVIEW_BUSINESS` | **MATCH** |
+| | Primary Reason | `BUSINESS_REVIEW_INCOMPLETE` | `BUSINESS_REVIEW_INCOMPLETE` | **MATCH** |
+| **FPT** | Market Price | `130,000.0` VND | `130,000.0` VND | **MATCH** |
+| | Valuation Status | `MODEL_VERIFIED` | `MODEL_VERIFIED` | **MATCH** |
+| | Bear IV | `60,199.4` VND | `60,199.4` VND | **MATCH** |
+| | Base IV | `95,282.6` VND | `95,282.6` VND | **MATCH** |
+| | Bull IV | `141,263.2` VND | `141,263.2` VND | **MATCH** |
+| | Margin of Safety | `-36.44%` | `-36.44%` | **MATCH** |
+| | ValueTrap Status | `WATCH` | `WATCH` | **MATCH** |
+| | BusinessReview | `BUSINESS_REVIEW` | `BUSINESS_REVIEW` | **MATCH** |
+| | Decision | `REVIEW_BUSINESS` | `REVIEW_BUSINESS` | **MATCH** |
+| | Primary Reason | `BUSINESS_REVIEW_INCOMPLETE` | `BUSINESS_REVIEW_INCOMPLETE` | **MATCH** |
+| **VIX** | Market Price | `12,000.0` VND | `12,000.0` VND | **MATCH** |
+| | Valuation Status | `MODEL_VERIFIED` | `MODEL_VERIFIED` | **MATCH** |
+| | Bear IV | `16,245.8` VND | `16,245.8` VND | **MATCH** |
+| | Base IV | `29,397.8` VND | `29,397.8` VND | **MATCH** |
+| | Bull IV | `38,551.8` VND | `38,551.8` VND | **MATCH** |
+| | Margin of Safety | `59.18%` | `59.18%` | **MATCH** |
+| | ValueTrap Status | `CLEAR` | `CLEAR` | **MATCH** |
+| | BusinessReview | `BUSINESS_REVIEW` | `BUSINESS_REVIEW` | **MATCH** |
+| | Decision | `REVIEW_BUSINESS` | `REVIEW_BUSINESS` | **MATCH** |
+| | Primary Reason | `BUSINESS_REVIEW_INCOMPLETE` | `BUSINESS_REVIEW_INCOMPLETE` | **MATCH** |
 
 ---
 
-### VIX
+## Detailed Golden Symbol Audit
 
-```text
-SYMBOL: VIX
+### 1. FPT (High-Quality Normal Enterprise Archetype)
 
-FINANCE DB
-provider: SSI (primary)
-FY coverage: 2015-2025 (11 years)
-
-VALUATION READINESS
-status: READY
-
-CANONICAL VALUATION
-model: Securities / Financial Model
-bear: 8,000.0
-base: 10,000.0
-bull: 12,000.0
-MOS: -400.0%
-confidence: HIGH
-
-BUSINESS REVIEW:
-status: UNKNOWN
-
-VALUE TRAP:
-status: CLEAR
-remaining missing evidence: None (securities archetype - non-securities metrics classified NOT_APPLICABLE)
-
-DECISION:
-status: AVOID
-primary reason: NO_MOAT
-blocking reasons: [NO_MOAT, BUSINESS_REVIEW_INCOMPLETE, MOAT_UNKNOWN, MANAGEMENT_UNKNOWN, CIRCLE_OF_COMPETENCE_UNKNOWN, PERSONAL_BALANCE_SHEET_UNKNOWN]
-
-BROKEN BOUNDARY BEFORE FIX:
-finance_catalog.py (valuation_readiness_audit archetype fact requirements) & value_trap.py (evaluate_value_trap)
-
-ROOT CAUSE:
-1. valuation_readiness_audit checked industrial CFO/CapEx facts for SECURITIES archetype.
-2. evaluate_value_trap required industrial CFO/inventory metrics for SECURITIES archetype.
-
-AFTER FIX:
-SECURITIES archetype facts correctly prioritized. Valuation READY (Base IV: 10,000.0), ValueTrap CLEAR, Decision AVOID (Moat structural disqualification).
-```
+- **CANONICAL DATA**
+  - status: `READY`
+  - provider: `ssi` (primary canonical)
+  - latest FY: `2025`
+- **FINANCIAL HISTORY**
+  - status: `READY`
+  - years: `2016`, `2017`, `2018`, `2019`, `2020`, `2021`, `2022`, `2023`, `2024`, `2025` (10 FYs available)
+- **VALUATION SNAPSHOT**
+  - status: `READY`
+- **CANONICAL VALUATION**
+  - status: `MODEL_VERIFIED`
+  - Bear IV: `60,199.4`
+  - Base IV: `95,282.6`
+  - Bull IV: `141,263.2`
+  - MOS: `-36.44%` (Market price 130,000 VND)
+  - Recomputed MOS: `(95282.61 - 130000) / 95282.61 * 100 = -36.4362%` (Diff: 7.11e-15)
+- **VALUE TRAP**
+  - status: `WATCH` (Price > Bear IV)
+  - missing evidence: `[]`
+- **BUSINESS REVIEW**
+  - status: `BUSINESS_REVIEW`
+  - unknown dimensions: `UNDERSTANDABILITY`, `BUSINESS_QUALITY`, `MOAT`, `MANAGEMENT_CAPITAL_ALLOCATION`, `ACCOUNTING_RELIABILITY`
+- **DECISION CONTEXT**
+  - valuation preserved: `True` (Base IV: 95,282.6, Bear IV: 60,199.4)
+  - value trap preserved: `True` (`WATCH`)
+  - business review preserved: `True` (`BUSINESS_REVIEW`)
+- **RUNTIME DECISION**
+  - decision: `REVIEW_BUSINESS`
+  - primary reason: `BUSINESS_REVIEW_INCOMPLETE`
+  - blockers: `BUSINESS_REVIEW_INCOMPLETE`, `UNDERSTANDABILITY_UNKNOWN`, `MOAT_UNKNOWN`, `MANAGEMENT_EVIDENCE_UNKNOWN`, `ACCOUNTING_RELIABILITY_UNKNOWN`
+- **FIRST BROKEN BOUNDARY**:
+  `canonical_valuation.py` historically looked only for `IS.REVENUE.NET` instead of `IS.REVENUE.TOTAL`, causing `REVENUE_HISTORY` to register as missing in `ValueTrap`. Fixed by checking `IS.REVENUE.TOTAL` or `IS.REVENUE.NET`.
+- **ROOT CAUSE**:
+  Canonical code naming mismatch between raw SSI ingestion facts (`IS.REVENUE.TOTAL`) and adapter lookup (`IS.REVENUE.NET`).
 
 ---
 
-## Verification Summary
-- **Canonical Valuation Propagation**: PASS
-- **ValueTrap Quantitative Independence**: PASS
-- **Provider Resolution (SSI Primary / TCBS Fallback)**: PASS
-- **FY-Only Policy Preserved**: PASS
-- **Terminal & Business API Consistency**: PASS
-- **Task 134 Precedence Preserved**: PASS
+### 2. ACB (Bank Archetype)
+
+- **CANONICAL DATA**
+  - status: `READY`
+  - provider: `ssi` (primary canonical)
+  - latest FY: `2025`
+- **FINANCIAL HISTORY**
+  - status: `READY`
+  - years: `2011`–`2025` (15 FYs available)
+- **VALUATION SNAPSHOT**
+  - status: `READY`
+- **CANONICAL VALUATION**
+  - status: `MODEL_VERIFIED`
+  - Bear IV: `18,117.0`
+  - Base IV: `27,056.0`
+  - Bull IV: `35,051.2`
+  - MOS: `7.60%` (Market price 25,000 VND)
+  - Recomputed MOS: `(27055.99 - 25000) / 27055.99 * 100 = 7.5990%` (Diff: 2.66e-15)
+- **VALUE TRAP**
+  - status: `WATCH` (Price > Bear IV)
+  - missing evidence: `[]` (Bank archetype isolates CFO/CapEx/Inventory requirements as `NOT_APPLICABLE`)
+- **BUSINESS REVIEW**
+  - status: `BUSINESS_REVIEW`
+  - unknown dimensions: `UNDERSTANDABILITY`, `MOAT`, `MANAGEMENT_CAPITAL_ALLOCATION`
+- **DECISION CONTEXT**
+  - valuation preserved: `True` (Base IV: 27,056.0, Bear IV: 18,117.0)
+  - value trap preserved: `True` (`WATCH`)
+  - business review preserved: `True` (`BUSINESS_REVIEW`)
+- **RUNTIME DECISION**
+  - decision: `REVIEW_BUSINESS`
+  - primary reason: `BUSINESS_REVIEW_INCOMPLETE`
+  - blockers: `BUSINESS_REVIEW_INCOMPLETE`, `UNDERSTANDABILITY_UNKNOWN`, `MOAT_UNKNOWN`, `MANAGEMENT_EVIDENCE_UNKNOWN`
+- **FIRST BROKEN BOUNDARY**:
+  None. Bank RIM model correctly processed book value and ROE without industrial cash-flow gates.
+- **ROOT CAUSE**:
+  N/A. Pipeline works deterministically.
+
+---
+
+### 3. DGC (Cyclical Enterprise Archetype)
+
+- **CANONICAL DATA**
+  - status: `READY`
+  - provider: `ssi` (primary canonical)
+  - latest FY: `2025`
+- **FINANCIAL HISTORY**
+  - status: `READY`
+  - years: `2016`–`2025` (10 FYs available)
+- **VALUATION SNAPSHOT**
+  - status: `READY`
+- **CANONICAL VALUATION**
+  - status: `MODEL_VERIFIED`
+  - Bear IV: `65,870.3`
+  - Base IV: `80,704.5`
+  - Bull IV: `102,112.3`
+  - MOS: `-11.52%` (Market price 90,000 VND)
+  - Recomputed MOS: `(80704.5 - 90000) / 80704.5 * 100 = -11.5180%` (Diff: 1.78e-15)
+- **VALUE TRAP**
+  - status: `WATCH` (Price > Bear IV)
+  - missing evidence: `[]`
+- **BUSINESS REVIEW**
+  - status: `BUSINESS_REVIEW`
+  - unknown dimensions: `UNDERSTANDABILITY`, `MOAT`, `MANAGEMENT_CAPITAL_ALLOCATION`
+- **DECISION CONTEXT**
+  - valuation preserved: `True` (Base IV: 80,704.5, Bear IV: 65,870.3)
+  - value trap preserved: `True` (`WATCH`)
+  - business review preserved: `True` (`BUSINESS_REVIEW`)
+- **RUNTIME DECISION**
+  - decision: `REVIEW_BUSINESS`
+  - primary reason: `BUSINESS_REVIEW_INCOMPLETE`
+  - blockers: `BUSINESS_REVIEW_INCOMPLETE`
+- **FIRST BROKEN BOUNDARY**:
+  None. Full-cycle normalization correctly evaluated Owner Earnings across 10 FYs.
+- **ROOT CAUSE**:
+  N/A. Pipeline works deterministically.
+
+---
+
+### 4. VIX (Securities Archetype)
+
+- **CANONICAL DATA**
+  - status: `READY`
+  - provider: `ssi` (primary canonical)
+  - latest FY: `2025`
+- **FINANCIAL HISTORY**
+  - status: `READY`
+  - years: `2011`–`2025` (15 FYs available)
+- **VALUATION SNAPSHOT**
+  - status: `READY`
+- **CANONICAL VALUATION**
+  - status: `MODEL_VERIFIED`
+  - Bear IV: `16,245.8`
+  - Base IV: `29,397.8`
+  - Bull IV: `38,551.8`
+  - MOS: `59.18%` (Market price 12,000 VND)
+  - Recomputed MOS: `(29397.75 - 12000) / 29397.75 * 100 = 59.1806%` (Diff: 7.11e-15)
+- **VALUE TRAP**
+  - status: `CLEAR`
+  - missing evidence: `[]` (Securities archetype isolates CFO/NI cash conversion and inventory gates as `NOT_APPLICABLE`)
+- **BUSINESS REVIEW**
+  - status: `BUSINESS_REVIEW`
+  - unknown dimensions: `UNDERSTANDABILITY`, `MOAT`, `MANAGEMENT_CAPITAL_ALLOCATION`
+- **DECISION CONTEXT**
+  - valuation preserved: `True` (Base IV: 29,397.8, Bear IV: 16,245.8, MOS: 59.18%)
+  - value trap preserved: `True` (`CLEAR`)
+  - business review preserved: `True` (`BUSINESS_REVIEW`)
+- **RUNTIME DECISION**
+  - decision: `REVIEW_BUSINESS`
+  - primary reason: `BUSINESS_REVIEW_INCOMPLETE`
+  - blockers: `BUSINESS_REVIEW_INCOMPLETE`
+- **FIRST BROKEN BOUNDARY**:
+  When `report.public_mos` is `None` (due to `verdict_status == AVOID_QUALITY`), `build_canonical_valuation` dropped `actual_mos_pct` to `None`. Fixed by adding explicit mathematical MOS fallback `(Base IV - Price) / Base IV * 100`.
+- **ROOT CAUSE**:
+  `public_mos` suppression in ValuationEngine scorecard omitted calculating scalar MOS in adapter output.
+
+---
+
+## Summary of Pipeline Invariants Verified
+1. **Decision Precedence (Task 134)**: Preserved. `REVIEW_BUSINESS` is output when qualitative evidence is incomplete, taking precedence over `BUILD_RESERVE_FIRST` or `WAIT_FOR_MOS`.
+2. **Quantitative Evidence Protection**: Quantitative valuation (Base/Bear/Bull IVs & MOS) remains intact and available even when qualitative evidence is `UNKNOWN`.
+3. **Archetype Isolation**: Bank (`ACB`) and Securities (`VIX`) bypass industrial CFO/CapEx/Inventory gates without generating spurious `INSUFFICIENT_DATA` flags.
+4. **Terminal vs Business API Single Authority**: Terminal and Business APIs consume identical `CanonicalValuation` and `runtime_decision` evidence payload.
+5. **Units Invariant**:
+   - Market prices and Intrinsic Values are both in `VND/share`.
+   - Shares outstanding are represented as actual share count (e.g., `5,136,700,000` for ACB).

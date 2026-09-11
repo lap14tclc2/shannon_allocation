@@ -286,7 +286,9 @@ def build_canonical_valuation(
             shares_val = items.get("IS.SHARES.OUTSTANDING")
             debt_val = items.get("BS.DEBT.TOTAL")
             cash_val = items.get("BS.ASSETS.CASH_AND_EQUIVALENTS")
-            rev_val = items.get("IS.REVENUE.NET")
+            rev_val = items.get("IS.REVENUE.TOTAL") or items.get("IS.REVENUE.NET")
+            rec_val = items.get("BS.ASSETS.RECEIVABLES_SHORT_TERM") or items.get("BS.ASSETS.SHORT_TERM")
+            inv_val = items.get("BS.ASSETS.INVENTORY")
 
             np_scaled = float(np_val * Decimal("1000000000")) if np_val is not None else None
             eq_scaled = float(eq_val * Decimal("1000000000")) if eq_val is not None else None
@@ -295,6 +297,8 @@ def build_canonical_valuation(
             fcf_scaled = (cfo_scaled - capex_scaled) if (cfo_scaled is not None and capex_scaled is not None) else None
             debt_scaled = float(debt_val * Decimal("1000000000")) if debt_val is not None else None
             cash_scaled = float(cash_val * Decimal("1000000000")) if cash_val is not None else None
+            rec_scaled = float(rec_val * Decimal("1000000000")) if rec_val is not None else None
+            inv_scaled = float(inv_val * Decimal("1000000000")) if inv_val is not None else None
             shares_count = float(shares_val) if shares_val is not None else None
 
             roe_hist = round((float(np_val) / float(eq_val) * 100), 1) if (np_val is not None and eq_val and eq_val > Decimal("0")) else None
@@ -312,6 +316,8 @@ def build_canonical_valuation(
                 "shares_outstanding": shares_count,
                 "total_debt": debt_scaled,
                 "cash_and_equivalents": cash_scaled,
+                "receivables": rec_scaled,
+                "inventory": inv_scaled,
             })
 
     np_series = [(h["fiscal_year"], h["net_profit"]) for h in financial_history if h.get("net_profit") is not None]
@@ -514,6 +520,8 @@ def build_canonical_valuation(
                 bull_iv_val = float(v.intrinsic_value_per_share) if v and getattr(v, "intrinsic_value_per_share", None) is not None else None
 
     actual_mos = float(report.public_mos) if report.public_mos is not None else (float(report.margin_of_safety_pct) if report.margin_of_safety_pct is not None else None)
+    if actual_mos is None and base_iv_val is not None and base_iv_val > 0 and curr_price_float > 0:
+        actual_mos = float(round((Decimal(str(base_iv_val)) - Decimal(str(curr_price_float))) / Decimal(str(base_iv_val)) * Decimal("100"), 2))
     req_mos = float(report.margin_of_safety_analysis.get("required_margin_of_safety_pct") or 25.0) if isinstance(report.margin_of_safety_analysis, dict) else 25.0
     quality_score = report.quality_scorecard.get("total_score") if isinstance(report.quality_scorecard, dict) else (report.assessment.quality_score if getattr(report, "assessment", None) else 0)
     quality_tier = report.quality_scorecard.get("tier") if isinstance(report.quality_scorecard, dict) else (str(report.assessment.quality_tier.value if hasattr(report.assessment.quality_tier, "value") else report.assessment.quality_tier) if getattr(report, "assessment", None) else "UNKNOWN")

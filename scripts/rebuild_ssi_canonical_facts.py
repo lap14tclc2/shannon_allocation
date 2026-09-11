@@ -18,11 +18,12 @@ def rebuild():
         before_ssi_count = conn.execute("SELECT count(*) as c FROM canonical_facts WHERE provider='ssi'").fetchone()["c"]
         print(f"BEFORE SSI canonical facts count: {before_ssi_count}")
 
-        # Fetch raw observations
+        # Fetch raw observations deterministically ordered by id DESC (latest observation wins)
         rows = conn.execute(
             """SELECT symbol, statement_type, raw_line_name, period, fiscal_year, value
                FROM ssi_raw_financial_observations
-               WHERE value IS NOT NULL AND fiscal_year IS NOT NULL"""
+               WHERE value IS NOT NULL AND fiscal_year IS NOT NULL
+               ORDER BY id DESC"""
         ).fetchall()
 
         print(f"Fetched {len(rows)} raw observations for canonical re-mapping.", flush=True)

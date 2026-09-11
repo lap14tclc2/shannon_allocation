@@ -206,6 +206,13 @@ def initialize_finance_schema() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_finance_canonical_symbol
             ON canonical_facts(symbol, line_item_code, fiscal_year DESC, fiscal_quarter DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_facts_unique_fy
+            ON canonical_facts(symbol, statement_type, line_item_code, period_type, fiscal_year, provider)
+            WHERE fiscal_quarter IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_facts_unique_quarter
+            ON canonical_facts(symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
+            WHERE fiscal_quarter IS NOT NULL;
+
         CREATE TABLE IF NOT EXISTS parse_errors (
             id BIGSERIAL PRIMARY KEY,
             source_document_id BIGINT,
