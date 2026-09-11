@@ -528,6 +528,9 @@ def build_canonical_valuation(
     val_conf = str(report.confidence_level.value if hasattr(report.confidence_level, "value") else report.confidence_level)
     hard_rejects = [str(r.value if hasattr(r, "value") else r) for r in (getattr(report, "hard_rejects", None) or (report.margin_of_safety_analysis.get("hard_rejects") if isinstance(report.margin_of_safety_analysis, dict) else []))]
 
+    from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
+    munger_analysis = build_munger_financial_analysis(ticker, existing_history=financial_history).to_dict()
+
     return {
         "ok": True,
         "symbol": ticker,
@@ -549,12 +552,14 @@ def build_canonical_valuation(
         "financial_history_10y": financial_history,      # compatibility alias
         "cagr_5y_net_profit": cagr_5y,
         "value_investor_pillars": value_investor_pillars,
+        "munger_analysis": munger_analysis,
         "report": {
             **rep_dict,
             "financial_history": financial_history,
             "financial_history_10y": financial_history,
             "cagr_5y_net_profit": cagr_5y,
             "value_investor_pillars": value_investor_pillars,
+            "munger_analysis": munger_analysis,
         },
         "valuation_snapshot": snapshot,
         "data_freshness": {

@@ -115,7 +115,7 @@
 | [TASK-20260910-134](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260910-134-final-buffett-munger-decision-precedence.md) | Final Buffett-Munger Decision Precedence Policy Engine | completed | high | 2026-09-10 |
 | [TASK-20260911-135](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-135-runtime-valuation-evidence-propagation.md) | Runtime Valuation & Evidence Propagation Repair | completed | high | 2026-09-11 |
 | [TASK-20260911-132C](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-132C-ssi-canonical-semantics-repair.md) | SSI Canonical Semantics Repair | completed | high | 2026-09-11 |
-| [TASK-20260911-136](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-136-business-workspace-symbol-search-entry-point.md) | Business Workspace Symbol & Company Search Entry Point | draft | high | 2026-09-11 |
+| [TASK-20260911-136](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-136-munger-financial-analysis-engine.md) | Munger-Style Full Financial Statement Analysis Engine | completed | high | 2026-09-11 |
 
 
 

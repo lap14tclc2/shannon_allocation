@@ -6,7 +6,7 @@ from portfolio.policy.engine import evaluate_decision
 
 
 def test_scenario_a_business_unknown_attractive_mos_safe_pbs():
-    """Scenario A: Business UNKNOWN + ValueTrap CLEAR + MOS 50% + PBS SAFE -> REVIEW_BUSINESS."""
+    """Scenario A: Qualitative UNKNOWN + ValueTrap CLEAR + MOS 50% + PBS SAFE -> BUY under Task 136 BCTC-only pipeline."""
     ctx = InvestmentDecisionContext(
         symbol="SYM_A",
         current_weight=0.0,
@@ -21,9 +21,8 @@ def test_scenario_a_business_unknown_attractive_mos_safe_pbs():
         available_long_term_capital=100_000_000,
     )
     ev = evaluate_decision(ctx)
-    assert ev.decision == "REVIEW_BUSINESS"
-    assert ev.primary_reason == "BUSINESS_REVIEW_INCOMPLETE"
-    assert "BUSINESS_REVIEW_INCOMPLETE" in ev.blocking_reasons
+    assert ev.decision == "BUY"
+    assert "BUSINESS_REVIEW_INCOMPLETE" not in ev.blocking_reasons
 
 
 def test_scenario_b_business_pass_mos_insufficient_candidate():
@@ -69,7 +68,7 @@ def test_scenario_c_business_pass_mos_sufficient_pbs_unknown():
 
 
 def test_scenario_d_business_unknown_pbs_unknown_multiple_blockers():
-    """Scenario D: Business UNKNOWN + ValueTrap CLEAR + MOS sufficient + PBS UNKNOWN -> primary REVIEW_BUSINESS with PBS blocker retained."""
+    """Scenario D: Qualitative UNKNOWN + ValueTrap CLEAR + MOS sufficient + PBS UNKNOWN -> BUILD_RESERVE_FIRST."""
     ctx = InvestmentDecisionContext(
         symbol="SYM_D",
         current_weight=0.0,
@@ -84,9 +83,8 @@ def test_scenario_d_business_unknown_pbs_unknown_multiple_blockers():
         available_long_term_capital=0.0,
     )
     ev = evaluate_decision(ctx)
-    assert ev.decision == "REVIEW_BUSINESS"
-    assert ev.primary_reason == "BUSINESS_REVIEW_INCOMPLETE"
-    assert "BUSINESS_REVIEW_INCOMPLETE" in ev.blocking_reasons
+    assert ev.decision == "BUILD_RESERVE_FIRST"
+    assert ev.primary_reason == "PERSONAL_BALANCE_SHEET_UNKNOWN"
     assert "PERSONAL_BALANCE_SHEET_UNKNOWN" in ev.blocking_reasons
 
 

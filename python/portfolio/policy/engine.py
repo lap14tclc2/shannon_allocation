@@ -102,31 +102,32 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
 
     # -------------------------------------------------------------------------
-    # 5. GATE 5: Business Evidence Readiness (Unresolved Qualitative / Business Review)
+    # 5. GATE 5: Business Evidence Readiness (Only Financial Evidence Gaps Block)
     # -------------------------------------------------------------------------
-    if ctx.business_review_status not in ("BUSINESS_PASS", "PASS"):
-        blocking_reasons.append("BUSINESS_REVIEW_INCOMPLETE")
-        if ctx.circle_of_competence in ("UNKNOWN", None):
-            blocking_reasons.append("UNDERSTANDABILITY_UNKNOWN")
-            blocking_reasons.append("CIRCLE_OF_COMPETENCE_UNKNOWN")
-        if ctx.moat_assessment in ("UNKNOWN", None):
-            blocking_reasons.append("MOAT_UNKNOWN")
-        if ctx.management_integrity in ("UNKNOWN", None) or ctx.capital_allocation_quality in ("UNKNOWN", None):
-            blocking_reasons.append("MANAGEMENT_EVIDENCE_UNKNOWN")
-        if ctx.accounting_qualitative_reliability in ("UNKNOWN", None):
-            blocking_reasons.append("ACCOUNTING_RELIABILITY_UNKNOWN")
-
-        rules.append(
-            DecisionRuleTrigger(
-                rule_id="R-05-BUSINESS-REVIEW-INCOMPLETE",
-                metric="business_review_status",
-                value=ctx.business_review_status,
-                threshold="BUSINESS_PASS",
-                status="TRIGGERED",
-                source="business_review",
-                description="Chưa đủ bằng chứng định tính về doanh nghiệp.",
-            )
+    # Task 136 Munger BCTC-only Invariant: Qualitative UNKNOWN (Moat, Management, Circle of Competence)
+    # MUST NOT block the core financial decision pipeline.
+    if ctx.business_review_status in ("BUSINESS_FAIL", "FAIL"):
+        # Handled in GATE 3 STRUCTURAL_DETERIORATION
+        pass
+    elif ctx.business_review_status not in ("BUSINESS_PASS", "PASS"):
+        # Only block if financial evidence itself is missing or marked failing
+        has_financial_gap = (
+            ctx.data_readiness.get("financial_core") == "BLOCKED"
+            or ctx.data_readiness.get("value_trap") == "BLOCKED"
         )
+        if has_financial_gap:
+            blocking_reasons.append("BUSINESS_REVIEW_INCOMPLETE")
+            rules.append(
+                DecisionRuleTrigger(
+                    rule_id="R-05-BUSINESS-REVIEW-INCOMPLETE",
+                    metric="business_review_status",
+                    value=ctx.business_review_status,
+                    threshold="BUSINESS_PASS",
+                    status="TRIGGERED",
+                    source="business_review",
+                    description="Chưa đủ dữ liệu tài chính BCTC để hoàn tất phân tích.",
+                )
+            )
 
     # -------------------------------------------------------------------------
     # 6. GATE 6: Value Trap Insufficient Data / Watch

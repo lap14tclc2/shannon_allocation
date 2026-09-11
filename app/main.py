@@ -1221,6 +1221,23 @@ def portfolio_symbol_valuation(
     return response
 
 
+@app.get("/api/portfolio/business/{symbol}/munger")
+def portfolio_symbol_munger_analysis(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    """Munger-style long-term financial statement analysis engine for symbol."""
+    from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
+    require_portfolio_user(qport_session)
+    ticker = str(symbol or "").upper().strip()
+    analysis = build_munger_financial_analysis(ticker)
+    return {
+        "ok": True,
+        "symbol": ticker,
+        "munger_analysis": analysis.to_dict(),
+    }
+
+
 @app.get("/api/portfolio/crawl-status")
 def portfolio_crawl_status(qport_session: str | None = Cookie(default=None)):
     """Whether TCBS crawling is available (local/worker) vs read-only (Vercel)."""
