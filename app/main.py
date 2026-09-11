@@ -1227,14 +1227,16 @@ def portfolio_symbol_munger_analysis(
     qport_session: str | None = Cookie(default=None),
 ):
     """Munger-style long-term financial statement analysis engine for symbol."""
-    from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
-    require_portfolio_user(qport_session)
+    from portfolio.canonical_valuation import build_canonical_valuation
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
     ticker = str(symbol or "").upper().strip()
-    analysis = build_munger_financial_analysis(ticker)
+    val_data = build_canonical_valuation(ticker, store=svc.store)
     return {
         "ok": True,
         "symbol": ticker,
-        "munger_analysis": analysis.to_dict(),
+        "munger_analysis": val_data.get("munger_analysis", {}),
+        "valuation": val_data,
     }
 
 
@@ -1659,11 +1661,15 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
 @app.get("/api/portfolio/business/{symbol}")
 def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Business Workspace detail endpoint."""
+    from portfolio.canonical_valuation import build_canonical_valuation
+
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     ticker = str(symbol or "").strip().upper()
 
     runtime_data = svc.runtime_decision(ticker)
+    canonical_val = build_canonical_valuation(ticker, store=svc.store)
+    munger_analysis = canonical_val.get("munger_analysis", {})
 
     munger_checklist = [
         {"question": "Tại sao luận điểm đầu tư này có thể sai?", "key": "thesis_failure"},
@@ -1679,11 +1685,13 @@ def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(defau
     return {
         "ok": True,
         "symbol": ticker,
-        "holding": runtime_data["holding"],
-        "valuation": runtime_data["valuation"],
-        "business_review": runtime_data["business_review"],
-        "value_trap": runtime_data["value_trap"],
-        "decision": runtime_data["evidence"],
+        "munger_analysis": munger_analysis,
+        "canonical_valuation": canonical_val,
+        "holding": runtime_data.get("holding"),
+        "valuation": runtime_data.get("valuation"),
+        "business_review": runtime_data.get("business_review"),
+        "value_trap": runtime_data.get("value_trap"),
+        "decision": runtime_data.get("evidence"),
         "munger_checklist": munger_checklist,
     }
 

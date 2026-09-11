@@ -66,5 +66,16 @@ class MungerThresholdPolicy:
     SECURITIES_LEVERAGE_PASS: float = 3.5           # Total Assets / Equity <= 3.5x
     SECURITIES_LEVERAGE_WATCH: float = 5.0          # Total Assets / Equity <= 5.0x
 
+    # Required Margin of Safety (MOS) Policy Thresholds
+    BASE_REQUIRED_MOS_COMPOUNDER: float = 15.0      # Base Required MOS for high-quality durable compounder
+    BASE_REQUIRED_MOS_POTENTIAL_COMPOUNDER: float = 20.0 # Base Required MOS for potential compounder
+    BASE_REQUIRED_MOS_AVERAGE: float = 25.0         # Base Required MOS for average enterprise
+    BASE_REQUIRED_MOS_WEAK: float = 35.0            # Base Required MOS for weak enterprise (if buyable)
+    MOS_ADDON_VALUE_TRAP_WATCH: float = 5.0          # +5% MOS penalty for WATCH value trap
+    MOS_ADDON_LIMITED_HISTORY: float = 5.0          # +5% MOS penalty for limited history (5-7Y)
+    MOS_ADDON_BALANCE_SHEET_WATCH: float = 5.0      # +5% MOS penalty for balance sheet watch
+    MOS_ADDON_LOW_CONFIDENCE: float = 5.0           # +5% MOS penalty for low valuation confidence
+
 
 DEFAULT_MUNGER_THRESHOLD_POLICY = MungerThresholdPolicy()
+

@@ -41,9 +41,29 @@ def build_munger_financial_analysis(
     raw_facts: Optional[List[Dict[str, Any]]] = None,
     existing_history: Optional[List[Dict[str, Any]]] = None,
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
+    valuation_data: Optional[Dict[str, Any]] = None,
 ) -> FinancialBusinessAnalysis:
     """Build canonical FinancialBusinessAnalysis for a symbol."""
     ticker = symbol.strip().upper()
+
+    # Auto-retrieve canonical valuation if not explicitly passed
+    if valuation_data is None:
+        try:
+            from portfolio.canonical_valuation import build_canonical_valuation
+            val_res = build_canonical_valuation(ticker, compute_munger=False)
+            if val_res.get("ok"):
+                valuation_data = {
+                    "status": "READY" if val_res.get("base_iv") is not None else "INCOMPLETE",
+                    "current_price": val_res.get("current_price"),
+                    "bear_iv": val_res.get("bear_iv"),
+                    "base_iv": val_res.get("base_iv"),
+                    "bull_iv": val_res.get("bull_iv"),
+                    "actual_mos_pct": val_res.get("actual_mos_pct"),
+                    "valuation_confidence": val_res.get("valuation_confidence", "MEDIUM"),
+                    "quality_tier": val_res.get("quality_tier"),
+                }
+        except Exception:
+            valuation_data = None
 
     # 1. Build Multi-Year History
     history_data = build_financial_history_from_facts(ticker, raw_facts=raw_facts, existing_history=existing_history)
@@ -194,23 +214,97 @@ def build_munger_financial_analysis(
         "explanation": f"Đánh giá Bẫy giá trị: {vt_status}. Trạng thái cấu trúc: {structural_class}.",
     }
 
-    # 10. Core BCTC-Only Decision
-    decision_state = "BUY"
-    decision_reason = "Doanh nghiệp đạt chuẩn tài chính Munger."
+    # 10. Canonical Valuation & Deterministic Required MOS Integration
+    val_payload = valuation_data or {}
+    val_status = val_payload.get("status", "INCOMPLETE")
+    curr_price = val_payload.get("current_price")
+    bear_iv = val_payload.get("bear_iv")
+    base_iv = val_payload.get("base_iv")
+    bull_iv = val_payload.get("bull_iv")
+    actual_mos = val_payload.get("actual_mos_pct")
+    val_confidence = val_payload.get("valuation_confidence", "MEDIUM")
 
-    if hard_failures or vt_status == "HIGH_RISK" or compounder_class == CompounderClassification.DETERIORATING_BUSINESS.value:
+    # Dynamic Required MOS calculation based on evidence & risk
+    base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
+    if compounder_class == CompounderClassification.COMPOUNDER.value:
+        base_req_mos = thresholds.BASE_REQUIRED_MOS_COMPOUNDER
+    elif compounder_class == CompounderClassification.POTENTIAL_COMPOUNDER.value:
+        base_req_mos = thresholds.BASE_REQUIRED_MOS_POTENTIAL_COMPOUNDER
+    elif compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+        base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
+    elif compounder_class in (CompounderClassification.WEAK_BUSINESS.value, CompounderClassification.DETERIORATING_BUSINESS.value):
+        base_req_mos = thresholds.BASE_REQUIRED_MOS_WEAK
+
+    addons = 0.0
+    if vt_status == "WATCH":
+        addons += thresholds.MOS_ADDON_VALUE_TRAP_WATCH
+    if history_depth == "LIMITED":
+        addons += thresholds.MOS_ADDON_LIMITED_HISTORY
+    if bs_res.status == DimensionStatus.WATCH.value:
+        addons += thresholds.MOS_ADDON_BALANCE_SHEET_WATCH
+    if val_confidence in ("LOW", "MEDIUM"):
+        addons += thresholds.MOS_ADDON_LOW_CONFIDENCE
+
+    required_mos = round(base_req_mos + addons, 1)
+
+    if val_status != "READY" or actual_mos is None:
+        mos_gate = "UNKNOWN"
+    elif actual_mos >= required_mos:
+        mos_gate = "PASS"
+    else:
+        mos_gate = "FAIL"
+
+    valuation_analysis = {
+        "status": val_status,
+        "current_price": curr_price,
+        "bear_iv": bear_iv,
+        "base_iv": base_iv,
+        "bull_iv": bull_iv,
+        "actual_mos_pct": actual_mos,
+        "required_mos_pct": required_mos,
+        "mos_gate": mos_gate,
+        "valuation_confidence": val_confidence,
+    }
+
+    # 11. Core Deterministic BCTC-Only Decision (NO DEFAULT BUY!)
+    decision_state = "WAIT_FOR_MOS"
+    decision_reason = ""
+
+    if hard_failures or vt_status == "HIGH_RISK" or compounder_class == CompounderClassification.DETERIORATING_BUSINESS.value or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value):
         decision_state = "AVOID"
-        decision_reason = f"Phát hiện rủi ro tài chính nghiêm trọng ({', '.join(hard_failures)})."
-    elif vt_status == "WATCH" or data_readiness == "PARTIAL":
-        decision_state = "WAIT_FOR_MOS"
-        decision_reason = "Doanh nghiệp ở trạng thái WATCH/cần biên an toàn chiết khấu cao hơn."
+        fail_reasons = hard_failures if hard_failures else ([f"Bẫy giá trị rủi ro cao ({vt_status})"] if vt_status == "HIGH_RISK" else [f"Doanh nghiệp suy giảm cấu trúc ({structural_class})"])
+        decision_reason = f"Phát hiện rủi ro tài chính nghiêm trọng ({', '.join(fail_reasons)})."
     elif data_readiness == "INSUFFICIENT":
         decision_state = "REVIEW_BUSINESS"
-        decision_reason = "Chưa đủ dữ liệu tài chính lịch sử để kết luận."
+        decision_reason = "Chưa đủ dữ liệu tài chính lịch sử (dưới 3-5 năm) để hoàn thành đánh giá BCTC."
+    elif (
+        data_readiness in ("READY", "PARTIAL")
+        and not hard_failures
+        and vt_status != "HIGH_RISK"
+        and compounder_class not in (CompounderClassification.DETERIORATING_BUSINESS.value, CompounderClassification.INSUFFICIENT_DATA.value, CompounderClassification.WEAK_BUSINESS.value)
+        and val_status == "READY"
+        and actual_mos is not None
+        and mos_gate == "PASS"
+    ):
+        decision_state = "BUY"
+        decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+    else:
+        decision_state = "WAIT_FOR_MOS"
+        if compounder_class == CompounderClassification.WEAK_BUSINESS.value:
+            decision_reason = "Doanh nghiệp có chất lượng tài chính yếu, không đạt tiêu chí mua dài hạn."
+        elif val_status != "READY" or actual_mos is None:
+            decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
+        elif mos_gate == "FAIL":
+            decision_reason = f"Doanh nghiệp có chất lượng tốt ({compounder_class}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+        else:
+            decision_reason = "Doanh nghiệp ở trạng thái theo dõi, chờ mức giá có Biên an toàn phù hợp."
 
     long_term_decision = {
         "state": decision_state,
         "primary_reason": decision_reason,
+        "actual_mos_pct": actual_mos,
+        "required_mos_pct": required_mos,
+        "mos_gate": mos_gate,
         "bctc_only_pipeline": True,
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,
@@ -241,7 +335,7 @@ def build_munger_financial_analysis(
         structural_deterioration=structural_dict,
         cyclical_analysis={"cyclical_rebound": False},
         value_trap_assessment=value_trap_assessment,
-        valuation={"status": "READY"},
+        valuation=valuation_analysis,
         long_term_decision=long_term_decision,
         compounder_classification=compounder_class,
         overall_financial_quality=overall_quality,
@@ -249,3 +343,4 @@ def build_munger_financial_analysis(
         financial_warnings=warnings,
         all_findings=all_findings,
     )
+

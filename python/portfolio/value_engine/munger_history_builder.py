@@ -143,17 +143,29 @@ def build_financial_history_from_facts(
             "series": {},
         }
 
-    # Deterministic provider resolution: SSI primary if valid SSI fact exists, TCBS fallback
-    ssi_facts = [f for f in facts if f.get("provider") == "ssi"]
-    effective_facts = ssi_facts if ssi_facts else facts
-    provider = "ssi" if ssi_facts else (facts[0].get("provider") if facts else "unknown")
-
-    by_year: Dict[int, Dict[str, Any]] = {}
-    for f in effective_facts:
+    # Deterministic provider resolution: SSI primary per (code, fy) if present, TCBS fallback otherwise
+    fact_map: Dict[tuple[str, int], Dict[str, Any]] = {}
+    for f in facts:
         fy = f.get("fiscal_year")
         if not fy or not isinstance(fy, int) or fy <= 1900:
             continue
         code = str(f.get("line_item_code") or "").upper()
+        p = f.get("provider", "unknown")
+        key = (code, fy)
+
+        # SSI primary priority over TCBS
+        if key not in fact_map or p == "ssi":
+            fact_map[key] = f
+
+    effective_facts = list(fact_map.values())
+    ssi_count = sum(1 for f in effective_facts if f.get("provider") == "ssi")
+    provider = "ssi" if ssi_count > 0 else (facts[0].get("provider") if facts else "unknown")
+
+    by_year: Dict[int, Dict[str, Any]] = {}
+    for f in effective_facts:
+        fy = f.get("fiscal_year")
+        code = str(f.get("line_item_code") or "").upper()
+        p = f.get("provider", "ssi")
         val = f.get("value")
         if val is None:
             continue
@@ -161,6 +173,10 @@ def build_financial_history_from_facts(
             fval = float(val)
         except (ValueError, TypeError):
             continue
+
+        # Scale TCBS monetary facts (stored in billions) to exact VND if needed
+        if p == "tcbs" and "SHARES" not in code and abs(fval) < 1e7 and fval != 0:
+            fval = fval * 1e9
 
         if fy not in by_year:
             by_year[fy] = {"fiscal_year": fy, "provider": provider}

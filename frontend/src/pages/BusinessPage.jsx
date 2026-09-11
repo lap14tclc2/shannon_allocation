@@ -6,7 +6,7 @@ import { navigate } from '../lib/navigation.js';
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
   const [searchInput, setSearchInput] = useState('');
-  const [portfolioSymbols, setPortfolioSymbols] = useState(['ACB', 'DGC', 'FPT']);
+  const [portfolioSymbols, setPortfolioSymbols] = useState(['ACB', 'DGC', 'FPT', 'VIX']);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +44,7 @@ export default function BusinessPage() {
         if (res.ok) {
           setData(res);
         } else {
-          setError(res.error || `Không thể tải dữ liệu phân tích doanh nghiệp cho ${sym}`);
+          setError(res.error || `Không thể tải dữ liệu phân tích BCTC Munger cho ${sym}`);
         }
       })
       .catch((err) => setError(err.message))
@@ -66,7 +66,64 @@ export default function BusinessPage() {
     }
   };
 
-  const GOLDEN_CANDIDATES = ['ACB', 'FPT', 'DGC', 'VIX'];
+  const GOLDEN_CANDIDATES = ['ACB', 'FPT', 'DGC', 'VIX', 'AAA', 'AAH'];
+
+  // Data helpers
+  const munger = data?.munger_analysis || {};
+  const decision = munger.long_term_decision || {};
+  const valuation = munger.valuation || data?.canonical_valuation || {};
+  const quality = munger.overall_financial_quality || {};
+  const valueTrap = munger.value_trap_assessment || {};
+  const normPower = munger.normalized_earning_power || {};
+
+  const formatVND = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return 'N/A';
+    if (Math.abs(num) >= 1e12) return (num / 1e12).toFixed(2) + ' nghìn tỷ';
+    if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(1) + ' tỷ';
+    return Number(num).toLocaleString('vi-VN') + ' đ';
+  };
+
+  const formatPct = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return 'N/A';
+    return (num > 0 ? '+' : '') + Number(num).toFixed(1) + '%';
+  };
+
+  const renderBadge = (status) => {
+    const s = String(status || '').toUpperCase();
+    let bg = '#6b7280';
+    let text = 'UNKNOWN';
+
+    if (s === 'PASS' || s === 'CLEAR' || s === 'READY' || s === 'COMPOUNDER' || s === 'POTENTIAL_COMPOUNDER') {
+      bg = '#16a34a'; text = s;
+    } else if (s === 'WATCH' || s === 'PARTIAL' || s === 'AVERAGE_BUSINESS') {
+      bg = '#d97706'; text = s;
+    } else if (s === 'FAIL' || s === 'HIGH_RISK' || s === 'DETERIORATING_BUSINESS' || s === 'WEAK_BUSINESS' || s === 'AVOID') {
+      bg = '#dc2626'; text = s;
+    } else if (s === 'WAIT_FOR_MOS') {
+      bg = '#0284c7'; text = 'WAIT FOR MOS';
+    } else if (s === 'BUY') {
+      bg = '#15803d'; text = 'BUY';
+    } else if (s === 'REVIEW_BUSINESS') {
+      bg = '#ea580c'; text = 'REVIEW BUSINESS';
+    } else {
+      text = s || 'N/A';
+    }
+
+    return (
+      <span style={{
+        padding: '3px 10px',
+        borderRadius: '4px',
+        background: bg,
+        color: '#ffffff',
+        fontSize: '0.82rem',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        display: 'inline-block',
+      }}>
+        {text}
+      </span>
+    );
+  };
 
   return (
     <div className="wealth-app-shell">
@@ -77,10 +134,10 @@ export default function BusinessPage() {
           <div className="business-landing-container">
             <header className="page-header">
               <div>
-                <span className="eyebrow">QPort Business Workspace</span>
-                <h1>Phân Tích Doanh Nghiệp & Ứng Viên Đầu Tư</h1>
+                <span className="eyebrow">QPort Munger Business Workspace</span>
+                <h1>Phân Tích Báo Cáo Tài Chính Dài Hạn Munger</h1>
                 <p className="muted" style={{ marginTop: '4px' }}>
-                  Điểm tra cứu và nghiên cứu mô hình 7 chiều, Moat, Bẫy giá trị cho mọi cổ phiếu trong thị trường (Finance DB catalog).
+                  Hệ thống phân tích 12 chiều BCTC, Bẫy giá trị và Định giá chuẩn mực cho 390+ mã cổ phiếu toàn thị trường (Finance DB).
                 </p>
               </div>
             </header>
@@ -91,7 +148,7 @@ export default function BusinessPage() {
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Tra cứu mã chứng khoán hoặc tên công ty</h3>
               </div>
               <p className="muted" style={{ marginBottom: '16px', fontSize: '0.92rem' }}>
-                Nghiên cứu bất kỳ cổ phiếu nào trong vũ trụ Finance DB (cả mã đang giữ lẫn mã ứng viên chưa có trong danh mục):
+                Nhập bất kỳ mã chứng khoán nào trong vũ trụ Finance DB để thực thi phân tích BCTC Munger:
               </p>
               
               <form onSubmit={handleSearchSubmit} className="search-form" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
@@ -100,7 +157,7 @@ export default function BusinessPage() {
                     value={searchInput}
                     onChange={setSearchInput}
                     onSelectSecurity={handleSelectSymbol}
-                    placeholder="Search company or ticker... (ví dụ: FPT, ACB, DGC, VIX)"
+                    placeholder="Search company or ticker... (ví dụ: FPT, ACB, DGC, VIX, AAA, AAH)"
                     holdingSymbols={portfolioSymbols}
                     autoFocus
                   />
@@ -120,14 +177,14 @@ export default function BusinessPage() {
                     height: '42px',
                   }}
                 >
-                  Nghiên cứu →
+                  Phân Tích BCTC →
                 </button>
               </form>
 
               {/* Sample Candidate Shortcuts */}
               <div className="candidate-shortcuts" style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border, #e5e7eb)' }}>
                 <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-muted, #6b7280)', marginRight: '12px' }}>
-                  Mã mẫu nghiên cứu nhanh:
+                  Mã mẫu thử nghiệm:
                 </span>
                 <div style={{ display: 'inline-flex', gap: '8px', flexWrap: 'wrap' }}>
                   {GOLDEN_CANDIDATES.map((cand) => (
@@ -159,7 +216,7 @@ export default function BusinessPage() {
                 <h3>Danh mục hiện tại ({portfolioSymbols.length} vị thế)</h3>
               </div>
               <p className="muted" style={{ marginBottom: '16px', fontSize: '0.9rem' }}>
-                Chọn một mã cổ phiếu trong danh mục để xem phân tích 7 chiều Buffett-Munger & Cổng Bẫy Giá Trị:
+                Chọn một vị thế trong danh mục để xem phân tích tài chính Munger & Biên an toàn:
               </p>
               <div className="symbol-buttons-grid" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 {portfolioSymbols.map((sym) => (
@@ -200,9 +257,14 @@ export default function BusinessPage() {
                 >
                   ← Tra cứu mã khác
                 </a>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800 }}>
-                  Đánh Giá 7 Chiều & Bẫy Giá Trị ({symbol})
+                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>
+                  Phân Tích BCTC Munger & Định Giá ({symbol})
                 </h1>
+                {munger.history_years > 0 && (
+                  <p className="muted" style={{ margin: '4px 0 0 0', fontSize: '0.9rem' }}>
+                    Loại hình kinh tế: <strong>{munger.archetype}</strong> | Lịch sử FY{munger.history_start}–FY{munger.history_end} ({munger.history_years} năm) | Nguồn: {munger.provider?.toUpperCase()}
+                  </p>
+                )}
               </div>
 
               {/* Quick switch search bar */}
@@ -216,62 +278,250 @@ export default function BusinessPage() {
               </div>
             </header>
 
-            {loading && <div className="loading-state" style={{ padding: '30px', textAlign: 'center' }}>Đang tải dữ liệu phân tích doanh nghiệp {symbol}...</div>}
+            {loading && <div className="loading-state" style={{ padding: '40px', textAlign: 'center', fontSize: '1.1rem' }}>Đang thực thi phân tích BCTC Munger cho {symbol}...</div>}
             {error && <div className="error-box" style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', borderRadius: '6px' }}>Thông báo: {error}</div>}
 
-            {data && (
+            {data && munger && (
               <div className="business-grid" style={{ display: 'grid', gap: '20px' }}>
-                {/* Decision & Evidence Header */}
-                <section className="card decision-header-card" style={{ padding: '20px' }}>
+                
+                {/* 1. DECISION CARD */}
+                <section className="card decision-header-card" style={{ padding: '24px', borderLeft: `6px solid ${decision.state === 'BUY' ? '#16a34a' : (decision.state === 'WAIT_FOR_MOS' ? '#0284c7' : '#dc2626')}` }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h2 style={{ fontSize: '1.35rem', margin: 0 }}>
-                      Quyết Định Hiện Tại:{' '}
-                      <span className={`decision-tag ${data.decision?.decision}`} style={{ padding: '4px 12px', borderRadius: '4px', background: '#0284c7', color: '#fff', fontSize: '1.1rem' }}>
-                        {data.decision?.decision}
-                      </span>
+                    <h2 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      Quyết Định BCTC Dài Hạn: {renderBadge(decision.state)}
                     </h2>
-                    <small style={{ color: '#6b7280' }}>Độ tin cậy: {data.decision?.confidence}</small>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#6b7280', display: 'block' }}>Phân loại Doanh nghiệp</span>
+                      <strong>{munger.compounder_classification || 'N/A'}</strong>
+                    </div>
                   </div>
-                  <p className="summary-text" style={{ fontSize: '1rem', lineHeight: 1.5, margin: 0 }}>
-                    {data.decision?.summary}
+                  <p className="summary-text" style={{ fontSize: '1.05rem', lineHeight: 1.6, margin: '8px 0 16px 0', color: 'var(--text-main, #1f2937)' }}>
+                    {decision.primary_reason}
                   </p>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', paddingTop: '12px', borderTop: '1px solid var(--border, #e5e7eb)', fontSize: '0.92rem' }}>
+                    <div>Biên An Toàn Thực Tế (Actual MOS): <strong style={{ color: (decision.actual_mos_pct ?? 0) >= (decision.required_mos_pct ?? 25) ? '#16a34a' : '#dc2626' }}>{formatPct(decision.actual_mos_pct)}</strong></div>
+                    <div>Biên An Toàn Yêu Cầu (Required MOS): <strong>{decision.required_mos_pct !== undefined ? `${decision.required_mos_pct}%` : 'N/A'}</strong></div>
+                    <div>Cổng MOS: {renderBadge(decision.mos_gate)}</div>
+                  </div>
                 </section>
 
-                {/* 7-Dimension Business Review */}
-                <section className="card business-review-card" style={{ padding: '20px' }}>
+                {/* 2. VALUATION & MOS CARD */}
+                <section className="card valuation-card" style={{ padding: '20px' }}>
+                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>Định Giá Chuẩn Mực & Biên An Toàn</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', textAlign: 'center' }}>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Giá Thị Trường</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.current_price)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Bear IV (Thận trọng)</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bear_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                      <small style={{ display: 'block', color: '#1d4ed8' }}>Base IV (Nội tại)</small>
+                      <strong style={{ fontSize: '1.15rem', color: '#1e40af' }}>{formatVND(valuation.base_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Bull IV (Lạc quan)</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bull_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Thực Tế</small>
+                      <strong style={{ fontSize: '1.1rem', color: (valuation.actual_mos_pct ?? 0) >= (valuation.required_mos_pct ?? 25) ? '#16a34a' : '#dc2626' }}>{formatPct(valuation.actual_mos_pct)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Yêu Cầu</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{valuation.required_mos_pct ? `${valuation.required_mos_pct}%` : 'N/A'}</strong>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 3. 12-DIMENSION FINANCIAL QUALITY */}
+                <section className="card quality-matrix-card" style={{ padding: '20px' }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Đánh Giá 7 Chiều Buffett-Munger</h3>
-                    <span className={`status-badge ${data.business_review?.overall_status}`} style={{ fontWeight: 700 }}>
-                      {data.business_review?.overall_status}
-                    </span>
+                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Ma Trận Chất Lượng Tài Chính 12 Chiều Munger</h3>
+                    <small style={{ color: '#6b7280' }}>Độ sẵn sàng dữ liệu: {renderBadge(munger.data_readiness)}</small>
                   </div>
-                  <div className="dimension-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>1. Vùng hiểu biết</small><strong>{data.business_review?.understandability}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>2. Chất lượng doanh nghiệp</small><strong>{data.business_review?.business_quality}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>3. Sức mạnh tài chính</small><strong>{data.business_review?.financial_strength}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>4. Độ bền lợi nhuận</small><strong>{data.business_review?.earnings_durability}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>5. Moat / Lợi thế cạnh tranh</small><strong>{data.business_review?.moat}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>6. Phân bổ vốn quản trị</small><strong>{data.business_review?.management_capital_allocation}</strong></div>
-                    <div className="dim-item"><small style={{ display: 'block', color: '#6b7280' }}>7. Độ tin cậy BCTC</small><strong>{data.business_review?.accounting_reliability}</strong></div>
+
+                  <div className="dimension-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '14px' }}>
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>1. Tăng Trưởng (Growth)</small>
+                        {renderBadge(quality.growth)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Tăng trưởng Doanh thu: {munger.growth_analysis?.metrics?.revenue_cagr !== undefined ? formatPct(munger.growth_analysis.metrics.revenue_cagr * 100) : 'N/A'}<br/>
+                        Tăng trưởng LNST: {munger.growth_analysis?.metrics?.net_profit_cagr !== undefined ? formatPct(munger.growth_analysis.metrics.net_profit_cagr * 100) : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>2. Sinh Lời (Profitability)</small>
+                        {renderBadge(quality.profitability)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        ROE Trung Vị: {munger.profitability_analysis?.metrics?.median_roe !== undefined ? `${(munger.profitability_analysis.metrics.median_roe * 100).toFixed(1)}%` : 'N/A'}<br/>
+                        Xu hướng Biên LN: {munger.profitability_analysis?.metrics?.margin_trend || 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>3. Độ Bền Lợi Nhuận</small>
+                        {renderBadge(quality.durability)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Biến động LN: {munger.earnings_durability?.metrics?.pat_volatility !== undefined ? `${(munger.earnings_durability.metrics.pat_volatility * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>4. Chất Lượng Lợi Nhuận</small>
+                        {renderBadge(quality.earnings_quality)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Tỷ lệ CFO/PAT: {munger.earnings_quality?.metrics?.avg_cfo_pat !== undefined ? `${munger.earnings_quality.metrics.avg_cfo_pat}x` : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>5. Bảng Cân Đối Kế Toán</small>
+                        {renderBadge(quality.balance_sheet)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Đánh giá TS & Nguồn vốn
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>6. Nợ & Thanh Khoản</small>
+                        {renderBadge(quality.debt_liquidity)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Debt/Equity: {munger.debt_liquidity?.metrics?.latest_debt_equity !== undefined ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>7. Hiệu Quả Sử Dụng Vốn</small>
+                        {renderBadge(quality.capital_efficiency)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Tạo giá trị LN giữ lại
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>8. Phân Bổ Vốn Quản Trị</small>
+                        {renderBadge(quality.capital_allocation)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        ROE & Tích lũy tài sản
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>9. Pha Loãng Cổ Phiếu</small>
+                        {renderBadge(quality.dilution)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Tăng trưởng cổ phiếu/năm
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>10. Nhất Quán Kế Toán</small>
+                        {renderBadge(quality.accounting_consistency)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Hằng đẳng thức BCTC
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>11. Điều Tra BCTC (Forensics)</small>
+                        {renderBadge(quality.forensics)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Phát hiện bất thường
+                      </div>
+                    </div>
+
+                    <div className="dim-card" style={{ padding: '12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <small style={{ color: '#6b7280' }}>12. Dòng Tiền Thuần</small>
+                        {renderBadge(quality.cash_flow_quality)}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>
+                        Chất lượng chuyển hóa tiền
+                      </div>
+                    </div>
                   </div>
                 </section>
 
-                {/* Value Trap Gate */}
+                {/* 4. VALUE TRAP GATE CARD */}
                 <section className="card value-trap-card" style={{ padding: '20px' }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cổng Bẫy Giá Trị (Value Trap Gate)</h3>
-                    <span className={`vt-badge ${data.value_trap?.status}`} style={{ fontWeight: 700 }}>
-                      {data.value_trap?.status}
-                    </span>
+                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cổng Bẫy Giá Trị (Value Trap Assessment)</h3>
+                    {renderBadge(valueTrap.status)}
                   </div>
                   <div className="vt-details" style={{ lineHeight: 1.6 }}>
-                    <p>Phân loại suy giảm: <strong>{data.value_trap?.deterioration_classification}</strong></p>
-                    <p>Chất lượng lợi nhuận: <strong>{data.value_trap?.earnings_quality}</strong></p>
-                    <p>Bảo vệ kịch bản Thận trọng (Bear IV): <strong>{data.value_trap?.bear_case_protection}</strong></p>
+                    <p style={{ margin: '4px 0' }}>Phân loại suy giảm cấu trúc: <strong>{valueTrap.deterioration_classification || 'NEUTRAL'}</strong></p>
+                    {valueTrap.hard_failures && valueTrap.hard_failures.length > 0 && (
+                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng (Hard Failures): <strong>{valueTrap.hard_failures.join(', ')}</strong></p>
+                    )}
+                    {valueTrap.warnings && valueTrap.warnings.length > 0 && (
+                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý (Warnings): <strong>{valueTrap.warnings.join(', ')}</strong></p>
+                    )}
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9rem', color: '#6b7280' }}>{valueTrap.explanation}</p>
                   </div>
                 </section>
 
-                {/* Munger Pre-Commitment Checklist */}
+                {/* 5. NORMALIZED EARNING POWER CARD */}
+                <section className="card earning-power-card" style={{ padding: '20px' }}>
+                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '12px' }}>Sức Mạnh Lợi Nhuận Chuẩn Hóa (Normalized Earning Power)</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>LNST Gần Nhất (Reported)</small>
+                      <strong style={{ fontSize: '1.05rem' }}>{formatVND(normPower.reported_latest)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>LNST Chuẩn Hóa 5 Năm</small>
+                      <strong style={{ fontSize: '1.05rem' }}>{formatVND(normPower.normalized_5y)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>LNST Chuẩn Hóa 10 Năm</small>
+                      <strong style={{ fontSize: '1.05rem' }}>{formatVND(normPower.normalized_10y)}</strong>
+                    </div>
+                  </div>
+                  <p style={{ marginTop: '12px', marginBottom: 0, fontSize: '0.88rem', color: '#6b7280' }}>{normPower.explanation}</p>
+                </section>
+
+                {/* 6. SECONDARY QUALITATIVE SECTION (Part M) */}
+                <section className="card qualitative-secondary-card" style={{ padding: '20px', background: '#f9fafb', border: '1px dashed #d1d5db' }}>
+                  <h3 style={{ fontSize: '1.05rem', marginTop: 0, marginBottom: '8px', color: '#4b5563' }}>
+                    Dấu Vết Định Tính Bổ Sung (Qualitative Dimensions)
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: '0 0 12px 0' }}>
+                    <em>* LƯU Ý: BCTC không thể chứng minh các chiều định tính bên dưới (Vùng hiểu biết, Moat, Ban quản trị). Dữ liệu UNKNOWN ở đây KHÔNG dùng làm cổng chặn trong hệ thống đánh giá BCTC Munger thuần túy.</em>
+                  </p>
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
+                    <div>Vùng hiểu biết: <strong>UNKNOWN</strong></div>
+                    <div>Moat / Lợi thế cạnh tranh: <strong>UNKNOWN</strong></div>
+                    <div>Liêm chính ban quản trị: <strong>UNKNOWN</strong></div>
+                  </div>
+                </section>
+
+                {/* 7. MUNGER PRE-COMMITMENT CHECKLIST */}
                 {data.munger_checklist && (
                   <section className="card munger-checklist-card" style={{ padding: '20px' }}>
                     <div className="card-header" style={{ marginBottom: '12px' }}>

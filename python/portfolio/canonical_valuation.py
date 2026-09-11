@@ -56,6 +56,7 @@ def build_canonical_valuation(
     symbol: str,
     store: Any | None = None,
     market_price: float | None = None,
+    compute_munger: bool = True,
 ) -> dict[str, Any]:
     """Single canonical valuation application builder.
 
@@ -290,15 +291,22 @@ def build_canonical_valuation(
             rec_val = items.get("BS.ASSETS.RECEIVABLES_SHORT_TERM") or items.get("BS.ASSETS.SHORT_TERM")
             inv_val = items.get("BS.ASSETS.INVENTORY")
 
-            np_scaled = float(np_val * Decimal("1000000000")) if np_val is not None else None
-            eq_scaled = float(eq_val * Decimal("1000000000")) if eq_val is not None else None
-            cfo_scaled = float(cfo_val * Decimal("1000000000")) if cfo_val is not None else None
-            capex_scaled = float(abs(capex_val) * Decimal("1000000000")) if capex_val is not None else None
+            def to_vnd(v: Decimal | None) -> float | None:
+                if v is None:
+                    return None
+                fv = float(v)
+                return fv if abs(fv) >= 1e7 else fv * 1e9
+
+            np_scaled = to_vnd(np_val)
+            eq_scaled = to_vnd(eq_val)
+            cfo_scaled = to_vnd(cfo_val)
+            capex_scaled = abs(to_vnd(capex_val)) if capex_val is not None else None
             fcf_scaled = (cfo_scaled - capex_scaled) if (cfo_scaled is not None and capex_scaled is not None) else None
-            debt_scaled = float(debt_val * Decimal("1000000000")) if debt_val is not None else None
-            cash_scaled = float(cash_val * Decimal("1000000000")) if cash_val is not None else None
-            rec_scaled = float(rec_val * Decimal("1000000000")) if rec_val is not None else None
-            inv_scaled = float(inv_val * Decimal("1000000000")) if inv_val is not None else None
+            debt_scaled = to_vnd(debt_val)
+            cash_scaled = to_vnd(cash_val)
+            rec_scaled = to_vnd(rec_val)
+            inv_scaled = to_vnd(inv_val)
+            rev_scaled = to_vnd(rev_val)
             shares_count = float(shares_val) if shares_val is not None else None
 
             roe_hist = round((float(np_val) / float(eq_val) * 100), 1) if (np_val is not None and eq_val and eq_val > Decimal("0")) else None
@@ -306,7 +314,7 @@ def build_canonical_valuation(
 
             financial_history.append({
                 "fiscal_year": y,
-                "revenue": float(rev_val * Decimal("1000000000")) if rev_val is not None else None,
+                "revenue": rev_scaled,
                 "net_profit": np_scaled,
                 "equity": eq_scaled,
                 "roe": roe_hist,
@@ -528,8 +536,26 @@ def build_canonical_valuation(
     val_conf = str(report.confidence_level.value if hasattr(report.confidence_level, "value") else report.confidence_level)
     hard_rejects = [str(r.value if hasattr(r, "value") else r) for r in (getattr(report, "hard_rejects", None) or (report.margin_of_safety_analysis.get("hard_rejects") if isinstance(report.margin_of_safety_analysis, dict) else []))]
 
-    from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
-    munger_analysis = build_munger_financial_analysis(ticker, existing_history=financial_history).to_dict()
+    val_summary = {
+        "status": "READY" if (base_iv_val is not None and base_iv_val > 0) else "INCOMPLETE",
+        "current_price": curr_price_float,
+        "bear_iv": bear_iv_val,
+        "base_iv": base_iv_val,
+        "bull_iv": bull_iv_val,
+        "actual_mos_pct": actual_mos,
+        "valuation_confidence": val_conf,
+        "quality_tier": quality_tier,
+    }
+
+    if compute_munger:
+        from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
+        munger_obj = build_munger_financial_analysis(ticker, existing_history=financial_history, valuation_data=val_summary)
+        munger_analysis = munger_obj.to_dict()
+        munger_val = munger_analysis.get("valuation", {})
+        if munger_val.get("required_mos_pct") is not None:
+            req_mos = munger_val.get("required_mos_pct")
+    else:
+        munger_analysis = {}
 
     return {
         "ok": True,
