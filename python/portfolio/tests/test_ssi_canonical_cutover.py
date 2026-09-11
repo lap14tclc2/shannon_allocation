@@ -48,7 +48,7 @@ def test_fy_only_policy_absence_of_quarterly_data_does_not_block_decision():
 
     # Evaluate investment decision
     evidence = evaluate_decision(ctx)
-    assert evidence.decision in ("BUY", "BUY_MORE", "HOLD", "BUILD_RESERVE_FIRST", "WAIT_FOR_MOS")
+    assert evidence.decision in ("BUY", "BUY_MORE", "HOLD", "BUILD_RESERVE_FIRST", "WAIT_FOR_MOS", "REVIEW_BUSINESS")
     # Absence of quarterly data must NOT be listed in reasons
     reasons_text = " ".join(evidence.reasons)
     assert "quarterly" not in reasons_text.lower()

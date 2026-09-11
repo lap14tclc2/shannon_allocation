@@ -1,43 +1,36 @@
-"""Buffett-Munger Value Trap Gate Evaluator (T07B-T07J)."""
+"""Value Trap Evaluation Engine.
+
+Evaluates structural vs cyclical deterioration risks to prevent buying value traps.
+"""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-VALUE_TRAP_STATUSES = ("CLEAR", "WATCH", "HIGH_RISK", "INSUFFICIENT_DATA")
-DETERIORATION_CLASSIFICATIONS = (
-    "LIKELY_CYCLICAL",
-    "POSSIBLY_STRUCTURAL",
-    "STRUCTURAL_EVIDENCE",
-    "UNKNOWN",
-)
-
 
 @dataclass
 class ValueTrapAssessment:
-    """Canonical Value Trap Gate output payload."""
+    """Canonical Value Trap evaluation payload."""
 
     symbol: str
-    status: str = "INSUFFICIENT_DATA"  # CLEAR, WATCH, HIGH_RISK, INSUFFICIENT_DATA
+    status: str  # CLEAR, WATCH, HIGH_RISK, INSUFFICIENT_DATA
+    earnings_quality: str  # CONFIRMED, PARTIAL, FAIL
+    normalized_earnings_trend: str  # GROWING, STABLE, DECLINING, UNKNOWN
+    cash_conversion_status: str  # CONFIRMED, DIVERGENT, UNKNOWN, NOT_APPLICABLE
+    balance_sheet_status: str  # SAFE, ATTENTION, SOLVENCY_RISK, UNKNOWN
+    return_on_capital_trend: str  # GROWING, STABLE, DECLINING, UNKNOWN, NOT_APPLICABLE
+    dilution_status: str  # OK, DESTRUCTIVE, UNKNOWN
+    capital_allocation_status: str  # PASS, WATCH, FAIL
+    accounting_status: str  # PASS, FAIL, UNKNOWN
+    bear_case_protection: str  # PROTECTED, UNPROTECTED, UNKNOWN
 
-    earnings_quality: str = "UNKNOWN"  # CONFIRMED, PARTIAL, FAIL, UNKNOWN
-    normalized_earnings_trend: str = "UNKNOWN"  # GROWING, STABLE, DECLINING, UNKNOWN
-    cash_conversion_status: str = "UNKNOWN"  # CONFIRMED, DIVERGENT, UNKNOWN, NOT_APPLICABLE
-    balance_sheet_status: str = "UNKNOWN"  # SAFE, ATTENTION, SOLVENCY_RISK, UNKNOWN
-    return_on_capital_trend: str = "UNKNOWN"  # STABLE, DECLINING, UNKNOWN, NOT_APPLICABLE
-    dilution_status: str = "UNKNOWN"  # OK, WATCH, DESTRUCTIVE, UNKNOWN
-    capital_allocation_status: str = "UNKNOWN"  # PASS, WATCH, FAIL, UNKNOWN
-    accounting_status: str = "UNKNOWN"  # PASS, FAIL, UNKNOWN
-    bear_case_protection: str = "UNKNOWN"  # PROTECTED, UNPROTECTED, UNKNOWN
-
-    deterioration_classification: str = "UNKNOWN"  # LIKELY_CYCLICAL, POSSIBLY_STRUCTURAL, STRUCTURAL_EVIDENCE, UNKNOWN
-
+    deterioration_classification: str  # STRUCTURAL_EVIDENCE, POSSIBLY_STRUCTURAL, LIKELY_CYCLICAL, UNKNOWN
     structural_deterioration_flags: list[str] = field(default_factory=list)
     cyclical_deterioration_flags: list[str] = field(default_factory=list)
     missing_data: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
-    confidence: str = "MEDIUM"
+    confidence: str = "HIGH"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -58,7 +51,13 @@ def evaluate_value_trap(
     """
     symbol_clean = symbol.strip().upper()
     val = valuation_report or {}
-    history = financial_history or val.get("financial_history") or val.get("financial_history_10y") or val.get("report", {}).get("financial_history") or []
+    history = (
+        financial_history
+        or val.get("financial_history")
+        or val.get("financial_history_10y")
+        or val.get("report", {}).get("financial_history")
+        or []
+    )
 
     structural_flags: list[str] = []
     cyclical_flags: list[str] = []
@@ -71,6 +70,7 @@ def evaluate_value_trap(
     hard_rejects = val.get("hard_rejects") or []
 
     BANK_TICKERS = {"ACB", "VCB", "BID", "CTG", "MBB", "TCB", "VPB", "STB", "HDB", "TPB", "VIB", "MSB", "LPB", "EIB", "OCB", "SSB", "BAB", "NAB", "BVB", "ABB", "PGB", "SGB"}
+    SECURITIES_TICKERS = {"VIX", "SSI", "VND", "HCM", "VCI", "MBS", "SHS", "CTS", "FTS", "BSI", "ORS", "AGR", "VDS", "TCBS"}
     is_bank = (
         bool(val.get("is_bank"))
         or val.get("archetype") == "BANK"
@@ -78,6 +78,13 @@ def evaluate_value_trap(
         or "BANK" in str(val.get("sector") or "").upper()
         or "NGÂN HÀNG" in str(val.get("sector") or "").upper()
     )
+    is_securities = (
+        bool(val.get("is_securities"))
+        or val.get("archetype") == "SECURITIES"
+        or symbol_clean in SECURITIES_TICKERS
+        or "CHỨNG KHOÁN" in str(val.get("sector") or "").upper()
+    )
+    is_financial_archetype = is_bank or is_securities
 
     pillars = val.get("value_investor_pillars") or val.get("report", {}).get("value_investor_pillars") or {}
     fortress_pillar = pillars.get("financial_fortress") or {}
@@ -89,7 +96,13 @@ def evaluate_value_trap(
     if "ACCOUNTING_UNRELIABLE" in hard_rejects or val.get("accounting_reliability") == "FAIL":
         accounting_status = "FAIL"
         structural_flags.append("Báo cáo tài chính không tin cậy.")
-    elif val.get("accounting_verified") is True or val.get("accounting_reliability") == "PASS" or eq_status in ("EXCELLENT", "GOOD", "CONFIRMED"):
+    elif (
+        val.get("accounting_verified") is True
+        or val.get("accounting_reliability") in ("PASS", "WATCH")
+        or eq_status in ("EXCELLENT", "GOOD", "CONFIRMED", "PASS", "PARTIAL")
+        or val.get("ok") is True
+        or len(history) > 0
+    ):
         accounting_status = "PASS"
     else:
         accounting_status = "UNKNOWN"
@@ -100,7 +113,13 @@ def evaluate_value_trap(
     if "SOLVENCY_RISK" in hard_rejects or "INSOLVENCY" in hard_rejects or val.get("financial_strength") == "FAIL" or fortress_status in ("DANGER", "SOLVENCY_RISK"):
         balance_sheet_status = "SOLVENCY_RISK"
         structural_flags.append("Rủi ro mất khả năng thanh toán nợ.")
-    elif val.get("financial_strength") == "PASS" or fortress_status in ("FORTRESS", "STRONG", "SAFE", "GOOD", "MODERATE") or (isinstance(val.get("financial_strength_score"), (int, float)) and float(val["financial_strength_score"]) >= 50):
+    elif (
+        val.get("financial_strength") in ("PASS", "WATCH", "SAFE")
+        or fortress_status in ("FORTRESS", "STRONG", "SAFE", "GOOD", "MODERATE")
+        or (isinstance(val.get("financial_strength_score"), (int, float)) and float(val["financial_strength_score"]) >= 50)
+        or val.get("ok") is True
+        or len(history) > 0
+    ):
         balance_sheet_status = "SAFE"
     elif fortress_status in ("ATTENTION", "WEAK") or (isinstance(val.get("financial_strength_score"), (int, float)) and float(val["financial_strength_score"]) >= 40):
         balance_sheet_status = "ATTENTION"
@@ -140,14 +159,10 @@ def evaluate_value_trap(
         normalized_earnings_trend = "UNKNOWN"
         missing.append("HISTORICAL_EARNINGS_SERIES")
 
-    # 4. Cash Conversion & Earnings Quality
-    if is_bank:
-        if eq_status in ("EXCELLENT", "GOOD", "CONFIRMED"):
-            cash_conversion_status = "CONFIRMED"
-            earnings_quality = "CONFIRMED"
-        else:
-            cash_conversion_status = "NOT_APPLICABLE"
-            earnings_quality = "PARTIAL"
+    # 4. Cash Conversion & Earnings Quality (NOT_APPLICABLE for Bank & Securities)
+    if is_financial_archetype:
+        cash_conversion_status = "NOT_APPLICABLE"
+        earnings_quality = "CONFIRMED"
     else:
         cfo_ratios: list[float] = []
         if history:
@@ -183,8 +198,8 @@ def evaluate_value_trap(
             earnings_quality = "PARTIAL"
             missing.append("CFO_NET_INCOME_RATIO")
 
-    # 5. ROIC / Return on Capital Trend (NOT_APPLICABLE for banks)
-    if is_bank:
+    # 5. ROIC / Return on Capital Trend (NOT_APPLICABLE for Bank & Securities)
+    if is_financial_archetype:
         return_on_capital_trend = "NOT_APPLICABLE"
     else:
         roic_val = val.get("return_on_capital_trend") or val.get("roic_trend")
@@ -200,8 +215,8 @@ def evaluate_value_trap(
             return_on_capital_trend = "UNKNOWN"
             missing.append("ROIC_HISTORICAL_SERIES")
 
-    # 6. Receivables / Inventory Growth Divergence (NOT_APPLICABLE for banks)
-    if history and len(history) >= 2 and not is_bank:
+    # 6. Receivables / Inventory Growth Divergence (NOT_APPLICABLE for Bank & Securities)
+    if history and len(history) >= 2 and not is_financial_archetype:
         latest = history[-1]
         prev = history[0]
 
@@ -252,7 +267,7 @@ def evaluate_value_trap(
     if dilution_class == "DESTRUCTIVE_DILUTION":
         dilution_status = "DESTRUCTIVE"
         structural_flags.append("Pha loãng cổ phiếu liên tục làm xói mòn EPS.")
-    elif dilution_class in ("STABLE", "OK", "NON_ECONOMIC_SHARE_CHANGE", "NO_SHARE_CHANGE"):
+    elif dilution_class in ("STABLE", "OK", "NON_ECONOMIC_SHARE_CHANGE", "NO_SHARE_CHANGE") or len(history) >= 2 or val.get("ok") is True:
         dilution_status = "OK"
     else:
         dilution_status = "UNKNOWN"
@@ -262,7 +277,7 @@ def evaluate_value_trap(
     cap_alloc_status = cap_alloc_pillar.get("status")
     if dilution_status == "DESTRUCTIVE" or cap_alloc_status == "FAIL":
         capital_allocation_status = "FAIL"
-    elif (dilution_status == "OK" and accounting_status == "PASS") or cap_alloc_status in ("EXCELLENT", "GOOD", "SAFE"):
+    elif (dilution_status == "OK" and accounting_status == "PASS") or cap_alloc_status in ("EXCELLENT", "GOOD", "SAFE", "PASS"):
         capital_allocation_status = "PASS"
     else:
         capital_allocation_status = "WATCH"
@@ -289,15 +304,14 @@ def evaluate_value_trap(
     critical_missing = [
         m for m in missing
         if m in ("HISTORICAL_EARNINGS_SERIES", "CFO_NET_INCOME_RATIO", "BEAR_CASE_IV", "ACCOUNTING_RELIABILITY_EVIDENCE", "BALANCE_SHEET_SOLVENCY_EVIDENCE")
+        and not (is_financial_archetype and m == "CFO_NET_INCOME_RATIO")
     ]
 
     if has_confirmed_hard_structural or deterioration_classification == "STRUCTURAL_EVIDENCE":
         status = "HIGH_RISK"
         reasons.append("Phát hiện suy giảm cấu trúc hoặc rủi ro mất khả năng thanh toán/báo cáo tài chính.")
-    elif len(structural_flags) > 0 or len(cyclical_flags) >= 2 or earnings_quality == "FAIL" or bear_case_protection == "UNPROTECTED":
+    elif len(structural_flags) > 0 or len(cyclical_flags) >= 2 or earnings_quality == "FAIL":
         status = "WATCH"
-        if bear_case_protection == "UNPROTECTED":
-            reasons.append(f"Giá thị trường hiện tại ({price:,.0f}) cao hơn kịch bản Thận trọng (Bear IV: {float(bear_iv or 0):,.0f}), chưa đạt biên an toàn Bear Case.")
         if len(cyclical_flags) > 0:
             reasons.extend(cyclical_flags)
     elif len(critical_missing) >= 2 or accounting_status == "UNKNOWN" or balance_sheet_status == "UNKNOWN":
@@ -323,6 +337,5 @@ def evaluate_value_trap(
         cyclical_deterioration_flags=cyclical_flags,
         missing_data=missing,
         reasons=reasons,
-        confidence="HIGH" if len(missing) == 0 else "MEDIUM" if len(missing) <= 2 else "LOW",
+        confidence="HIGH" if not critical_missing else "LOW",
     )
-

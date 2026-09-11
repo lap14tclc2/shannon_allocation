@@ -1222,7 +1222,17 @@ def valuation_readiness_audit(symbol: str, market_price: float | None = None) ->
             ).fetchall()
         ]
 
-    required_codes = [code for code, _ in VALUE_ENGINE_REQUIRED_FACTS]
+    archetype = "NORMAL_ENTERPRISE"
+    if ticker in {"ACB", "BID", "CTG", "HDB", "MBB", "MSN", "STB", "TCB", "TPB", "VCB", "VIB", "VPB"}:
+        archetype = "BANK"
+    elif ticker in {"VIX", "SSI", "VND", "HCM", "VCI"}:
+        archetype = "SECURITIES"
+
+    if archetype in ("BANK", "SECURITIES"):
+        required_codes = ["IS.PROFIT.NET", "IS.PROFIT.OPERATING", "BS.EQUITY.TOTAL", "BS.DEBT.TOTAL", "IS.SHARES.OUTSTANDING"]
+    else:
+        required_codes = [code for code, _ in VALUE_ENGINE_REQUIRED_FACTS]
+
     fact_periods = sorted(
         {
             int(row["fiscal_year"])
@@ -1246,21 +1256,35 @@ def valuation_readiness_audit(symbol: str, market_price: float | None = None) ->
         ]
         for code in required_codes:
             candidates = [row for row in period_facts if row.get("line_item_code") == code and row.get("value") is not None]
-            bad_quality = [row for row in candidates if row.get("quality_status") in {"CONFLICT", "QUARANTINED", "MISSING"}]
-            if bad_quality or _materially_conflicting(candidates):
-                conflicts.append({
-                    "line_item_code": code,
-                    "fiscal_year": selected_year,
-                    "providers": sorted({str(row.get("provider") or "") for row in candidates}),
-                })
+            valid_candidates = [row for row in candidates if row.get("quality_status") not in {"CONFLICT", "QUARANTINED", "MISSING"}]
+            has_conflict = any(row.get("quality_status") == "CONFLICT" for row in candidates)
+            if has_conflict or not valid_candidates:
+                if has_conflict:
+                    conflicts.append({
+                        "line_item_code": code,
+                        "fiscal_year": selected_year,
+                        "providers": sorted({str(row.get("provider") or "") for row in candidates}),
+                    })
                 continue
-            if candidates:
-                def _prank(p: Any) -> int:
-                    pl = str(p or "").lower()
-                    if pl == "ssi": return 1
-                    if pl == "tcbs": return 2
-                    return 3
-                selected_facts[code] = sorted(candidates, key=lambda row: _prank(row.get("provider")))[0]
+
+            def _prank(p: Any) -> int:
+                pl = str(p or "").lower()
+                if pl == "ssi": return 1
+                if pl == "tcbs": return 2
+                return 3
+
+            sorted_cand = sorted(valid_candidates, key=lambda row: _prank(row.get("provider")))
+            primary_fact = sorted_cand[0]
+            selected_facts[code] = primary_fact
+
+            if len(sorted_cand) > 1:
+                try:
+                    base_val = float(primary_fact["value"])
+                    sec_val = float(sorted_cand[1]["value"])
+                    if abs(sec_val - base_val) > max(1.0, abs(base_val) * 0.001):
+                        warnings.append(f"SOURCE_VARIANCE:{code}")
+                except (ValueError, TypeError):
+                    pass
         for row in period_facts:
             code = str(row.get("line_item_code") or "")
             if code and code not in selected_facts and row.get("value") is not None and row.get("quality_status") not in {"CONFLICT", "QUARANTINED", "MISSING"}:
