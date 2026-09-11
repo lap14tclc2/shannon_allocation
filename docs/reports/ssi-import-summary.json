@@ -1,5 +1,5 @@
 {
-  "scanned_at": "2026-09-11T13:12:46.663155+00:00",
+  "scanned_at": "2026-09-11T13:28:05.406470+00:00",
   "source_directory": "F:\\DATA_BCTC",
   "files_discovered": 9,
   "files_parsed": 9,
@@ -10,9 +10,9 @@
   "cash_flow_payloads": 4,
   "same_payload_group_count": 3,
   "different_payload_conflicts": 0,
-  "raw_observations_count": 0,
-  "canonical_facts_count": 0,
-  "unmapped_rows_count": 0,
+  "raw_observations_count": 5250,
+  "canonical_facts_count": 330,
+  "unmapped_rows_count": 4920,
   "symbols": [
     "VIX"
   ]

@@ -6,11 +6,13 @@ BALANCE_SHEET,Chi phí trả trước ngắn hạn
 BALANCE_SHEET,Chêch lệch tỷ giá
 BALANCE_SHEET,Chêch lệch đánh giá lại tài sản
 BALANCE_SHEET,Các khoản cho vay
+BALANCE_SHEET,Các khoản phải thu (từ 2016)
 BALANCE_SHEET,Các khoản phải trả về thuế
 BALANCE_SHEET,Các khoản trích nộp phúc lợi nhân viên
 BALANCE_SHEET,Các khoản tài chính sẵn sàng để bán (AFS)
 BALANCE_SHEET,Các khoản tương đương tiền
 BALANCE_SHEET,Các khoản đầu tư nắm giữ đến ngày đáo hạn (HTM)
+BALANCE_SHEET,Các tài sản dài hạn khác
 BALANCE_SHEET,Các tài sản tài chính ghi nhận thông qua lãi/lỗ (FVTPL)
 BALANCE_SHEET,"Cầm cố, thế chấp, ký quỹ và ký cược dài hạn"
 BALANCE_SHEET,"Cầm cố, thế chấp, ký quỹ và ký cược ngắn hạn"
@@ -19,6 +21,7 @@ BALANCE_SHEET,Cổ phiếu ưu đãi
 BALANCE_SHEET,Doanh thu chưa thực hiện
 BALANCE_SHEET,Doanh thu chưa thực hiện ngắn hạn
 BALANCE_SHEET,Dữ liệu được cung cấp bởi FiinTrade
+BALANCE_SHEET,Dự phòng các khoản công nợ dài hạn
 BALANCE_SHEET,Dự phòng các khoản phải trả ngắn hạn
 BALANCE_SHEET,Dự phòng giảm giá HTK
 BALANCE_SHEET,Dự phòng giảm giá chứng khoán kinh doanh
@@ -26,6 +29,8 @@ BALANCE_SHEET,Dự phòng giảm giá tài sản tài chính dài hạn
 BALANCE_SHEET,Dự phòng nợ khó đòi
 BALANCE_SHEET,Dự phòng phải thu dài hạn
 BALANCE_SHEET,Dự phòng suy giảm giá trị TSNH khác
+BALANCE_SHEET,Dự phòng suy giảm giá trị các khoản phải thu
+BALANCE_SHEET,Dự phòng suy giảm giá trị tài sản dài hạn
 BALANCE_SHEET,Dự phòng trợ cấp thôi việc
 BALANCE_SHEET,GTCL TSCĐ hữu hình
 BALANCE_SHEET,GTCL tài sản cố định vô hình
@@ -66,6 +71,8 @@ BALANCE_SHEET,Phải thu nội bộ
 BALANCE_SHEET,Phải thu nội bộ dài hạn
 BALANCE_SHEET,Phải thu thuế khác
 BALANCE_SHEET,Phải thu về XDCB
+BALANCE_SHEET,Phải thu về cho vay dài hạn
+BALANCE_SHEET,Phải thu về cho vay ngắn hạn
 BALANCE_SHEET,Phải thu về hoạt động giao dịch chứng khoán
 BALANCE_SHEET,Phải thu về lỗi giao dịch CK
 BALANCE_SHEET,"Phải trả cổ tức, gốc và lãi trái phiếu"
@@ -107,6 +114,7 @@ BALANCE_SHEET,Trả trước dài hạn
 BALANCE_SHEET,Trả trước người bán
 BALANCE_SHEET,Trả trước người bán dài hạn
 BALANCE_SHEET,Tài sản cố định
+BALANCE_SHEET,Tài sản dài hạn khác
 BALANCE_SHEET,Tài sản dở dang dài hạn
 BALANCE_SHEET,Tài sản lưu động khác
 BALANCE_SHEET,Tài sản thiếu chờ xử lý
@@ -114,7 +122,8 @@ BALANCE_SHEET,Tài sản tài chính dài hạn
 BALANCE_SHEET,Tài sản tài chính ngắn hạn
 BALANCE_SHEET,Tạm ứng
 BALANCE_SHEET,TỔNG CỘNG NGUỒN VỐN
-BALANCE_SHEET,TỔNG CỘNG TÀI SẢN
+BALANCE_SHEET,Tổng các khoản phải thu
+BALANCE_SHEET,Vay nợ ngắn hạn
 BALANCE_SHEET,Vay quỹ hỗ trợ thanh toán
 BALANCE_SHEET,Vay tài sản tài chính dài hạn
 BALANCE_SHEET,Vay tài sản tài chính ngắn hạn
@@ -206,6 +215,7 @@ CASH_FLOW,Tiền chi trả nợ gốc vay tài sản tài chính
 CASH_FLOW,Tiền chi trả nợ thuê tài chính
 CASH_FLOW,"Tiền chi trả vốn góp cho các chủ sở hữu, mua lại cổ phiếu của doanh nghiệp đã phát hành"
 CASH_FLOW,Tiền chi đầu tư góp vốn vào đơn vị khác
+CASH_FLOW,"Tiền chi để mua sắm, xây dựng TSCĐ và các tài sản dài hạn khác"
 CASH_FLOW,Tiền lãi vay đã trả
 CASH_FLOW,"Tiền mặt, tiền gửi ngân hàng đầu kỳ"
 CASH_FLOW,"Tiền thu hồi cho vay, bán lại các công cụ nợ của đơn vị khác"
@@ -247,9 +257,9 @@ INCOME_STATEMENT,Chi phí hoạt động kinh doanh
 INCOME_STATEMENT,Chi phí hoạt động tự doanh
 INCOME_STATEMENT,"Chi phí hoạt động đấu giá, ủy thác"
 INCOME_STATEMENT,Chi phí khác
+INCOME_STATEMENT,"Chi phí lãi vay, lỗ từ các khoản cho vay và phải thu"
 INCOME_STATEMENT,Chi phí lưu ký chứng khoán
 INCOME_STATEMENT,Chi phí môi giới chứng khoán
-INCOME_STATEMENT,Chi phí quản lý công ty chứng khoán
 INCOME_STATEMENT,Chi phí thuế thu nhập doanh nghiệp
 INCOME_STATEMENT,Chi phí thuế thu nhập hiện hành
 INCOME_STATEMENT,Chi phí thuế thu nhập hoãn lại
@@ -263,6 +273,12 @@ INCOME_STATEMENT,Chêch lệch tăng đánh giá lại các tài sản tài chí
 INCOME_STATEMENT,Các khoản giảm trừ doanh thu
 INCOME_STATEMENT,"Cổ tức, tiền lãi phát sinh từ tài sản tài chính FVTPL"
 INCOME_STATEMENT,Doanh thu bảo lãnh phát hành chứng khoán
+INCOME_STATEMENT,Doanh thu hoạt động môi giới chứng khoán
+INCOME_STATEMENT,Doanh thu hoạt động tài chính
+INCOME_STATEMENT,Doanh thu hoạt động tư vấn tài chính
+INCOME_STATEMENT,Doanh thu hoạt động tư vấn đầu tư chứng khoán
+INCOME_STATEMENT,"Doanh thu hoạt động đầu tư chứng khoán, góp vốn"
+INCOME_STATEMENT,"Doanh thu hoạt động ủy thác, đấu giá"
 INCOME_STATEMENT,Doanh thu khác
 INCOME_STATEMENT,Doanh thu khác về đầu tư
 INCOME_STATEMENT,Doanh thu lưu ký chứng khoán
@@ -298,7 +314,6 @@ INCOME_STATEMENT,Lỗ các tài sản tài chính ghi nhận thông qua lãi l�
 INCOME_STATEMENT,Lỗ từ các tài sản tài chính phái sinh phòng ngừa rủi ro
 INCOME_STATEMENT,Lỗ và ghi nhận chêch lệch đánh giá theo giá trị hợp lý tài sản tài chính sẵn sàng để bán (AFS)
 INCOME_STATEMENT,Lợi nhuận chưa thực hiện
-INCOME_STATEMENT,Lợi nhuận kế toán sau thuế
 INCOME_STATEMENT,Lợi nhuận đã thực hiện
 INCOME_STATEMENT,Lợi ích cổ đông thiểu số
 INCOME_STATEMENT,Thu cho thuê sử dụng tài sản
@@ -309,5 +324,4 @@ INCOME_STATEMENT,Thu nhập pha loãng trên cổ phiếu
 INCOME_STATEMENT,Thu nhập thuần trên cổ phiếu phổ thông
 INCOME_STATEMENT,Thu nhập toàn diện phân bổ cho chủ sở hữu
 INCOME_STATEMENT,Thu nhập toàn diện phân bổ cho cổ đông không kiểm soát
-INCOME_STATEMENT,Tổng lợi nhuận kế toán trước thuế
 INCOME_STATEMENT,https://fiintrade.vn/

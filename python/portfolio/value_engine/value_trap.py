@@ -310,10 +310,11 @@ def evaluate_value_trap(
     if has_confirmed_hard_structural or deterioration_classification == "STRUCTURAL_EVIDENCE":
         status = "HIGH_RISK"
         reasons.append("Phát hiện suy giảm cấu trúc hoặc rủi ro mất khả năng thanh toán/báo cáo tài chính.")
-    elif len(structural_flags) > 0 or len(cyclical_flags) >= 2 or earnings_quality == "FAIL":
+    elif len(structural_flags) > 0 or len(cyclical_flags) >= 1 or earnings_quality == "FAIL":
         status = "WATCH"
         if len(cyclical_flags) > 0:
             reasons.extend(cyclical_flags)
+
     elif len(critical_missing) >= 2 or accounting_status == "UNKNOWN" or balance_sheet_status == "UNKNOWN":
         status = "INSUFFICIENT_DATA"
         reasons.append(f"Thiếu dữ liệu quan trọng: {', '.join(critical_missing)}")

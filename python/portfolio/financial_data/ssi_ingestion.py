@@ -46,36 +46,62 @@ CANONICAL_LINE_MAPPINGS: dict[str, dict[str, str]] = {
     "INCOME_STATEMENT": {
         "tong doanh thu": "IS.REVENUE.TOTAL",
         "doanh thu thuan": "IS.REVENUE.TOTAL",
-        "doanh thu hoat dong": "IS.REVENUE.TOTAL",
+        "doanh thu thuan ve ban hang va cung cap dich vu": "IS.REVENUE.TOTAL",
+        "tong doanh thu hoat dong": "IS.REVENUE.TOTAL",
+        "doanh so thuan": "IS.REVENUE.TOTAL",
+        "doanh so": "IS.REVENUE.TOTAL",
         "loi nhuan gop": "IS.PROFIT.GROSS",
+        "loi nhuan gop ve ban hang va cung cap dich vu": "IS.PROFIT.GROSS",
+        "lai gop": "IS.PROFIT.GROSS",
         "loi nhuan tu hoat dong kinh doanh": "IS.PROFIT.OPERATING",
         "loi nhuan thuan tu hoat dong kinh doanh": "IS.PROFIT.OPERATING",
+        "lailo tu hoat dong kinh doanh": "IS.PROFIT.OPERATING",
         "loi nhuan sau thue": "IS.PROFIT.NET",
         "loi nhuan sau thue tndn": "IS.PROFIT.NET",
+        "loi nhuan sau thue thu nhap doanh nghiep": "IS.PROFIT.NET",
+        "loi nhuan sau thue cua cong ty me": "IS.PROFIT.NET",
+        "loi nhuan cua co dong cua cong ty me": "IS.PROFIT.NET",
+        "loi nhuan ke toan sau thue": "IS.PROFIT.NET",
+        "loi nhuan sau thue phan bo cho chu so huu": "IS.PROFIT.NET",
+        "lailo thuan sau thue": "IS.PROFIT.NET",
         "loi nhuan thuan": "IS.PROFIT.NET",
         "loi nhuan truoc thue": "IS.PROFIT.BEFORE_TAX",
+        "tong loi nhuan truoc thue": "IS.PROFIT.BEFORE_TAX",
+        "tong loi nhuan ke toan truoc thue": "IS.PROFIT.BEFORE_TAX",
+        "lailo rong truoc thue": "IS.PROFIT.BEFORE_TAX",
+        "doanh thu hoat dong": "IS.REVENUE.TOTAL",
+        "doanh thu thuan ve hoat dong kinh doanh": "IS.REVENUE.TOTAL",
+        "chi phi quan ly cong ty chung khoan": "IS.EXPENSE.GA",
+
         "co phieu dang luu hanh": "IS.SHARES.OUTSTANDING",
         "so luong co phieu luu hanh": "IS.SHARES.OUTSTANDING",
         "chi phi lai vay": "IS.EXPENSE.INTEREST",
+        "trong do chi phi lai vay": "IS.EXPENSE.INTEREST",
         "chi phi quan ly doanh nghiep": "IS.EXPENSE.GA",
         "chi phi ban hang": "IS.EXPENSE.SELLING",
     },
     "BALANCE_SHEET": {
         "tong tai san": "BS.ASSETS.TOTAL",
+        "tong cong tai san": "BS.ASSETS.TOTAL",
         "tai san ngan han": "BS.ASSETS.SHORT_TERM",
+        "tong tai san ngan han": "BS.ASSETS.SHORT_TERM",
         "tai san dai han": "BS.ASSETS.LONG_TERM",
+        "tong tai san dai han": "BS.ASSETS.LONG_TERM",
         "tien va tuong duong tien": "BS.ASSETS.CASH_AND_EQUIVALENTS",
         "tien va cac khoan tuong duong tien": "BS.ASSETS.CASH_AND_EQUIVALENTS",
-        "cac khoan phai thu": "BS.ASSETS.RECEIVABLES",
         "cac khoan phai thu ngan han": "BS.ASSETS.RECEIVABLES",
         "hang ton kho rong": "BS.ASSETS.INVENTORY",
         "hang ton kho": "BS.ASSETS.INVENTORY",
         "von chu so huu": "BS.EQUITY.TOTAL",
         "tong von chu so huu": "BS.EQUITY.TOTAL",
+        "tong cong von chu so huu": "BS.EQUITY.TOTAL",
+        "tong nguon von": "BS.EQUITY.TOTAL",
         "no phai tra": "BS.LIABILITIES.TOTAL",
         "tong no phai tra": "BS.LIABILITIES.TOTAL",
         "no ngan han": "BS.LIABILITIES.SHORT_TERM",
+        "tong no ngan han": "BS.LIABILITIES.SHORT_TERM",
         "no dai han": "BS.LIABILITIES.LONG_TERM",
+        "tong no dai han": "BS.LIABILITIES.LONG_TERM",
         "vay va no thue tai chinh ngan han": "BS.LIABILITIES.SHORT_TERM_BORROWINGS",
         "vay ngan han": "BS.LIABILITIES.SHORT_TERM_BORROWINGS",
         "vay va no thue tai chinh dai han": "BS.LIABILITIES.LONG_TERM_BORROWINGS",
@@ -83,16 +109,25 @@ CANONICAL_LINE_MAPPINGS: dict[str, dict[str, str]] = {
     },
     "CASH_FLOW": {
         "luu chuyen tien thuan tu hoat dong kinh doanh": "CF.OPERATING.NET",
+        "luu chuyen tien thuan tu cac hoat dong kinh doanh": "CF.OPERATING.NET",
         "dong tien tu hoat dong kinh doanh": "CF.OPERATING.NET",
         "luu chuyen tien thuan tu hoat dong dau tu": "CF.INVESTING.NET",
+        "luu chuyen tien thuan tu cac hoat dong dau tu": "CF.INVESTING.NET",
+        "dong tien tu hoat dong dau tu": "CF.INVESTING.NET",
         "luu chuyen tien thuan tu hoat dong tai chinh": "CF.FINANCING.NET",
+        "luu chuyen tien thuan tu cac hoat dong tai chinh": "CF.FINANCING.NET",
+        "dong tien tu hoat dong tai chinh": "CF.FINANCING.NET",
         "tien chi mua sam tscd": "CF.CAPEX",
         "tien chi de mua sam xay dung tscd": "CF.CAPEX",
         "chi mua sam tai san co dinh": "CF.CAPEX",
+        "tien chi mua sam xay dung tscd va tai san dai han khac": "CF.CAPEX",
         "khau hao tscd": "CF.OPERATING.DEPRECIATION",
         "khau hao tai san co dinh": "CF.OPERATING.DEPRECIATION",
+        "khau hao tai san co dinh va bat dong san dau tu": "CF.OPERATING.DEPRECIATION",
     },
 }
+
+
 
 
 def normalize_string(val: Any) -> str:
@@ -326,23 +361,111 @@ def map_ssi_line_item(raw_line_name: str, statement_type: str) -> tuple[str | No
     """Map Vietnamese raw line name to canonical line item code.
 
     Returns (canonical_code or None, mapping_status: 'MAPPED' | 'UNMAPPED').
+    Only exact normalized string matching is allowed.
     """
     normalized = normalize_string(raw_line_name)
     mapping_dict = CANONICAL_LINE_MAPPINGS.get(statement_type, {})
     canonical = mapping_dict.get(normalized)
     if canonical:
         return canonical, "MAPPED"
-
-    # Secondary fuzzy prefix/token match
-    for norm_pattern, code in mapping_dict.items():
-        if norm_pattern in normalized or normalized.startswith(norm_pattern):
-            return code, "MAPPED"
-
     return None, "UNMAPPED"
+
+
+def classify_payload_relationship(wb_a: SSIParsedWorkbook, wb_b: SSIParsedWorkbook) -> dict[str, Any]:
+
+    """Compare two workbooks for the same symbol and statement type."""
+    if wb_a.semantic_hash == wb_b.semantic_hash:
+        return {
+            "symbol": wb_a.metadata.symbol,
+            "statement_type": wb_a.metadata.statement_type,
+            "export_date_a": wb_a.metadata.export_date_str,
+            "export_date_b": wb_b.metadata.export_date_str,
+            "semantic_hash_a": wb_a.semantic_hash,
+            "semantic_hash_b": wb_b.semantic_hash,
+            "classification": "MULTIPLE_EXPORTS_SAME_FINANCIAL_PAYLOAD",
+            "changed_periods": 0,
+            "changed_rows": 0,
+        }
+
+    periods_a = set(wb_a.periods)
+    periods_b = set(wb_b.periods)
+
+    obs_map_a = {(obs["raw_line_name"], obs["period"]): obs["value"] for obs in wb_a.observations}
+    obs_map_b = {(obs["raw_line_name"], obs["period"]): obs["value"] for obs in wb_b.observations}
+
+    value_diff_count = 0
+    row_diff_count = 0
+
+    for key, val_a in obs_map_a.items():
+        if key in obs_map_b:
+            val_b = obs_map_b[key]
+            if val_a != val_b:
+                value_diff_count += 1
+        else:
+            row_diff_count += 1
+
+    if periods_a != periods_b and value_diff_count == 0:
+        classification = "NEWER_PERIOD_ADDED"
+    elif value_diff_count > 0:
+        classification = "CONFLICTED_PAYLOAD" if value_diff_count > 5 else "VALUE_CHANGED"
+    elif row_diff_count > 0:
+        classification = "ROW_STRUCTURE_CHANGED"
+    else:
+        classification = "CORRECTED_EXPORT"
+
+    return {
+        "symbol": wb_a.metadata.symbol,
+        "statement_type": wb_a.metadata.statement_type,
+        "export_date_a": wb_a.metadata.export_date_str,
+        "export_date_b": wb_b.metadata.export_date_str,
+        "semantic_hash_a": wb_a.semantic_hash,
+        "semantic_hash_b": wb_b.semantic_hash,
+        "classification": classification,
+        "changed_periods": len(periods_b - periods_a),
+        "changed_rows": value_diff_count + row_diff_count,
+    }
+
+
+def derive_total_debt_facts(canonical_batch: list[tuple], symbol: str) -> list[tuple]:
+    """Derive BS.DEBT.TOTAL = SHORT_TERM_BORROWINGS + LONG_TERM_BORROWINGS if non-bank/securities."""
+    ticker = str(symbol).upper().strip()
+    archetype = "NORMAL_ENTERPRISE"
+    if ticker in {"ACB", "BID", "CTG", "HDB", "MBB", "MSN", "STB", "TCB", "TPB", "VCB", "VIB", "VPB"}:
+        archetype = "BANK"
+    elif ticker in {"VIX", "SSI", "VND", "HCM", "VCI"}:
+        archetype = "SECURITIES"
+
+    if archetype in ("BANK", "SECURITIES"):
+        return []
+
+    short_term_by_yr: dict[int, tuple[float, str]] = {}
+    long_term_by_yr: dict[int, tuple[float, str]] = {}
+    now_str = datetime.now(timezone.utc).isoformat()
+
+    for item in canonical_batch:
+        sym, stmt, code, val, fy, period_end, obs_at = item[:7]
+        if stmt == "BALANCE_SHEET" and val is not None:
+            if code == "BS.LIABILITIES.SHORT_TERM_BORROWINGS":
+                short_term_by_yr[fy] = (float(val), period_end)
+            elif code == "BS.LIABILITIES.LONG_TERM_BORROWINGS":
+                long_term_by_yr[fy] = (float(val), period_end)
+
+    derived = []
+    all_years = set(short_term_by_yr.keys()).intersection(long_term_by_yr.keys())
+    for fy in sorted(all_years):
+        st_val, p_end = short_term_by_yr[fy]
+        lt_val, _ = long_term_by_yr[fy]
+        if st_val is not None and lt_val is not None:
+            total_debt = st_val + lt_val
+            derived.append((
+                symbol, "BALANCE_SHEET", "BS.DEBT.TOTAL", total_debt, fy, p_end, now_str
+            ))
+    return derived
 
 
 def _parse_file_top(fp_str: str) -> SSIParsedWorkbook:
     return parse_ssi_workbook(fp_str)
+
 
 
 @dataclass
@@ -431,6 +554,29 @@ class SSIBulkImporter:
 
         same_payload_groups = sum(1 for g in semantic_groups.values() if len(g) > 1)
 
+        # Detect payload relationship conflicts across files for the same symbol & statement
+        symbol_stmt_groups: dict[tuple[str, str], list[SSIParsedWorkbook]] = {}
+        for p in parsed_workbooks:
+            if p.is_valid:
+                symbol_stmt_groups.setdefault((p.metadata.symbol, p.metadata.statement_type), []).append(p)
+
+        payload_conflicts: list[dict[str, Any]] = []
+        different_payload_conflicts = 0
+
+        for (sym, st_type), wbs in symbol_stmt_groups.items():
+            hashes: dict[str, SSIParsedWorkbook] = {}
+            for wb in wbs:
+                if wb.semantic_hash not in hashes:
+                    hashes[wb.semantic_hash] = wb
+            if len(hashes) > 1:
+                hash_wbs = list(hashes.values())
+                for i in range(len(hash_wbs)):
+                    for j in range(i + 1, len(hash_wbs)):
+                        rel = classify_payload_relationship(hash_wbs[i], hash_wbs[j])
+                        payload_conflicts.append(rel)
+                        if rel["classification"] == "CONFLICTED_PAYLOAD":
+                            different_payload_conflicts += 1
+
         raw_obs_total = 0
         canonical_facts_total = 0
         unmapped_total = 0
@@ -459,19 +605,20 @@ class SSIBulkImporter:
                 income_statement_payloads=is_count,
                 cash_flow_payloads=cf_count,
                 same_payload_group_count=same_payload_groups,
-                different_payload_conflicts=0,
+                different_payload_conflicts=different_payload_conflicts,
                 raw_observations_count=raw_obs_total,
                 canonical_facts_count=canonical_facts_total,
                 unmapped_rows_count=unmapped_total,
                 symbols=sorted(list(symbols_found)),
             )
-            self.write_reports(summary, parsed_workbooks)
+            self.write_reports(summary, parsed_workbooks, payload_conflicts)
             return summary
 
         # Production Database Import Phase
         now_str = datetime.now(timezone.utc).isoformat()
         total_workbooks = len(parsed_workbooks)
 
+        # 1. Record ALL physical files in ssi_import_files (provenance preserved)
         for idx, parsed in enumerate(parsed_workbooks, 1):
             if idx % 100 == 0 or idx == total_workbooks:
                 print(f"[{idx}/{total_workbooks}] Processing SSI database import: symbol={parsed.metadata.symbol} statement={parsed.metadata.statement_type}")
@@ -489,45 +636,61 @@ class SSIBulkImporter:
             if parsed.raw_file_sha256 in processed_shas:
                 continue
 
-            # Insert ssi_import_files record
-            res = self.db.execute(
+            self.db.execute(
                 """INSERT INTO ssi_import_files
                    (symbol, statement_type, file_name, raw_file_sha256, semantic_hash, export_date, extraction_timestamp, import_status, imported_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?)
-                   ON CONFLICT (raw_file_sha256) DO UPDATE SET import_status='SUCCESS' RETURNING id""",
+                   ON CONFLICT (raw_file_sha256) DO UPDATE SET import_status='SUCCESS'""",
                 (parsed.metadata.symbol, parsed.metadata.statement_type, parsed.metadata.filename, parsed.raw_file_sha256, parsed.semantic_hash, parsed.metadata.export_date_str, parsed.extraction_timestamp, now_str),
-            ).fetchone()
-            file_id = res["id"] if res else None
+            )
 
-            raw_obs_batch = []
-            canonical_batch = []
+        if self.db and hasattr(self.db, "commit"):
+            self.db.commit()
 
-            for obs in parsed.observations:
-                raw_obs_total += 1
-                line_name = obs["raw_line_name"]
-                period = obs["period"]
-                val = obs["value"]
+        # 2. Process unique logical payloads per symbol & statement type to generate observations & canonical facts
+        for (sym, st_type), wbs in symbol_stmt_groups.items():
+            # Deduplicate workbooks by semantic_hash to avoid redundant fact generation
+            unique_payload_wbs: dict[str, SSIParsedWorkbook] = {}
+            for wb in wbs:
+                if wb.semantic_hash not in unique_payload_wbs:
+                    unique_payload_wbs[wb.semantic_hash] = wb
 
-                fiscal_year = int(period) if re.match(r"^\d{4}$", period) else None
-                fiscal_quarter = None
+            canonical_batch: list[tuple] = []
+            raw_obs_batch: list[tuple] = []
 
-                code, map_status = map_ssi_line_item(line_name, parsed.metadata.statement_type)
-                if map_status == "UNMAPPED":
-                    unmapped_total += 1
-                else:
-                    canonical_facts_total += 1
+            for semantic_hash, parsed in unique_payload_wbs.items():
+                file_row = self.db.execute(
+                    "SELECT id FROM ssi_import_files WHERE raw_file_sha256=?",
+                    (parsed.raw_file_sha256,),
+                ).fetchone()
+                file_id = file_row["id"] if file_row else None
 
-                if file_id:
-                    raw_obs_batch.append((
-                        file_id, parsed.metadata.symbol, parsed.metadata.statement_type, line_name, period, fiscal_year, fiscal_quarter, val, map_status, code, now_str
-                    ))
+                for obs in parsed.observations:
+                    raw_obs_total += 1
+                    line_name = obs["raw_line_name"]
+                    period = obs["period"]
+                    val = obs["value"]
 
-                if code and val is not None and fiscal_year:
-                    canonical_batch.append((
-                        parsed.metadata.symbol, parsed.metadata.statement_type, code, val, fiscal_year, f"{fiscal_year}-12-31", now_str
-                    ))
+                    fiscal_year = int(period) if re.match(r"^\d{4}$", period) else None
+                    fiscal_quarter = None
 
-            if file_id and raw_obs_batch:
+                    code, map_status = map_ssi_line_item(line_name, parsed.metadata.statement_type)
+                    if map_status == "UNMAPPED":
+                        unmapped_total += 1
+                    else:
+                        canonical_facts_total += 1
+
+                    if file_id:
+                        raw_obs_batch.append((
+                            file_id, parsed.metadata.symbol, parsed.metadata.statement_type, line_name, period, fiscal_year, fiscal_quarter, val, map_status, code, now_str
+                        ))
+
+                    if code and val is not None and fiscal_year:
+                        canonical_batch.append((
+                            parsed.metadata.symbol, parsed.metadata.statement_type, code, float(val), fiscal_year, f"{fiscal_year}-12-31", now_str
+                        ))
+
+            if raw_obs_batch:
                 self.db.executemany(
                     """INSERT INTO ssi_raw_financial_observations
                        (import_file_id, symbol, statement_type, raw_line_name, period, fiscal_year, fiscal_quarter, value, mapping_status, canonical_code, created_at)
@@ -535,19 +698,36 @@ class SSIBulkImporter:
                     raw_obs_batch,
                 )
 
+            # Derive BS.DEBT.TOTAL if applicable
+            derived_debt = derive_total_debt_facts(canonical_batch, sym)
+
+            # Non-destructive UPSERT into canonical_facts
             if canonical_batch:
-                sym = canonical_batch[0][0]
-                st_type = canonical_batch[0][1]
-                self.db.execute(
-                    """DELETE FROM canonical_facts
-                       WHERE symbol = ? AND statement_type = ? AND provider = 'ssi'""",
-                    (sym, st_type),
-                )
+                upsert_items = [
+                    (item[0], item[1], item[2], item[3], 'FY', item[4], None, item[5], 'ssi', 'PRIMARY_SSI', item[6])
+                    for item in canonical_batch
+                ]
                 self.db.executemany(
                     """INSERT INTO canonical_facts
                        (symbol, statement_type, line_item_code, value, period_type, fiscal_year, fiscal_quarter, period_end, provider, quality_status, observed_at)
-                       VALUES (?, ?, ?, ?, 'FY', ?, NULL, ?, 'ssi', 'PRIMARY_SSI', ?)""",
-                    canonical_batch,
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT (symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
+                       DO UPDATE SET value = EXCLUDED.value, quality_status = EXCLUDED.quality_status, observed_at = EXCLUDED.observed_at""",
+                    upsert_items,
+                )
+
+            if derived_debt:
+                derived_items = [
+                    (item[0], item[1], item[2], item[3], 'FY', item[4], None, item[5], 'ssi', item[6], item[7])
+                    for item in derived_debt
+                ]
+                self.db.executemany(
+                    """INSERT INTO canonical_facts
+                       (symbol, statement_type, line_item_code, value, period_type, fiscal_year, fiscal_quarter, period_end, provider, quality_status, observed_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT (symbol, statement_type, line_item_code, period_type, fiscal_year, fiscal_quarter, provider)
+                       DO UPDATE SET value = EXCLUDED.value, quality_status = EXCLUDED.quality_status, observed_at = EXCLUDED.observed_at""",
+                    derived_items,
                 )
 
             if self.db and hasattr(self.db, "commit"):
@@ -567,16 +747,22 @@ class SSIBulkImporter:
             income_statement_payloads=is_count,
             cash_flow_payloads=cf_count,
             same_payload_group_count=same_payload_groups,
-            different_payload_conflicts=0,
+            different_payload_conflicts=different_payload_conflicts,
             raw_observations_count=raw_obs_total,
             canonical_facts_count=canonical_facts_total,
             unmapped_rows_count=unmapped_total,
             symbols=sorted(list(symbols_found)),
         )
-        self.write_reports(summary, parsed_workbooks)
+        self.write_reports(summary, parsed_workbooks, payload_conflicts)
         return summary
 
-    def write_reports(self, summary: ImportSummaryReport, workbooks: list[SSIParsedWorkbook]) -> None:
+
+    def write_reports(
+        self,
+        summary: ImportSummaryReport,
+        workbooks: list[SSIParsedWorkbook],
+        payload_conflicts: list[dict[str, Any]] | None = None,
+    ) -> None:
         reports_dir = Path("docs/reports")
         reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -605,6 +791,27 @@ class SSIBulkImporter:
             writer.writerow(["file", "symbol", "error"])
             for err in errors:
                 writer.writerow([err["file"], err["symbol"], err["error"]])
+
+        with open(reports_dir / "ssi-payload-conflicts.csv", "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "symbol", "statement_type", "export_date_a", "export_date_b",
+                "semantic_hash_a", "semantic_hash_b", "classification",
+                "changed_periods", "changed_rows"
+            ])
+            for conflict in payload_conflicts or []:
+                writer.writerow([
+                    conflict.get("symbol"),
+                    conflict.get("statement_type"),
+                    conflict.get("export_date_a"),
+                    conflict.get("export_date_b"),
+                    conflict.get("semantic_hash_a"),
+                    conflict.get("semantic_hash_b"),
+                    conflict.get("classification"),
+                    conflict.get("changed_periods"),
+                    conflict.get("changed_rows"),
+                ])
+
 
 
 def main():
