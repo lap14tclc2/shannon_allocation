@@ -1408,6 +1408,7 @@ def portfolio_sync(
 
 
 @app.get("/api/portfolio/securities/lookup")
+@app.get("/api/portfolio/search/symbols")
 def portfolio_securities_lookup(
     q: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=20, ge=1, le=100),

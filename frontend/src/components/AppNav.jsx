@@ -11,6 +11,7 @@ import {
   selectUser,
 } from '../lib/store.js';
 import AppearanceControls from './AppearanceControls.jsx';
+import SymbolSuggestInput from './SymbolSuggestInput.jsx';
 
 const LINKS = [
   ['/', 'portfolio', 'Terminal'],
@@ -69,6 +70,7 @@ function NavIcon({ name, size = 18 }) {
   if (name === 'guide') return <svg {...common}><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23Z" /><path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5A3.5 3.5 0 0 1 20 23Z" /></svg>;
   if (name === 'eye-off') return <svg {...common}><path d="m3 3 18 18" /><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" /><path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c5.5 0 9 8 9 8a17 17 0 0 1-2.1 3.2M6.6 6.6C4.2 8.2 3 12 3 12s3.5 8 9 8a9.7 9.7 0 0 0 4.1-.9" /></svg>;
   if (name === 'eye') return <svg {...common}><path d="M3 12s3.5-8 9-8 9 8 9 8-3.5 8-9 8-9-8-9-8Z" /><circle cx="12" cy="12" r="2.5" /></svg>;
+  if (name === 'search') return <svg {...common}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>;
   return <svg {...common}><circle cx="12" cy="8" r="3.25" /><path d="M5.5 20c.6-4 2.75-6 6.5-6s5.9 2 6.5 6" /></svg>;
 }
 
@@ -333,6 +335,17 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
             <BrandMark />
             <span className="brand-copy"><strong>QPort</strong><small>{adminMode ? 'Quản trị' : 'Sổ tài sản'}</small></span>
           </a>
+          {!adminMode && (
+            <button
+              type="button"
+              className="mobile-header-search-btn"
+              aria-label="Tra cứu cổ phiếu"
+              onClick={() => navigate('/business')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary, #6b7280)', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center' }}
+            >
+              <NavIcon name="search" size={18} />
+            </button>
+          )}
           <button type="button" className="nav-toggle header-user-button" aria-expanded={accountOpen} aria-label="Mở tài khoản và tùy chọn" onClick={() => { setPortfolioOpen(false); setNavigationOpen(false); setAccountOpen(value => !value); }}>
             <span className="header-user-avatar">{userInitial}</span><NavIcon name="chevron" size={15} />
           </button>
@@ -340,6 +353,16 @@ export default function AppNav({ active = 'portfolio', locale = 'vi' }) {
 
         {!adminMode && portfolios.length > 0 && <DesktopPortfolioSwitcher />}
         <DesktopNavigationTrigger />
+
+        {!adminMode && (
+          <div className="header-desktop-quick-search" style={{ flex: '1 1 240px', maxWidth: '280px', margin: '0 8px' }}>
+            <SymbolSuggestInput
+              value=""
+              onSelectSecurity={(item) => navigate(`/business/${item.symbol}`)}
+              placeholder="Search ticker or company..."
+            />
+          </div>
+        )}
 
         <div className="app-nav-footer desktop-nav-footer">
           {!adminMode && <button type="button" className={`header-privacy-button ${privacyMode ? 'active' : ''}`} onClick={() => setPrivacyMode(value => !value)} aria-pressed={privacyMode} title={privacyMode ? 'Hiện số dư' : 'Ẩn số dư'}>
