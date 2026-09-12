@@ -377,7 +377,7 @@
 }
 
 @media (max-width: 719px) {
-  .portfolio-manager-page { padding-top: 70px; }
+  .portfolio-manager-page { padding-top: 84px; }
   .portfolio-manager-hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
