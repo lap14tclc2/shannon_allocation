@@ -1,4 +1,4 @@
-# TASK-20260912-139 — Forensic Correctness + Canonical MOS Authority Audit
+# TASK-20260912-139 — Universe Forensic Correctness & Canonical MOS Authority Audit
 
 - **Status**: completed
 - **Priority**: high
