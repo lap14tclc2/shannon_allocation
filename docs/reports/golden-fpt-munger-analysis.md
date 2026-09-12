@@ -9,9 +9,9 @@ Full evidence-driven long-term financial trace for FPT Corporation against real 
 - **Data Provider**: SSI
 - **Data Readiness**: READY
 - **Compounder Classification**: POTENTIAL_COMPOUNDER
-- **Value Trap Assessment**: CLEAR (NO_DETERIORATION)
+- **Value Trap Assessment**: CLEAR (POSSIBLY_CYCLICAL)
 - **Final Decision**: **WAIT_FOR_MOS**
-- **Primary Decision Reason**: "Doanh nghiệp có chất lượng tốt (POTENTIAL_COMPOUNDER) nhưng mức giá hiện tại (MOS -36.4%) chưa đạt Biên an toàn yêu cầu (25.0%)."
+- **Primary Decision Reason**: "Doanh nghiệp có chất lượng tốt (POTENTIAL_COMPOUNDER) nhưng mức giá hiện tại (MOS 23.7%) chưa đạt Biên an toàn yêu cầu (25.0%)."
 
 ## 2. Growth & Profitability Metrics
 - **Revenue 15Y CAGR**: 7.53%
@@ -41,18 +41,18 @@ Full evidence-driven long-term financial trace for FPT Corporation against real 
 - **Earning Power Divergence**: +2,707,006,360,399 VND
 
 ## 6. Canonical Valuation & Margin of Safety
-- **Current Market Price**: 130,000 VND
+- **Current Market Price**: 72,700 VND
 - **Bear Intrinsic Value**: 60,199 VND
 - **Base Intrinsic Value**: 95,283 VND
 - **Bull Intrinsic Value**: 141,263 VND
-- **Actual Margin of Safety (Actual MOS)**: -36.44%
+- **Actual Margin of Safety (Actual MOS)**: 23.70%
 - **Required Margin of Safety (Required MOS)**: 25.0%
-- **MOS Gate**: **FAIL** (Actual MOS < Required MOS -> `FAIL`)
+- **MOS Gate**: **FAIL** (Actual MOS 23.7% < Required MOS 25.0% -> `FAIL`)
 
 ## 7. Forensic & Accounting Integrity Findings
-- **Accounting Identity Violations**: 0
-- **Forensic Findings Count**: 0
-- **Structural Deterioration**: `NO_DETERIORATION`
+- **Accounting Identity Violations**: 1 (`ACCOUNTING_IDENTITY_DISCREPANCY` - minor historical rounding check)
+- **Forensic Findings Count**: 1 (WATCH level warning)
+- **Structural Deterioration**: `POSSIBLY_CYCLICAL`
 - **Value Trap Status**: `CLEAR`
 
 ## 8. Final Decision Lineage & Precedence
@@ -61,7 +61,7 @@ Full evidence-driven long-term financial trace for FPT Corporation against real 
 3. `data_readiness`: `READY` (15 years FY data) -> `REVIEW_BUSINESS` not triggered.
 4. `compounder_classification`: `POTENTIAL_COMPOUNDER` (High ROE & Growth).
 5. `valuation_status`: `READY`.
-6. `mos_gate`: `FAIL` (Actual MOS -36.44% < Required MOS 25.0%).
+6. `mos_gate`: `FAIL` (Actual MOS 23.70% < Required MOS 25.0%).
 7. **Final Outcome**: **`WAIT_FOR_MOS`**
 
-FPT meets all financial business quality criteria of a long-term compounder, but the current market price of 130,000 VND exceeds Base Intrinsic Value (95,283 VND). Investors must wait for market price to provide a >= 25.0% Margin of Safety.
+FPT meets financial business quality criteria of a potential long-term compounder. With current market price at 72,700 VND and Base Intrinsic Value at 95,283 VND, actual MOS is 23.7%, slightly below the required 25.0% MOS threshold. Investors must wait for market price to provide >= 25.0% Margin of Safety.

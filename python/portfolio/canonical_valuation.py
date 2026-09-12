@@ -171,12 +171,21 @@ def build_canonical_valuation(
     fiscal_quarter = int(fiscal_quarter_raw) if fiscal_quarter_raw and 1 <= fiscal_quarter_raw <= 4 else None
     period_end = str(snapshot.get("period_end") or f"{fiscal_year}-12-31")
 
+    prov_name = str(snapshot.get("provider", "")).lower()
+
+    def to_vnd(val: Decimal | None, code: str, provider: str = "") -> Decimal | None:
+        if val is None:
+            return None
+        if code == "IS.SHARES.OUTSTANDING" or abs(val) >= Decimal("1000000") or provider.lower() == "ssi":
+            return val
+        return val * Decimal("1000000000")
+
     facts: list[CanonicalFact] = []
 
     def add_fact(code: str, statement_type: StatementType, value: Decimal | None, period_type: PeriodType) -> None:
         if value is None:
             return
-        fact_val = value if code == "IS.SHARES.OUTSTANDING" or abs(value) >= Decimal("1000000000") else value * Decimal("1000000000")
+        fact_val = to_vnd(value, code, prov_name)
         fact_id = f"db-{ticker.lower()}-{code.lower().replace('.', '-')}-{fetched_at[:19]}"
         facts.append(CanonicalFact(
             canonical_fact_id=fact_id,
@@ -214,8 +223,8 @@ def build_canonical_valuation(
     add_fact("CF.OPERATING.NET", StatementType.CASH_FLOW, operating_cash, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
     add_fact("IS.SHARES.OUTSTANDING", StatementType.INCOME_STATEMENT, shares, PeriodType.QUARTER if fiscal_quarter else PeriodType.FY)
 
-    scaled_net_income = net_income * Decimal("1000000000") if net_income is not None and abs(net_income) < Decimal("1000000000") else net_income
-    scaled_equity = equity * Decimal("1000000000") if equity is not None and abs(equity) < Decimal("1000000000") else equity
+    scaled_net_income = to_vnd(net_income, "IS.PROFIT.NET", prov_name)
+    scaled_equity = to_vnd(equity, "BS.EQUITY.TOTAL", prov_name)
 
     if bvps is None and scaled_equity is not None and shares > 0:
         bvps = scaled_equity / shares
@@ -247,6 +256,7 @@ def build_canonical_valuation(
             y_int = int(r["fiscal_year"])
             code_str = str(r["line_item_code"])
             val_dec = Decimal(str(r["value"]))
+            prov_r = str(r["provider"] or "")
             
             # Provider precedence: ssi first, then tcbs. Only set if code_str not yet present for that year.
             if code_str not in by_year.setdefault(y_int, {}):
@@ -254,7 +264,7 @@ def build_canonical_valuation(
 
             if y_int != fiscal_year:
                 st_type = StatementType.INCOME_STATEMENT if code_str.startswith("IS.") else (StatementType.BALANCE_SHEET if code_str.startswith("BS.") else StatementType.CASH_FLOW)
-                fact_val = val_dec if code_str == "IS.SHARES.OUTSTANDING" or abs(val_dec) >= Decimal("1000000000") else val_dec * Decimal("1000000000")
+                fact_val = to_vnd(val_dec, code_str, prov_r)
                 facts.append(CanonicalFact(
                     canonical_fact_id=f"db-{ticker.lower()}-{code_str.lower().replace('.', '-')}-{y_int}",
                     identity=FactIdentityKey(
