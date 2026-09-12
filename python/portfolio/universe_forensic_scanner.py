@@ -253,7 +253,7 @@ def write_reports(scan_res: Dict[str, Any]):
 
 ### F. Most Frequent Forensic Finding Codes
 ```json
-{json.dumps(dict(scan_res['rule_counter'].most_common(15)), indent=2)}
+{json.dumps(dict(Counter(scan_res['rule_counter']).most_common(15)), indent=2)}
 ```
 
 ---
