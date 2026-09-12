@@ -94,7 +94,7 @@ def build_financial_history_from_facts(
         # Construct from existing financial_history format
         by_year: Dict[int, Dict[str, Any]] = {}
         for h in existing_history:
-            fy = int(h.get("fiscal_year") or 0)
+            fy = int(h.get("fiscal_year") or h.get("year") or 0)
             if fy > 0:
                 by_year[fy] = dict(h)
         years = sorted(by_year.keys())

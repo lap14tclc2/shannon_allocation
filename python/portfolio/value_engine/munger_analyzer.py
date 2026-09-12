@@ -1,7 +1,25 @@
-"""High-Level Munger Financial Statement Analysis Orchestrator (Task 136).
+"""High-Level Munger Financial Statement Analysis Orchestrator (Task 136, Task 154).
 
-Orchestrates full evidence-driven long-term financial analysis across 12 dimensions
-and returns a canonical FinancialBusinessAnalysis payload.
+Orchestrates full evidence-driven long-term financial analysis across 16 deterministic gates:
+GATE 1: Data completeness
+GATE 2: Accounting consistency
+GATE 3: Balance sheet / Solvency
+GATE 4: Earnings quality
+GATE 5: Cash conversion
+GATE 6: Earnings durability
+GATE 7: Capital efficiency
+GATE 8: Capital allocation
+GATE 9: Dilution
+GATE 10: Financial forensics (10 pairings)
+GATE 11: Structural deterioration / Value trap
+GATE 12: Normalized earnings (3Y/5Y/10Y/Median/Volatility/Peak-Trough)
+GATE 13: Bear case resilience
+GATE 14: Valuation readiness
+GATE 15: Margin of Safety (MOS)
+GATE 16: Portfolio / Personal capital constraints
+-> Final Action
+
+Sole evidence source: Canonical SSI Annual Financial Statements in PostgreSQL.
 """
 
 from __future__ import annotations
@@ -33,6 +51,11 @@ from .munger_models import (
     FinancialFinding,
 )
 from .munger_thresholds import DEFAULT_MUNGER_THRESHOLD_POLICY, MungerThresholdPolicy
+from .vietnamese_presenter import (
+    get_vietnamese_deterioration,
+    get_vietnamese_finding_title,
+    get_vietnamese_valuetrap,
+)
 
 
 def build_munger_financial_analysis(
@@ -59,13 +82,14 @@ def build_munger_financial_analysis(
                     "base_iv": val_res.get("base_iv"),
                     "bull_iv": val_res.get("bull_iv"),
                     "actual_mos_pct": val_res.get("actual_mos_pct"),
+                    "required_mos_pct": val_res.get("required_mos_pct"),
                     "valuation_confidence": val_res.get("valuation_confidence", "MEDIUM"),
                     "quality_tier": val_res.get("quality_tier"),
                 }
         except Exception:
             valuation_data = None
 
-    # 1. Build Multi-Year History
+    # 1. GATE 1: Build Multi-Year History & Check Data Completeness
     history_data = build_financial_history_from_facts(ticker, raw_facts=raw_facts, existing_history=existing_history)
     years = history_data.get("years", [])
     history_start = history_data.get("history_start", 0)
@@ -84,16 +108,14 @@ def build_munger_financial_analysis(
         else "NORMAL_ENTERPRISE")
     )
 
-    # Data Readiness
     data_readiness = "READY" if history_years >= 5 else ("PARTIAL" if history_years >= 3 else "INSUFFICIENT")
 
-    # 3. Forensics & Accounting Consistency
+    # 3. GATE 2 & 4 & 5 & 10: Forensics, Accounting Consistency, Earnings Quality, Receivables, Inventory
     acct_res = run_accounting_consistency_checks(history_data, thresholds)
     eq_res = run_earnings_quality_forensics(history_data, archetype_str, thresholds)
     rec_res = run_receivables_forensics(history_data, archetype_str, thresholds)
     inv_res = run_inventory_forensics(history_data, archetype_str, thresholds)
 
-    # Combined Forensics Result
     all_findings: List[FinancialFinding] = []
     for r in (acct_res, eq_res, rec_res, inv_res):
         all_findings.extend(r.findings)
@@ -115,7 +137,7 @@ def build_munger_financial_analysis(
         explanation=f"Phát hiện {len(all_findings)} vấn đề cần lưu ý trong BCTC." if all_findings else "Không phát hiện dấu hiệu bất thường BCTC nghiêm trọng.",
     )
 
-    # 4. Archetype Specific Analyzers
+    # 4. GATES 6, 7, 8, 9: Archetype-Specific Analyzers (Durability, Profitability, Capital Efficiency, Allocation, Dilution)
     if archetype_str == "BANK":
         arch_dict = analyze_bank(history_data, thresholds)
     elif archetype_str == "SECURITIES":
@@ -138,23 +160,52 @@ def build_munger_financial_analysis(
             if f not in all_findings:
                 all_findings.append(f)
 
-    # 5. Normalized Earning Power
+    # 5. GATE 12: Normalized Earning Power & Earnings Volatility Deep Dive
     by_year = history_data.get("by_year", {})
-    pat_series = [by_year[y].get("net_profit") for y in years if by_year[y].get("net_profit") is not None]
+    pat_series = [float(by_year[y]["net_profit"]) for y in years if by_year.get(y, {}).get("net_profit") is not None]
     reported_latest = pat_series[-1] if pat_series else None
-    
+
+    norm_3y = sum(pat_series[-3:]) / min(3, len(pat_series)) if pat_series else None
     norm_5y = sum(pat_series[-5:]) / min(5, len(pat_series)) if pat_series else None
     norm_10y = sum(pat_series[-10:]) / min(10, len(pat_series)) if len(pat_series) >= 5 else norm_5y
 
+    clean_pats = sorted(pat_series) if pat_series else []
+    n_p = len(clean_pats)
+    median_pat = (clean_pats[n_p // 2] if n_p % 2 != 0 else (clean_pats[n_p // 2 - 1] + clean_pats[n_p // 2]) / 2.0) if clean_pats else None
+    mean_pat = (sum(pat_series) / len(pat_series)) if pat_series else None
+
+    earnings_volatility = 0.0
+    if pat_series and mean_pat and abs(mean_pat) > 0:
+        variance = sum((p - mean_pat) ** 2 for p in pat_series) / len(pat_series)
+        std_dev = math.sqrt(variance)
+        earnings_volatility = round(std_dev / abs(mean_pat), 4)
+
+    is_peak_earnings = bool(reported_latest and norm_5y and norm_5y > 0 and reported_latest >= 1.50 * norm_5y)
+    is_trough_earnings = bool(reported_latest and norm_5y and norm_5y > 0 and reported_latest <= 0.60 * norm_5y)
+
+    norm_exp = "Chưa đủ dữ liệu lợi nhuận chuẩn hóa."
+    if norm_5y and reported_latest:
+        norm_exp = f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} VND so với gần nhất {reported_latest:,.0f} VND (Biến động CV: {earnings_volatility*100:.1f}%)."
+        if is_peak_earnings:
+            norm_exp += " Cảnh báo: Lợi nhuận gần nhất cao hơn đáng kể so với mức bình thường hóa 5 năm (khả năng chạm đỉnh chu kỳ/biên lợi nhuận đột biến)."
+        elif is_trough_earnings:
+            norm_exp += " Ghi chú: Lợi nhuận gần nhất đang ở vùng đáy chu kỳ hoặc chịu chi phí bất thường."
+
     normalized_earning_power = {
         "reported_latest": reported_latest,
+        "normalized_3y": norm_3y,
         "normalized_5y": norm_5y,
         "normalized_10y": norm_10y,
+        "median_pat": median_pat,
+        "mean_pat": mean_pat,
+        "earnings_volatility": earnings_volatility,
+        "is_peak_earnings": is_peak_earnings,
+        "is_trough_earnings": is_trough_earnings,
         "earning_power_divergence": (reported_latest - norm_5y) if reported_latest is not None and norm_5y is not None else None,
-        "explanation": f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} VND so với gần nhất {reported_latest:,.0f} VND." if norm_5y and reported_latest else "Chưa đủ dữ liệu lợi nhuận chuẩn hóa.",
+        "explanation": norm_exp,
     }
 
-    # 6. Structural vs Cyclical Deterioration
+    # 6. GATE 11: Structural vs Cyclical Deterioration & Value Trap
     growth_metrics = growth_res.metrics
     prof_metrics = prof_res.metrics
     dur_metrics = dur_res.metrics
@@ -177,8 +228,8 @@ def build_munger_financial_analysis(
     }
 
     hard_failures = [
-        f.code for f in all_findings 
-        if f.severity == FindingSeverity.CRITICAL.value 
+        f.code for f in all_findings
+        if f.severity == FindingSeverity.CRITICAL.value
         or (f.severity == FindingSeverity.HIGH.value and f.category not in ("WORKING_CAPITAL",))
     ]
     warnings = [f.code for f in all_findings if f.code not in hard_failures]
@@ -203,7 +254,7 @@ def build_munger_financial_analysis(
     else:
         compounder_class = CompounderClassification.WEAK_BUSINESS.value
 
-    # 9. Value Trap Assessment (Refactored to consume Munger analysis)
+    # 9. Value Trap Assessment (Multi-signal integration)
     vt_status = "CLEAR"
     if hard_failures or structural_class == DeteriorationClassification.STRUCTURAL.value:
         vt_status = "HIGH_RISK"
@@ -226,7 +277,7 @@ def build_munger_financial_analysis(
         "explanation": f"Đánh giá Bẫy giá trị: {get_vietnamese_valuetrap(vt_status)}. Trạng thái cấu trúc: {get_vietnamese_deterioration(structural_class)}.",
     }
 
-    # 10. Canonical Valuation & Deterministic Required MOS Integration
+    # 10. GATES 13, 14, 15: Canonical Valuation & Required MOS Integration
     val_payload = valuation_data or {}
     val_status = val_payload.get("status", "INCOMPLETE")
     curr_price = val_payload.get("current_price")
@@ -236,12 +287,10 @@ def build_munger_financial_analysis(
     actual_mos = val_payload.get("actual_mos_pct")
     val_confidence = val_payload.get("valuation_confidence", "MEDIUM")
 
-    # Consume canonical required MOS authority from valuation engine payload
     canonical_req_mos = val_payload.get("required_mos_pct")
     if canonical_req_mos is not None:
         required_mos = float(canonical_req_mos)
     else:
-        # Dynamic fallback if valuation engine payload was not provided
         base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
         if compounder_class == CompounderClassification.COMPOUNDER.value:
             base_req_mos = thresholds.BASE_REQUIRED_MOS_COMPOUNDER
@@ -283,40 +332,50 @@ def build_munger_financial_analysis(
         "valuation_confidence": val_confidence,
     }
 
-    # 11. Core Deterministic BCTC-Only Decision (NO DEFAULT BUY!)
+    # 11. Core Deterministic Munger Decision (Anti False-BUY Gate & Separation of Quality vs MOS)
     decision_state = "WAIT_FOR_MOS"
     decision_reason = ""
 
-    if hard_failures or vt_status == "HIGH_RISK" or compounder_class == CompounderClassification.DETERIORATING_BUSINESS.value or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value):
+    has_forensic_red_flags = bool(hard_failures or vt_status == "HIGH_RISK" or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value))
+    has_forensic_warnings = bool("WEAK_CASH_CONVERSION" in warnings or "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in warnings or "ACCOUNTING_IDENTITY_DISCREPANCY" in warnings or earnings_volatility >= 0.60)
+
+    if has_forensic_red_flags:
         decision_state = "AVOID"
         fail_reasons = hard_failures if hard_failures else ([f"Bẫy giá trị rủi ro cao ({get_vietnamese_valuetrap(vt_status)})"] if vt_status == "HIGH_RISK" else [f"Doanh nghiệp suy giảm cấu trúc ({get_vietnamese_deterioration(structural_class)})"])
         decision_reason = f"Phát hiện rủi ro tài chính nghiêm trọng ({', '.join(fail_reasons)})."
     elif data_readiness == "INSUFFICIENT":
         decision_state = "REVIEW_BUSINESS"
         decision_reason = "Chưa đủ dữ liệu tài chính lịch sử (dưới 3-5 năm) để hoàn thành đánh giá BCTC."
-    elif (
-        data_readiness in ("READY", "PARTIAL")
-        and not hard_failures
-        and vt_status != "HIGH_RISK"
-        and compounder_class not in (CompounderClassification.DETERIORATING_BUSINESS.value, CompounderClassification.INSUFFICIENT_DATA.value, CompounderClassification.WEAK_BUSINESS.value)
-        and val_status == "READY"
-        and actual_mos is not None
-        and mos_gate == "PASS"
-    ):
-        decision_state = "BUY"
-        decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%)."
-    else:
+    elif compounder_class == CompounderClassification.WEAK_BUSINESS.value:
+        decision_state = "AVOID"
+        decision_reason = "Doanh nghiệp có chất lượng tài chính yếu, không đạt tiêu chí tích sản dài hạn."
+    elif val_status != "READY" or actual_mos is None:
         decision_state = "WAIT_FOR_MOS"
-        if compounder_class == CompounderClassification.WEAK_BUSINESS.value:
-            decision_reason = "Doanh nghiệp có chất lượng tài chính yếu, không đạt tiêu chí mua dài hạn."
-        elif val_status != "READY" or actual_mos is None:
-            decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
-        elif mos_gate == "FAIL":
-            decision_reason = f"Doanh nghiệp có chất lượng tốt ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+        decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
+    elif mos_gate == "PASS":
+        # Munger Invariant: MOS is a PRICE condition, Quality is a BUSINESS condition.
+        # High MOS alone CANNOT override forensic warnings to create a false BUY!
+        if has_forensic_warnings or vt_status == "WATCH" or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+            decision_state = "WAIT_FOR_MOS"
+            warn_list = [get_vietnamese_finding_title(w) for w in warnings if w in ("WEAK_CASH_CONVERSION", "RECEIVABLES_GROW_FASTER_THAN_REVENUE", "ACCOUNTING_IDENTITY_DISCREPANCY")]
+            warn_desc = f", cảnh báo: {', '.join(warn_list)}" if warn_list else ""
+            decision_reason = (
+                f"Mặc dù Biên an toàn tính toán hấp dẫn (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
+                f"nhưng phát hiện rủi ro phân kỳ dòng tiền / chất lượng tài chính cần thận trọng{warn_desc} "
+                f"(độ biến động LN: {earnings_volatility*100:.1f}%). Chưa đạt chuẩn mua an toàn theo nguyên lý Munger."
+            )
+        elif bear_iv is not None and curr_price is not None and curr_price > bear_iv:
+            decision_state = "WAIT_FOR_MOS"
+            decision_reason = (
+                f"Mức giá hiện tại đạt Biên an toàn cơ sở (MOS {actual_mos:.1f}%), nhưng thị giá ({curr_price:,.0f} đ) "
+                f"vẫn cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ). Cần theo dõi thêm để bảo vệ vốn tuyệt đối."
+            )
         else:
-            decision_reason = "Doanh nghiệp ở trạng thái theo dõi, chờ mức giá có Biên an toàn phù hợp."
-
-    from .vietnamese_presenter import get_vietnamese_decision, get_vietnamese_status
+            decision_state = "BUY"
+            decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+    else:  # mos_gate == "FAIL"
+        decision_state = "WAIT_FOR_MOS"
+        decision_reason = f"Doanh nghiệp có chất lượng ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
 
     long_term_decision = {
         "state": decision_state,
@@ -329,6 +388,7 @@ def build_munger_financial_analysis(
         "bctc_only_pipeline": True,
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,
+        "has_forensic_warnings": has_forensic_warnings,
     }
 
     # 12. Automated Investment Thesis Challenge Engine (Task 141)
@@ -355,7 +415,7 @@ def build_munger_financial_analysis(
     )
     thesis_challenge_dict = thesis_challenge_obj.to_dict()
 
-    # 13. Evidence-Based 9-Part Final Conclusion (Task 9)
+    # 13. Evidence-Based Final Conclusion
     evidence_conclusion = _build_evidence_based_conclusion(
         symbol=ticker,
         archetype=archetype_str,
@@ -422,7 +482,7 @@ def _build_evidence_based_conclusion(
     growth_res: FinancialDimensionResult,
     eq_res: FinancialDimensionResult,
 ) -> Dict[str, Any]:
-    """Build structured 9-part evidence-based final conclusion payload (Task 9)."""
+    """Build structured evidence-based final conclusion payload."""
     from .vietnamese_presenter import (
         get_vietnamese_classification,
         get_vietnamese_decision,
@@ -442,79 +502,58 @@ def _build_evidence_based_conclusion(
     if pat_cagr is not None and pat_cagr >= 0.12:
         strengths.append(f"Tăng trưởng lợi nhuận ròng mạnh mẽ ({(pat_cagr*100):.1f}%/năm)")
 
-    avg_cfo_pat = eq_res.metrics.get("avg_cfo_pat")
+    avg_cfo_pat = eq_res.metrics.get("avg_cfo_pat") or eq_res.metrics.get("median_cfo_pat")
     if avg_cfo_pat is not None and avg_cfo_pat >= 0.8:
-        strengths.append(f"Khả năng chuyển hóa lợi nhuận thành tiền mặt tương đối tốt (CFO/PAT trung bình {avg_cfo_pat:.2f}x)")
+        strengths.append(f"Khả năng chuyển hóa lợi nhuận thành tiền mặt tương đối tốt (CFO/PAT trung vị {avg_cfo_pat:.2f}x)")
 
     if not hard_failures:
         strengths.append("Không phát hiện vi phạm hằng đẳng thức kế toán hay thất bại nghiêm trọng")
 
-    if not strengths:
-        strengths.append("Doanh nghiệp duy trì nền tảng hoạt động cơ bản")
-
-    for f in all_findings:
-        if f.severity in ("HIGH", "CRITICAL", "MEDIUM"):
-            title = get_vietnamese_finding_title(f.code)
-            if title not in weaknesses:
-                weaknesses.append(title)
-
-    if not weaknesses:
-        weaknesses.append("Chưa phát hiện điểm yếu tài chính nghiêm trọng")
-
-    top_warning = "Chưa phát hiện cảnh báo rủi ro tài chính đáng ngại"
     if hard_failures:
-        top_warning = get_vietnamese_finding_title(hard_failures[0])
-    elif warnings:
-        top_warning = get_vietnamese_finding_title(warnings[0])
+        for f in hard_failures:
+            weaknesses.append(f"Thất bại nghiêm trọng: {get_vietnamese_finding_title(f)}")
 
-    comp_vi = get_vietnamese_classification(compounder_class)
-    long_term_trend = f"Xu hướng dài hạn: {comp_vi}."
+    if warnings:
+        for w in warnings[:3]:
+            weaknesses.append(f"Cảnh báo: {get_vietnamese_finding_title(w)}")
 
-    vt_status = value_trap_assessment.get("status", "CLEAR")
-    vt_vi = get_vietnamese_valuetrap(vt_status)
-    value_trap_risk = f"Đánh giá rủi ro Bẫy giá trị: {vt_vi}."
-
-    finding_codes = [f.code for f in all_findings]
-    if "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in finding_codes or "PROFIT_CASH_DIVERGENCE" in finding_codes:
-        what_breaks = "Luận điểm đầu tư sẽ suy yếu đáng kể nếu dòng tiền tiếp tục tụt lại phía sau lợi nhuận và vốn lưu động tiếp tục hút tiền."
-        conditions_to_strengthen = "Luận điểm sẽ được củng cố khi dòng tiền kinh doanh (CFO) thu hồi đạt tương ứng lợi nhuận sau thuế (CFO/PAT >= 0.8x) và tốc độ tăng khoản phải thu giảm xuống dưới tốc độ tăng doanh thu."
-    else:
-        what_breaks = "Luận điểm đầu tư sẽ suy yếu nếu hiệu suất sinh lời ROE sụt giảm dưới mức kỳ vọng tối thiểu hoặc đòn bẩy nợ vay tăng nhanh."
-        conditions_to_strengthen = "Luận điểm được củng cố khi doanh nghiệp tiếp tục duy trì ROE cao và quản trị chi phí tài chính hiệu quả."
-
-    val_status = valuation.get("status", "INCOMPLETE")
-    curr_p = valuation.get("current_price")
-    base_iv = valuation.get("base_iv")
-    act_mos = valuation.get("actual_mos_pct")
-    req_mos = valuation.get("required_mos_pct", 25.0)
-
-    if val_status == "READY" and curr_p is not None and base_iv is not None and act_mos is not None:
-        val_mos_str = f"Giá hiện tại {curr_p:,.0f} đ vs Giá trị nội tại cơ sở {base_iv:,.0f} đ (MOS thực tế {act_mos:.1f}% vs Yêu cầu {req_mos:.1f}%)."
-    else:
-        val_mos_str = "Chưa đủ dữ liệu định giá chuẩn để xác định Biên an toàn."
-
-    final_decision_str = f"{long_term_decision.get('state_vietnamese', 'WAIT_FOR_MOS')} — {long_term_decision.get('primary_reason', '')}"
-
-    full_narrative = (
-        f"Doanh nghiệp {symbol} có nền tảng tài chính được đánh giá ở nhóm '{comp_vi}'. "
-        f"Điểm mạnh chính bao gồm: {', '.join(strengths[:2])}. "
-        f"Tuy nhiên, hệ thống phát hiện cảnh báo cần lưu ý: {top_warning}. "
-        f"{what_breaks} "
-        f"Về định giá: {val_mos_str} "
-        f"Kết luận đầu tư: {final_decision_str}"
+    conclusion_text = (
+        f"Đánh giá tổng thể cho {symbol}: {get_vietnamese_classification(compounder_class)}. "
+        f"Trạng thái bẫy giá trị: {get_vietnamese_valuetrap(value_trap_assessment.get('status', 'CLEAR'))}. "
+        f"Quyết định khuyến nghị: {long_term_decision.get('state_vietnamese', 'Chờ biên an toàn')} — {long_term_decision.get('primary_reason', '')}"
     )
 
+    str_list = strengths if strengths else ["Nền tảng tài chính duy trì ổn định"]
+    weak_list = weaknesses if weaknesses else ["Chưa phát hiện điểm yếu BCTC nghiêm trọng"]
+    primary_warn = weaknesses[0] if weaknesses else "Chưa phát hiện cảnh báo trọng yếu"
+    act_mos = valuation.get("actual_mos_pct") if valuation else None
+    req_mos = valuation.get("required_mos_pct") if valuation else None
+    if act_mos is not None and req_mos is not None:
+        val_mos_str = f"MOS: {float(act_mos):.1f}% vs Yêu cầu: {float(req_mos):.1f}%"
+    else:
+        val_mos_str = "Chưa có định giá chuẩn"
+
     return {
-        "diem_manh_tai_chinh": strengths,
-        "diem_yeu": weaknesses,
-        "warning_quan_trong_nhat": top_warning,
-        "xu_huong_dai_han": long_term_trend,
-        "value_trap_risk": value_trap_risk,
-        "dieu_co_the_pha_vo_thesis": what_breaks,
-        "dieu_kien_cung_co_thesis": conditions_to_strengthen,
+        "symbol": symbol,
+        "compounder_classification": compounder_class,
+        "compounder_classification_vietnamese": get_vietnamese_classification(compounder_class),
+        "decision_state": long_term_decision.get("state"),
+        "decision_state_vietnamese": long_term_decision.get("state_vietnamese"),
+        "primary_reason": long_term_decision.get("primary_reason"),
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "diem_manh_tai_chinh": str_list,
+        "diem_yeu": weak_list,
+        "diem_yeu_tai_chinh": weak_list,
+        "warning_quan_trong_nhat": primary_warn,
+        "xu_huong_dai_han": f"Phân loại: {get_vietnamese_classification(compounder_class)}",
+        "value_trap_risk": get_vietnamese_valuetrap(value_trap_assessment.get("status", "CLEAR")),
+        "dieu_co_the_pha_vo_thesis": "Biên an toàn suy giảm hoặc phát hiện bất thường dòng tiền BCTC",
+        "dieu_kien_cung_co_thesis": "Duy trì ROE và tăng trưởng lợi nhuận có dòng tiền bảo chứng",
         "valuation_mos": val_mos_str,
-        "final_decision": final_decision_str,
-        "full_narrative": full_narrative,
+        "final_decision": long_term_decision.get("state_vietnamese", "Chờ biên an toàn"),
+        "ket_luan_tong_the": conclusion_text,
+        "khuyen_nghi": long_term_decision.get("state_vietnamese"),
+        "summary_text": conclusion_text,
+        "full_narrative": conclusion_text,
     }
-
-

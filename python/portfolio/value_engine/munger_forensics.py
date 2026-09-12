@@ -1,12 +1,16 @@
-"""Financial Forensics, Accounting Consistency, and Structural Deterioration Engine (Task 136).
+"""Financial Forensics, Accounting Consistency, and Structural Deterioration Engine (Task 136, Task 154).
 
-Provides deterministic evidence-first forensics across:
-- Accounting consistency & balance sheet equation integrity
-- Earnings quality & profit vs cash flow divergence
-- Receivables & inventory forensic checks (archetype-aware)
-- Debt-funded expansion & leverage stress
-- Share dilution vs per-share compounding
-- Structural vs cyclical deterioration classification
+Provides deterministic evidence-first forensics across 10 core financial statement pairings:
+1. Revenue ↔ Receivables (revenue recognition & trade credit)
+2. Revenue ↔ Inventory (inventory buildup vs sales velocity)
+3. PAT ↔ CFO (accrual accounting vs real cash generation)
+4. PAT ↔ Retained Earnings (clean surplus & profit retention)
+5. PAT ↔ Equity (internal capital compounding)
+6. Debt ↔ Assets (asset leverage stress)
+7. Debt ↔ Equity (solvency & capital structure risk)
+8. CFO ↔ Working Capital (cash conversion efficiency & WC drain)
+9. Shares ↔ EPS / Equity (dilution drag on compounding)
+10. Cash ↔ Debt (cash fortress vs debt vulnerability)
 """
 
 from __future__ import annotations
@@ -32,9 +36,9 @@ def run_accounting_consistency_checks(
     """Validate accounting identities across financial statements.
 
     Checks:
-    1. Assets ≈ Liabilities + Equity (BS)
-    2. BS Cash vs CF Ending Cash / Cash flow continuity
-    3. PBT - Tax ≈ PAT (IS)
+    1. Assets ≈ Liabilities + Equity (BS equation)
+    2. PBT - Tax ≈ PAT (IS equation)
+    3. Retained earnings reconciliation (Clean surplus: RE_t ≈ RE_{t-1} + PAT_t - Dividends_t)
     """
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
@@ -119,7 +123,7 @@ def run_accounting_consistency_checks(
             )
         )
 
-    explanation = "Báo cáo tài chính tuân thủ các hằng đẳng thức kế toán cơ bản." if status == DimensionStatus.PASS.value else "Phát hiện bộc lộ bất bếnh hằng đẳng thức kế toán trong BCTC."
+    explanation = "Báo cáo tài chính tuân thủ các hằng đẳng thức kế toán cơ bản." if status == DimensionStatus.PASS.value else "Phát hiện chênh lệch hằng đẳng thức kế toán trong BCTC."
 
     return FinancialDimensionResult(
         status=status,
@@ -142,7 +146,15 @@ def run_earnings_quality_forensics(
     archetype: str = "NORMAL_ENTERPRISE",
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
 ) -> FinancialDimensionResult:
-    """Analyze earnings quality and profit vs cash flow divergence."""
+    """Analyze earnings quality and profit vs cash flow divergence with multi-year series and contradiction resolution.
+
+    Requirement 9:
+    - Yearly series: CFO, PAT, CFO/PAT
+    - Median, Mean, Weighted ratio (sum CFO / sum PAT)
+    - Years CFO < PAT, Years CFO < 0, Years CFO/PAT < threshold
+    - Trend analysis
+    - Explicit explanation if mean CFO/PAT is high but CFO < PAT in multiple years (contradiction resolution).
+    """
     if archetype in ("BANK", "SECURITIES"):
         return FinancialDimensionResult(
             status=DimensionStatus.NOT_APPLICABLE.value,
@@ -170,6 +182,7 @@ def run_earnings_quality_forensics(
             explanation="Chưa đủ lịch sử tài chính để phân tích chất lượng lợi nhuận.",
         )
 
+    yearly_series: List[Dict[str, Any]] = []
     cfo_pat_ratios: List[float] = []
     cfo_series: List[float] = []
     pat_series: List[float] = []
@@ -186,10 +199,21 @@ def run_earnings_quality_forensics(
             cfo_series.append(fcfo)
             pat_series.append(fpat)
             evidence_facts.extend([f"CF.OPERATING.NET FY{y}", f"IS.PROFIT.NET FY{y}"])
+
+            ratio = (fcfo / fpat) if fpat > 0 else (0.0 if fpat == 0 else -1.0)
             if fpat > 0:
                 cfo_pat_ratios.append(fcfo / fpat)
 
-    if not cfo_pat_ratios:
+            yearly_series.append({
+                "fiscal_year": y,
+                "cfo": fcfo,
+                "pat": fpat,
+                "cfo_pat": round(ratio, 2),
+                "cfo_lt_pat": fcfo < fpat,
+                "cfo_negative": fcfo < 0,
+            })
+
+    if not cfo_series or not pat_series:
         return FinancialDimensionResult(
             status=DimensionStatus.UNKNOWN.value,
             confidence=ConfidenceLevel.LOW.value,
@@ -198,25 +222,82 @@ def run_earnings_quality_forensics(
             evidence=[],
             missing_data=["CFO_PAT_DATA"],
             not_applicable=[],
-            explanation="Thiếu dữ liệu dòng tiền kinh doanh hoặc lợi nhuận ròng âm liên tục.",
+            explanation="Thiếu dữ liệu dòng tiền kinh doanh hoặc lợi nhuận ròng.",
         )
 
-    avg_cfo_pat = sum(cfo_pat_ratios) / len(cfo_pat_ratios)
-    negative_cfo_years = sum(1 for c in cfo_series if c < 0)
+    # Statistical Aggregates
+    mean_cfo_pat = (sum(cfo_pat_ratios) / len(cfo_pat_ratios)) if cfo_pat_ratios else 0.0
+    sorted_ratios = sorted(cfo_pat_ratios)
+    n_ratios = len(sorted_ratios)
+    median_cfo_pat = (
+        (sorted_ratios[n_ratios // 2] if n_ratios % 2 != 0 else (sorted_ratios[n_ratios // 2 - 1] + sorted_ratios[n_ratios // 2]) / 2.0)
+        if sorted_ratios else 0.0
+    )
 
-    # Calculate 5Y CAGR gap if available
+    sum_cfo = sum(cfo_series)
+    sum_pat = sum(pat_series)
+    weighted_cfo_pat = (sum_cfo / sum_pat) if sum_pat > 0 else 0.0
+
+    years_cfo_lt_pat = sum(1 for item in yearly_series if item["cfo_lt_pat"])
+    years_cfo_negative = sum(1 for item in yearly_series if item["cfo_negative"])
+    years_cfo_pat_lt_threshold = sum(1 for item in yearly_series if item["cfo_pat"] < thresholds.NORMAL_CFO_PAT_PASS_RATIO)
+    total_valid_years = len(yearly_series)
+
+    # Trend calculation
+    recent_ratios = [item["cfo_pat"] for item in yearly_series[-3:] if item["pat"] > 0]
+    older_ratios = [item["cfo_pat"] for item in yearly_series[:-3] if item["pat"] > 0]
+    recent_avg = (sum(recent_ratios) / len(recent_ratios)) if recent_ratios else mean_cfo_pat
+    older_avg = (sum(older_ratios) / len(older_ratios)) if older_ratios else mean_cfo_pat
+
+    cfo_trend = "STABLE"
+    if recent_avg > older_avg * 1.20:
+        cfo_trend = "IMPROVING"
+    elif recent_avg < older_avg * 0.80:
+        cfo_trend = "DETERIORATING"
+
+    # Multi-year CAGR gap
     cagr_pat = None
     cagr_cfo = None
     if len(pat_series) >= 4:
         cagr_pat = (pat_series[-1] / pat_series[0]) ** (1.0 / (len(pat_series) - 1)) - 1.0 if pat_series[0] > 0 and pat_series[-1] > 0 else None
         cagr_cfo = (cfo_series[-1] / cfo_series[0]) ** (1.0 / (len(cfo_series) - 1)) - 1.0 if cfo_series[0] > 0 and cfo_series[-1] > 0 else None
 
+    # Contradiction Detection (e.g. Mean = 3.08x due to one outlier year, but CFO < PAT in multiple years)
+    has_outlier_distortion = (mean_cfo_pat >= 1.5 or weighted_cfo_pat >= 1.5) and (years_cfo_lt_pat >= total_valid_years * 0.40 or years_cfo_negative >= 1)
+    contradiction_explanation = ""
+    if has_outlier_distortion:
+        contradiction_explanation = (
+            f"Lưu ý phân kỳ dòng tiền: Tỷ lệ CFO/PAT trung bình số học cao ({mean_cfo_pat:.2f}x) do có năm phát sinh dòng tiền đột biến (như doanh thu nhận trước/khách hàng trả trước), "
+            f"nhưng trong {total_valid_years} năm có tới {years_cfo_lt_pat} năm dòng tiền CFO thấp hơn LNST ({years_cfo_negative} năm CFO âm). "
+            f"Khả năng chuyển hóa tiền mặt thực tế không ổn định qua các năm."
+        )
+
     findings: List[FinancialFinding] = []
     status = DimensionStatus.PASS.value
 
-    # Check Profit vs Cash Divergence
-    if avg_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO or negative_cfo_years >= thresholds.PERSISTENT_NEGATIVE_CFO_YEARS:
+    # Check Divergence Rules
+    is_severe_divergence = (
+        (median_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO and years_cfo_lt_pat >= total_valid_years * 0.50)
+        or years_cfo_negative >= thresholds.PERSISTENT_NEGATIVE_CFO_YEARS
+        or (weighted_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO)
+    )
+
+    is_moderate_divergence = (
+        median_cfo_pat < thresholds.NORMAL_CFO_PAT_PASS_RATIO
+        or years_cfo_lt_pat >= total_valid_years * 0.40
+        or (cagr_pat is not None and cagr_cfo is not None and (cagr_pat - cagr_cfo) > thresholds.PROFIT_CASH_DIVERGENCE_CAGR_GAP)
+        or has_outlier_distortion
+    )
+
+    if is_severe_divergence:
         status = DimensionStatus.FAIL.value
+        exp_text = (
+            f"Lợi nhuận và dòng tiền phân kỳ nghiêm trọng. CFO/PAT trung vị {median_cfo_pat:.2f}x (< {thresholds.NORMAL_CFO_PAT_WATCH_RATIO}x), "
+            f"CFO âm {years_cfo_negative}/{total_valid_years} năm và thấp hơn LNST {years_cfo_lt_pat}/{total_valid_years} năm."
+        )
+        if contradiction_explanation:
+            exp_text += f" {contradiction_explanation}"
+
         findings.append(
             FinancialFinding(
                 code="PROFIT_CASH_DIVERGENCE",
@@ -226,15 +307,32 @@ def run_earnings_quality_forensics(
                 status=DimensionStatus.FAIL.value,
                 start_period=years[0],
                 end_period=years[-1],
-                metrics={"avg_cfo_pat": round(avg_cfo_pat, 2), "negative_cfo_years": negative_cfo_years},
+                metrics={
+                    "mean_cfo_pat": round(mean_cfo_pat, 2),
+                    "median_cfo_pat": round(median_cfo_pat, 2),
+                    "weighted_cfo_pat": round(weighted_cfo_pat, 2),
+                    "years_cfo_lt_pat": years_cfo_lt_pat,
+                    "years_cfo_negative": years_cfo_negative,
+                    "total_valid_years": total_valid_years,
+                    "has_outlier_distortion": has_outlier_distortion,
+                },
                 evidence_fact_ids=evidence_facts,
-                explanation=f"Lợi nhuận và dòng tiền phân kỳ mạnh. Tỷ lệ CFO/PAT trung bình {avg_cfo_pat:.2f}x (< {thresholds.NORMAL_CFO_PAT_WATCH_RATIO}x) và CFO âm {negative_cfo_years} năm.",
+                explanation=exp_text,
                 archetype=archetype,
                 impact="HIGH_EARNINGS_QUALITY_RISK",
             )
         )
-    elif avg_cfo_pat < thresholds.NORMAL_CFO_PAT_PASS_RATIO or (cagr_pat is not None and cagr_cfo is not None and (cagr_pat - cagr_cfo) > thresholds.PROFIT_CASH_DIVERGENCE_CAGR_GAP):
+    elif is_moderate_divergence:
         status = DimensionStatus.WATCH.value
+        exp_text = (
+            f"Khả năng chuyển hóa tiền mặt có điểm cần lưu ý: CFO/PAT trung vị đạt {median_cfo_pat:.2f}x, "
+            f"có {years_cfo_lt_pat}/{total_valid_years} năm CFO thấp hơn LNST."
+        )
+        if contradiction_explanation:
+            exp_text += f" {contradiction_explanation}"
+        elif cagr_pat is not None and cagr_cfo is not None and (cagr_pat - cagr_cfo) > thresholds.PROFIT_CASH_DIVERGENCE_CAGR_GAP:
+            exp_text += f" Tốc độ tăng trưởng lợi nhuận ({cagr_pat*100:.1f}%) vượt nhanh hơn dòng tiền CFO ({cagr_cfo*100:.1f}%)."
+
         findings.append(
             FinancialFinding(
                 code="WEAK_CASH_CONVERSION",
@@ -244,30 +342,47 @@ def run_earnings_quality_forensics(
                 status=DimensionStatus.WATCH.value,
                 start_period=years[0],
                 end_period=years[-1],
-                metrics={"avg_cfo_pat": round(avg_cfo_pat, 2), "cagr_pat": cagr_pat, "cagr_cfo": cagr_cfo},
+                metrics={
+                    "mean_cfo_pat": round(mean_cfo_pat, 2),
+                    "median_cfo_pat": round(median_cfo_pat, 2),
+                    "weighted_cfo_pat": round(weighted_cfo_pat, 2),
+                    "years_cfo_lt_pat": years_cfo_lt_pat,
+                    "years_cfo_negative": years_cfo_negative,
+                    "total_valid_years": total_valid_years,
+                    "has_outlier_distortion": has_outlier_distortion,
+                },
                 evidence_fact_ids=evidence_facts,
-                explanation=f"Tốc độ tăng trưởng lợi nhuận vượt xa tốc độ tăng trưởng dòng tiền kinh doanh.",
+                explanation=exp_text,
                 archetype=archetype,
                 impact="MODERATE_EARNINGS_QUALITY_RISK",
             )
         )
 
-    explanation = "Chất lượng lợi nhuận tốt, dòng tiền kinh doanh bảo chứng lợi nhuận." if status == DimensionStatus.PASS.value else "Lợi nhuận chưa được hỗ trợ đầy đủ bởi dòng tiền kinh doanh thực thu."
+    final_explanation = "Chất lượng lợi nhuận tốt, dòng tiền kinh doanh bảo chứng lợi nhuận qua các năm." if status == DimensionStatus.PASS.value else (exp_text if findings else "Chất lượng lợi nhuận cần theo dõi.")
 
     return FinancialDimensionResult(
         status=status,
         confidence=ConfidenceLevel.HIGH.value if len(years) >= 5 else ConfidenceLevel.MEDIUM.value,
         metrics={
-            "avg_cfo_pat": round(avg_cfo_pat, 2),
-            "negative_cfo_years": negative_cfo_years,
+            "mean_cfo_pat": round(mean_cfo_pat, 2),
+            "median_cfo_pat": round(median_cfo_pat, 2),
+            "weighted_cfo_pat": round(weighted_cfo_pat, 2),
+            "years_cfo_lt_pat": years_cfo_lt_pat,
+            "years_cfo_negative": years_cfo_negative,
+            "years_cfo_pat_lt_threshold": years_cfo_pat_lt_threshold,
+            "total_valid_years": total_valid_years,
+            "cfo_trend": cfo_trend,
             "cagr_pat": cagr_pat,
             "cagr_cfo": cagr_cfo,
+            "has_outlier_distortion": has_outlier_distortion,
+            "cfo_pat_explanation": contradiction_explanation,
+            "yearly_cfo_pat": yearly_series,
         },
         findings=findings,
         evidence=evidence_facts,
         missing_data=[],
         not_applicable=[],
-        explanation=explanation,
+        explanation=final_explanation,
     )
 
 
@@ -276,7 +391,14 @@ def run_receivables_forensics(
     archetype: str = "NORMAL_ENTERPRISE",
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
 ) -> FinancialDimensionResult:
-    """Analyze receivables growth vs revenue growth with 2-stage semantic validation."""
+    """Analyze receivables growth vs revenue growth with multi-year YoY comparison and persistence classification.
+
+    Requirement 10:
+    - Revenue CAGR, Receivables CAGR, difference
+    - Yearly YoY growth: Revenue growth vs Receivables growth
+    - Distinguish: temporary (1 year), persistent (>= 2 years), accelerating
+    - Increase severity if persistent or accelerating.
+    """
     if archetype in ("BANK", "SECURITIES"):
         return FinancialDimensionResult(
             status=DimensionStatus.NOT_APPLICABLE.value,
@@ -292,7 +414,7 @@ def run_receivables_forensics(
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
 
-    # STAGE A — Canonical Semantic Validation
+    # STAGE A — Semantic Validation
     semantic_statuses = [by_year.get(y, {}).get("receivables_semantic_status", "DATA_VALID") for y in years]
     source_types = [by_year.get(y, {}).get("receivables_source_type", "TRADE_NET") for y in years]
 
@@ -344,49 +466,50 @@ def run_receivables_forensics(
             explanation="Chưa đủ dữ liệu các khoản phải thu để đánh giá.",
         )
 
-    # Calculate Receivable Intensity (receivables / revenue)
-    ratios: List[Tuple[int, float]] = [(y, rec / rev) for y, rec in rec_series for y_rev, rev in rev_series if y == y_rev]
-    ratio_vals = [r[1] for r in ratios]
-    latest_rec_ratio = ratio_vals[-1] if ratio_vals else 0.0
+    # Calculate Yearly YoY Comparisons
+    yearly_growth_comparison: List[Dict[str, Any]] = []
+    gap_widening_years = 0
+    consecutive_gap_years = 0
+    max_consecutive_gap_years = 0
 
-    def calc_median(vals: List[float]) -> float:
-        if not vals:
-            return 0.0
-        s = sorted(vals)
-        n = len(s)
-        return (s[n//2] if n % 2 != 0 else (s[n//2 - 1] + s[n//2]) / 2.0)
-
-    ratio_3y_median = calc_median(ratio_vals[-3:])
-    ratio_5y_median = calc_median(ratio_vals[-5:])
-    ratio_hist_median = calc_median(ratio_vals)
-
-    # Calculate DSO = (Avg Receivables / Annual Revenue) * 365
-    dso_series: List[Tuple[int, float]] = []
     for i in range(1, len(rec_series)):
-        y = rec_series[i][0]
-        prev_rec = rec_series[i-1][1]
-        curr_rec = rec_series[i][1]
-        curr_rev = rev_series[i][1]
-        avg_rec = (prev_rec + curr_rec) / 2.0
-        if curr_rev > 0:
-            dso = (avg_rec / curr_rev) * 365.0
-            dso_series.append((y, dso))
+        y_curr = rec_series[i][0]
+        rec_prev = rec_series[i-1][1]
+        rec_curr = rec_series[i][1]
+        rev_prev = rev_series[i-1][1]
+        rev_curr = rev_series[i][1]
 
-    dso_vals = [d[1] for d in dso_series]
-    latest_dso = dso_vals[-1] if dso_vals else None
-    dso_3y_median = calc_median(dso_vals[-3:]) if dso_vals else None
-    dso_5y_median = calc_median(dso_vals[-5:]) if dso_vals else None
-    dso_hist_median = calc_median(dso_vals) if dso_vals else None
-    dso_3y_change = (latest_dso - dso_vals[-3]) if len(dso_vals) >= 3 and latest_dso is not None else 0.0
-    dso_5y_change = (latest_dso - dso_vals[-5]) if len(dso_vals) >= 5 and latest_dso is not None else 0.0
+        rec_yoy = ((rec_curr - rec_prev) / rec_prev) if rec_prev > 0 else 0.0
+        rev_yoy = ((rev_curr - rev_prev) / rev_prev) if rev_prev > 0 else 0.0
+        gap = rec_yoy - rev_yoy
 
-    # Consecutive worsening DSO years
-    consecutive_worsening_dso_years = 0
-    for i in range(len(dso_vals) - 1, 0, -1):
-        if dso_vals[i] > dso_vals[i-1]:
-            consecutive_worsening_dso_years += 1
+        if gap > 0.05:  # Receivables grew > 5% faster than revenue in this year
+            consecutive_gap_years += 1
+            max_consecutive_gap_years = max(max_consecutive_gap_years, consecutive_gap_years)
         else:
-            break
+            consecutive_gap_years = 0
+
+        if i >= 2:
+            prev_gap = yearly_growth_comparison[-1]["growth_gap"]
+            if gap > prev_gap + 0.05:
+                gap_widening_years += 1
+
+        yearly_growth_comparison.append({
+            "fiscal_year": y_curr,
+            "revenue_growth": round(rev_yoy, 4),
+            "receivables_growth": round(rec_yoy, 4),
+            "growth_gap": round(gap, 4),
+            "receivables_faster": gap > 0.05,
+        })
+
+    # Pattern Classification: TEMPORARY vs PERSISTENT vs ACCELERATING
+    divergence_pattern = "NORMAL"
+    if max_consecutive_gap_years >= 3 or gap_widening_years >= 2:
+        divergence_pattern = "ACCELERATING"
+    elif max_consecutive_gap_years >= 2:
+        divergence_pattern = "PERSISTENT"
+    elif max_consecutive_gap_years == 1:
+        divergence_pattern = "TEMPORARY"
 
     # Multi-period CAGRs
     n_full = len(rec_series) - 1
@@ -399,45 +522,62 @@ def run_receivables_forensics(
     gap_3y = rec_cagr_3y - rev_cagr_3y
     gap_full = rec_cagr_full - rev_cagr_full
 
-    # Corroborating Evidence: CFO / PAT
+    # Ratios and DSO
+    ratios = [rec / rev for (_, rec), (_, rev) in zip(rec_series, rev_series)]
+    latest_rec_ratio = ratios[-1] if ratios else 0.0
+
+    def calc_median(vals: List[float]) -> float:
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        n = len(s)
+        return (s[n//2] if n % 2 != 0 else (s[n//2 - 1] + s[n//2]) / 2.0)
+
+    ratio_3y_median = calc_median(ratios[-3:])
+    ratio_hist_median = calc_median(ratios)
+
+    dso_series: List[Tuple[int, float]] = []
+    for i in range(1, len(rec_series)):
+        y = rec_series[i][0]
+        avg_rec = (rec_series[i-1][1] + rec_series[i][1]) / 2.0
+        curr_rev = rev_series[i][1]
+        if curr_rev > 0:
+            dso_series.append((y, (avg_rec / curr_rev) * 365.0))
+
+    dso_vals = [d[1] for d in dso_series]
+    latest_dso = dso_vals[-1] if dso_vals else None
+    dso_3y_median = calc_median(dso_vals[-3:]) if dso_vals else None
+    dso_3y_change = (latest_dso - dso_vals[-3]) if len(dso_vals) >= 3 and latest_dso is not None else 0.0
+
+    # Corroborating cash conversion
     recent_cfo_sum = sum(c[1] for c in cfo_series[-3:]) if len(cfo_series) >= 3 else (sum(c[1] for c in cfo_series) if cfo_series else 0)
     recent_pat_sum = sum(p[1] for p in pat_series[-3:]) if len(pat_series) >= 3 else (sum(p[1] for p in pat_series) if pat_series else 0)
     cash_conversion = (recent_cfo_sum / recent_pat_sum) if recent_pat_sum > 0 else 1.0
 
-    # STAGE B — Economic Forensic Assessment & Persistence Check
     has_growth_gap = (gap_3y > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP or gap_full > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP)
     has_high_intensity = latest_rec_ratio > thresholds.RECEIVABLES_REVENUE_RATIO_HIGH
-    is_persistent = (consecutive_worsening_dso_years >= 2 or dso_3y_change > 15.0 or (latest_rec_ratio > ratio_hist_median + 0.05))
-    has_weak_cash_conversion = cash_conversion < 0.6 or recent_cfo_sum < 0
 
     status = DimensionStatus.PASS.value
     findings: List[FinancialFinding] = []
-    explanation = "Khả năng thu hồi tiền bán hàng bình thường."
+    explanation = "Khả năng thu hồi tiền bán hàng bình thường, không có dấu hiệu nới lỏng chính sách bán chịu."
 
-    if has_growth_gap or (has_high_intensity and is_persistent):
-        # Default severity for persistent material divergence + worsening DSO + weak CFO
-        if not is_total_proxy and is_persistent and has_weak_cash_conversion and latest_rec_ratio > 0.40:
-            status = DimensionStatus.FAIL.value
+    if has_growth_gap or (has_high_intensity and divergence_pattern in ("PERSISTENT", "ACCELERATING")):
+        if not is_total_proxy and divergence_pattern in ("PERSISTENT", "ACCELERATING"):
+            status = DimensionStatus.FAIL.value if (cash_conversion < 0.6 or latest_rec_ratio > 0.40) else DimensionStatus.WATCH.value
             severity = FindingSeverity.HIGH.value
             explanation = (
-                f"Khoản phải thu từ khách hàng tăng vượt doanh thu (gap 3Y {gap_3y*100:.1f}%), "
-                f"thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {latest_dso:.0f} ngày), "
-                f"đồng thời dòng tiền kinh doanh yếu (CFO/PAT 3Y = {cash_conversion:.2f})."
+                f"Khoản phải thu tăng nhanh hơn doanh thu liên tiếp {max_consecutive_gap_years} năm ({divergence_pattern}), "
+                f"gap 3Y {gap_3y*100:.1f}%, thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {latest_dso:.0f} ngày), "
+                f"dòng tiền CFO/PAT 3Y ({cash_conversion:.2f}x). Cần giám sát chặt chẽ nguy cơ ứ đọng công nợ."
             )
         else:
             status = DimensionStatus.WATCH.value
             severity = FindingSeverity.MEDIUM.value
-            if is_total_proxy:
-                explanation = (
-                    f"Tổng các khoản phải thu (gồm cả chi phí trả trước/khác) tăng nhanh hơn doanh thu. "
-                    f"Dữ liệu ở dạng tổng hợp (TOTAL_PROXY), cần theo dõi thêm."
-                )
-            else:
-                dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "N/A"
-                explanation = (
-                    f"Khoản phải thu từ khách hàng tăng nhanh hơn doanh thu (gap 3Y {gap_3y*100:.1f}%), "
-                    f"tỷ lệ Phải thu/Doanh thu ở mức {latest_rec_ratio*100:.1f}% (DSO = {dso_str})."
-                )
+            dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "Chưa đủ dữ liệu"
+            explanation = (
+                f"Khoản phải thu tăng nhanh hơn doanh thu (mô hình: {divergence_pattern}, gap 3Y {gap_3y*100:.1f}%), "
+                f"tỷ lệ Phải thu/Doanh thu đạt {latest_rec_ratio*100:.1f}% (DSO = {dso_str}). Cần theo dõi chính sách công nợ."
+            )
 
         findings.append(
             FinancialFinding(
@@ -452,11 +592,14 @@ def run_receivables_forensics(
                     "rec_cagr_3y": rec_cagr_3y,
                     "rev_cagr_3y": rev_cagr_3y,
                     "gap_3y": gap_3y,
+                    "gap_full": gap_full,
                     "latest_rec_ratio": latest_rec_ratio,
                     "latest_dso": latest_dso,
                     "dso_3y_change": dso_3y_change,
+                    "divergence_pattern": divergence_pattern,
+                    "max_consecutive_gap_years": max_consecutive_gap_years,
                     "cash_conversion_3y": cash_conversion,
-                    "source_type": source_types[-1] if source_types else "UNKNOWN",
+                    "yearly_growth_comparison": yearly_growth_comparison,
                 },
                 evidence_fact_ids=evidence_facts,
                 explanation=explanation,
@@ -472,15 +615,17 @@ def run_receivables_forensics(
             "rec_cagr_3y": rec_cagr_3y,
             "rev_cagr_3y": rev_cagr_3y,
             "gap_3y": gap_3y,
+            "gap_full": gap_full,
             "latest_rec_ratio": latest_rec_ratio,
             "ratio_3y_median": ratio_3y_median,
             "ratio_hist_median": ratio_hist_median,
             "latest_dso": latest_dso,
             "dso_3y_median": dso_3y_median,
             "dso_3y_change": dso_3y_change,
-            "consecutive_worsening_dso_years": consecutive_worsening_dso_years,
+            "divergence_pattern": divergence_pattern,
+            "max_consecutive_gap_years": max_consecutive_gap_years,
             "cash_conversion_3y": cash_conversion,
-            "receivables_source_type": source_types[-1] if source_types else "UNKNOWN",
+            "yearly_growth_comparison": yearly_growth_comparison,
         },
         findings=findings,
         evidence=evidence_facts,
@@ -641,7 +786,6 @@ def classify_structural_vs_cyclical_deterioration(
     if durability_metrics.get("cyclical_rebound_observed") is True:
         cyclical_signals.append("Có lịch sử phục hồi mạnh sau giai đoạn đáy chu kỳ.")
 
-    # Invariant: A single working capital finding alone MUST NOT trigger POSSIBLY_STRUCTURAL or STRUCTURAL
     if len(structural_signals) >= 3:
         classification = DeteriorationClassification.STRUCTURAL.value
     elif len(structural_signals) in (1, 2):

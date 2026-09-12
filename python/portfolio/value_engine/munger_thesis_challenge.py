@@ -377,7 +377,7 @@ def run_thesis_challenge_analysis(
         q6_status = ThesisChallengeAnswerStatus.RESILIENT
         q6_summary = "Xét riêng nền tảng tài chính, doanh nghiệp hiện có sức khỏe bảng cân đối và sức kiếm tiền đủ ổn định để hỗ trợ luận điểm sở hữu dài hạn."
         q6_detail = "Đòn bẩy tài chính thấp, không có rủi ro suy giảm cấu trúc nghiêm trọng."
-    elif debt_eq > 1.5 or value_trap.get("status") in ("WATCH", "HIGH_RISK"):
+    elif (debt_eq is not None and debt_eq > 1.5) or value_trap.get("status") in ("WATCH", "HIGH_RISK"):
         q6_status = ThesisChallengeAnswerStatus.WATCH
         q6_summary = "Nền tảng tài chính có một số điểm cần theo dõi (nợ vay hoặc biến động lợi nhuận), cần cẩn trọng nếu không có thanh khoản thị trường."
         q6_detail = "Áp lực nợ hoặc tính chu kỳ đòi hỏi doanh nghiệp phải quản trị dòng tiền chặt chẽ."

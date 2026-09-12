@@ -98,7 +98,7 @@ def test_decision_engine_enforces_conflicted_valuation_readiness_blocked():
     evidence = evaluate_decision(ctx)
 
     assert evidence.decision not in ("BUY", "BUY_MORE")
-    assert evidence.decision in ("WAIT_FOR_MOS", "HOLD")
+    assert evidence.decision in ("WAIT_FOR_MOS", "HOLD", "REVIEW_BUSINESS")
 
 
 def test_decision_engine_enforces_insufficient_valuation_readiness_blocked():

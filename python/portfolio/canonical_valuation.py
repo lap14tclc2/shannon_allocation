@@ -95,6 +95,18 @@ def build_canonical_valuation(
             except Exception:
                 pass
 
+    if current_price_val is None or current_price_val <= 0:
+        try:
+            with _schema_connection(FINANCE_SCHEMA) as db:
+                row = db.execute(
+                    "SELECT close FROM market_prices WHERE symbol=%s ORDER BY trading_date DESC LIMIT 1",
+                    (ticker,),
+                ).fetchone()
+                if row and row.get("close"):
+                    current_price_val = float(row["close"])
+        except Exception:
+            pass
+
     snapshot = valuation_snapshot_from_catalog(ticker, current_price_val)
     if not snapshot.get("ok"):
         return {

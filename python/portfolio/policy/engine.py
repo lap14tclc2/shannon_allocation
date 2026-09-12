@@ -1,4 +1,11 @@
-"""Buffett-Munger Core Deterministic Decision Policy Engine (T08)."""
+"""Buffett-Munger Core Deterministic Decision Policy Engine (Task 136, Task 154).
+
+Strict BCTC-Only 16-Gate Decision Precedence Engine:
+- Sole source of financial evidence: Canonical SSI Annual Financial Statements in PostgreSQL.
+- Qualitative UNKNOWN (Circle of competence, qualitative moat, management integrity) MUST NOT block financial decisions.
+- Margin of Safety (MOS) is a PRICE condition, Financial Quality is a BUSINESS condition.
+- A high MOS alone CANNOT override financial red flags or create false BUY decisions.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +28,7 @@ DECISION_STATES = (
 
 
 def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
-    """Evaluate canonical InvestmentDecisionContext through strict Buffett-Munger precedence rules."""
+    """Evaluate canonical InvestmentDecisionContext through strict 16-gate Buffett-Munger precedence rules."""
     is_existing_holding = ctx.current_weight > 0 or ctx.shares_held > 0
 
     blocking_reasons: list[str] = []
@@ -30,7 +37,7 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
     what_would_change: list[str] = []
 
     # -------------------------------------------------------------------------
-    # 1. GATE 1: Hard Accounting Reliability Failure
+    # GATE 1: Hard Accounting Reliability Failure
     # -------------------------------------------------------------------------
     if ctx.accounting_reliability == "FAIL" or "ACCOUNTING_UNRELIABLE" in ctx.hard_rejects:
         blocking_reasons.append("ACCOUNTING_FAILURE")
@@ -42,12 +49,12 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
                 threshold="PASS",
                 status="TRIGGERED",
                 source="business_review",
-                description="Báo cáo tài chính không đạt chuẩn tin cậy.",
+                description="Báo cáo tài chính không đạt chuẩn tin cậy kế toán.",
             )
         )
 
     # -------------------------------------------------------------------------
-    # 2. GATE 2: Solvency Failure / Solvency Risk
+    # GATE 2: Solvency Failure / Solvency Risk
     # -------------------------------------------------------------------------
     if ctx.financial_strength == "FAIL" or "SOLVENCY_RISK" in ctx.hard_rejects:
         blocking_reasons.append("SOLVENCY_FAILURE")
@@ -59,12 +66,12 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
                 threshold="PASS/WATCH",
                 status="TRIGGERED",
                 source="financial_data",
-                description="Khả năng thanh toán nợ không đạt.",
+                description="Khả năng thanh toán nợ và an toàn tài chính không đạt.",
             )
         )
 
     # -------------------------------------------------------------------------
-    # 3. GATE 3: Structural Business Deterioration / Moat Destruction
+    # GATE 3: Structural Business Deterioration / Moat Destruction
     # -------------------------------------------------------------------------
     if (
         ctx.business_review_status in ("BUSINESS_FAIL", "FAIL")
@@ -80,12 +87,12 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
                 threshold="PASS/WATCH",
                 status="TRIGGERED",
                 source="business_review",
-                description="Doanh nghiệp hoặc lợi thế cạnh tranh thất bại.",
+                description="Doanh nghiệp hoặc lợi thế cạnh tranh bị suy thoái cấu trúc.",
             )
         )
 
     # -------------------------------------------------------------------------
-    # 4. GATE 4: Value Trap High Risk
+    # GATE 4: Value Trap High Risk
     # -------------------------------------------------------------------------
     if ctx.value_trap_status == "HIGH_RISK":
         blocking_reasons.append("VALUE_TRAP_HIGH_RISK")
@@ -97,57 +104,35 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
                 threshold="CLEAR",
                 status="TRIGGERED",
                 source="value_trap",
-                description="Cổ phiếu bị bẫy giá trị mức nguy hiểm HIGH_RISK.",
+                description="Cổ phiếu bị bẫy giá trị mức nguy hiểm cao (HIGH_RISK).",
             )
         )
 
     # -------------------------------------------------------------------------
-    # 5. GATE 5: Business Evidence Readiness (Only Financial Evidence Gaps Block)
+    # GATE 5: Financial Core Data Readiness
+    # Note: Qualitative UNKNOWN (Circle of competence, qualitative moat, management)
+    # MUST NOT block the financial decision pipeline.
     # -------------------------------------------------------------------------
-    # Task 136 Munger BCTC-only Invariant: Qualitative UNKNOWN (Moat, Management, Circle of Competence)
-    # MUST NOT block the core financial decision pipeline.
-    if ctx.business_review_status in ("BUSINESS_FAIL", "FAIL"):
-        # Handled in GATE 3 STRUCTURAL_DETERIORATION
-        pass
-    elif ctx.business_review_status not in ("BUSINESS_PASS", "PASS"):
-        # Only block if financial evidence itself is missing or marked failing
-        has_financial_gap = (
-            ctx.data_readiness.get("financial_core") == "BLOCKED"
-            or ctx.data_readiness.get("value_trap") == "BLOCKED"
-        )
-        if has_financial_gap:
-            blocking_reasons.append("BUSINESS_REVIEW_INCOMPLETE")
-            rules.append(
-                DecisionRuleTrigger(
-                    rule_id="R-05-BUSINESS-REVIEW-INCOMPLETE",
-                    metric="business_review_status",
-                    value=ctx.business_review_status,
-                    threshold="BUSINESS_PASS",
-                    status="TRIGGERED",
-                    source="business_review",
-                    description="Chưa đủ dữ liệu tài chính BCTC để hoàn tất phân tích.",
-                )
-            )
-
-    # -------------------------------------------------------------------------
-    # 6. GATE 6: Value Trap Insufficient Data / Watch
-    # -------------------------------------------------------------------------
-    if ctx.value_trap_status in ("INSUFFICIENT_DATA", "WATCH", None) or ctx.data_readiness.get("value_trap") == "BLOCKED":
-        blocking_reasons.append("VALUE_TRAP_INSUFFICIENT")
+    has_financial_core_gap = (
+        ctx.data_readiness.get("financial_core") in ("BLOCKED", "INSUFFICIENT")
+        or ctx.data_readiness.get("history") == "INSUFFICIENT"
+    )
+    if has_financial_core_gap:
+        blocking_reasons.append("BUSINESS_REVIEW_INCOMPLETE")
         rules.append(
             DecisionRuleTrigger(
-                rule_id="R-06B-VALUE-TRAP-INSUFFICIENT",
-                metric="value_trap_status",
-                value=ctx.value_trap_status,
-                threshold="CLEAR",
+                rule_id="R-05-BUSINESS-REVIEW-INCOMPLETE",
+                metric="data_readiness",
+                value=str(ctx.data_readiness),
+                threshold="READY/PARTIAL",
                 status="TRIGGERED",
-                source="value_trap",
-                description="Dữ liệu bẫy giá trị chưa đầy đủ hoặc thuộc WATCH.",
+                source="financial_data",
+                description="Chưa đủ dữ liệu tài chính BCTC lịch sử để hoàn tất phân tích.",
             )
         )
 
     # -------------------------------------------------------------------------
-    # 7. GATE 7: Valuation Readiness & Base IV Availability
+    # GATE 6: Valuation Readiness & Base IV Availability
     # -------------------------------------------------------------------------
     has_valid_valuation = (
         ctx.model_status in ("VALID", "VERIFIED", "MODEL_VERIFIED")
@@ -173,9 +158,24 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
 
     # -------------------------------------------------------------------------
-    # 8. GATE 8: Margin of Safety (MOS) Check
+    # GATE 7: Forensic Red Flags & Quality Mismatch (Anti-False BUY Gate)
+    # If there are quality warnings (CFO/PAT divergence, persistent receivables, high volatility)
+    # A high MOS CANNOT automatically trigger BUY!
     # -------------------------------------------------------------------------
-    req_mos = ctx.required_mos if (ctx.required_mos is not None and ctx.required_mos > 0) else 15.0
+    has_forensic_cfo_warning = any(
+        "CFO" in w or "CASH_CONVERSION" in w or "DIVERGENCE" in w or "RECEIVABLES" in w or "IDENTITY" in w
+        for w in ctx.warnings
+    )
+    has_quality_hesitation = (
+        has_forensic_cfo_warning
+        or ctx.value_trap_status == "WATCH"
+        or ctx.quality_tier in ("TIER_3", "TIER_4", "WEAK", "WEAK_BUSINESS", "AVERAGE_BUSINESS")
+    )
+
+    # -------------------------------------------------------------------------
+    # GATE 8: Margin of Safety (MOS) Check
+    # -------------------------------------------------------------------------
+    req_mos = ctx.required_mos if (ctx.required_mos is not None and ctx.required_mos > 0) else 20.0
     mos_price = (ctx.base_iv * (1.0 - req_mos / 100.0)) if (ctx.base_iv and ctx.base_iv > 0) else None
 
     mos_insufficient = False
@@ -198,9 +198,23 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
                 description="Giá thị trường chưa đạt mức Biên an toàn (MOS) yêu cầu.",
             )
         )
+    elif has_quality_hesitation and not is_existing_holding:
+        # MOS passes, but quality has red flags/warnings -> Do NOT auto BUY
+        blocking_reasons.append("FINANCIAL_QUALITY_HESITATION")
+        rules.append(
+            DecisionRuleTrigger(
+                rule_id="R-07B-QUALITY-HESITATION",
+                metric="warnings",
+                value=str(ctx.warnings),
+                threshold="CLEAR",
+                status="TRIGGERED",
+                source="forensics",
+                description="Biên an toàn đạt nhưng chất lượng dòng tiền/BCTC có dấu hiệu cần thận trọng.",
+            )
+        )
 
     # -------------------------------------------------------------------------
-    # 9. GATE 9: Personal Balance Sheet (PBS) Check
+    # GATE 9: Personal Balance Sheet (PBS) Check
     # -------------------------------------------------------------------------
     if ctx.survival_reserve_status in ("UNCONFIGURED", "UNKNOWN"):
         blocking_reasons.append("PERSONAL_BALANCE_SHEET_UNKNOWN")
@@ -243,7 +257,7 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         )
 
     # -------------------------------------------------------------------------
-    # 10. GATE 10: Position Capacity Check
+    # GATE 10: Position Capacity Check
     # -------------------------------------------------------------------------
     if is_existing_holding and ctx.current_weight >= 0.35:
         blocking_reasons.append("POSITION_CAP_REACHED")
@@ -269,15 +283,15 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         primary_reason = "ACCOUNTING_FAILURE"
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
         confidence = "HIGH"
-        summary = "Báo cáo tài chính vi phạm tính tin cậy. Tối quan trọng bảo vệ vốn."
-        reasons.append("Báo cáo tài chính vi phạm tính tin cậy.")
+        summary = "Báo cáo tài chính vi phạm tính tin cậy kế toán. Tối quan trọng bảo vệ vốn."
+        reasons.append("Báo cáo tài chính vi phạm tính tin cậy kế toán.")
         what_would_change.append("Báo cáo tài chính được kiểm toán độc lập xác nhận minh bạch.")
 
     elif "SOLVENCY_FAILURE" in blocking_reasons:
         primary_reason = "SOLVENCY_FAILURE"
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
         confidence = "HIGH"
-        summary = "Rủi ro nợ và khả năng thanh toán nghiêm trọng."
+        summary = "Rủi ro nợ vay và khả năng thanh toán nghiêm trọng."
         reasons.append("Doanh nghiệp đối mặt với rủi ro tài chính / kiệt quệ thanh khoản.")
         what_would_change.append("Doanh nghiệp tái cơ cấu nợ và tái lập dòng tiền kinh doanh dương.")
 
@@ -285,9 +299,9 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         primary_reason = "STRUCTURAL_DETERIORATION"
         decision = "SELL_REVIEW" if is_existing_holding else "AVOID"
         confidence = "HIGH"
-        summary = "Mô hình kinh doanh không đạt tiêu chí chất lượng tối thiểu hoặc suy giảm xói mòn lợi thế cạnh tranh."
+        summary = "Mô hình kinh doanh suy giảm cấu trúc hoặc xói mòn lợi thế cạnh tranh kéo dài."
         reasons.append("Chất lượng kinh doanh yếu kém hoặc xói mòn lợi thế cạnh tranh.")
-        what_would_change.append("Doanh nghiệp tái lập biên lợi nhuận và lợi thế cạnh tranh bền vững.")
+        what_would_change.append("Doanh nghiệp tái lập biên lợi nhuận và sức kiếm tiền bền vững.")
 
     elif "VALUE_TRAP_HIGH_RISK" in blocking_reasons:
         primary_reason = "VALUE_TRAP_HIGH_RISK"
@@ -301,17 +315,9 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         primary_reason = "BUSINESS_REVIEW_INCOMPLETE"
         decision = "REVIEW_BUSINESS"
         confidence = "LOW"
-        summary = "Chưa đủ bằng chứng định tính về doanh nghiệp. Cần nghiên cứu doanh nghiệp trước khi phân bổ vốn."
-        reasons.append("Thông tin định tính hoặc năng lực hiểu biết doanh nghiệp chưa hoàn thiện.")
-        what_would_change.append("Bổ sung đầy đủ bằng chứng định tính (Vòng tròn năng lực, Moat, Ban lãnh đạo).")
-
-    elif "VALUE_TRAP_INSUFFICIENT" in blocking_reasons:
-        primary_reason = "VALUE_TRAP_INSUFFICIENT"
-        decision = "REVIEW_BUSINESS" if is_existing_holding else "REVIEW_BUSINESS"
-        confidence = "LOW"
-        summary = "Dữ liệu bẫy giá trị ở trạng thái INSUFFICIENT_DATA hoặc WATCH. Cần hoàn thiện đánh giá."
-        reasons.append("Chưa đủ bằng chứng xác nhận Value Trap CLEAR.")
-        what_would_change.append("Bổ sung dữ liệu tài chính lịch sử để hoàn thiện đánh giá Value Trap.")
+        summary = "Chưa đủ dữ liệu tài chính BCTC lịch sử để hoàn thành đánh giá toàn diện."
+        reasons.append("Dữ liệu tài chính lịch sử dưới 3-5 năm.")
+        what_would_change.append("Bổ sung dữ liệu BCTC các năm tiếp theo.")
 
     elif "VALUATION_UNAVAILABLE" in blocking_reasons:
         primary_reason = "VALUATION_UNAVAILABLE"
@@ -320,6 +326,14 @@ def evaluate_decision(ctx: InvestmentDecisionContext) -> DecisionEvidence:
         summary = "Mô hình định giá chưa hoàn chỉnh hoặc chưa đủ dữ liệu giá trị nội tại."
         reasons.append("Thiếu định giá Base IV hợp lệ.")
         what_would_change.append("Cập nhật đầy đủ BCTC để tính toán định giá Base IV.")
+
+    elif "FINANCIAL_QUALITY_HESITATION" in blocking_reasons:
+        primary_reason = "FINANCIAL_QUALITY_HESITATION"
+        decision = "HOLD" if is_existing_holding else "WAIT_FOR_MOS"
+        confidence = "HIGH" if ctx.valuation_confidence == "HIGH" else "MEDIUM"
+        summary = "Biên an toàn số học hấp dẫn nhưng chất lượng dòng tiền/BCTC có dấu hiệu cần thận trọng."
+        reasons.append("Mặc dù MOS đạt yêu cầu, nhưng phát hiện phân kỳ dòng tiền hoặc biến động lợi nhuận lớn.")
+        what_would_change.append("Dòng tiền kinh doanh xác nhận ổn định qua 2 kỳ BCTC liên tiếp.")
 
     elif "MOS_INSUFFICIENT" in blocking_reasons:
         primary_reason = "MOS_INSUFFICIENT"

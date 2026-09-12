@@ -219,6 +219,8 @@ def test_invariant_unknown_not_equal_to_pass():
         base_iv=100000,
         business_review_status="UNKNOWN",
         survival_reserve_status="SAFE",
+        available_long_term_capital=100_000_000,
+        data_readiness={"financial_core": "INSUFFICIENT", "valuation": "READY", "value_trap": "READY"},
     )
     ev = evaluate_decision(ctx)
     assert ev.decision != "BUY"

@@ -54,8 +54,8 @@ def analyze_normal_enterprise(
     # 1. Growth Analysis
     rev_list = [by_year[y].get("revenue") for y in years if by_year[y].get("revenue") is not None]
     pat_list = [by_year[y].get("net_profit") for y in years if by_year[y].get("net_profit") is not None]
-    eq_list = [by_year[y].get("equity") for y in years if by_year[y].get("equity") is not None]
-    sh_list = [by_year[y].get("outstanding_shares") for y in years if by_year[y].get("outstanding_shares") is not None]
+    eq_list = [(by_year[y].get("equity") or by_year[y].get("total_equity")) for y in years if (by_year[y].get("equity") or by_year[y].get("total_equity")) is not None]
+    sh_list = [(by_year[y].get("outstanding_shares") or by_year[y].get("shares_outstanding")) for y in years if (by_year[y].get("outstanding_shares") or by_year[y].get("shares_outstanding")) is not None]
 
     rev_cagr = (rev_list[-1] / rev_list[0]) ** (1.0 / (len(rev_list) - 1)) - 1.0 if len(rev_list) >= 2 and rev_list[0] > 0 and rev_list[-1] > 0 else None
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
@@ -121,7 +121,7 @@ def analyze_normal_enterprise(
     for y in years:
         ydict = by_year[y]
         p = ydict.get("net_profit")
-        e = ydict.get("equity")
+        e = ydict.get("equity") or ydict.get("total_equity")
         r = ydict.get("revenue")
         d = ydict.get("total_debt") or 0.0
         op = ydict.get("operating_profit") or p or 0.0
