@@ -56,6 +56,7 @@ import './screener-page.css';
 import './allocation-page.css';
 import './guide-friendly.css';
 import './dividend-history.css';
+import './terminal-page.css';
 import './mobile-iphone.css';
 import './mobile-scroll-fix.css';
 import './design-system-v1.css';

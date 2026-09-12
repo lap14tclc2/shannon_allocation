@@ -55,10 +55,13 @@ export const FORTRESS_STATUS_MAP = {
 };
 
 export const LIABILITY_STATUS_MAP = {
+  COVERED: 'Đã được bảo đảm an toàn',
+  UNCOVERED: 'Chưa được bảo đảm',
   ZERO_DEBT: 'Không có nợ ngắn hạn',
   MANAGEABLE: 'Trong tầm kiểm soát',
   HIGH_PRESSURE: 'Áp lực nợ cao',
   CRITICAL: 'Áp lực nợ nghiêm trọng',
+  SAFE: 'An toàn',
   UNKNOWN: 'Chưa xác định',
 };
 

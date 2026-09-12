@@ -15,7 +15,8 @@
   .dividend-overview-table,
   .holding-source-table,
   .dividend-history-table,
-  .received-dividend-table {
+  .received-dividend-table,
+  .data-table {
     width: 100% !important;
     min-width: 100% !important;
   }

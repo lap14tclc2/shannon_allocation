@@ -1,0 +1,326 @@
+/* ==========================================================================
+   Terminal Page Design & Layout System (Warren Buffett & Charlie Munger Terminal)
+   ========================================================================== */
+
+.wealth-main-content {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.terminal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Card Headers & Layout */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Data Table System */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 8px 0;
+}
+
+.data-table {
+  width: 100% !important;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  margin: 0;
+}
+
+.data-table th {
+  padding: 10px 14px;
+  background: var(--panel-subtle, rgba(0, 0, 0, 0.03));
+  border-bottom: 2px solid var(--border-bold, #cbd5e0);
+  color: var(--text-muted, #718096);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.data-table td {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.data-table tbody tr:hover td {
+  background-color: var(--hover-bg, rgba(0, 0, 0, 0.025));
+}
+
+/* Decision Matrix Table Column Widths & Spacing */
+.holdings-matrix-card .data-table th:nth-child(1),
+.holdings-matrix-card .data-table td:nth-child(1) {
+  min-width: 70px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(2),
+.holdings-matrix-card .data-table td:nth-child(2) {
+  min-width: 80px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(3),
+.holdings-matrix-card .data-table td:nth-child(3) {
+  min-width: 130px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(4),
+.holdings-matrix-card .data-table td:nth-child(4),
+.holdings-matrix-card .data-table th:nth-child(5),
+.holdings-matrix-card .data-table td:nth-child(5) {
+  min-width: 110px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(6),
+.holdings-matrix-card .data-table td:nth-child(6) {
+  min-width: 130px;
+  padding-right: 18px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(7),
+.holdings-matrix-card .data-table td:nth-child(7) {
+  min-width: 170px;
+  padding-left: 14px;
+}
+
+.holdings-matrix-card .data-table th:nth-child(8),
+.holdings-matrix-card .data-table td:nth-child(8) {
+  min-width: 180px;
+}
+
+/* Action Button Group in Portfolio Table */
+.table-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: none;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  line-height: 1.4;
+}
+
+.table-btn-split {
+  color: #0284c7;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.table-btn-split:hover {
+  background: #e0f2fe;
+  border-color: #0284c7;
+}
+
+.table-btn-edit {
+  color: #4a5568;
+  border-color: #cbd5e0;
+  background: #f7fafc;
+}
+
+.table-btn-edit:hover {
+  background: #edf2f7;
+  border-color: #718096;
+}
+
+.table-btn-delete {
+  color: #e53e3e;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.table-btn-delete:hover {
+  background: #fee2e2;
+  border-color: #e53e3e;
+}
+
+/* Decision Tags */
+.decision-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.decision-tag.BUY,
+.decision-tag.BUY_MORE,
+.decision-tag.BUY_WITH_MOS {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.decision-tag.HOLD,
+.decision-tag.HOLD_NO_NEW_CAPITAL {
+  background: #f0f9ff;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.decision-tag.WAIT_FOR_MOS,
+.decision-tag.BUILD_RESERVE_FIRST,
+.decision-tag.WAIT_FOR_IMPROVEMENT,
+.decision-tag.STUDY_FURTHER {
+  background: #fefce8;
+  color: #a16207;
+  border-color: #fde047;
+}
+
+.decision-tag.REVIEW_BUSINESS,
+.decision-tag.BUSINESS_REVIEW_INCOMPLETE,
+.decision-tag.WATCH {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+
+.decision-tag.AVOID,
+.decision-tag.SELL,
+.decision-tag.SELL_REVIEW,
+.decision-tag.REDUCE {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+/* Value Trap Badges */
+.vt-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.vt-badge.CLEAR {
+  background: #f0fdf4;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.vt-badge.WATCH {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fef08a;
+}
+
+.vt-badge.HIGH_RISK {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.vt-badge.INSUFFICIENT_DATA,
+.vt-badge.UNKNOWN {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--border, #cbd5e0);
+  background: var(--panel-subtle, #f7fafc);
+}
+
+.status-badge.SAFE {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.status-badge.VULNERABLE,
+.status-badge.UNSAFE,
+.status-badge.DEPLETED {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+/* Metric Grids in Cards */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.metric-item {
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--panel-subtle, rgba(0, 0, 0, 0.025));
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+.metric-item small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted, #718096);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.metric-item strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text, #1a202c);
+}
+
+/* Coach Narrative */
+.coach-narrative {
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--panel-subtle, rgba(0, 0, 0, 0.02));
+  border-left: 4px solid var(--primary, #0284c7);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.coach-narrative p {
+  margin: 0;
+}

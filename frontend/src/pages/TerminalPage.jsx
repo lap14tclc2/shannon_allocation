@@ -22,6 +22,7 @@ import {
   formatValueTrap,
   formatFindingNarrative,
 } from '../utils/vietnameseSemantics.js';
+import '../terminal-page.css';
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtNum = (n, digits = 0) =>
@@ -509,21 +510,21 @@ function PortfolioSection({ onRefreshTerminal }) {
                         {p.has_complex_ledger ? (
                           <a href="/transactions" style={{ fontSize: 12, color: '#718096' }}>Lịch sử sổ cái</a>
                         ) : (
-                          <>
+                          <div className="table-action-group">
                             <button
                               onClick={() => handleAutoSplit(p.symbol)}
                               title="Tự động chuẩn hóa số lượng và giá vốn sau chia tách/cổ tức cổ phiếu"
-                              style={{ marginRight: 6, fontSize: 12, background: 'none', border: '1px solid #0284c7', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', color: '#0284c7', fontWeight: 600 }}
+                              className="table-btn table-btn-split"
                             >⚡ Chia tách</button>
                             <button
                               onClick={() => setModal({ type: 'edit', row: p })}
-                              style={{ marginRight: 6, fontSize: 12, background: 'none', border: '1px solid #4a5568', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', color: 'inherit' }}
+                              className="table-btn table-btn-edit"
                             >Sửa</button>
                             <button
                               onClick={() => setModal({ type: 'delete', row: p })}
-                              style={{ fontSize: 12, background: 'none', border: '1px solid #e53e3e', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', color: '#fc8181' }}
+                              className="table-btn table-btn-delete"
                             >Xóa</button>
-                          </>
+                          </div>
                         )}
                       </td>
                     </tr>
