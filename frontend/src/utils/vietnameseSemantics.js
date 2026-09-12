@@ -239,3 +239,51 @@ export function formatFindingNarrative(finding) {
     anh_huong_dai_han: 'Cần xem xét kỹ trong mô hình định giá và xác định Biên an toàn (MOS).',
   };
 }
+
+export function formatPct(val, fallback = 'Chưa đủ dữ liệu') {
+  if (val === null || val === undefined || isNaN(val)) {
+    return fallback;
+  }
+  const num = Number(val);
+  return (num > 0 ? '+' : '') + num.toFixed(1) + '%';
+}
+
+export function formatRatioX(val, fallback = 'Chưa đủ dữ liệu') {
+  if (val === null || val === undefined || isNaN(val)) {
+    return fallback;
+  }
+  return Number(val).toFixed(2) + 'x';
+}
+
+export function formatDebtEquity(val, archetype, fallback = 'Chưa đủ dữ liệu nợ và vốn chủ sở hữu') {
+  const arch = String(archetype || '').toUpperCase().trim();
+  if (arch === 'BANK') {
+    return 'Không áp dụng cho ngân hàng thương mại';
+  }
+  if (arch === 'SECURITIES') {
+    if (val !== null && val !== undefined && !isNaN(val)) {
+      return Number(val).toFixed(2) + 'x (Nợ / Vốn chủ)';
+    }
+    return 'Thương lượng đòn bẩy tự doanh / Margin';
+  }
+  if (val === null || val === undefined || isNaN(val)) {
+    return fallback;
+  }
+  return Number(val).toFixed(2) + 'x';
+}
+
+export function formatCfoPat(val, fallback = 'Chưa đủ dữ liệu dòng tiền hoạt động') {
+  if (val === null || val === undefined || isNaN(val)) {
+    return fallback;
+  }
+  return Number(val).toFixed(2) + 'x';
+}
+
+export function formatVND(num, fallback = 'Chưa có dữ liệu') {
+  if (num === null || num === undefined || isNaN(num)) return fallback;
+  const n = Number(num);
+  if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(2) + ' nghìn tỷ';
+  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
+  return n.toLocaleString('vi-VN') + ' đ';
+}
+

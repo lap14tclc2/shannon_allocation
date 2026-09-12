@@ -4,7 +4,7 @@ import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import ThesisChallengeSection from '../components/ThesisChallengeSection.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
-import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative, formatMarginTrend, formatFindingTitle } from '../utils/vietnameseSemantics.js';
+import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative, formatMarginTrend, formatFindingTitle, formatPct, formatVND, formatRatioX, formatDebtEquity, formatCfoPat } from '../utils/vietnameseSemantics.js';
 
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
@@ -90,23 +90,12 @@ export default function BusinessPage() {
 
   // Data helpers
   const munger = data?.munger_analysis || {};
+  const archetype = munger.archetype || 'NORMAL_ENTERPRISE';
   const decision = munger.long_term_decision || {};
   const valuation = munger.valuation || data?.canonical_valuation || {};
   const quality = munger.overall_financial_quality || {};
   const valueTrap = munger.value_trap_assessment || {};
   const normPower = munger.normalized_earning_power || {};
-
-  const formatVND = (num) => {
-    if (num === null || num === undefined || isNaN(num)) return 'N/A';
-    if (Math.abs(num) >= 1e12) return (num / 1e12).toFixed(2) + ' nghìn tỷ';
-    if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(1) + ' tỷ';
-    return Number(num).toLocaleString('vi-VN') + ' đ';
-  };
-
-  const formatPct = (num) => {
-    if (num === null || num === undefined || isNaN(num)) return 'N/A';
-    return (num > 0 ? '+' : '') + Number(num).toFixed(1) + '%';
-  };
 
   const renderBadge = (status) => {
     const s = String(status || '').toUpperCase();
@@ -399,8 +388,8 @@ export default function BusinessPage() {
                         {renderBadge(quality.growth)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Tăng trưởng Doanh thu: {munger.growth_analysis?.metrics?.revenue_cagr !== undefined ? formatPct(munger.growth_analysis.metrics.revenue_cagr * 100) : 'N/A'}<br/>
-                        Tăng trưởng LNST: {munger.growth_analysis?.metrics?.net_profit_cagr !== undefined ? formatPct(munger.growth_analysis.metrics.net_profit_cagr * 100) : 'N/A'}
+                        Tăng trưởng Doanh thu: {formatPct(munger.growth_analysis?.metrics?.revenue_cagr !== null && munger.growth_analysis?.metrics?.revenue_cagr !== undefined ? munger.growth_analysis.metrics.revenue_cagr * 100 : null)}<br/>
+                        Tăng trưởng LNST: {formatPct(munger.growth_analysis?.metrics?.net_profit_cagr !== null && munger.growth_analysis?.metrics?.net_profit_cagr !== undefined ? munger.growth_analysis.metrics.net_profit_cagr * 100 : null)}
                       </div>
                     </div>
 
@@ -410,7 +399,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.profitability)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        ROE Trung Vị: {munger.profitability_analysis?.metrics?.median_roe !== undefined ? `${(munger.profitability_analysis.metrics.median_roe * 100).toFixed(1)}%` : 'N/A'}<br/>
+                        ROE Trung Vị: {formatPct(munger.profitability_analysis?.metrics?.median_roe !== null && munger.profitability_analysis?.metrics?.median_roe !== undefined ? munger.profitability_analysis.metrics.median_roe * 100 : null)}<br/>
                         Xu hướng Biên LN: {formatMarginTrend(munger.profitability_analysis?.metrics?.margin_trend)}
                       </div>
                     </div>
@@ -421,7 +410,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.durability)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Biến động LN: {munger.earnings_durability?.metrics?.pat_volatility !== undefined ? `${(munger.earnings_durability.metrics.pat_volatility * 100).toFixed(1)}%` : 'N/A'}
+                        Biến động LN: {formatPct(munger.earnings_durability?.metrics?.pat_volatility !== null && munger.earnings_durability?.metrics?.pat_volatility !== undefined ? munger.earnings_durability.metrics.pat_volatility * 100 : null, 'Chưa đủ chuỗi 3 năm')}
                       </div>
                     </div>
 
@@ -431,7 +420,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.earnings_quality)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Tỷ lệ CFO/PAT: {munger.earnings_quality?.metrics?.avg_cfo_pat !== undefined ? `${munger.earnings_quality.metrics.avg_cfo_pat}x` : 'N/A'}
+                        Tỷ lệ CFO/PAT: {formatCfoPat(munger.earnings_quality?.metrics?.avg_cfo_pat)}
                       </div>
                     </div>
 
@@ -451,7 +440,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.debt_liquidity)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Debt/Equity: {munger.debt_liquidity?.metrics?.latest_debt_equity !== undefined ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}
+                        Debt/Equity: {formatDebtEquity(munger.debt_liquidity?.metrics?.latest_debt_equity, archetype)}
                       </div>
                     </div>
 

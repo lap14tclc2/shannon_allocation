@@ -360,6 +360,118 @@ def get_vietnamese_comparison(comparison_expr: str) -> str:
     )
 
 
+def format_metric_presentation(
+    val: Any,
+    metric_code: str,
+    archetype: str = "NORMAL_ENTERPRISE",
+) -> Dict[str, Any]:
+    """Format metric value into a structured diagnostic object with value, status, reason, and formatted_vi."""
+    import math
+
+    m_code = str(metric_code).lower().strip()
+    arch = str(archetype).upper().strip()
+
+    if m_code in ("latest_debt_equity", "debt_equity_ratio"):
+        if arch == "BANK":
+            return {
+                "value": None,
+                "status": "NOT_APPLICABLE",
+                "reason": "BANK_DEBT_NOT_APPLICABLE",
+                "formatted_vi": "Không áp dụng cho ngân hàng thương mại",
+            }
+        elif arch == "SECURITIES":
+            if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+                return {
+                    "value": float(val),
+                    "status": "VALUE",
+                    "reason": "CALCULATED_FROM_FINANCIALS",
+                    "formatted_vi": f"{float(val):.2f}x (Nợ / Vốn chủ)",
+                }
+            return {
+                "value": None,
+                "status": "NOT_APPLICABLE",
+                "reason": "SECURITIES_LEVERAGE_NOT_STANDARD",
+                "formatted_vi": "Thương lượng đòn bẩy tự doanh / Margin",
+            }
+        else:
+            if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+                return {
+                    "value": float(val),
+                    "status": "VALUE",
+                    "reason": "CALCULATED_FROM_FINANCIALS",
+                    "formatted_vi": f"{float(val):.2f}x",
+                }
+            return {
+                "value": None,
+                "status": "INSUFFICIENT_DATA",
+                "reason": "DEBT_OR_EQUITY_MISSING",
+                "formatted_vi": "Chưa đủ dữ liệu nợ và vốn chủ sở hữu",
+            }
+
+    if "cagr" in m_code or "growth" in m_code or "roe" in m_code or "roic" in m_code or "margin" in m_code:
+        if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+            f_val = float(val)
+            sign = "+" if f_val > 0 else ""
+            formatted = f"{sign}{f_val * 100:.1f}%" if abs(f_val) <= 5.0 else f"{sign}{f_val:.1f}%"
+            return {
+                "value": f_val,
+                "status": "VALUE",
+                "reason": "CALCULATED_FROM_SERIES",
+                "formatted_vi": formatted,
+            }
+        return {
+            "value": None,
+            "status": "INSUFFICIENT_DATA",
+            "reason": "HISTORICAL_SERIES_TOO_SHORT",
+            "formatted_vi": "Chưa đủ dữ liệu lịch sử",
+        }
+
+    if "cfo_pat" in m_code:
+        if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+            return {
+                "value": float(val),
+                "status": "VALUE",
+                "reason": "CALCULATED_FROM_CFO_AND_PAT",
+                "formatted_vi": f"{float(val):.2f}x",
+            }
+        return {
+            "value": None,
+            "status": "INSUFFICIENT_DATA",
+            "reason": "CFO_OR_PAT_MISSING",
+            "formatted_vi": "Chưa đủ dữ liệu dòng tiền hoạt động",
+        }
+
+    if "volatility" in m_code:
+        if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+            return {
+                "value": float(val),
+                "status": "VALUE",
+                "reason": "CALCULATED_SD_OVER_MEAN",
+                "formatted_vi": f"{float(val) * 100:.1f}%",
+            }
+        return {
+            "value": None,
+            "status": "INSUFFICIENT_DATA",
+            "reason": "PAT_SERIES_LESS_THAN_3_YEARS",
+            "formatted_vi": "Chưa đủ dữ liệu chuỗi lợi nhuận",
+        }
+
+    if val is not None:
+        return {
+            "value": val,
+            "status": "VALUE",
+            "reason": "EXPLICIT_VALUE",
+            "formatted_vi": str(val),
+        }
+
+    return {
+        "value": None,
+        "status": "INSUFFICIENT_DATA",
+        "reason": "DATA_MISSING",
+        "formatted_vi": "Chưa đủ dữ liệu",
+    }
+
+
 def generate_vietnamese_finding_narrative(
     code: str,
     status: str = "WATCH",

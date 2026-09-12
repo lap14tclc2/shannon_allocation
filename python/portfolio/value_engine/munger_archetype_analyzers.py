@@ -59,7 +59,7 @@ def analyze_normal_enterprise(
     rev_cagr = (rev_list[-1] / rev_list[0]) ** (1.0 / (len(rev_list) - 1)) - 1.0 if len(rev_list) >= 2 and rev_list[0] > 0 and rev_list[-1] > 0 else None
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
-    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
+    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else None
 
     eps_list = []
     for y in years:
@@ -184,11 +184,12 @@ def analyze_normal_enterprise(
     total_y = len(pat_list)
 
     pat_vol = None
-    if len(pat_list) >= 2:
+    if len(pat_list) >= 3:
         mean_p = sum(pat_list) / len(pat_list)
-        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
-        std_p = math.sqrt(var_p)
-        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
+        if mean_p != 0:
+            var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+            std_p = math.sqrt(var_p)
+            pat_vol = std_p / abs(mean_p)
 
     durability_status = DimensionStatus.PASS.value
     durability_findings: List[FinancialFinding] = []
@@ -232,15 +233,17 @@ def analyze_normal_enterprise(
 
     # 4. Balance Sheet & Debt
     last_ydict = by_year[years[-1]]
-    tot_debt = last_ydict.get("total_debt") or 0.0
-    tot_eq = last_ydict.get("equity") or 1.0
+    raw_debt = last_ydict.get("total_debt")
+    raw_eq = last_ydict.get("equity")
     interest_exp = last_ydict.get("interest_expense") or 0.0
     op_prof = last_ydict.get("operating_profit") or last_ydict.get("net_profit") or 0.0
     cash_val = last_ydict.get("cash") or 0.0
 
-    de_ratio = float(tot_debt) / float(tot_eq) if tot_eq > 0 else None
-    interest_coverage = float(op_prof) / float(interest_exp) if interest_exp > 0 else None
-    cash_debt = float(cash_val) / float(tot_debt) if tot_debt > 0 else None
+    tot_debt = float(raw_debt) if raw_debt is not None else None
+    tot_eq = float(raw_eq) if raw_eq is not None else None
+    de_ratio = (tot_debt / tot_eq) if (tot_debt is not None and tot_eq is not None and tot_eq > 0) else None
+    interest_coverage = float(op_prof) / float(interest_exp) if (interest_exp > 0 and op_prof is not None) else None
+    cash_debt = (float(cash_val) / tot_debt) if (tot_debt is not None and tot_debt > 0) else None
 
     bs_status = DimensionStatus.PASS.value
     bs_findings: List[FinancialFinding] = []
@@ -418,11 +421,12 @@ def analyze_bank(
     total_y = len(pat_list)
 
     pat_vol = None
-    if len(pat_list) >= 2:
+    if len(pat_list) >= 3:
         mean_p = sum(pat_list) / len(pat_list)
-        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
-        std_p = math.sqrt(var_p)
-        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
+        if mean_p != 0:
+            var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+            std_p = math.sqrt(var_p)
+            pat_vol = std_p / abs(mean_p)
 
     prof_status = DimensionStatus.PASS.value
     prof_findings: List[FinancialFinding] = []
@@ -561,7 +565,7 @@ def analyze_bank(
     )
 
     dilution_res = FinancialDimensionResult(
-        status=DimensionStatus.PASS.value if share_cagr <= 0.08 else DimensionStatus.WATCH.value,
+        status=DimensionStatus.PASS.value if (share_cagr is not None and share_cagr <= 0.08) else DimensionStatus.WATCH.value,
         confidence=ConfidenceLevel.HIGH.value,
         metrics={
             "annual_share_growth": share_cagr,
@@ -574,7 +578,7 @@ def analyze_bank(
         evidence=[],
         missing_data=[],
         not_applicable=[],
-        explanation=f"Pha loãng cổ phần ngân hàng trung bình {share_cagr*100:.1f}%/năm.",
+        explanation=f"Pha loãng cổ phần ngân hàng trung bình {share_cagr*100:.1f}%/năm." if share_cagr is not None else "Không phát hiện pha loãng cổ phần đáng kể.",
     )
 
     return {
@@ -627,7 +631,7 @@ def analyze_securities(
     rev_cagr = (rev_list[-1] / rev_list[0]) ** (1.0 / (len(rev_list) - 1)) - 1.0 if len(rev_list) >= 2 and rev_list[0] > 0 and rev_list[-1] > 0 else None
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
-    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
+    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else None
 
     eps_list = []
     for y in years:
@@ -675,15 +679,18 @@ def analyze_securities(
     total_y = len(pat_list)
 
     pat_vol = None
-    if len(pat_list) >= 2:
+    if len(pat_list) >= 3:
         mean_p = sum(pat_list) / len(pat_list)
-        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
-        std_p = math.sqrt(var_p)
-        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
+        if mean_p != 0:
+            var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+            std_p = math.sqrt(var_p)
+            pat_vol = std_p / abs(mean_p)
 
-    tot_debt = last_ydict.get("total_debt") or 0.0
-    tot_eq = last_ydict.get("equity") or 1.0
-    de_ratio = float(tot_debt) / float(tot_eq) if tot_eq > 0 else None
+    raw_debt = last_ydict.get("total_debt")
+    raw_eq = last_ydict.get("equity")
+    tot_debt = float(raw_debt) if raw_debt is not None else None
+    tot_eq = float(raw_eq) if raw_eq is not None else None
+    de_ratio = (tot_debt / tot_eq) if (tot_debt is not None and tot_eq is not None and tot_eq > 0) else None
 
     prof_status = DimensionStatus.PASS.value
     prof_findings: List[FinancialFinding] = []
@@ -839,7 +846,7 @@ def analyze_securities(
     )
 
     dilution_res = FinancialDimensionResult(
-        status=DimensionStatus.PASS.value if share_cagr <= 0.08 else DimensionStatus.WATCH.value,
+        status=DimensionStatus.PASS.value if (share_cagr is not None and share_cagr <= 0.08) else DimensionStatus.WATCH.value,
         confidence=ConfidenceLevel.HIGH.value,
         metrics={
             "annual_share_growth": share_cagr,
@@ -852,7 +859,7 @@ def analyze_securities(
         evidence=[],
         missing_data=[],
         not_applicable=[],
-        explanation=f"Pha loãng cổ phần chứng khoán trung bình {share_cagr*100:.1f}%/năm.",
+        explanation=f"Pha loãng cổ phần chứng khoán trung bình {share_cagr*100:.1f}%/năm." if share_cagr is not None else "Không phát hiện pha loãng cổ phần đáng kể.",
     )
 
     return {
