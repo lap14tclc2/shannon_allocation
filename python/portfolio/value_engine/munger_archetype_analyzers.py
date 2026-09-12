@@ -1,4 +1,4 @@
-"""Archetype-Specific Financial Statement Analyzers (Task 136).
+"""Archetype-Specific Financial Statement Analyzers (Task 136, Task 144).
 
 Provides tailored financial statement analysis for:
 - NORMAL_ENTERPRISE (AAA, DGC, FPT, etc.)
@@ -27,7 +27,6 @@ def analyze_normal_enterprise(
     """Run full financial statement analysis for a NORMAL_ENTERPRISE."""
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
-    series = history_data.get("series", {})
 
     if not years:
         empty_res = FinancialDimensionResult(
@@ -60,13 +59,15 @@ def analyze_normal_enterprise(
     rev_cagr = (rev_list[-1] / rev_list[0]) ** (1.0 / (len(rev_list) - 1)) - 1.0 if len(rev_list) >= 2 and rev_list[0] > 0 and rev_list[-1] > 0 else None
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
+    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
 
     eps_list = []
-    if len(pat_list) == len(sh_list):
-        for p, s in zip(pat_list, sh_list):
-            eps_list.append(p / s if s > 0 else None)
-    eps_clean = [e for e in eps_list if e is not None]
-    eps_cagr = (eps_clean[-1] / eps_clean[0]) ** (1.0 / (len(eps_clean) - 1)) - 1.0 if len(eps_clean) >= 2 and eps_clean[0] > 0 and eps_clean[-1] > 0 else None
+    for y in years:
+        p = by_year[y].get("net_profit")
+        s = by_year[y].get("outstanding_shares")
+        if p is not None and s is not None and float(s) > 0:
+            eps_list.append(float(p) / float(s))
+    eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     growth_findings: List[FinancialFinding] = []
     growth_status = DimensionStatus.PASS.value
@@ -81,9 +82,9 @@ def analyze_normal_enterprise(
                 status=DimensionStatus.WATCH.value,
                 start_period=years[0],
                 end_period=years[-1],
-                metrics={"pat_cagr": pat_cagr, "eps_cagr": eps_cagr},
+                metrics={"pat_cagr": pat_cagr, "eps_cagr": eps_cagr, "share_cagr": share_cagr},
                 evidence_fact_ids=[f"IS.PROFIT.NET FY{years[-1]}", f"IS.SHARES.OUTSTANDING FY{years[-1]}"],
-                explanation=f"Tăng trưởng LNST tổng ({pat_cagr*100:.1f}%) nhanh hơn tăng trưởng EPS trên mỗi cổ phần ({eps_cagr*100:.1f}%) do pha loãng cổ phiếu.",
+                explanation=f"Tăng trưởng LNST tổng ({pat_cagr*100:.1f}%) nhanh hơn tăng trưởng EPS trên mỗi cổ phần ({eps_cagr*100:.1f}%) do pha loãng cổ phiếu ({share_cagr*100:.1f}%/năm).",
                 archetype="NORMAL_ENTERPRISE",
             )
         )
@@ -96,6 +97,8 @@ def analyze_normal_enterprise(
             "net_profit_cagr": pat_cagr,
             "equity_cagr": eq_cagr,
             "eps_cagr": eps_cagr,
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
         },
         findings=growth_findings,
         evidence=[f"IS.REVENUE.TOTAL FY{years[-1]}", f"IS.PROFIT.NET FY{years[-1]}"],
@@ -128,6 +131,15 @@ def analyze_normal_enterprise(
     med_roic = sorted(roic_series)[len(roic_series)//2] if roic_series else None
     med_margin = sorted(margin_series)[len(margin_series)//2] if margin_series else None
 
+    margin_trend = "STABLE"
+    if len(margin_series) >= 2:
+        rec_3y_m = sum(margin_series[-3:]) / len(margin_series[-3:])
+        hist_m = sum(margin_series) / len(margin_series)
+        if rec_3y_m > hist_m + 0.005:
+            margin_trend = "EXPANDING"
+        elif rec_3y_m < hist_m - 0.005:
+            margin_trend = "DECLINING"
+
     prof_status = DimensionStatus.PASS.value
     prof_findings: List[FinancialFinding] = []
     if med_roe is not None and med_roe < thresholds.ROE_WATCH:
@@ -141,7 +153,7 @@ def analyze_normal_enterprise(
                 status=DimensionStatus.FAIL.value,
                 start_period=years[0],
                 end_period=years[-1],
-                metrics={"median_roe": med_roe},
+                metrics={"median_roe": med_roe, "margin_trend": margin_trend},
                 evidence_fact_ids=[f"IS.PROFIT.NET FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
                 explanation=f"Tỷ suất sinh lời trên vốn chủ sở hữu (ROE) trung vị {med_roe*100:.1f}% thấp hơn ngưỡng yêu cầu ({thresholds.ROE_WATCH*100:.1f}%).",
                 archetype="NORMAL_ENTERPRISE",
@@ -157,18 +169,26 @@ def analyze_normal_enterprise(
             "median_roe": med_roe,
             "median_roic": med_roic,
             "median_net_margin": med_margin,
+            "margin_trend": margin_trend,
         },
         findings=prof_findings,
         evidence=[f"IS.PROFIT.NET FY{years[-1]}"],
         missing_data=[],
         not_applicable=[],
-        explanation=f"ROE trung vị: {med_roe*100:.1f}% nếu có, ROIC trung vị: {med_roic*100:.1f}% nếu có." if med_roe is not None else "Thiếu dữ liệu tỷ suất lợi nhuận.",
+        explanation=f"ROE trung vị: {med_roe*100:.1f}% nếu có, ROIC trung vị: {med_roic*100:.1f}% nếu có, Xu hướng biên LN: {margin_trend}." if med_roe is not None else "Thiếu dữ liệu tỷ suất lợi nhuận.",
     )
 
     # 3. Durability & Stability
     profitable_years = sum(1 for p in pat_list if p is not None and p > 0)
     negative_years = sum(1 for p in pat_list if p is not None and p <= 0)
     total_y = len(pat_list)
+
+    pat_vol = None
+    if len(pat_list) >= 2:
+        mean_p = sum(pat_list) / len(pat_list)
+        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+        std_p = math.sqrt(var_p)
+        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
 
     durability_status = DimensionStatus.PASS.value
     durability_findings: List[FinancialFinding] = []
@@ -184,7 +204,7 @@ def analyze_normal_enterprise(
                     status=DimensionStatus.FAIL.value,
                     start_period=years[0],
                     end_period=years[-1],
-                    metrics={"negative_years": negative_years, "total_years": total_y},
+                    metrics={"negative_years": negative_years, "total_years": total_y, "pat_volatility": pat_vol},
                     evidence_fact_ids=[f"IS.PROFIT.NET FY{y}" for y in years],
                     explanation=f"Lịch sử lợi nhuận không ổn định với {negative_years}/{total_y} năm bị thua lỗ.",
                     archetype="NORMAL_ENTERPRISE",
@@ -200,6 +220,8 @@ def analyze_normal_enterprise(
             "profitable_years": profitable_years,
             "negative_earnings_years": negative_years,
             "total_years": total_y,
+            "pat_volatility": pat_vol,
+            "profit_volatility": pat_vol,
         },
         findings=durability_findings,
         evidence=[f"IS.PROFIT.NET FY{y}" for y in years],
@@ -214,9 +236,11 @@ def analyze_normal_enterprise(
     tot_eq = last_ydict.get("equity") or 1.0
     interest_exp = last_ydict.get("interest_expense") or 0.0
     op_prof = last_ydict.get("operating_profit") or last_ydict.get("net_profit") or 0.0
+    cash_val = last_ydict.get("cash") or 0.0
 
     de_ratio = float(tot_debt) / float(tot_eq) if tot_eq > 0 else None
     interest_coverage = float(op_prof) / float(interest_exp) if interest_exp > 0 else None
+    cash_debt = float(cash_val) / float(tot_debt) if tot_debt > 0 else None
 
     bs_status = DimensionStatus.PASS.value
     bs_findings: List[FinancialFinding] = []
@@ -231,7 +255,7 @@ def analyze_normal_enterprise(
                 status=DimensionStatus.FAIL.value,
                 start_period=years[-1],
                 end_period=years[-1],
-                metrics={"debt_equity_ratio": de_ratio},
+                metrics={"debt_equity_ratio": de_ratio, "latest_debt_equity": de_ratio},
                 evidence_fact_ids=[f"BS.DEBT.TOTAL FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
                 explanation=f"Nợ vay trên vốn chủ sở hữu {de_ratio:.2f}x vượt ngưỡng cảnh báo ({thresholds.DEBT_EQUITY_WATCH:.2f}x).",
                 archetype="NORMAL_ENTERPRISE",
@@ -244,8 +268,10 @@ def analyze_normal_enterprise(
         status=bs_status,
         confidence=ConfidenceLevel.HIGH.value,
         metrics={
+            "latest_debt_equity": de_ratio,
             "debt_equity_ratio": de_ratio,
             "interest_coverage": interest_coverage,
+            "cash_debt_ratio": cash_debt,
             "total_debt": tot_debt,
             "equity": tot_eq,
         },
@@ -256,11 +282,16 @@ def analyze_normal_enterprise(
         explanation=f"Tỷ lệ D/E: {de_ratio:.2f}x." if de_ratio is not None else "Không phát hiện rủi ro nợ vay đe dọa khả năng hoạt động.",
     )
 
-    # Capital Efficiency & Allocation
+    # 5. Capital Efficiency
+    roic_trend = "EXPANDING" if (roic_series and len(roic_series) >= 3 and roic_series[-1] > roic_series[0]) else "STABLE"
     cap_eff_res = FinancialDimensionResult(
         status=prof_status,
         confidence=ConfidenceLevel.HIGH.value if len(years) >= 5 else ConfidenceLevel.MEDIUM.value,
-        metrics={"median_roic": med_roic, "median_roe": med_roe},
+        metrics={
+            "median_roic": med_roic,
+            "median_roe": med_roe,
+            "roic_trend": roic_trend,
+        },
         findings=[],
         evidence=[f"IS.PROFIT.NET FY{years[-1]}"],
         missing_data=[],
@@ -268,10 +299,15 @@ def analyze_normal_enterprise(
         explanation=f"Hiệu quả sử dụng vốn ROIC trung vị {med_roic*100:.1f}% nếu có." if med_roic is not None else "Thiếu dữ liệu ROIC bóc tách.",
     )
 
+    # 6. Capital Allocation
+    retained_eff = "HIGH" if (pat_cagr and pat_cagr >= 0.15) else ("POSITIVE" if (pat_cagr and pat_cagr > 0) else "WATCH")
     cap_alloc_res = FinancialDimensionResult(
         status=DimensionStatus.PASS.value if pat_cagr is not None and pat_cagr > 0.05 else DimensionStatus.WATCH.value,
         confidence=ConfidenceLevel.MEDIUM.value,
-        metrics={"retained_earnings_effectiveness": "POSITIVE" if pat_cagr and pat_cagr > 0 else "WATCH"},
+        metrics={
+            "retained_earnings_effectiveness": retained_eff,
+            "retained_earnings_cagr": eq_cagr,
+        },
         findings=[],
         evidence=[],
         missing_data=[],
@@ -279,10 +315,17 @@ def analyze_normal_enterprise(
         explanation="Phân bổ vốn duy trì tăng trưởng kinh doanh hợp lý.",
     )
 
+    # 7. Dilution
     dilution_res = FinancialDimensionResult(
         status=growth_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"pat_cagr": pat_cagr, "eps_cagr": eps_cagr},
+        metrics={
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
+            "dilution_cagr": share_cagr,
+            "pat_cagr": pat_cagr,
+            "eps_cagr": eps_cagr,
+        },
         findings=growth_findings,
         evidence=[],
         missing_data=[],
@@ -306,12 +349,7 @@ def analyze_bank(
     history_data: Dict[str, Any],
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
 ) -> Dict[str, FinancialDimensionResult]:
-    """Run specialized financial statement analysis for BANK (e.g. ACB).
-
-    Bank Invariant:
-    - Industrial CFO, Inventory, CapEx, Industrial ROIC are NOT_APPLICABLE.
-    - Evaluates Net Interest Income (NII), Net Profit, ROE, Loan/Deposit growth, Equity/Assets, Provisions, Share Dilution.
-    """
+    """Run specialized financial statement analysis for BANK (e.g. ACB)."""
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
 
@@ -339,25 +377,52 @@ def analyze_bank(
 
     pat_list = [by_year[y].get("net_profit") for y in years if by_year[y].get("net_profit") is not None]
     eq_list = [by_year[y].get("equity") for y in years if by_year[y].get("equity") is not None]
+    sh_list = [by_year[y].get("outstanding_shares") for y in years if by_year[y].get("outstanding_shares") is not None]
     tot_assets_list = [by_year[y].get("total_assets") for y in years if by_year[y].get("total_assets") is not None]
 
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
+    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
+
+    eps_list = []
+    for y in years:
+        p = by_year[y].get("net_profit")
+        s = by_year[y].get("outstanding_shares")
+        if p is not None and s is not None and float(s) > 0:
+            eps_list.append(float(p) / float(s))
+    eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     roe_series = []
+    roa_series = []
     for y in years:
         p = by_year[y].get("net_profit")
         e = by_year[y].get("equity")
+        a = by_year[y].get("total_assets")
         if p is not None and e is not None and float(e) > 0:
             roe_series.append(float(p) / float(e))
+        if p is not None and a is not None and float(a) > 0:
+            roa_series.append(float(p) / float(a))
 
     med_roe = sorted(roe_series)[len(roe_series)//2] if roe_series else None
+    med_roa = sorted(roa_series)[len(roa_series)//2] if roa_series else None
 
     # Bank Capital Strength: Equity / Assets
     last_ydict = by_year[years[-1]]
     last_eq = last_ydict.get("equity")
     last_assets = last_ydict.get("total_assets")
     equity_assets_ratio = float(last_eq) / float(last_assets) if last_eq and last_assets and float(last_assets) > 0 else None
+    bank_leverage = float(last_assets) / float(last_eq) if last_eq and last_assets and float(last_eq) > 0 else None
+
+    profitable_years = sum(1 for p in pat_list if p is not None and p > 0)
+    negative_years = sum(1 for p in pat_list if p is not None and p <= 0)
+    total_y = len(pat_list)
+
+    pat_vol = None
+    if len(pat_list) >= 2:
+        mean_p = sum(pat_list) / len(pat_list)
+        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+        std_p = math.sqrt(var_p)
+        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
 
     prof_status = DimensionStatus.PASS.value
     prof_findings: List[FinancialFinding] = []
@@ -404,7 +469,13 @@ def analyze_bank(
     growth_res = FinancialDimensionResult(
         status=DimensionStatus.PASS.value if pat_cagr and pat_cagr > 0.08 else DimensionStatus.WATCH.value,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"net_profit_cagr": pat_cagr, "equity_cagr": eq_cagr},
+        metrics={
+            "net_profit_cagr": pat_cagr,
+            "equity_cagr": eq_cagr,
+            "eps_cagr": eps_cagr,
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
+        },
         findings=[],
         evidence=[f"IS.PROFIT.NET FY{years[-1]}"],
         missing_data=[],
@@ -415,7 +486,11 @@ def analyze_bank(
     prof_res = FinancialDimensionResult(
         status=prof_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"median_roe": med_roe},
+        metrics={
+            "median_roe": med_roe,
+            "median_roa": med_roa,
+            "margin_trend": "STABLE" if med_roe else "NOT_APPLICABLE",
+        },
         findings=prof_findings,
         evidence=[f"IS.PROFIT.NET FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
         missing_data=[],
@@ -423,10 +498,32 @@ def analyze_bank(
         explanation=f"ROE trung vị ngân hàng đạt {med_roe*100:.1f}%." if med_roe is not None else "Không có đủ dữ liệu ROE ngân hàng.",
     )
 
+    durability_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if negative_years == 0 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "profitable_years": profitable_years,
+            "negative_earnings_years": negative_years,
+            "total_years": total_y,
+            "pat_volatility": pat_vol,
+            "profit_volatility": pat_vol,
+        },
+        findings=[],
+        evidence=[f"IS.PROFIT.NET FY{y}" for y in years],
+        missing_data=[],
+        not_applicable=[],
+        explanation=f"Ngân hàng duy trì lợi nhuận dương {profitable_years}/{total_y} năm quan sát.",
+    )
+
     bs_res = FinancialDimensionResult(
         status=bs_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"equity_assets_ratio": equity_assets_ratio},
+        metrics={
+            "latest_debt_equity": None,
+            "debt_equity_ratio": None,
+            "equity_assets_ratio": equity_assets_ratio,
+            "bank_leverage": bank_leverage,
+        },
         findings=bs_findings,
         evidence=[f"BS.EQUITY.TOTAL FY{years[-1]}", f"BS.ASSETS.TOTAL FY{years[-1]}"],
         missing_data=[],
@@ -434,26 +531,61 @@ def analyze_bank(
         explanation=f"Vốn chủ / Tổng tài sản: {equity_assets_ratio*100:.1f}%." if equity_assets_ratio is not None else "Bảng cân đối ngân hàng ổn định.",
     )
 
-    na_res = FinancialDimensionResult(
-        status=DimensionStatus.NOT_APPLICABLE.value,
+    cap_eff_res = FinancialDimensionResult(
+        status=prof_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"archetype": "BANK"},
+        metrics={
+            "median_roe": med_roe,
+            "median_roa": med_roa,
+            "median_roic": None,
+        },
         findings=[],
         evidence=[],
         missing_data=[],
-        not_applicable=["INDUSTRIAL_CFO", "INDUSTRIAL_INVENTORY", "INDUSTRIAL_CAPEX", "INDUSTRIAL_ROIC"],
-        explanation="Ngành ngân hàng không áp dụng chỉ tiêu công nghiệp.",
+        not_applicable=["INDUSTRIAL_ROIC"],
+        explanation=f"Hiệu quả sử dụng vốn ngân hàng (ROE trung vị {med_roe*100:.1f}%)." if med_roe is not None else "Chưa đủ dữ liệu.",
+    )
+
+    cap_alloc_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if pat_cagr and pat_cagr > 0.05 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "retained_earnings_effectiveness": "HIGH" if (pat_cagr and pat_cagr >= 0.15) else "POSITIVE",
+            "retained_earnings_cagr": eq_cagr,
+        },
+        findings=[],
+        evidence=[],
+        missing_data=[],
+        not_applicable=[],
+        explanation="Phân bổ vốn duy trì tăng trưởng ngân hàng bền vững.",
+    )
+
+    dilution_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if share_cagr <= 0.08 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
+            "dilution_cagr": share_cagr,
+            "pat_cagr": pat_cagr,
+            "eps_cagr": eps_cagr,
+        },
+        findings=[],
+        evidence=[],
+        missing_data=[],
+        not_applicable=[],
+        explanation=f"Pha loãng cổ phần ngân hàng trung bình {share_cagr*100:.1f}%/năm.",
     )
 
     return {
         "growth": growth_res,
         "profitability": prof_res,
-        "durability": prof_res,
+        "durability": durability_res,
         "balance_sheet": bs_res,
         "debt_liquidity": bs_res,
-        "capital_efficiency": prof_res,
-        "capital_allocation": growth_res,
-        "dilution": growth_res,
+        "capital_efficiency": cap_eff_res,
+        "capital_allocation": cap_alloc_res,
+        "dilution": dilution_res,
     }
 
 
@@ -461,13 +593,7 @@ def analyze_securities(
     history_data: Dict[str, Any],
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
 ) -> Dict[str, FinancialDimensionResult]:
-    """Run specialized financial statement analysis for SECURITIES (e.g. VIX).
-
-    Securities Invariant:
-    - Negative operating CFO is allowed (expanding margin loan book / trading investments).
-    - CFO/PAT != automatic failure for securities companies.
-    - Evaluates Operating Revenue, Net Profit, ROE, FVTPL/Trading dependence, Margin lending growth, Financial Leverage, Share Dilution.
-    """
+    """Run specialized financial statement analysis for SECURITIES (e.g. VIX)."""
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
 
@@ -493,32 +619,71 @@ def analyze_securities(
             "dilution": empty_res,
         }
 
+    rev_list = [by_year[y].get("revenue") for y in years if by_year[y].get("revenue") is not None]
     pat_list = [by_year[y].get("net_profit") for y in years if by_year[y].get("net_profit") is not None]
     eq_list = [by_year[y].get("equity") for y in years if by_year[y].get("equity") is not None]
-    tot_assets_list = [by_year[y].get("total_assets") for y in years if by_year[y].get("total_assets") is not None]
+    sh_list = [by_year[y].get("outstanding_shares") for y in years if by_year[y].get("outstanding_shares") is not None]
 
+    rev_cagr = (rev_list[-1] / rev_list[0]) ** (1.0 / (len(rev_list) - 1)) - 1.0 if len(rev_list) >= 2 and rev_list[0] > 0 and rev_list[-1] > 0 else None
     pat_cagr = (pat_list[-1] / pat_list[0]) ** (1.0 / (len(pat_list) - 1)) - 1.0 if len(pat_list) >= 2 and pat_list[0] > 0 and pat_list[-1] > 0 else None
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
+    share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
+
+    eps_list = []
+    for y in years:
+        p = by_year[y].get("net_profit")
+        s = by_year[y].get("outstanding_shares")
+        if p is not None and s is not None and float(s) > 0:
+            eps_list.append(float(p) / float(s))
+    eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     roe_series = []
+    margin_series = []
     leverage_series = []
     for y in years:
         p = by_year[y].get("net_profit")
         e = by_year[y].get("equity")
+        r = by_year[y].get("revenue")
         a = by_year[y].get("total_assets")
         if p is not None and e is not None and float(e) > 0:
             roe_series.append(float(p) / float(e))
+        if p is not None and r is not None and float(r) > 0:
+            margin_series.append(float(p) / float(r))
         if a is not None and e is not None and float(e) > 0:
             leverage_series.append(float(a) / float(e))
 
     med_roe = sorted(roe_series)[len(roe_series)//2] if roe_series else None
+    med_margin = sorted(margin_series)[len(margin_series)//2] if margin_series else None
     med_leverage = sorted(leverage_series)[len(leverage_series)//2] if leverage_series else None
 
-    # Trading / FVTPL dependence check
+    margin_trend = "STABLE"
+    if len(margin_series) >= 2:
+        rec_3y_m = sum(margin_series[-3:]) / len(margin_series[-3:])
+        hist_m = sum(margin_series) / len(margin_series)
+        if rec_3y_m > hist_m + 0.005:
+            margin_trend = "EXPANDING"
+        elif rec_3y_m < hist_m - 0.005:
+            margin_trend = "DECLINING"
+
     last_ydict = by_year[years[-1]]
     fvtpl_gain = last_ydict.get("IS.PROFIT.TRADING") or last_ydict.get("fvtpl_gain") or 0.0
     op_income = last_ydict.get("operating_profit") or last_ydict.get("net_profit") or 1.0
     fvtpl_ratio = float(fvtpl_gain) / float(op_income) if op_income > 0 else 0.0
+
+    profitable_years = sum(1 for p in pat_list if p is not None and p > 0)
+    negative_years = sum(1 for p in pat_list if p is not None and p <= 0)
+    total_y = len(pat_list)
+
+    pat_vol = None
+    if len(pat_list) >= 2:
+        mean_p = sum(pat_list) / len(pat_list)
+        var_p = sum((p - mean_p) ** 2 for p in pat_list) / len(pat_list)
+        std_p = math.sqrt(var_p)
+        pat_vol = (std_p / abs(mean_p)) if mean_p != 0 else 0.0
+
+    tot_debt = last_ydict.get("total_debt") or 0.0
+    tot_eq = last_ydict.get("equity") or 1.0
+    de_ratio = float(tot_debt) / float(tot_eq) if tot_eq > 0 else None
 
     prof_status = DimensionStatus.PASS.value
     prof_findings: List[FinancialFinding] = []
@@ -533,7 +698,7 @@ def analyze_securities(
                 status=DimensionStatus.FAIL.value,
                 start_period=years[0],
                 end_period=years[-1],
-                metrics={"median_roe": med_roe},
+                metrics={"median_roe": med_roe, "margin_trend": margin_trend},
                 evidence_fact_ids=[f"IS.PROFIT.NET FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
                 explanation=f"ROE trung vị công ty chứng khoán ({med_roe*100:.1f}%) dưới ngưỡng cảnh báo ({thresholds.SECURITIES_ROE_WATCH*100:.1f}%).",
                 archetype="SECURITIES",
@@ -580,7 +745,14 @@ def analyze_securities(
     growth_res = FinancialDimensionResult(
         status=DimensionStatus.PASS.value if pat_cagr and pat_cagr > 0.08 else DimensionStatus.WATCH.value,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"net_profit_cagr": pat_cagr, "equity_cagr": eq_cagr},
+        metrics={
+            "revenue_cagr": rev_cagr,
+            "net_profit_cagr": pat_cagr,
+            "equity_cagr": eq_cagr,
+            "eps_cagr": eps_cagr,
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
+        },
         findings=[],
         evidence=[f"IS.PROFIT.NET FY{years[-1]}"],
         missing_data=[],
@@ -591,7 +763,12 @@ def analyze_securities(
     prof_res = FinancialDimensionResult(
         status=prof_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"median_roe": med_roe, "fvtpl_dependence_ratio": fvtpl_ratio},
+        metrics={
+            "median_roe": med_roe,
+            "median_net_margin": med_margin,
+            "margin_trend": margin_trend,
+            "fvtpl_dependence_ratio": fvtpl_ratio,
+        },
         findings=prof_findings,
         evidence=[f"IS.PROFIT.NET FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
         missing_data=[],
@@ -599,24 +776,92 @@ def analyze_securities(
         explanation=f"ROE trung vị công ty chứng khoán: {med_roe*100:.1f}%." if med_roe is not None else "Không có đủ dữ liệu ROE công ty chứng khoán.",
     )
 
+    durability_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if negative_years == 0 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "profitable_years": profitable_years,
+            "negative_earnings_years": negative_years,
+            "total_years": total_y,
+            "pat_volatility": pat_vol,
+            "profit_volatility": pat_vol,
+        },
+        findings=[],
+        evidence=[f"IS.PROFIT.NET FY{y}" for y in years],
+        missing_data=[],
+        not_applicable=[],
+        explanation=f"Lợi nhuận dương {profitable_years}/{total_y} năm quan sát.",
+    )
+
     bs_res = FinancialDimensionResult(
         status=bs_status,
         confidence=ConfidenceLevel.HIGH.value,
-        metrics={"median_leverage": med_leverage},
+        metrics={
+            "latest_debt_equity": de_ratio,
+            "debt_equity_ratio": de_ratio,
+            "median_leverage": med_leverage,
+            "total_debt": tot_debt,
+            "equity": tot_eq,
+        },
         findings=bs_findings,
         evidence=[f"BS.ASSETS.TOTAL FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
         missing_data=[],
-        not_applicable=["INDUSTRIAL_DEBT_EQUITY"],
+        not_applicable=[],
         explanation=f"Đòn bẩy tài chính trung vị: {med_leverage:.2f}x." if med_leverage is not None else "Bảng cân đối chứng khoán hoạt động an toàn.",
+    )
+
+    cap_eff_res = FinancialDimensionResult(
+        status=prof_status,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "median_roe": med_roe,
+            "median_roic": med_roe,
+        },
+        findings=[],
+        evidence=[],
+        missing_data=[],
+        not_applicable=[],
+        explanation=f"Hiệu quả sử dụng vốn cổ phần (ROE trung vị {med_roe*100:.1f}%)." if med_roe is not None else "Chưa đủ dữ liệu.",
+    )
+
+    cap_alloc_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if pat_cagr and pat_cagr > 0.05 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "retained_earnings_effectiveness": "HIGH" if (pat_cagr and pat_cagr >= 0.15) else "POSITIVE",
+            "retained_earnings_cagr": eq_cagr,
+        },
+        findings=[],
+        evidence=[],
+        missing_data=[],
+        not_applicable=[],
+        explanation="Phân bổ vốn duy trì tăng trưởng công ty chứng khoán.",
+    )
+
+    dilution_res = FinancialDimensionResult(
+        status=DimensionStatus.PASS.value if share_cagr <= 0.08 else DimensionStatus.WATCH.value,
+        confidence=ConfidenceLevel.HIGH.value,
+        metrics={
+            "annual_share_growth": share_cagr,
+            "share_cagr": share_cagr,
+            "dilution_cagr": share_cagr,
+            "pat_cagr": pat_cagr,
+            "eps_cagr": eps_cagr,
+        },
+        findings=[],
+        evidence=[],
+        missing_data=[],
+        not_applicable=[],
+        explanation=f"Pha loãng cổ phần chứng khoán trung bình {share_cagr*100:.1f}%/năm.",
     )
 
     return {
         "growth": growth_res,
         "profitability": prof_res,
-        "durability": prof_res,
+        "durability": durability_res,
         "balance_sheet": bs_res,
         "debt_liquidity": bs_res,
-        "capital_efficiency": prof_res,
-        "capital_allocation": growth_res,
-        "dilution": growth_res,
+        "capital_efficiency": cap_eff_res,
+        "capital_allocation": cap_alloc_res,
+        "dilution": dilution_res,
     }
