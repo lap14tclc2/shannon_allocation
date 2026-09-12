@@ -3,9 +3,11 @@ import AppNav from '../components/AppNav.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import {
   addPortfolioPosition,
+  applySplitAdjustment,
   deletePortfolioPosition,
   getBuffettTerminalData,
   getPortfolioPositions,
+  getSplitAdjustment,
   setCashReserve,
   updatePortfolioPosition,
 } from '../lib/api.js';
@@ -78,6 +80,25 @@ function PositionForm({ title, initial = {}, holdingSymbols = [], onSave, onCanc
   const [err, setErr] = useState(null);
   const [saving, setSaving] = useState(false);
   const isEdit = !!initial.symbol;
+  const [splitInfo, setSplitInfo] = useState(null);
+  const [loadingSplit, setLoadingSplit] = useState(false);
+
+  useEffect(() => {
+    const sym = (symbol || initial.symbol || '').trim().toUpperCase();
+    if (sym && isEdit) {
+      setLoadingSplit(true);
+      getSplitAdjustment(sym)
+        .then((res) => {
+          if (res?.ok && res?.has_adjustment) {
+            setSplitInfo(res);
+          } else {
+            setSplitInfo(null);
+          }
+        })
+        .catch(() => setSplitInfo(null))
+        .finally(() => setLoadingSplit(false));
+    }
+  }, [symbol, isEdit, initial.symbol]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -138,6 +159,40 @@ function PositionForm({ title, initial = {}, holdingSymbols = [], onSave, onCanc
         </div>
       )}
       {isEdit && <div style={{ ...labelStyle, marginTop: 0 }}>Mã cổ phiếu: <strong>{initial.symbol}</strong></div>}
+      
+      {splitInfo?.has_adjustment && (
+        <div style={{
+          background: 'rgba(2, 132, 199, 0.08)',
+          border: '1px solid #0284c7',
+          borderRadius: 8,
+          padding: '12px 14px',
+          marginTop: 12,
+          marginBottom: 8,
+          fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 700, color: '#0284c7', marginBottom: 4 }}>
+            ⚡ Phát hiện {splitInfo.events?.length || 1} đợt chia tách / cổ tức cổ phiếu (Hệ số tích lũy: {splitInfo.cumulative_factor}x)
+          </div>
+          <div style={{ color: 'var(--text, #201d18)', marginBottom: 8, lineHeight: 1.5 }}>
+            • Số lượng sau chia đề xuất: <strong>{Number(splitInfo.adjusted_shares).toLocaleString('vi-VN')} cp</strong><br />
+            • Giá vốn sau chia đề xuất: <strong>{Number(splitInfo.adjusted_cost).toLocaleString('vi-VN')} ₫</strong> (Bảo toàn vốn: {Number(splitInfo.total_invested).toLocaleString('vi-VN')} ₫)
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setQuantity(String(splitInfo.adjusted_shares));
+              setAvgCost(String(splitInfo.adjusted_cost));
+            }}
+            style={{
+              background: '#0284c7', color: '#fff', border: 'none', borderRadius: 4,
+              padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: 12,
+            }}
+          >
+            Tự động điền số liệu sau chia tách
+          </button>
+        </div>
+      )}
+
       <label style={labelStyle}>
         Số lượng (cổ phiếu) *
         <input
@@ -298,6 +353,21 @@ function PortfolioSection({ onRefreshTerminal }) {
     afterSave();
   };
 
+  const handleAutoSplit = async (sym) => {
+    if (!window.confirm(`Tự động chuẩn hóa số lượng và giá vốn cho vị thế ${sym} sau các đợt chia tách/cổ tức cổ phiếu?\n(Tổng vốn đầu tư ban đầu sẽ được bảo toàn tuyệt đối).`)) return;
+    try {
+      const res = await applySplitAdjustment(sym);
+      if (res?.ok) {
+        alert(res.message || 'Chuẩn hóa thành công.');
+        afterSave();
+      } else {
+        alert(res?.error || 'Không thể chuẩn hóa.');
+      }
+    } catch (ex) {
+      alert(ex.message || 'Có lỗi xảy ra.');
+    }
+  };
+
   const positions = data?.positions || [];
   const summary = data?.summary || {};
   const cashReserve = data?.cash_reserve ?? 0;
@@ -435,6 +505,11 @@ function PortfolioSection({ onRefreshTerminal }) {
                           <a href="/transactions" style={{ fontSize: 12, color: '#718096' }}>Lịch sử sổ cái</a>
                         ) : (
                           <>
+                            <button
+                              onClick={() => handleAutoSplit(p.symbol)}
+                              title="Tự động chuẩn hóa số lượng và giá vốn sau chia tách/cổ tức cổ phiếu"
+                              style={{ marginRight: 6, fontSize: 12, background: 'none', border: '1px solid #0284c7', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', color: '#0284c7', fontWeight: 600 }}
+                            >⚡ Chia tách</button>
                             <button
                               onClick={() => setModal({ type: 'edit', row: p })}
                               style={{ marginRight: 6, fontSize: 12, background: 'none', border: '1px solid #4a5568', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', color: 'inherit' }}

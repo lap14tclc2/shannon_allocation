@@ -294,3 +294,5 @@ export const resolveRestatement = (id) => sendJSON(`/api/portfolio/restatements/
 export const updateSecurity = (symbol, payload) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}`, 'POST', payload);
 export const resolveSecurity = (symbol) => sendJSON(`/api/portfolio/securities/${encodeURIComponent(symbol)}/resolve`, 'POST', {});
 export const resolveAllSecurities = () => sendJSON('/api/portfolio/securities/resolve', 'POST', {});
+export const getSplitAdjustment = (symbol) => getJSON(`/api/portfolio/positions/${encodeURIComponent(symbol)}/split-adjustment`);
+export const applySplitAdjustment = (symbol) => sendJSON(`/api/portfolio/positions/${encodeURIComponent(symbol)}/auto-split-adjust`, 'POST', {});

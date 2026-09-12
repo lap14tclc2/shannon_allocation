@@ -1504,6 +1504,24 @@ def portfolio_delete_position(
     return portfolio(user).delete_position(symbol, created_by=user["username"])
 
 
+@app.get("/api/portfolio/positions/{symbol}/split-adjustment")
+def portfolio_get_split_adjustment(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    return portfolio(user).get_split_adjustment(symbol)
+
+
+@app.post("/api/portfolio/positions/{symbol}/auto-split-adjust")
+def portfolio_apply_split_adjustment(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    return portfolio(user).apply_split_adjustment(symbol, created_by=user["username"])
+
+
 @app.get("/api/portfolio/cash")
 def portfolio_get_cash(qport_session: str | None = Cookie(default=None)):
     return portfolio(require_portfolio_user(qport_session)).get_cash()

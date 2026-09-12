@@ -1108,3 +1108,108 @@ class CorrectablePortfolioService(PortfolioService):
         """Return current cash reserve amount."""
         raw = self.store.get_meta("cash_reserve_vnd")
         return {"ok": True, "cash_reserve": float(raw) if raw is not None else 0.0}
+
+    def get_split_adjustment(self, symbol: str) -> dict:
+        """Calculates cumulative stock dividend / split factor for a symbol.
+        Returns original quantity, original cost, adjusted quantity, adjusted cost,
+        cumulative split factor, and list of stock dividend events.
+        """
+        sym = str(symbol or "").strip().upper()
+        state = self.current_state()
+        pos = state.positions.get(sym)
+        if not pos or (pos.shares or 0) <= 0:
+            return {"ok": False, "error": f"Không tìm thấy vị thế {sym} trong danh mục.", "symbol": sym}
+
+        original_shares = float(pos.shares)
+        original_cost = float(pos.average_cost)
+        total_invested = float(pos.cost_basis)
+
+        # Query stock dividends / bonus shares from qport_finance.dividend_canonical
+        events = []
+        cumulative_factor = 1.0
+        try:
+            from portfolio.finance_catalog import _schema_connection, FINANCE_SCHEMA
+            with _schema_connection(FINANCE_SCHEMA) as db:
+                sql = """
+                    SELECT effective_event_date, dividend_type, stock_ratio, quality_status
+                    FROM dividend_canonical
+                    WHERE symbol = %s AND dividend_type IN ('STOCK_DIVIDEND', 'BONUS_SHARE', 'SPLIT')
+                      AND stock_ratio IS NOT NULL AND stock_ratio > 0
+                    ORDER BY effective_event_date ASC
+                """
+                rows = db.execute(sql, (sym,)).fetchall()
+                for r in rows:
+                    ratio = float(r["stock_ratio"])
+                    cumulative_factor *= (1.0 + ratio)
+                    events.append({
+                        "event_date": str(r["effective_event_date"]),
+                        "dividend_type": str(r["dividend_type"]),
+                        "stock_ratio": ratio,
+                        "quality_status": str(r.get("quality_status") or "VERIFIED"),
+                    })
+        except Exception:
+            pass
+
+        # Also check local SQLite corporate_actions table
+        try:
+            with self.store.connect() as db:
+                sql = """
+                    SELECT ex_date, action_type, stock_ratio, verification_status
+                    FROM corporate_actions
+                    WHERE symbol = ? AND action_type IN ('STOCK_DIVIDEND', 'BONUS_SHARE', 'SPLIT')
+                      AND stock_ratio IS NOT NULL AND stock_ratio > 0
+                    ORDER BY ex_date ASC
+                """
+                ca_rows = db.execute(sql, (sym,)).fetchall()
+                for r in ca_rows:
+                    dt = str(r["ex_date"])
+                    if not any(e["event_date"] == dt for e in events):
+                        ratio = float(r["stock_ratio"])
+                        cumulative_factor *= (1.0 + ratio)
+                        events.append({
+                            "event_date": dt,
+                            "dividend_type": str(r["action_type"]),
+                            "stock_ratio": ratio,
+                            "quality_status": str(r.get("verification_status") or "VERIFIED"),
+                        })
+        except Exception:
+            pass
+
+        adjusted_shares = round(original_shares * cumulative_factor, 2)
+        adjusted_cost = round(total_invested / adjusted_shares, 2) if adjusted_shares > 0 else original_cost
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "original_shares": original_shares,
+            "original_cost": original_cost,
+            "total_invested": total_invested,
+            "cumulative_factor": round(cumulative_factor, 4),
+            "adjusted_shares": adjusted_shares,
+            "adjusted_cost": adjusted_cost,
+            "has_adjustment": cumulative_factor > 1.0001,
+            "events": events,
+        }
+
+    def apply_split_adjustment(self, symbol: str, created_by: str = "auto_split_adjust") -> dict:
+        """Applies split adjustment by updating position shares and average cost while preserving total invested cost."""
+        adj = self.get_split_adjustment(symbol)
+        if not adj.get("ok"):
+            return adj
+        if not adj.get("has_adjustment"):
+            return {
+                "ok": True,
+                "symbol": symbol,
+                "message": f"{symbol} không có sự kiện chia tách/cổ tức cổ phiếu cần điều chỉnh.",
+                "adjustment": adj,
+            }
+
+        new_shares = adj["adjusted_shares"]
+        new_cost = adj["adjusted_cost"]
+        self.update_position(symbol, quantity=new_shares, average_cost=new_cost, created_by=created_by)
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "message": f"Đã chuẩn hóa vị thế {symbol}: {adj['original_shares']:,.0f} cp @ {adj['original_cost']:,.0f} đ -> {new_shares:,.0f} cp @ {new_cost:,.0f} đ (Bảo toàn vốn {adj['total_invested']:,.0f} đ).",
+            "adjustment": adj,
+        }
