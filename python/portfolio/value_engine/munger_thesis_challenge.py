@@ -13,7 +13,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .vietnamese_presenter import get_vietnamese_decision, get_vietnamese_status
+from .vietnamese_presenter import (
+    MARGIN_TREND_VIETNAMESE,
+    get_vietnamese_archetype,
+    get_vietnamese_decision,
+    get_vietnamese_finding_title,
+    get_vietnamese_q7_classification,
+    get_vietnamese_status,
+    get_vietnamese_valuetrap,
+)
 
 
 class ThesisChallengeAnswerStatus(str):
@@ -108,7 +116,7 @@ def run_thesis_challenge_analysis(
     # -------------------------------------------------------------------------
     q1_risks = []
     if hard_failures:
-        q1_risks.extend([f"Thất bại nghiêm trọng BCTC: {f}" for f in hard_failures])
+        q1_risks.extend([f"Thất bại nghiêm trọng BCTC: {get_vietnamese_finding_title(f)}" for f in hard_failures])
     if value_trap.get("status") == "HIGH_RISK":
         q1_risks.append("Bẫy giá trị nguy cơ cao do suy giảm cấu trúc")
 
@@ -129,7 +137,7 @@ def run_thesis_challenge_analysis(
     elif warnings:
         q1_status = ThesisChallengeAnswerStatus.WATCH
         q1_summary = "Luận điểm duy trì ổn định, tuy nhiên phát hiện một số cảnh báo cấp độ theo dõi nhẹ (Warnings)."
-        q1_detail = f"Các cảnh báo lưu ý: {', '.join(warnings[:3])}."
+        q1_detail = f"Các cảnh báo lưu ý: {', '.join(get_vietnamese_finding_title(w) for w in warnings[:3])}."
     else:
         q1_status = ThesisChallengeAnswerStatus.RESILIENT
         q1_summary = "Không phát hiện rủi ro tài chính nghiêm trọng nào đe dọa luận điểm đầu tư cơ sở."
@@ -186,7 +194,7 @@ def run_thesis_challenge_analysis(
             metrics={"median_roe": med_roe, "margin_trend": margin_trend},
             limitations="BCTC không thể chứng minh trực tiếp lợi thế cạnh tranh định tính (như thương hiệu hay giấy phép). Kết luận dựa trên xu hướng ROIC và biên lợi nhuận lịch sử.",
             conclusion_vi=q2_summary,
-            evidence_vi=f"ROE trung vị: {(med_roe*100):.1f}%, Xu hướng biên lợi nhuận: {margin_trend or 'Ổn định'}." if med_roe is not None else "Chưa đủ dữ liệu ROE trung vị.",
+            evidence_vi=f"ROE trung vị: {(med_roe*100):.1f}%, Xu hướng biên lợi nhuận: {MARGIN_TREND_VIETNAMESE.get(margin_trend, 'Ổn định')}." if med_roe is not None else "Chưa đủ dữ liệu ROE trung vị.",
             risk_vi="Cạnh tranh ngành làm thu hẹp biên lợi nhuận hoặc sụt giảm tỷ suất sinh lời trên vốn.",
             severity_vi=STATUS_VIETNAMESE_MAP.get(q2_status, q2_status),
         )
@@ -207,21 +215,18 @@ def run_thesis_challenge_analysis(
         mos_50 = round(((iv_50 - current_price) / iv_50) * 100, 1)
 
         stress_q3 = {
-            "norm_5y": norm_5y,
-            "minus_30_earnings": round(norm_5y * 0.70, 0) if norm_5y else None,
             "minus_30_iv": iv_30,
             "minus_30_mos": mos_30,
-            "minus_50_earnings": round(norm_5y * 0.50, 0) if norm_5y else None,
             "minus_50_iv": iv_50,
             "minus_50_mos": mos_50,
         }
 
-        if mos_30 >= required_mos:
+        if mos_30 >= 0:
             q3_status = ThesisChallengeAnswerStatus.RESILIENT
-            q3_summary = f"Nếu lợi nhuận sụt giảm 30%, Biên an toàn còn lại ({mos_30:.1f}%) vẫn đạt mức QPort yêu cầu ({required_mos:.1f}%)."
-        elif mos_30 >= 0:
+            q3_summary = f"Ngay cả trong kịch bản LN bình thường giảm 30%, mức giá hiện tại vẫn duy trì Biên an toàn {mos_30:.1f}%."
+        elif mos_50 >= 0:
             q3_status = ThesisChallengeAnswerStatus.WATCH
-            q3_summary = f"Nếu lợi nhuận giảm 30%, Biên an toàn còn {mos_30:.1f}% (dưới mức yêu cầu {required_mos:.1f}%). Nếu giảm 50%, MOS còn {mos_50:.1f}%."
+            q3_summary = f"Trong kịch bản LN bình thường giảm 30%, Biên an toàn bị âm ({mos_30:.1f}%), nhưng kịch bản giảm 50% vẫn hòa vốn."
         else:
             q3_status = ThesisChallengeAnswerStatus.VULNERABLE
             q3_summary = f"Nếu lợi nhuận bình thường sụt giảm 30–50%, giá hiện tại sẽ cao hơn giá trị nội tại điều chỉnh (MOS giảm âm {mos_30:.1f}%)."
@@ -233,7 +238,7 @@ def run_thesis_challenge_analysis(
     else:
         q3_status = ThesisChallengeAnswerStatus.INSUFFICIENT_DATA
         q3_summary = "Chưa đủ dữ liệu định giá hoặc giá thị trường để tính toán kịch bản suy giảm lợi nhuận."
-        q3_detail = "Cần định giá sẵn sàng (READY) để thực hiện tính toán stress test lợi nhuận."
+        q3_detail = f"Cần định giá sẵn sàng ({STATUS_VIETNAMESE_MAP.get(readiness, 'Sẵn sàng')}) để thực hiện tính toán stress test lợi nhuận."
 
     q3_evidence_str = (
         f"Kịch bản LN -30%: IV = {stress_q3.get('minus_30_iv', 0):,.0f} đ (MOS {stress_q3.get('minus_30_mos', 0):.1f}%). "
@@ -336,7 +341,7 @@ def run_thesis_challenge_analysis(
     else:
         q5_status = ThesisChallengeAnswerStatus.INSUFFICIENT_DATA
         q5_summary = "Chưa đủ dữ liệu tài chính cá nhân để đánh giá khả năng tiếp tục nắm giữ trong kịch bản giá giảm 50%."
-        q5_detail = "Hệ thống không yêu cầu nhà đầu tư tự điền thủ công. Kết quả tự động ghi nhận thiếu dữ liệu (INSUFFICIENT_DATA)."
+        q5_detail = "Hệ thống không yêu cầu nhà đầu tư tự điền thủ công. Kết quả tự động ghi nhận chưa đủ dữ liệu."
 
     questions.append(
         ThesisChallengeQuestion(
@@ -393,7 +398,7 @@ def run_thesis_challenge_analysis(
             metrics={"debt_to_equity": debt_eq},
             limitations="Xét riêng nền tảng tài chính BCTC; không dự đoán biến động giá cổ phiếu trên thị trường.",
             conclusion_vi=q6_summary,
-            evidence_vi=f"Tỷ lệ Nợ/VCSH = {debt_eq:.2f}x. Trạng thái Bẫy giá trị: {value_trap.get('status', 'CLEAR')}." if debt_eq is not None else f"Tỷ lệ Nợ/VCSH chưa đủ dữ liệu. Trạng thái Bẫy giá trị: {value_trap.get('status', 'CLEAR')}.",
+            evidence_vi=f"Tỷ lệ Nợ/VCSH = {debt_eq:.2f}x. Trạng thái Bẫy giá trị: {get_vietnamese_valuetrap(value_trap.get('status', 'CLEAR'))}." if debt_eq is not None else f"Tỷ lệ Nợ/VCSH chưa đủ dữ liệu. Trạng thái Bẫy giá trị: {get_vietnamese_valuetrap(value_trap.get('status', 'CLEAR'))}.",
             risk_vi="Gánh nặng nghĩa vụ nợ vay tài chính khi không có cơ hội giao dịch thanh khoản ngắn hạn.",
             severity_vi=STATUS_VIETNAMESE_MAP.get(q6_status, q6_status),
         )
@@ -427,7 +432,7 @@ def run_thesis_challenge_analysis(
         q7_status = ThesisChallengeAnswerStatus.INSUFFICIENT_DATA
         q7_summary = "Chưa đủ bằng chứng định giá để phân loại cơ hội giá trị."
 
-    q7_detail = f"Phân loại cơ hội: {q7_class}. Biên an toàn thực tế: {actual_mos if actual_mos is not None else 'N/A'}% vs Yêu cầu: {required_mos}%."
+    q7_detail = f"Phân loại cơ hội: {get_vietnamese_q7_classification(q7_class)}. Biên an toàn thực tế: {actual_mos if actual_mos is not None else 'Chưa đủ dữ liệu'}% vs Yêu cầu: {required_mos}%."
 
     questions.append(
         ThesisChallengeQuestion(
@@ -517,7 +522,7 @@ def run_thesis_challenge_analysis(
         ]
 
     q8_summary = f"Đã thiết lập {len(invalidation_criteria)} tiêu chí định lượng có thể đo lường để bác bỏ luận điểm đầu tư."
-    q8_detail = "Nếu các sự kiện tài chính trên xảy ra trong thực tế, QPort sẽ tự động hạ cấp đánh giá và khuyến nghị AVOID."
+    q8_detail = f"Nếu các sự kiện tài chính trên xảy ra trong thực tế, QPort sẽ tự động hạ cấp đánh giá và khuyến nghị {get_vietnamese_decision('AVOID')}."
     q8_evidence_str = "; ".join([f"{c['metric']}: {c['trigger']}" for c in invalidation_criteria])
 
     questions.append(
@@ -556,7 +561,7 @@ def run_thesis_challenge_analysis(
         overall_status = "WATCH"
 
     thesis_summary = (
-        f"Kết quả Phản biện luận điểm cho {symbol} ({archetype}): "
+        f"Kết quả Phản biện luận điểm cho {symbol} ({get_vietnamese_archetype(archetype)}): "
         f"{len([q for q in questions if q.answer_status == 'RESILIENT'])}/8 câu hỏi đạt trạng thái chống chịu tốt."
     )
 

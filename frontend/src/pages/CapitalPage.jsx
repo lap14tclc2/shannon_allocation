@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
+import { formatDecision, formatStatus } from '../utils/vietnameseSemantics.js';
 
 export default function CapitalPage() {
   const [loading, setLoading] = useState(true);
@@ -104,12 +105,12 @@ export default function CapitalPage() {
                 <div className="card-header">
                   <h3>Cấu Hình Bảng Cân Đối Cá Nhân</h3>
                   <span className={`status-badge ${data.durability?.survival_reserve_status || 'UNKNOWN'}`}>
-                    Dự phòng: {data.durability?.survival_reserve_status || 'UNKNOWN'}
+                    Dự phòng: {formatStatus(data.durability?.survival_reserve_status)}
                   </span>
                 </div>
                 {!isConfigured && (
                   <p className="muted" style={{ marginBottom: '16px' }}>
-                    Bạn chưa cấu hình Bảng Cân Đối Cá Nhân. Mọi hành động MUA / MUA THÊM cổ phiếu hiện bị cấm (BUILD_RESERVE_FIRST) để bảo vệ pháo đài sinh tồn.
+                    Bạn chưa cấu hình Bảng Cân Đối Cá Nhân. Mọi hành động MUA / MUA THÊM cổ phiếu hiện bị cấm ({formatDecision('BUILD_RESERVE_FIRST')}) để bảo vệ pháo đài sinh tồn.
                   </p>
                 )}
                 <form onSubmit={handleSavePersonalFinance} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

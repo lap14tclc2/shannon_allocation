@@ -22,6 +22,7 @@ from .munger_models import (
     FinancialDimensionResult,
 )
 from .munger_thresholds import DEFAULT_MUNGER_THRESHOLD_POLICY, MungerThresholdPolicy
+from .vietnamese_presenter import get_vietnamese_archetype, get_vietnamese_deterioration
 
 
 def run_accounting_consistency_checks(
@@ -151,7 +152,7 @@ def run_earnings_quality_forensics(
             evidence=[],
             missing_data=[],
             not_applicable=["INDUSTRIAL_CFO_PAT"],
-            explanation=f"Ngành {archetype} không áp dụng tỷ lệ CFO/PAT của doanh nghiệp phi tài chính.",
+            explanation=f"Ngành {get_vietnamese_archetype(archetype)} không áp dụng tỷ lệ CFO/PAT của doanh nghiệp phi tài chính.",
         )
 
     by_year = history_data.get("by_year", {})
@@ -285,7 +286,7 @@ def run_receivables_forensics(
             evidence=[],
             missing_data=[],
             not_applicable=["INDUSTRIAL_RECEIVABLES_REVENUE"],
-            explanation=f"Ngành {archetype} không áp dụng chỉ tiêu Phải thu / Doanh thu công nghiệp.",
+            explanation=f"Ngành {get_vietnamese_archetype(archetype)} không áp dụng chỉ tiêu Phải thu / Doanh thu công nghiệp.",
         )
 
     by_year = history_data.get("by_year", {})
@@ -504,7 +505,7 @@ def run_inventory_forensics(
             evidence=[],
             missing_data=[],
             not_applicable=["INDUSTRIAL_INVENTORY"],
-            explanation=f"Ngành {archetype} không tồn tại hàng tồn kho công nghiệp.",
+            explanation=f"Ngành {get_vietnamese_archetype(archetype)} không tồn tại hàng tồn kho công nghiệp.",
         )
 
     by_year = history_data.get("by_year", {})
@@ -659,5 +660,5 @@ def classify_structural_vs_cyclical_deterioration(
         "critical_count": len(critical_findings),
         "high_count": len(high_findings),
         "medium_count": len(medium_findings),
-        "explanation": f"Xác định trạng thái: {classification}. {len(structural_signals)} tín hiệu cấu trúc, {len(cyclical_signals)} tín hiệu chu kỳ.",
+        "explanation": f"Xác định trạng thái: {get_vietnamese_deterioration(classification)}. {len(structural_signals)} tín hiệu cấu trúc, {len(cyclical_signals)} tín hiệu chu kỳ.",
     }

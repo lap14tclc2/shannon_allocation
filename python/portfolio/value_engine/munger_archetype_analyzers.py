@@ -18,6 +18,7 @@ from .munger_models import (
     FinancialFinding,
 )
 from .munger_thresholds import DEFAULT_MUNGER_THRESHOLD_POLICY, MungerThresholdPolicy
+from .vietnamese_presenter import MARGIN_TREND_VIETNAMESE
 
 
 def analyze_normal_enterprise(
@@ -175,7 +176,7 @@ def analyze_normal_enterprise(
         evidence=[f"IS.PROFIT.NET FY{years[-1]}"],
         missing_data=[],
         not_applicable=[],
-        explanation=f"ROE trung vị: {med_roe*100:.1f}% nếu có, ROIC trung vị: {med_roic*100:.1f}% nếu có, Xu hướng biên LN: {margin_trend}." if med_roe is not None else "Thiếu dữ liệu tỷ suất lợi nhuận.",
+        explanation=f"ROE trung vị: {med_roe*100:.1f}% nếu có, ROIC trung vị: {med_roic*100:.1f}% nếu có, Xu hướng biên LN: {MARGIN_TREND_VIETNAMESE.get(margin_trend, margin_trend)}." if med_roe is not None else "Thiếu dữ liệu tỷ suất lợi nhuận.",
     )
 
     # 3. Durability & Stability

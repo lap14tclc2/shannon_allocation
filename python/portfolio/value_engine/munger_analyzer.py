@@ -210,12 +210,20 @@ def build_munger_financial_analysis(
     elif warnings or structural_class in (DeteriorationClassification.POSSIBLY_STRUCTURAL.value, DeteriorationClassification.POSSIBLY_CYCLICAL.value):
         vt_status = "WATCH"
 
+    from .vietnamese_presenter import (
+        get_vietnamese_classification,
+        get_vietnamese_decision,
+        get_vietnamese_deterioration,
+        get_vietnamese_status,
+        get_vietnamese_valuetrap,
+    )
+
     value_trap_assessment = {
         "status": vt_status,
         "deterioration_classification": structural_class,
         "hard_failures": hard_failures,
         "warnings": warnings,
-        "explanation": f"Đánh giá Bẫy giá trị: {vt_status}. Trạng thái cấu trúc: {structural_class}.",
+        "explanation": f"Đánh giá Bẫy giá trị: {get_vietnamese_valuetrap(vt_status)}. Trạng thái cấu trúc: {get_vietnamese_deterioration(structural_class)}.",
     }
 
     # 10. Canonical Valuation & Deterministic Required MOS Integration
@@ -281,7 +289,7 @@ def build_munger_financial_analysis(
 
     if hard_failures or vt_status == "HIGH_RISK" or compounder_class == CompounderClassification.DETERIORATING_BUSINESS.value or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value):
         decision_state = "AVOID"
-        fail_reasons = hard_failures if hard_failures else ([f"Bẫy giá trị rủi ro cao ({vt_status})"] if vt_status == "HIGH_RISK" else [f"Doanh nghiệp suy giảm cấu trúc ({structural_class})"])
+        fail_reasons = hard_failures if hard_failures else ([f"Bẫy giá trị rủi ro cao ({get_vietnamese_valuetrap(vt_status)})"] if vt_status == "HIGH_RISK" else [f"Doanh nghiệp suy giảm cấu trúc ({get_vietnamese_deterioration(structural_class)})"])
         decision_reason = f"Phát hiện rủi ro tài chính nghiêm trọng ({', '.join(fail_reasons)})."
     elif data_readiness == "INSUFFICIENT":
         decision_state = "REVIEW_BUSINESS"
@@ -304,7 +312,7 @@ def build_munger_financial_analysis(
         elif val_status != "READY" or actual_mos is None:
             decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
         elif mos_gate == "FAIL":
-            decision_reason = f"Doanh nghiệp có chất lượng tốt ({compounder_class}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+            decision_reason = f"Doanh nghiệp có chất lượng tốt ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
         else:
             decision_reason = "Doanh nghiệp ở trạng thái theo dõi, chờ mức giá có Biên an toàn phù hợp."
 

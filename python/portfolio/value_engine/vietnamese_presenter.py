@@ -101,6 +101,31 @@ CLASSIFICATION_VIETNAMESE: Dict[str, str] = {
     "INSUFFICIENT_DATA": "Chưa đủ dữ liệu để đánh giá",
 }
 
+Q7_CLASSIFICATION_VIETNAMESE: Dict[str, str] = {
+    "POSSIBLE_VALUE_TRAP": "Có dấu hiệu bẫy giá trị",
+    "CHEAP_BUT_DETERIORATING": "Giá rẻ nhưng chất lượng đang suy giảm",
+    "VALUE_WITH_SAFETY": "Cơ hội giá trị có biên an toàn",
+    "QUALITY_BUT_EXPENSIVE": "Doanh nghiệp tốt nhưng giá chưa đủ hấp dẫn",
+    "INSUFFICIENT_EVIDENCE": "Chưa đủ bằng chứng để phân loại",
+}
+
+QUALITY_TIER_VIETNAMESE: Dict[str, str] = {
+    "EXCEPTIONAL": "Xuất sắc",
+    "HIGH_QUALITY": "Chất lượng cao",
+    "INVESTABLE": "Đạt chuẩn đầu tư",
+    "WATCH": "Cần theo dõi",
+    "LOW_QUALITY": "Chất lượng thấp",
+}
+
+HARD_REJECT_REASON_VIETNAMESE: Dict[str, str] = {
+    "CIRCLE_OF_COMPETENCE_FAIL": "Vượt quá năng lực hiểu biết",
+    "DATA_INSUFFICIENT": "Chưa đủ dữ liệu lịch sử",
+    "ACCOUNTING_UNRELIABLE": "Dữ liệu kế toán không tin cậy",
+    "SOLVENCY_RISK": "Rủi ro khả năng thanh toán",
+    "UNNORMALIZABLE_EARNINGS": "Lợi nhuận không thể bình thường hóa",
+    "EXCESSIVE_DILUTION": "Pha loãng cổ phiếu quá mức",
+}
+
 VALUETRAP_VIETNAMESE: Dict[str, str] = {
     "CLEAR": "Chưa phát hiện dấu hiệu bẫy giá trị đáng kể",
     "WATCH": "Có dấu hiệu cần theo dõi",
@@ -291,6 +316,30 @@ def get_vietnamese_finding_title(code: str) -> str:
         return FINDING_TITLES[c_upper]
     # Safe fallback formatting
     return c_upper.lower().replace("_", " ").title()
+
+
+def get_vietnamese_q7_classification(code: str) -> str:
+    """Return investor-facing Vietnamese translation for Q7 opportunity classification."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return Q7_CLASSIFICATION_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
+
+
+def get_vietnamese_quality_tier(code: str) -> str:
+    """Return investor-facing Vietnamese translation for Business Quality Tier."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return QUALITY_TIER_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
+
+
+def get_vietnamese_hard_reject_reason(code: str) -> str:
+    """Return investor-facing Vietnamese translation for Hard Reject Reason."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return HARD_REJECT_REASON_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
 
 
 def get_vietnamese_classification(code: str) -> str:

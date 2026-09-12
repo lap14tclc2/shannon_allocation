@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from .archetypes import EconomicArchetype, ArchetypeOverlay, ArchetypeProfile
+from .archetypes import ArchetypeOverlay, ArchetypeProfile, EconomicArchetype
+from .vietnamese_presenter import get_vietnamese_quality_tier
 
 
 class QualityTier(str, Enum):
@@ -403,7 +404,7 @@ class QualityScorer:
             tier = QualityTier.LOW_QUALITY
 
         summary = (
-            f"Điểm Chất lượng Doanh nghiệp: {total}/100 ({tier.value}). "
+            f"Điểm Chất lượng Doanh nghiệp: {total}/100 ({get_vietnamese_quality_tier(tier.value)}). "
             f"Moat: {moat_pts}/20, Sinh lời: {ret_pts}/20, Tài chính: {fin_pts}/15, Phân bổ vốn: {cap_pts}/15."
         )
 
