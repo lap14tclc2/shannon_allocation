@@ -304,12 +304,16 @@ def build_munger_financial_analysis(
         else:
             decision_reason = "Doanh nghiệp ở trạng thái theo dõi, chờ mức giá có Biên an toàn phù hợp."
 
+    from .vietnamese_presenter import get_vietnamese_decision, get_vietnamese_status
+
     long_term_decision = {
         "state": decision_state,
+        "state_vietnamese": get_vietnamese_decision(decision_state),
         "primary_reason": decision_reason,
         "actual_mos_pct": actual_mos,
         "required_mos_pct": required_mos,
         "mos_gate": mos_gate,
+        "mos_gate_vietnamese": get_vietnamese_status(mos_gate),
         "bctc_only_pipeline": True,
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,

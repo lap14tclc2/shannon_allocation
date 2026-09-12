@@ -74,7 +74,12 @@ class FinancialFinding:
     impact: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        raw = asdict(self)
+        try:
+            from .vietnamese_presenter import enrich_finding_dict
+            return enrich_finding_dict(raw)
+        except Exception:
+            return raw
 
 
 @dataclass

@@ -3,6 +3,7 @@ import AppNav from '../components/AppNav.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
+import { formatStatus, formatDecision, formatFindingNarrative } from '../utils/vietnameseSemantics.js';
 
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
@@ -109,22 +110,20 @@ export default function BusinessPage() {
   const renderBadge = (status) => {
     const s = String(status || '').toUpperCase();
     let bg = '#6b7280';
-    let text = 'UNKNOWN';
+    let text = formatDecision(s) !== s ? formatDecision(s) : formatStatus(s);
 
     if (s === 'PASS' || s === 'CLEAR' || s === 'READY' || s === 'COMPOUNDER' || s === 'POTENTIAL_COMPOUNDER') {
-      bg = '#16a34a'; text = s;
+      bg = '#16a34a';
     } else if (s === 'WATCH' || s === 'PARTIAL' || s === 'AVERAGE_BUSINESS') {
-      bg = '#d97706'; text = s;
+      bg = '#d97706';
     } else if (s === 'FAIL' || s === 'HIGH_RISK' || s === 'DETERIORATING_BUSINESS' || s === 'WEAK_BUSINESS' || s === 'AVOID') {
-      bg = '#dc2626'; text = s;
+      bg = '#dc2626';
     } else if (s === 'WAIT_FOR_MOS') {
-      bg = '#0284c7'; text = 'WAIT FOR MOS';
+      bg = '#0284c7';
     } else if (s === 'BUY') {
-      bg = '#15803d'; text = 'BUY';
+      bg = '#15803d';
     } else if (s === 'REVIEW_BUSINESS') {
-      bg = '#ea580c'; text = 'REVIEW BUSINESS';
-    } else {
-      text = s || 'N/A';
+      bg = '#ea580c';
     }
 
     return (
@@ -135,7 +134,6 @@ export default function BusinessPage() {
         color: '#ffffff',
         fontSize: '0.82rem',
         fontWeight: 700,
-        textTransform: 'uppercase',
         display: 'inline-block',
       }}>
         {text}

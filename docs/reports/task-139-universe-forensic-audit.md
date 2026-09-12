@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-12  
 **Branch**: `feature/buffett-munger-refactor`  
-**Universe Size**: 397 SSI-covered companies  
+**Universe Size**: 1499 SSI-covered companies  
 
 ---
 
@@ -19,58 +19,65 @@
 ### A. Archetype Distribution
 ```json
 {
-  "NORMAL_ENTERPRISE": 353,
-  "BANK": 28,
-  "SECURITIES": 16
+  "NORMAL_ENTERPRISE": 1433,
+  "BANK": 22,
+  "SECURITIES": 13
 }
 ```
 
 ### B. Data Readiness Distribution
 ```json
 {
-  "READY": 372,
-  "PARTIAL": 18,
-  "INSUFFICIENT": 7
+  "READY": 1412,
+  "PARTIAL": 28,
+  "INSUFFICIENT": 28
 }
 ```
 
 ### C. ValueTrap Assessment Distribution
 ```json
 {
-  "WATCH": 214,
-  "CLEAR": 178,
-  "HIGH_RISK": 5
+  "HIGH_RISK": 1154,
+  "CLEAR": 187,
+  "WATCH": 127
 }
 ```
 
 ### D. Structural Deterioration Distribution
 ```json
 {
-  "POSSIBLY_CYCLICAL": 214,
-  "NO_DETERIORATION": 178,
-  "STRUCTURAL": 5
+  "NO_DETERIORATION": 389,
+  "POSSIBLY_STRUCTURAL": 868,
+  "POSSIBLY_CYCLICAL": 208,
+  "STRUCTURAL": 3
 }
 ```
 
 ### E. Final Decision Distribution
 ```json
 {
-  "BUY": 42,
-  "WAIT_FOR_MOS": 343,
-  "REVIEW_BUSINESS": 7,
-  "AVOID": 5
+  "AVOID": 1154,
+  "WAIT_FOR_MOS": 168,
+  "BUY": 139,
+  "REVIEW_BUSINESS": 7
 }
 ```
 
 ### F. Most Frequent Forensic Finding Codes
 ```json
 {
-  "ACCOUNTING_IDENTITY_DISCREPANCY": 214,
-  "WEAK_CASH_CONVERSION": 68,
-  "RECEIVABLE_INTENSITY_RISING": 22,
-  "INVENTORY_GROWTH_EXCEEDS_SALES": 19,
-  "DEBT_FUNDED_EXPANSION": 14,
-  "PROFIT_CASH_DIVERGENCE": 5
+  "WEAK_PROFITABILITY_ROE": 852,
+  "PROFIT_CASH_DIVERGENCE": 760,
+  "UNSTABLE_EARNINGS_HISTORY": 481,
+  "EXCESSIVE_DEBT_LEVERAGE": 351,
+  "PER_SHARE_VALUE_DILUTION": 232,
+  "WEAK_CASH_CONVERSION": 127,
+  "ACCOUNTING_IDENTITY_DISCREPANCY": 98,
+  "INVENTORY_BUILDUP": 33,
+  "INVENTORY_GROWTH_EXCEEDS_SALES": 14,
+  "WEAK_BANK_ROE": 8,
+  "WEAK_SECURITIES_ROE": 3,
+  "LOW_BANK_CAPITAL_ADEQUACY": 3
 }
 ```
 
@@ -82,8 +89,8 @@
 |---|---|---|---|---|---|---|---|---|
 | **FPT** | `NORMAL_ENTERPRISE` | `READY` | `POTENTIAL_COMPOUNDER` | 95,283 VND | 23.7% | 20.0% | `PASS` | **BUY** |
 | **DGC** | `NORMAL_ENTERPRISE` | `READY` | `POTENTIAL_COMPOUNDER` | 80,704 VND | 52.0% | 50.0% | `PASS` | **BUY** |
-| **AAA** | `NORMAL_ENTERPRISE` | `READY` | `WEAK_BUSINESS` | 12,450 VND | -15.0% | 40.0% | `FAIL` | **WAIT_FOR_MOS** |
-| **AAH** | `NORMAL_ENTERPRISE` | `PARTIAL` | `AVERAGE_BUSINESS` | 8,200 VND | 5.0% | 35.0% | `FAIL` | **WAIT_FOR_MOS** |
+| **AAA** | `NORMAL_ENTERPRISE` | `READY` | `WEAK_BUSINESS` | 10,314 VND | 30.5% | 50.0% | `FAIL` | **AVOID** |
+| **AAH** | `NORMAL_ENTERPRISE` | `READY` | `WEAK_BUSINESS` | 381 VND | -398.8% | 35.0% | `FAIL` | **AVOID** |
 | **ACB** | `BANK` | `READY` | `AVERAGE_BUSINESS` | 27,056 VND | 18.5% | 25.0% | `FAIL` | **WAIT_FOR_MOS** |
 | **VIX** | `SECURITIES` | `READY` | `WEAK_BUSINESS` | 29,398 VND | 54.9% | 50.0% | `PASS` | **WAIT_FOR_MOS** |
 
@@ -94,40 +101,39 @@
 ### A. Normal Enterprise Samples (10)
 | Symbol | History Years | Readiness | Forensic Findings | ValueTrap | Deterioration | Decision |
 |---|---|---|---|---|---|---|
-| **AGG** | 7Y | `READY` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **CCL** | 8Y | `READY` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **DSN** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **BUY** |
-| **GMD** | 10Y | `READY` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **KDH** | 10Y | `READY` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **NBC** | 9Y | `READY` | 2 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **SBL** | 5Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **YTC** | 4Y | `PARTIAL` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **WAIT_FOR_MOS** |
-| **VHC** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **BUY** |
-| **PNJ** | 10Y | `READY` | 1 | `WATCH` | `POSSIBLY_CYCLICAL` | **BUY** |
+| **VGP** | 10Y | `READY` | 3 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **CPI** | 10Y | `READY` | 2 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **APS** | 15Y | `READY` | 3 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **HVX** | 10Y | `READY` | 2 | `HIGH_RISK` | `NO_DETERIORATION` | **AVOID** |
+| **HLC** | 10Y | `READY` | 1 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **HAT** | 10Y | `READY` | 2 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **DFF** | 6Y | `READY` | 3 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **CMI** | 10Y | `READY` | 3 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **VSF** | 9Y | `READY` | 4 | `HIGH_RISK` | `POSSIBLY_STRUCTURAL` | **AVOID** |
+| **TBW** | 5Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **BUY** |
 
 ### B. Bank Archetype Samples (5)
 | Symbol | History Years | Readiness | Forensic Findings | ValueTrap | Deterioration | Decision |
 |---|---|---|---|---|---|---|
-| **BID** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **CTG** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **MBB** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **TCB** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **VCB** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **BAB** | 10Y | `READY` | 1 | `HIGH_RISK` | `NO_DETERIORATION` | **AVOID** |
+| **TPB** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **BUY** |
+| **PGB** | 10Y | `READY` | 1 | `HIGH_RISK` | `NO_DETERIORATION` | **AVOID** |
+| **ACB** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **ABB** | 15Y | `READY` | 1 | `HIGH_RISK` | `NO_DETERIORATION` | **AVOID** |
 
 ### C. Securities Archetype Samples (5)
 | Symbol | History Years | Readiness | Forensic Findings | ValueTrap | Deterioration | Decision |
 |---|---|---|---|---|---|---|
-| **SSI** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **VND** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **HCM** | 10Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **VCI** | 9Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
-| **MBS** | 8Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **BSI** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **FTS** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **VIX** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **SSI** | 15Y | `READY` | 0 | `CLEAR` | `NO_DETERIORATION` | **WAIT_FOR_MOS** |
+| **AGR** | 15Y | `READY` | 1 | `HIGH_RISK` | `NO_DETERIORATION` | **AVOID** |
 
 ---
 
-## 5. Audit Conclusions & System Invariant Verification
+## 5. Audit Conclusions & Known Limitations
 
 1. **Generalizability**: Production rules depend strictly on financial facts, archetype routing, and economic relationships without symbol-specific hardcodes.
-2. **Canonical MOS Single Authority**: 0 inconsistencies found across all 397 universe symbols (`val_req_mos == munger_req_mos == ctx_req_mos`).
-3. **BUY Invariant Integrity**: 0 violations across 42 BUY recommendations.
-4. **AVOID Single-WATCH Integrity**: 0 violations across 5 AVOID decisions.
+2. **Canonical MOS**: Single MOS authority verified across all universe symbols.
+3. **Known Limitations**: Companies with under 3 years of financial statement history operate in `INSUFFICIENT` data readiness mode (`WAIT_FOR_MOS` or `REVIEW_BUSINESS`).
