@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
+import ThesisChallengeSection from '../components/ThesisChallengeSection.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
 import { formatStatus, formatDecision, formatFindingNarrative } from '../utils/vietnameseSemantics.js';
@@ -565,36 +566,8 @@ export default function BusinessPage() {
                   <p style={{ marginTop: '12px', marginBottom: 0, fontSize: '0.88rem', color: '#6b7280' }}>{normPower.explanation}</p>
                 </section>
 
-                {/* 6. SECONDARY QUALITATIVE SECTION (Part M) */}
-                <section className="card qualitative-secondary-card" style={{ padding: '20px', background: '#f9fafb', border: '1px dashed #d1d5db' }}>
-                  <h3 style={{ fontSize: '1.05rem', marginTop: 0, marginBottom: '8px', color: '#4b5563' }}>
-                    Dấu Vết Định Tính Bổ Sung (Qualitative Dimensions)
-                  </h3>
-                  <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: '0 0 12px 0' }}>
-                    <em>* LƯU Ý: BCTC không thể chứng minh các chiều định tính bên dưới (Vùng hiểu biết, Moat, Ban quản trị). Dữ liệu UNKNOWN ở đây KHÔNG dùng làm cổng chặn trong hệ thống đánh giá BCTC Munger thuần túy.</em>
-                  </p>
-                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
-                    <div>Vùng hiểu biết: <strong>UNKNOWN</strong></div>
-                    <div>Moat / Lợi thế cạnh tranh: <strong>UNKNOWN</strong></div>
-                    <div>Liêm chính ban quản trị: <strong>UNKNOWN</strong></div>
-                  </div>
-                </section>
-
-                {/* 7. MUNGER PRE-COMMITMENT CHECKLIST */}
-                {data.munger_checklist && (
-                  <section className="card munger-checklist-card" style={{ padding: '20px' }}>
-                    <div className="card-header" style={{ marginBottom: '12px' }}>
-                      <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Checklist Phản Phản Biện Munger (Pre-Commitment)</h3>
-                    </div>
-                    <ul className="checklist-list" style={{ paddingLeft: '20px', margin: 0, lineHeight: 1.8 }}>
-                      {data.munger_checklist.map((item, idx) => (
-                        <li key={item.key}>
-                          <strong>{idx + 1}. {item.question}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
+                {/* 6. AUTOMATED MUNGER INVESTMENT THESIS CHALLENGE */}
+                <ThesisChallengeSection challengeData={munger.thesis_challenge} decision={decision} />
               </div>
             )}
           </div>

@@ -119,6 +119,7 @@
 | [TASK-20260912-138](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-138-business-workspace-ai-export-button.md) | Business Workspace AI Export Button | completed | high | 2026-09-12 |
 | [TASK-20260912-139](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-139-forensic-correctness-and-canonical-mos-authority.md) | Forensic Correctness + Canonical MOS Authority Audit | completed | high | 2026-09-12 |
 | [TASK-20260912-140](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-140-vietnamese-semantic-presentation-layer.md) | Vietnamese Semantic Presentation Layer | completed | high | 2026-09-12 |
+| [TASK-20260912-141](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-141-automated-investment-thesis-challenge.md) | Automated Munger Investment Thesis Challenge Engine | completed | high | 2026-09-12 |
 
 
 

@@ -319,6 +319,30 @@ def build_munger_financial_analysis(
         "compounder_classification": compounder_class,
     }
 
+    # 12. Automated Investment Thesis Challenge Engine (Task 141)
+    from .munger_thesis_challenge import run_thesis_challenge_analysis
+    temp_payload = {
+        "symbol": ticker,
+        "archetype": archetype_str,
+        "data_readiness": data_readiness,
+        "all_findings": [f.to_dict() if hasattr(f, "to_dict") else f for f in all_findings],
+        "hard_financial_failures": hard_failures,
+        "financial_warnings": warnings,
+        "value_trap_assessment": value_trap_assessment,
+        "normalized_earning_power": normalized_earning_power,
+        "overall_financial_quality": overall_quality,
+        "long_term_decision": long_term_decision,
+        "valuation": valuation_analysis,
+        "profitability_analysis": prof_res.to_dict() if hasattr(prof_res, "to_dict") else prof_res,
+        "debt_liquidity": debt_res.to_dict() if hasattr(debt_res, "to_dict") else debt_res,
+        "compounder_classification": compounder_class,
+    }
+    thesis_challenge_obj = run_thesis_challenge_analysis(
+        munger_analysis=temp_payload,
+        valuation_data=valuation_analysis,
+    )
+    thesis_challenge_dict = thesis_challenge_obj.to_dict()
+
     return FinancialBusinessAnalysis(
         symbol=ticker,
         archetype=archetype_str,
@@ -346,6 +370,7 @@ def build_munger_financial_analysis(
         value_trap_assessment=value_trap_assessment,
         valuation=valuation_analysis,
         long_term_decision=long_term_decision,
+        thesis_challenge=thesis_challenge_dict,
         compounder_classification=compounder_class,
         overall_financial_quality=overall_quality,
         hard_financial_failures=hard_failures,

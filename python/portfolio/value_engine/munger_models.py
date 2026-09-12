@@ -135,6 +135,7 @@ class FinancialBusinessAnalysis:
     value_trap_assessment: Dict[str, Any] = field(default_factory=dict)
     valuation: Dict[str, Any] = field(default_factory=dict)
     long_term_decision: Dict[str, Any] = field(default_factory=dict)
+    thesis_challenge: Dict[str, Any] = field(default_factory=dict)
 
     compounder_classification: str = CompounderClassification.INSUFFICIENT_DATA.value
     overall_financial_quality: Dict[str, str] = field(default_factory=dict)  # dimension_name -> PASS/WATCH/FAIL/UNKNOWN/NOT_APPLICABLE
