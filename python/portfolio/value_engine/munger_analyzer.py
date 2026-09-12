@@ -350,32 +350,72 @@ def build_munger_financial_analysis(
         decision_state = "AVOID"
         decision_reason = "Doanh nghiệp có chất lượng tài chính yếu, không đạt tiêu chí tích sản dài hạn."
     elif val_status != "READY" or actual_mos is None:
-        decision_state = "WAIT_FOR_MOS"
+        decision_state = "REVIEW_BUSINESS"
         decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
     elif mos_gate == "PASS":
-        # Munger Invariant: MOS is a PRICE condition, Quality is a BUSINESS condition.
-        # High MOS alone CANNOT override forensic warnings to create a false BUY!
+        # Munger Invariant: When MOS passes (actual_mos >= required_mos), MOS gate is PASS.
+        # NEVER call it "WAIT_FOR_MOS" when MOS is already passed.
         if has_forensic_warnings or vt_status == "WATCH" or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
-            decision_state = "WAIT_FOR_MOS"
+            decision_state = "CONDITIONAL_BUY"
             warn_list = [get_vietnamese_finding_title(w) for w in warnings if w in ("WEAK_CASH_CONVERSION", "RECEIVABLES_GROW_FASTER_THAN_REVENUE", "ACCOUNTING_IDENTITY_DISCREPANCY")]
             warn_desc = f", cảnh báo: {', '.join(warn_list)}" if warn_list else ""
             decision_reason = (
-                f"Mặc dù Biên an toàn tính toán hấp dẫn (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
-                f"nhưng phát hiện rủi ro phân kỳ dòng tiền / chất lượng tài chính cần thận trọng{warn_desc} "
-                f"(độ biến động LN: {earnings_volatility*100:.1f}%). Chưa đạt chuẩn mua an toàn theo nguyên lý Munger."
+                f"Biên an toàn đạt yêu cầu (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
+                f"nhưng phát hiện rủi ro phân kỳ dòng tiền / chất lượng tài chính cần theo dõi thêm{warn_desc} "
+                f"(độ biến động LN: {earnings_volatility*100:.1f}%). Khuyến nghị mua có điều kiện / thận trọng."
             )
         elif bear_iv is not None and curr_price is not None and curr_price > bear_iv:
-            decision_state = "WAIT_FOR_MOS"
+            decision_state = "CONDITIONAL_BUY"
             decision_reason = (
                 f"Mức giá hiện tại đạt Biên an toàn cơ sở (MOS {actual_mos:.1f}%), nhưng thị giá ({curr_price:,.0f} đ) "
-                f"vẫn cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ). Cần theo dõi thêm để bảo vệ vốn tuyệt đối."
+                f"vẫn cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ). Có thể mua có điều kiện và theo dõi sát kịch bản thận trọng."
             )
         else:
             decision_state = "BUY"
-            decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+            decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%). Đạt chuẩn mua tích sản."
     else:  # mos_gate == "FAIL"
         decision_state = "WAIT_FOR_MOS"
-        decision_reason = f"Doanh nghiệp có chất lượng ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%)."
+        decision_reason = f"Doanh nghiệp có chất lượng ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%). Kiên nhẫn chờ đạt biên an toàn."
+
+    # Machine-readable Decision Trace
+    blocking_reasons: List[str] = []
+    supporting_evidence: List[str] = []
+    critical_risks: List[str] = []
+
+    if mos_gate == "FAIL":
+        blocking_reasons.append(f"Biên an toàn thực tế ({actual_mos:.1f}%) chưa đạt yêu cầu ({required_mos:.1f}%)")
+    elif mos_gate == "PASS":
+        supporting_evidence.append(f"Biên an toàn thực tế ({actual_mos:.1f}%) đạt yêu cầu ({required_mos:.1f}%)")
+
+    if hard_failures:
+        for h in hard_failures:
+            critical_risks.append(get_vietnamese_finding_title(h))
+            blocking_reasons.append(f"Thất bại tài chính: {get_vietnamese_finding_title(h)}")
+
+    if warnings:
+        for w in warnings:
+            critical_risks.append(get_vietnamese_finding_title(w))
+
+    if med_roe is not None and med_roe >= 0.15:
+        supporting_evidence.append(f"ROE trung vị đạt {(med_roe*100):.1f}%")
+    if pat_cagr is not None and pat_cagr >= 0.10:
+        supporting_evidence.append(f"Tăng trưởng LNST CAGR đạt {(pat_cagr*100):.1f}%/năm")
+
+    quality_gate_status = "PASS" if not hard_failures and compounder_class in (CompounderClassification.COMPOUNDER.value, CompounderClassification.POTENTIAL_COMPOUNDER.value) else ("WATCH" if warnings else "FAIL")
+
+    decision_trace = {
+        "decision": decision_state,
+        "decision_vietnamese": get_vietnamese_decision(decision_state),
+        "mos_gate": mos_gate,
+        "mos_gate_vietnamese": get_vietnamese_status(mos_gate),
+        "quality_gate": quality_gate_status,
+        "quality_gate_vietnamese": get_vietnamese_status(quality_gate_status),
+        "value_trap_gate": vt_status,
+        "value_trap_gate_vietnamese": get_vietnamese_valuetrap(vt_status),
+        "blocking_reasons": blocking_reasons,
+        "supporting_evidence": supporting_evidence,
+        "critical_risks": critical_risks,
+    }
 
     long_term_decision = {
         "state": decision_state,
@@ -389,6 +429,7 @@ def build_munger_financial_analysis(
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,
         "has_forensic_warnings": has_forensic_warnings,
+        "decision_trace": decision_trace,
     }
 
     # 12. Automated Investment Thesis Challenge Engine (Task 141)
