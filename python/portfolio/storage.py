@@ -329,6 +329,44 @@ class PortfolioStore:
         out: dict[str, dict] = {}
         for row in rows:
             out.setdefault(str(row["symbol"]).upper(), dict(row))
+
+        # Fallback to PostgreSQL catalog for symbols missing in local sqlite
+        missing = [s for s in symbol_list if s not in out]
+        if missing:
+            try:
+                from portfolio.finance_catalog import _schema_connection, FINANCE_SCHEMA
+                with _schema_connection(FINANCE_SCHEMA) as db:
+                    ph = ",".join("%s" for _ in missing)
+                    pg_sql = f"""
+                        SELECT DISTINCT ON (symbol) symbol, trading_date, open, high, low, close, volume
+                        FROM market_prices
+                        WHERE symbol IN ({ph})
+                    """
+                    if on_or_before:
+                        pg_sql += f" AND trading_date <= '{on_or_before}'"
+                    pg_sql += " ORDER BY symbol, trading_date DESC"
+                    pg_rows = db.execute(pg_sql, tuple(missing)).fetchall()
+                    if pg_rows:
+                        upsert_rows = []
+                        for r in pg_rows:
+                            sym = str(r["symbol"]).upper()
+                            p_row = {
+                                "symbol": sym,
+                                "trading_date": str(r["trading_date"]),
+                                "open": float(r["open"]) if r.get("open") is not None else float(r["close"]),
+                                "high": float(r["high"]) if r.get("high") is not None else float(r["close"]),
+                                "low": float(r["low"]) if r.get("low") is not None else float(r["close"]),
+                                "close": float(r["close"]),
+                                "volume": float(r["volume"]) if r.get("volume") is not None else 0.0,
+                                "source": "postgres_catalog",
+                            }
+                            upsert_rows.append(p_row)
+                            out[sym] = p_row
+                        if upsert_rows:
+                            self.upsert_market_prices(upsert_rows)
+            except Exception:
+                pass
+
         return out
 
     def price_history(self, symbol: str, limit: int = 252, end: str | None = None) -> list[dict]:

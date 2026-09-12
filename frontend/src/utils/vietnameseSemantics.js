@@ -13,8 +13,9 @@ export const STATUS_MAP = {
   FAIL: 'Không đạt',
   UNKNOWN: 'Chưa xác định',
   NOT_APPLICABLE: 'Không áp dụng',
-  MISSING: 'Thiếu dữ liệu',
-  CLEAR: 'Chưa phát hiện rủi ro đáng kể',
+  MISSING: 'Chưa đủ dữ liệu',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu',
+  CLEAR: 'Chưa thấy dấu hiệu bẫy giá trị đáng kể',
   HIGH_RISK: 'Rủi ro cao',
   INFO: 'Thông tin',
   LOW: 'Rủi ro thấp',
@@ -26,7 +27,48 @@ export const STATUS_MAP = {
   INSUFFICIENT: 'Chưa đủ dữ liệu',
   RESILIENT: 'Khả năng chống chịu tốt',
   VULNERABLE: 'Dễ bị tổn thương',
+  UNSAFE: 'Dưới mức an toàn',
+  DEPLETED: 'Cạn kiệt',
   EXTREME: 'Cực đoan',
+  AVAILABLE: 'Có dữ liệu',
+  UNAVAILABLE: 'Chưa lấy được dữ liệu',
+};
+
+export const QUALITY_TIER_MAP = {
+  EXCEPTIONAL: 'Xuất sắc',
+  HIGH_QUALITY: 'Chất lượng cao',
+  INVESTABLE: 'Có thể đầu tư',
+  WATCH: 'Cần theo dõi',
+  LOW_QUALITY: 'Chất lượng thấp',
+  REVIEW_BUSINESS: 'Cần xem xét thêm',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu',
+  UNKNOWN: 'Chưa xác định',
+};
+
+export const FORTRESS_STATUS_MAP = {
+  SAFE: 'An toàn',
+  VULNERABLE: 'Dễ tổn thương',
+  UNSAFE: 'Dưới mức an toàn',
+  DEPLETED: 'Cạn kiệt',
+  UNKNOWN: 'Chưa cấu hình',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu',
+};
+
+export const LIABILITY_STATUS_MAP = {
+  ZERO_DEBT: 'Không có nợ ngắn hạn',
+  MANAGEABLE: 'Trong tầm kiểm soát',
+  HIGH_PRESSURE: 'Áp lực nợ cao',
+  CRITICAL: 'Áp lực nợ nghiêm trọng',
+  UNKNOWN: 'Chưa xác định',
+};
+
+export const SOURCE_MAP = {
+  PRIMARY_SSI: 'Nguồn BCTC: SSI',
+  SSI: 'Nguồn BCTC: SSI',
+  DERIVED: 'Tổng hợp chuẩn hóa',
+  POSTGRES_CATALOG: 'Cơ sở dữ liệu QPort',
+  VNDIRECT: 'VNDirect',
+  MOCK: 'Dữ liệu thử nghiệm',
 };
 
 export const DECISION_MAP = {
@@ -34,7 +76,7 @@ export const DECISION_MAP = {
   BUY_MORE: 'Có thể mua thêm',
   HOLD: 'Tiếp tục nắm giữ',
   HOLD_NO_NEW_CAPITAL: 'Tiếp tục nắm giữ, chưa phân bổ thêm vốn',
-  WAIT_FOR_MOS: 'Chờ biên an toàn',
+  WAIT_FOR_MOS: 'Chờ đạt biên an toàn',
   BUILD_RESERVE_FIRST: 'Ưu tiên củng cố quỹ dự phòng trước',
   REVIEW_BUSINESS: 'Cần xem xét thêm dữ liệu doanh nghiệp',
   BUSINESS_REVIEW_INCOMPLETE: 'Đánh giá doanh nghiệp chưa hoàn tất',
@@ -53,14 +95,15 @@ export const CLASSIFICATION_MAP = {
   WEAK_BUSINESS: 'Chất lượng doanh nghiệp còn yếu',
   DETERIORATING_BUSINESS: 'Nền tảng kinh doanh đang suy yếu',
   INSUFFICIENT_DATA: 'Chưa đủ dữ liệu để đánh giá',
+  UNKNOWN: 'Chưa xác định',
 };
 
 export const VALUETRAP_MAP = {
-  CLEAR: 'Chưa phát hiện dấu hiệu bẫy giá trị đáng kể',
+  CLEAR: 'Chưa thấy dấu hiệu bẫy giá trị đáng kể',
   WATCH: 'Có dấu hiệu cần theo dõi',
   HIGH_RISK: 'Nguy cơ bẫy giá trị cao',
-  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu để đánh giá',
-  UNPROTECTED: 'Kịch bản thận trọng chưa được bảo vệ',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu',
+  UNPROTECTED: 'Chưa được bảo vệ trong kịch bản thận trọng',
 };
 
 export const DETERIORATION_MAP = {
@@ -195,6 +238,39 @@ export function formatFindingTitle(code) {
     return uCode.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
   return uCode;
+}
+
+export function formatQualityTier(code) {
+  if (!code) return 'Chưa xác định';
+  const c = String(code).toUpperCase().trim();
+  return QUALITY_TIER_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatFortressStatus(status) {
+  if (!status) return 'Chưa cấu hình';
+  const s = String(status).toUpperCase().trim();
+  return FORTRESS_STATUS_MAP[s] || formatStatus(s);
+}
+
+export function formatLiabilityStatus(status) {
+  if (!status) return 'Chưa xác định';
+  const s = String(status).toUpperCase().trim();
+  return LIABILITY_STATUS_MAP[s] || (s.includes('_') ? s.toLowerCase().replace(/_/g, ' ') : s);
+}
+
+export function formatSource(src) {
+  if (!src) return 'Nguồn BCTC: SSI';
+  const s = String(src).toUpperCase().trim();
+  return SOURCE_MAP[s] || `Nguồn: ${src}`;
+}
+
+export function formatSafeText(val, fallback = 'Chưa đủ dữ liệu') {
+  if (val === null || val === undefined) return fallback;
+  const str = String(val).trim();
+  if (['null', 'undefined', 'nullx', 'NaN', 'N/A', 'UNKNOWN', '—', ''].includes(str)) {
+    return fallback;
+  }
+  return str;
 }
 
 export function formatMetricName(code) {

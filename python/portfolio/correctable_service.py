@@ -967,6 +967,8 @@ class CorrectablePortfolioService(PortfolioService):
                 symbol_types.setdefault(ev.symbol, set()).add(ev.event_type)
 
         positions = []
+        valued_positions = []
+        unvalued_positions = []
         for r in rows:
             if (r.get("shares") or 0) <= 0:
                 continue
@@ -976,32 +978,63 @@ class CorrectablePortfolioService(PortfolioService):
                 for et in symbol_types.get(sym, set())
             )
             invested = float(r.get("cost_value") or 0.0)
-            pnl = r.get("unrealized_pnl")
+            m_price = r.get("price")
+            m_val = r.get("market_value") if m_price is not None else None
+            pnl = r.get("unrealized_pnl") if m_price is not None else None
             pnl_pct = None
             if pnl is not None and invested > 0:
                 pnl_pct = round(pnl / invested * 100, 2)
-            positions.append({
+
+            pos_item = {
                 **r,
                 "quantity": r.get("shares"),
                 "invested_value": invested,
-                "market_price": r.get("price"),
+                "market_price": m_price,
+                "market_value": m_val,
+                "unrealized_pnl": pnl,
                 "unrealized_pnl_pct": pnl_pct,
                 "has_complex_ledger": has_complex,
-            })
+                "price_status": "AVAILABLE" if m_price is not None else "UNAVAILABLE",
+            }
+            positions.append(pos_item)
+            if m_price is not None:
+                valued_positions.append(pos_item)
+            else:
+                unvalued_positions.append(pos_item)
 
-        has_market_prices = any(p.get("price") is not None for p in positions)
+        valued_count = len(valued_positions)
+        unvalued_count = len(unvalued_positions)
+        total_count = len(positions)
+        all_valued = (unvalued_count == 0) and (total_count > 0)
+
         total_invested = sum(p["invested_value"] for p in positions)
-        total_market = equity_value if has_market_prices else 0.0
+        valued_invested = sum(p["invested_value"] for p in valued_positions)
+        unvalued_invested = sum(p["invested_value"] for p in unvalued_positions)
+        valued_market_val = sum(p["market_value"] for p in valued_positions if p.get("market_value") is not None)
+
         cash_reserve = float(self.store.get_meta("cash_reserve_vnd") or 0)
 
-        portfolio_value = (total_market if has_market_prices else total_invested) + cash_reserve
+        # Total portfolio value:
+        # If all positions valued: valued_market_val + cash_reserve
+        # If some positions unvalued: valued_market_val + unvalued_invested + cash_reserve
+        determined_portfolio_value = valued_market_val + cash_reserve
+        estimated_portfolio_value = valued_market_val + unvalued_invested + cash_reserve
+
         summary = {
             "total_invested": total_invested,
-            "total_market_value": total_market if has_market_prices else None,
+            "valued_invested": valued_invested,
+            "unvalued_invested": unvalued_invested,
+            "total_market_value": valued_market_val if valued_count > 0 else None,
+            "valued_market_value": valued_market_val,
             "cash_reserve": cash_reserve,
-            "total_portfolio_value": portfolio_value,
-            "unrealized_pnl": round(total_market - total_invested, 2) if has_market_prices and total_invested > 0 else None,
-            "unrealized_pnl_pct": round((total_market - total_invested) / total_invested * 100, 2) if has_market_prices and total_invested > 0 else None,
+            "total_portfolio_value": estimated_portfolio_value if (total_count > 0 or cash_reserve > 0) else 0.0,
+            "determined_portfolio_value": determined_portfolio_value,
+            "unrealized_pnl": round(valued_market_val - valued_invested, 2) if valued_count > 0 and valued_invested > 0 else None,
+            "unrealized_pnl_pct": round((valued_market_val - valued_invested) / valued_invested * 100, 2) if valued_count > 0 and valued_invested > 0 else None,
+            "valued_positions_count": valued_count,
+            "unvalued_positions_count": unvalued_count,
+            "total_positions_count": total_count,
+            "all_positions_valued": all_valued,
         }
         return {"ok": True, "positions": positions, "cash_reserve": cash_reserve, "summary": summary}
 

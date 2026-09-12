@@ -133,6 +133,7 @@
 | [TASK-20260912-152](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-152-corporate-action-normalization.md) | Corporate Action Normalization for Dividend and Stock Split | completed | high | 2026-09-12 |
 | [TASK-20260912-153](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-153-qport-terminal-user-guide.md) | Improve QPort Terminal User Guide | completed | high | 2026-09-12 |
 | [TASK-20260912-154](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-154-deep-munger-financial-decision.md) | Deep Audit & Refactor Munger BCTC-Only Decision Engine | completed | high | 2026-09-12 |
+| [TASK-20260912-155](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-155-terminal-semantic-data-completeness.md) | Terminal Semantic + Portfolio Data Completeness Audit | completed | high | 2026-09-12 |
 
 
 

@@ -17,6 +17,7 @@ import {
   POST_ACTION_WEIGHT_LABEL_VI,
   reasonCodeVi,
 } from '../lib/allocationLabels.js';
+import { formatQualityTier, formatStatus } from '../utils/vietnameseSemantics.js';
 import '../valuation-page.css';
 import '../allocation-page.css';
 
@@ -204,7 +205,7 @@ function WatchlistCard({ opportunity, onViewValuation }) {
       </div>
       <div className="allocation-opportunity-body">
         <div className="allocation-opp-grid">
-          <span>Chất lượng</span><strong>{opportunity.eligibility.quality_tier || 'WATCH'}</strong>
+          <span>Chất lượng</span><strong>{formatQualityTier(opportunity.eligibility.quality_tier)}</strong>
           <span>MOS hiện tại</span><strong data-sensitive>{opportunity.eligibility.actual_mos_pct != null ? `${opportunity.eligibility.actual_mos_pct.toFixed(1)}%` : '—'}</strong>
           <span>MOS yêu cầu</span><strong data-sensitive>{opportunity.eligibility.required_mos_pct != null ? `${opportunity.eligibility.required_mos_pct.toFixed(1)}%` : '—'}</strong>
           <span>Phù hợp danh mục</span><strong>{FIT_LABEL_VI[fit.fit] || fit.fit}</strong>
@@ -515,7 +516,7 @@ export default function AllocationPage({ allocation: initialAllocation = null, l
                         return (
                           <tr key={cand.symbol}>
                             <td className="allocation-symbol">{cand.symbol}</td>
-                            <td>{cand.eligibility.quality_tier || 'LOW_QUALITY'}</td>
+                            <td>{formatQualityTier(cand.eligibility.quality_tier)}</td>
                             <td className="error">{rejects}</td>
                           </tr>
                         );
