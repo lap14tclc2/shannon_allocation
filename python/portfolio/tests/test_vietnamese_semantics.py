@@ -79,7 +79,7 @@ def test_finding_narrative_generator():
         period="Giai đoạn FY2021–FY2025",
     )
 
-    assert narrative["tieu_de"] == "Khoản phải thu tăng nhanh hơn doanh thu"
+    assert narrative["tieu_de"] == "Khả năng thu hồi tiền bán hàng"
     assert "doanh thu" in narrative["dieu_gi_dang_xay_ra"].lower() or "phải thu" in narrative["dieu_gi_dang_xay_ra"].lower()
     assert narrative["xu_huong_keo_dai"] == "Giai đoạn FY2021–FY2025"
     assert narrative["muc_do_nghiem_trong"] == "Cần theo dõi"
