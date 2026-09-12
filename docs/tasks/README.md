@@ -131,6 +131,7 @@
 | [TASK-20260912-150](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-150-terminal-portfolio-position-management.md) | Terminal Portfolio Position Management | completed | high | 2026-09-12 |
 | [TASK-20260912-151](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-151-terminal-position-modal-ux.md) | Terminal Position Modal Input Colors & Symbol Suggest Search | completed | high | 2026-09-12 |
 | [TASK-20260912-152](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-152-corporate-action-normalization.md) | Corporate Action Normalization for Dividend and Stock Split | completed | high | 2026-09-12 |
+| [TASK-20260912-153](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-153-qport-terminal-user-guide.md) | Improve QPort Terminal User Guide | completed | high | 2026-09-12 |
 
 
 
