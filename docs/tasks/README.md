@@ -140,8 +140,5 @@
 | [TASK-20260912-159](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-159-terminal-decision-integrity.md) | Audit & Fix QPort Buffett Terminal — Portfolio Decision Integrity | completed | high | 2026-09-12 |
 | [TASK-20260912-160](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-160-munger-deep-financial-analysis.md) | Deep Munger Financial Analysis — Upgrade QPort Buffett Terminal | completed | high | 2026-09-12 |
 | [TASK-20260912-161](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-161-global-munger-financial-decision-audit.md) | Global Audit & Fix — Munger Financial Decision Engine for All Symbols | completed | high | 2026-09-12 |
-
-
-
-
+| [TASK-20260912-162](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-162-munger-liquidity-gate-and-semantic-audit.md) | Munger Stock Screening — Liquidity Gate + Full Semantic UI Audit | verified | high | 2026-09-12 |
 

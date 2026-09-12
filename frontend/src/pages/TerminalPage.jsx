@@ -798,23 +798,36 @@ function TerminalCandidatesSection() {
             }}
           >
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 6 }}>
                 <div>
                   <span style={{ fontSize: 18, fontWeight: 800 }}>{c.symbol}</span>
                   <div style={{ fontSize: 12, color: 'var(--text-muted, #718096)' }}>{c.company_name}</div>
                 </div>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '3px 8px',
-                    borderRadius: 6,
-                    background: c.candidate_tier_code === 'EXCEPTIONAL' ? 'rgba(72,187,120,0.15)' : 'rgba(49,130,206,0.15)',
-                    color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#2f855a' : '#2b6cb0',
-                  }}
-                >
-                  {c.quality_tier_vi}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: c.candidate_tier_code === 'EXCEPTIONAL' ? 'rgba(72,187,120,0.15)' : 'rgba(49,130,206,0.15)',
+                      color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#2f855a' : '#2b6cb0',
+                    }}
+                  >
+                    {c.quality_tier_vi}
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#f0fdf4' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#eff6ff' : '#fffbeb'),
+                    color: c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#166534' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#1e40af' : '#92400e'),
+                    border: `1px solid ${c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#bbf7d0' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#bfdbfe' : '#fef08a')}`,
+                  }}>
+                    {c.liquidity?.classification_vi || 'Thanh khoản'}
+                  </span>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, margin: '10px 0' }}>

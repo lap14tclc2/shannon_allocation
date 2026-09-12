@@ -21,6 +21,7 @@ export default function BusinessPage() {
   const [candidatesData, setCandidatesData] = useState(null);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [selectedCandidateTier, setSelectedCandidateTier] = useState('all');
+  const [selectedLiquidityFilter, setSelectedLiquidityFilter] = useState('all');
   const [showAllCandidates, setShowAllCandidates] = useState(false);
 
   useEffect(() => {
@@ -32,13 +33,13 @@ export default function BusinessPage() {
       fetchBusinessData(targetSym);
     } else {
       fetchPortfolioSymbols();
-      fetchCandidates('all');
+      fetchCandidates('all', 'all');
     }
   }, [window.location.pathname]);
 
-  const fetchCandidates = (tier = 'all') => {
+  const fetchCandidates = (tier = 'all', liq = 'all') => {
     setCandidatesLoading(true);
-    getMungerCandidates(tier)
+    getMungerCandidates(tier, liq)
       .then((res) => {
         if (res && res.ok) setCandidatesData(res);
       })
@@ -295,36 +296,72 @@ export default function BusinessPage() {
                 )}
               </div>
 
-              {/* Tier Filter Tabs */}
-              <div className="candidate-tier-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                {[
-                  { key: 'all', label: 'Tất cả ứng viên' },
-                  { key: 'exceptional', label: 'Chất lượng xuất sắc' },
-                  { key: 'high_quality', label: 'Chất lượng cao' },
-                  { key: 'investable', label: 'Đáng xem xét' },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCandidateTier(tab.key);
-                      fetchCandidates(tab.key);
-                    }}
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: '12px',
-                      fontWeight: selectedCandidateTier === tab.key ? 700 : 500,
-                      borderRadius: '4px',
-                      border: selectedCandidateTier === tab.key ? '1px solid #0284c7' : '1px solid var(--border, #cbd5e0)',
-                      background: selectedCandidateTier === tab.key ? '#0284c7' : 'var(--panel-subtle, #f7fafc)',
-                      color: selectedCandidateTier === tab.key ? '#ffffff' : 'inherit',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              {/* Tier & Liquidity Filter Tabs */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                <div className="candidate-tier-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted, #718096)', marginRight: '4px' }}>Chất lượng:</span>
+                  {[
+                    { key: 'all', label: 'Tất cả chất lượng' },
+                    { key: 'exceptional', label: 'Chất lượng xuất sắc' },
+                    { key: 'high_quality', label: 'Chất lượng cao' },
+                    { key: 'investable', label: 'Đáng xem xét' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCandidateTier(tab.key);
+                        fetchCandidates(tab.key, selectedLiquidityFilter);
+                      }}
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '12px',
+                        fontWeight: selectedCandidateTier === tab.key ? 700 : 500,
+                        borderRadius: '4px',
+                        border: selectedCandidateTier === tab.key ? '1px solid #0284c7' : '1px solid var(--border, #cbd5e0)',
+                        background: selectedCandidateTier === tab.key ? '#0284c7' : 'var(--panel-subtle, #f7fafc)',
+                        color: selectedCandidateTier === tab.key ? '#ffffff' : 'inherit',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="candidate-liquidity-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted, #718096)', marginRight: '4px' }}>Thanh khoản:</span>
+                  {[
+                    { key: 'all', label: 'Tất cả thanh khoản' },
+                    { key: 'LIQUIDITY_STRONG', label: 'Thanh khoản tốt' },
+                    { key: 'LIQUIDITY_ACCEPTABLE', label: 'Thanh khoản đủ' },
+                    { key: 'LIQUIDITY_WEAK', label: 'Thanh khoản thấp' },
+                    { key: 'LIQUIDITY_INSUFFICIENT_DATA', label: 'Chưa đủ dữ liệu' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedLiquidityFilter(tab.key);
+                        fetchCandidates(selectedCandidateTier, tab.key);
+                      }}
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: '11px',
+                        fontWeight: selectedLiquidityFilter === tab.key ? 700 : 500,
+                        borderRadius: '4px',
+                        border: selectedLiquidityFilter === tab.key ? '1px solid #059669' : '1px solid var(--border, #e2e8f0)',
+                        background: selectedLiquidityFilter === tab.key ? '#059669' : 'var(--panel-subtle, #f8fafc)',
+                        color: selectedLiquidityFilter === tab.key ? '#ffffff' : 'inherit',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {candidatesLoading && (
@@ -372,17 +409,30 @@ export default function BusinessPage() {
                               </div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                background: c.candidate_tier_code === 'EXCEPTIONAL' ? '#f0fdf4' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#eff6ff' : '#f8fafc'),
-                                color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#15803d' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#1d4ed8' : '#475569'),
-                                border: `1px solid ${c.candidate_tier_code === 'EXCEPTIONAL' ? '#86efac' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#93c5fd' : '#cbd5e0')}`,
-                              }}>
-                                {c.quality_tier_vi}
-                              </span>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  background: c.candidate_tier_code === 'EXCEPTIONAL' ? '#f0fdf4' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#eff6ff' : '#f8fafc'),
+                                  color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#15803d' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#1d4ed8' : '#475569'),
+                                  border: `1px solid ${c.candidate_tier_code === 'EXCEPTIONAL' ? '#86efac' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#93c5fd' : '#cbd5e0')}`,
+                                }}>
+                                  {c.quality_tier_vi}
+                                </span>
+                                <span style={{
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  background: c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#f0fdf4' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#eff6ff' : '#fffbeb'),
+                                  color: c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#166534' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#1e40af' : '#92400e'),
+                                  border: `1px solid ${c.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#bbf7d0' : (c.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#bfdbfe' : '#fef08a')}`,
+                                }}>
+                                  {c.liquidity?.classification_vi || 'Thanh khoản'}
+                                </span>
+                              </div>
                               <span style={{
                                 padding: '2px 6px',
                                 borderRadius: '4px',
@@ -446,6 +496,21 @@ export default function BusinessPage() {
                               </strong>
                             </div>
                           </div>
+
+                          {/* Liquidity info snippet */}
+                          {c.liquidity && (
+                            <div style={{ fontSize: '11px', color: '#475569', margin: '4px 0 8px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                              <span><strong>GTGD 20 phiên:</strong> {c.liquidity.avg_trading_value_20d_billion != null ? `${c.liquidity.avg_trading_value_20d_billion} tỷ/ngày` : 'Chưa đủ dữ liệu'}</span>
+                              <span><strong>Khối lượng 20D:</strong> {c.liquidity.avg_volume_20d != null ? `${(c.liquidity.avg_volume_20d / 1e3).toFixed(0)}k cp` : 'Chưa đủ'}</span>
+                            </div>
+                          )}
+
+                          {/* Synthesis Conclusion */}
+                          {c.synthesis_conclusion_vi && (
+                            <div style={{ fontSize: '12px', lineHeight: 1.4, color: '#0f766e', background: '#f0fdfa', border: '1px solid #ccfbf1', padding: '6px 10px', borderRadius: '4px', marginBottom: '8px' }}>
+                              <strong>Kết luận:</strong> {c.synthesis_conclusion_vi}
+                            </div>
+                          )}
 
                           {/* Recommendation Rationale */}
                           <div style={{ fontSize: '12px', lineHeight: 1.5, color: '#334155', marginTop: '6px' }}>
@@ -942,7 +1007,64 @@ export default function BusinessPage() {
                   )}
                 </section>
 
-                {/* 6 & 7. ĐỊNH GIÁ & BIÊN AN TOÀN */}
+                {/* 6. THANH KHOẢN GIAO DỊCH THỰC TẾ (MUNGER LIQUIDITY GATE) */}
+                <section className="card liquidity-card" style={{ padding: '20px' }}>
+                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: 8 }}>
+                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Thanh Khoản Giao Dịch Thực Tế (Cổng Kiểm Tra Khả Thi Giao Dịch)</h3>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      background: munger.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#f0fdf4' : (munger.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#eff6ff' : (munger.liquidity?.classification === 'LIQUIDITY_WEAK' ? '#fffbeb' : '#f8fafc')),
+                      color: munger.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#166534' : (munger.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#1e40af' : (munger.liquidity?.classification === 'LIQUIDITY_WEAK' ? '#92400e' : '#64748b')),
+                      border: `1px solid ${munger.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#bbf7d0' : (munger.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#bfdbfe' : (munger.liquidity?.classification === 'LIQUIDITY_WEAK' ? '#fef08a' : '#e2e8f0'))}`,
+                    }}>
+                      {munger.liquidity?.classification_vi || 'Chưa đủ dữ liệu thanh khoản'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>Giá Giao Dịch Gần Nhất</small>
+                      <strong style={{ fontSize: '1.1rem', color: '#1e40af' }}>
+                        {munger.liquidity?.latest_price != null ? `${munger.liquidity.latest_price.toLocaleString('vi-VN')} đ` : 'Chưa có dữ liệu'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>KLGD Bình Quân 20 Phiên</small>
+                      <strong style={{ fontSize: '1.1rem' }}>
+                        {munger.liquidity?.avg_volume_20d != null ? `${munger.liquidity.avg_volume_20d.toLocaleString('vi-VN')} cp/ngày` : 'Chưa đủ dữ liệu'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>Giá Trị GD Bình Quân 20 Phiên</small>
+                      <strong style={{ fontSize: '1.1rem', color: (munger.liquidity?.avg_trading_value_20d || 0) >= 1 ? '#15803d' : '#b45309' }}>
+                        {munger.liquidity?.avg_trading_value_20d != null ? `${munger.liquidity.avg_trading_value_20d} tỷ đ/ngày` : 'Chưa đủ dữ liệu'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>Mật Độ Phiên Có GD (20 Phiên)</small>
+                      <strong style={{ fontSize: '1.1rem' }}>
+                        {munger.liquidity?.trading_day_coverage != null ? `${Math.round(munger.liquidity.trading_day_coverage * 100)}% (${munger.liquidity.trading_days_found}/20)` : 'Chưa đủ dữ liệu'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    padding: '12px 16px',
+                    borderRadius: '6px',
+                    background: munger.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#f0fdf4' : (munger.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#eff6ff' : '#fffbeb'),
+                    borderLeft: `4px solid ${munger.liquidity?.classification === 'LIQUIDITY_STRONG' ? '#16a34a' : (munger.liquidity?.classification === 'LIQUIDITY_ACCEPTABLE' ? '#3b82f6' : '#d97706')}`,
+                    fontSize: '0.92rem',
+                    lineHeight: 1.5,
+                  }}>
+                    <strong>Nhận xét khả năng giao dịch:</strong> {munger.liquidity?.commentary_vi || 'Chưa đủ dữ liệu thanh khoản để đánh giá.'}
+                  </div>
+                </section>
+
+                {/* 7. ĐỊNH GIÁ & BIÊN AN TOÀN */}
                 <section className="card valuation-card" style={{ padding: '20px' }}>
                   <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>Định Giá Chuẩn Mực & Biên An Toàn (MOS)</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', textAlign: 'center' }}>
@@ -968,7 +1090,7 @@ export default function BusinessPage() {
                     </div>
                     <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
                       <small style={{ display: 'block', color: '#6b7280' }}>MOS Yêu Cầu</small>
-                      <strong style={{ fontSize: '1.1rem' }}>{valuation.required_mos_pct ? `${valuation.required_mos_pct}%` : 'N/A'}</strong>
+                      <strong style={{ fontSize: '1.1rem' }}>{valuation.required_mos_pct ? `${valuation.required_mos_pct}%` : 'Chưa có'}</strong>
                     </div>
                   </div>
                 </section>

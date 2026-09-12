@@ -57,6 +57,21 @@ DECISION_VIETNAMESE: Dict[str, str] = {
 }
 
 
+LIQUIDITY_VIETNAMESE: Dict[str, str] = {
+    "LIQUIDITY_STRONG": "Thanh khoản tốt",
+    "LIQUIDITY_ACCEPTABLE": "Thanh khoản đủ",
+    "LIQUIDITY_WEAK": "Thanh khoản thấp",
+    "LIQUIDITY_INSUFFICIENT_DATA": "Chưa đủ dữ liệu thanh khoản",
+}
+
+
+def get_vietnamese_liquidity(code: Optional[str]) -> str:
+    if not code:
+        return "Chưa đủ dữ liệu thanh khoản"
+    clean = str(code).strip().upper()
+    return LIQUIDITY_VIETNAMESE.get(clean, LIQUIDITY_VIETNAMESE.get(f"LIQUIDITY_{clean}", "Chưa đủ dữ liệu thanh khoản"))
+
+
 COMPARISON_VIETNAMESE: Dict[str, str] = {
     "actual_mos >= required_mos": "Biên an toàn thực tế đạt yêu cầu tối thiểu",
     "actual_mos < required_mos": "Biên an toàn thực tế chưa đạt yêu cầu tối thiểu",

@@ -456,7 +456,11 @@ def build_munger_financial_analysis(
     )
     thesis_challenge_dict = thesis_challenge_obj.to_dict()
 
-    # 13. Evidence-Based Final Conclusion
+    # 13. Liquidity Gate Evaluation (Task 162)
+    from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
+    liquidity_info = evaluate_symbol_liquidity(ticker)
+
+    # 14. Evidence-Based Final Conclusion
     evidence_conclusion = _build_evidence_based_conclusion(
         symbol=ticker,
         archetype=archetype_str,
@@ -470,6 +474,7 @@ def build_munger_financial_analysis(
         prof_res=prof_res,
         growth_res=growth_res,
         eq_res=eq_res,
+        liquidity=liquidity_info,
     )
 
     return FinancialBusinessAnalysis(
@@ -501,6 +506,7 @@ def build_munger_financial_analysis(
         long_term_decision=long_term_decision,
         thesis_challenge=thesis_challenge_dict,
         evidence_based_conclusion=evidence_conclusion,
+        liquidity=liquidity_info,
         compounder_classification=compounder_class,
         overall_financial_quality=overall_quality,
         hard_financial_failures=hard_failures,
@@ -522,6 +528,7 @@ def _build_evidence_based_conclusion(
     prof_res: FinancialDimensionResult,
     growth_res: FinancialDimensionResult,
     eq_res: FinancialDimensionResult,
+    liquidity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build structured evidence-based final conclusion payload."""
     from .vietnamese_presenter import (
@@ -531,6 +538,7 @@ def _build_evidence_based_conclusion(
         get_vietnamese_status,
         get_vietnamese_valuetrap,
     )
+    from .liquidity_evaluator import synthesize_munger_screening_conclusion_vi
 
     strengths: List[str] = []
     weaknesses: List[str] = []
@@ -574,6 +582,17 @@ def _build_evidence_based_conclusion(
     else:
         val_mos_str = "Chưa có định giá chuẩn"
 
+    liq_code = (liquidity or {}).get("classification", "LIQUIDITY_INSUFFICIENT_DATA")
+    synthesis_conclusion = synthesize_munger_screening_conclusion_vi(
+        quality_tier=valuation.get("quality_tier", "INVESTABLE"),
+        compounder_class=compounder_class,
+        mos=act_mos,
+        req_mos=req_mos,
+        vt_status=value_trap_assessment.get("status", "CLEAR"),
+        liquidity_code=liq_code,
+        hard_failures_count=len(hard_failures),
+    )
+
     return {
         "symbol": symbol,
         "compounder_classification": compounder_class,
@@ -589,6 +608,9 @@ def _build_evidence_based_conclusion(
         "warning_quan_trong_nhat": primary_warn,
         "xu_huong_dai_han": f"Phân loại: {get_vietnamese_classification(compounder_class)}",
         "value_trap_risk": get_vietnamese_valuetrap(value_trap_assessment.get("status", "CLEAR")),
+        "liquidity_classification": (liquidity or {}).get("classification"),
+        "liquidity_classification_vietnamese": (liquidity or {}).get("classification_vi"),
+        "synthesis_conclusion_vietnamese": synthesis_conclusion,
         "dieu_co_the_pha_vo_thesis": "Biên an toàn suy giảm hoặc phát hiện bất thường dòng tiền BCTC",
         "dieu_kien_cung_co_thesis": "Duy trì ROE và tăng trưởng lợi nhuận có dòng tiền bảo chứng",
         "valuation_mos": val_mos_str,

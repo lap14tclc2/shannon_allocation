@@ -92,6 +92,215 @@ def _generate_candidate_rationale_vi(
     return f"{formatted_base}.{val_context}"
 
 
+def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
+    """Evaluate a single symbol against Munger candidate standards and attach liquidity assessment."""
+    try:
+        from ..canonical_valuation import build_canonical_valuation
+        from .value_trap_detector import evaluate_value_trap
+
+        val = build_canonical_valuation(sym, compute_munger=True)
+        if not val.get("ok"):
+            return None
+
+        munger = val.get("munger_analysis", {})
+        quality_tier = val.get("quality_tier", "UNKNOWN")
+        compounder_class = munger.get("compounder_classification", "UNKNOWN")
+        overall_quality = munger.get("overall_financial_quality", {})
+
+        # Munger Filtering Gates (Never compromise on quality / integrity)
+        accounting_status = overall_quality.get("accounting_consistency", "UNKNOWN")
+        solvency_status = overall_quality.get("balance_sheet", "UNKNOWN")
+        dilution_status = overall_quality.get("dilution", "UNKNOWN")
+        history_years = munger.get("history_years", 0)
+
+        # Hard Reject: Accounting Failure, Solvency Collapse, Destructive Dilution, Insufficient History
+        if accounting_status == "FAIL":
+            return None
+        if solvency_status in ("FAIL", "SOLVENCY_RISK"):
+            return None
+        if dilution_status == "FAIL" or dilution_status == "DESTRUCTIVE":
+            return None
+        if history_years < 2:
+            return None
+
+        # Evaluate Value Trap
+        vt = evaluate_value_trap(sym, valuation_report=val)
+        if vt.status == "HIGH_RISK" or vt.deterioration_classification == "STRUCTURAL_EVIDENCE":
+            return None
+
+        # Extract Financial Metrics
+        growth_metrics = munger.get("growth_analysis", {}).get("metrics", {})
+        prof_metrics = munger.get("profitability_analysis", {}).get("metrics", {})
+        eq_metrics = munger.get("earnings_quality", {}).get("metrics", {})
+        bs_metrics = munger.get("balance_sheet_strength", {}).get("metrics", {})
+
+        roe_val = prof_metrics.get("median_roe")
+        if roe_val is not None:
+            roe_pct = round(float(roe_val) * 100, 1)
+        else:
+            roe_pct = None
+
+        pat_cagr = growth_metrics.get("net_profit_cagr")
+        cfo_pat_val = eq_metrics.get("avg_cfo_pat")
+        cfo_pat = round(float(cfo_pat_val), 2) if cfo_pat_val is not None else None
+        de_ratio = bs_metrics.get("latest_debt_equity")
+
+        is_fin = munger.get("archetype") in ("BANK", "SECURITIES")
+
+        # Filter minimum acceptable quality threshold for Munger candidates
+        is_quality_qualified = (
+            quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE")
+            or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CONSISTENT_GROWER")
+            or (roe_pct is not None and roe_pct >= 14.0 and (pat_cagr is None or pat_cagr >= 0.05))
+        )
+
+        if not is_quality_qualified:
+            return None
+
+        current_price = val.get("current_price")
+        base_iv = val.get("base_iv")
+        bear_iv = val.get("bear_iv")
+        actual_mos = val.get("actual_mos_pct")
+        req_mos = val.get("required_mos_pct", 25.0)
+
+        # Top Warning
+        findings = munger.get("all_findings", [])
+        crit_findings = [f for f in findings if f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")]
+        if crit_findings:
+            top_f = crit_findings[0]
+            top_warning_vi = top_f.get("explanation") or top_f.get("impact") or "Cần theo dõi chu kỳ kinh doanh"
+        elif vt.top_risks:
+            top_warning_vi = vt.top_risks[0].get("title_vi", "Không có rủi ro trọng yếu")
+        else:
+            top_warning_vi = "Không có cảnh báo tài chính trọng yếu"
+
+        # Decision state
+        decision_state = munger.get("long_term_decision", {}).get("state") or val.get("verdict") or "HOLD"
+
+        # Candidate Category Labeling
+        if quality_tier == "EXCEPTIONAL" or compounder_class == "COMPOUNDER":
+            candidate_tier_code = "EXCEPTIONAL"
+            candidate_tier_vi = "Chất lượng xuất sắc"
+            rank_score = 100
+        elif quality_tier == "HIGH_QUALITY" or compounder_class == "POTENTIAL_COMPOUNDER":
+            candidate_tier_code = "HIGH_QUALITY"
+            candidate_tier_vi = "Chất lượng cao"
+            rank_score = 80
+        else:
+            candidate_tier_code = "INVESTABLE"
+            candidate_tier_vi = "Đáng xem xét"
+            rank_score = 60
+
+        # Score boosts for ROE, clean Value Trap, and MOS
+        if roe_pct is not None:
+            if roe_pct >= 25.0:
+                rank_score += 25
+            elif roe_pct >= 18.0:
+                rank_score += 15
+            elif roe_pct >= 14.0:
+                rank_score += 8
+
+        if vt.status == "CLEAR":
+            rank_score += 15
+
+        if actual_mos is not None and req_mos is not None:
+            if actual_mos >= req_mos:
+                rank_score += 30
+            elif actual_mos > 0:
+                rank_score += 10
+
+        if cfo_pat is not None and cfo_pat >= 1.0:
+            rank_score += 10
+
+        if pat_cagr is not None and pat_cagr >= 0.15:
+            rank_score += 10
+
+        # Construct Vietnamese synthesis rationale
+        rationale_vi = _build_recommendation_reason_vi(
+            roe=roe_pct,
+            pat_cagr=pat_cagr,
+            cfo_pat=cfo_pat,
+            is_financial=is_fin,
+            vt_status=vt.status,
+            mos=actual_mos,
+            req_mos=req_mos,
+        )
+
+        # Evaluate real market liquidity from qport_finance.market_prices
+        from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
+        liq = evaluate_symbol_liquidity(sym)
+        liq_code = liq.get("classification", "LIQUIDITY_INSUFFICIENT_DATA")
+
+        synthesis_conclusion = synthesize_munger_screening_conclusion_vi(
+            quality_tier=quality_tier,
+            compounder_class=compounder_class,
+            mos=actual_mos,
+            req_mos=req_mos,
+            vt_status=vt.status,
+            liquidity_code=liq_code,
+            hard_failures_count=len(crit_findings),
+        )
+
+        # Boost score if liquidity is strong or acceptable
+        if liq_code == "LIQUIDITY_STRONG":
+            rank_score += 10
+        elif liq_code == "LIQUIDITY_ACCEPTABLE":
+            rank_score += 5
+
+        return {
+            "symbol": sym,
+            "company_name": val.get("company_name") or f"Doanh nghiệp {sym}",
+            "archetype": munger.get("archetype", "NORMAL_ENTERPRISE"),
+            "archetype_vi": "Ngân hàng" if is_fin and munger.get("archetype") == "BANK" else ("Chứng khoán" if is_fin else "Doanh nghiệp sản xuất / kinh doanh"),
+            "quality_tier": quality_tier,
+            "quality_tier_vi": candidate_tier_vi,
+            "candidate_tier_code": candidate_tier_code,
+            "compounder_classification": compounder_class,
+            "current_price": current_price,
+            "base_iv": base_iv,
+            "bear_iv": bear_iv,
+            "actual_mos_pct": actual_mos,
+            "required_mos_pct": req_mos,
+            "is_mos_qualified": (actual_mos is not None and req_mos is not None and actual_mos >= req_mos),
+            "value_trap_status": vt.status,
+            "value_trap_status_vi": "Chưa thấy dấu hiệu bẫy giá trị" if vt.status == "CLEAR" else "Có rủi ro cần theo dõi",
+            "deterioration_classification": vt.deterioration_classification,
+            "roe_pct": roe_pct,
+            "net_profit_cagr": pat_cagr,
+            "net_profit_cagr_pct": round(pat_cagr * 100, 1) if pat_cagr is not None else None,
+            "cfo_to_pat": cfo_pat if not is_fin else None,
+            "cfo_to_pat_display": f"{cfo_pat:.2f}x" if cfo_pat is not None and not is_fin else ("Không áp dụng (Bank/Securities)" if is_fin else "Chưa đủ dữ liệu"),
+            "debt_to_equity": round(float(de_ratio), 2) if de_ratio is not None and not is_fin else None,
+            "debt_to_equity_display": f"{float(de_ratio):.2f}x" if de_ratio is not None and not is_fin else ("Không áp dụng" if is_fin else "An toàn"),
+            "liquidity": {
+                "classification": liq.get("classification"),
+                "classification_vi": liq.get("classification_vi"),
+                "commentary_vi": liq.get("commentary_vi"),
+                "avg_volume_20d": liq.get("avg_volume_20d"),
+                "avg_trading_value_20d_billion": liq.get("avg_trading_value_20d_billion"),
+                "avg_volume_60d": liq.get("avg_volume_60d"),
+                "avg_trading_value_60d_billion": liq.get("avg_trading_value_60d_billion"),
+                "trading_day_coverage_pct": liq.get("trading_day_coverage_pct"),
+                "trading_days_observed": liq.get("trading_days_observed"),
+                "data_status": liq.get("data_status"),
+            },
+            "liquidity_classification": liq.get("classification"),
+            "liquidity_classification_vi": liq.get("classification_vi"),
+            "synthesis_conclusion_vi": synthesis_conclusion,
+            "top_warning_vi": top_warning_vi,
+            "decision": decision_state,
+            "decision_vi": "Có thể mua" if decision_state in ("BUY", "BUY_MORE", "BUY_UNDER_MOS") else ("Có thể mua có điều kiện" if decision_state in ("CONDITIONAL_BUY", "BUY_WATCH") else ("Chờ đạt biên an toàn" if decision_state == "WAIT_FOR_MOS" else "Tiếp tục nắm giữ / Theo dõi")),
+            "recommendation_reason_vi": rationale_vi,
+            "rank_score": rank_score,
+            "history_years": history_years,
+            "data_source": "Nguồn BCTC: SSI (Chuẩn hóa)",
+            "updated_at": val.get("valuation_date") or time.strftime("%Y-%m-%d"),
+        }
+    except Exception as exc:
+        logger.warning(f"Error evaluating candidate {sym}: {exc}")
+        return None
+
+
 def compute_all_munger_candidates(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Scan universe and compute ranked list of Buffett-Munger long-term investment candidates."""
     global _CACHED_CANDIDATES, _LAST_COMPUTE_TIME
@@ -101,9 +310,7 @@ def compute_all_munger_candidates(force_refresh: bool = False) -> List[Dict[str,
         if not force_refresh and _CACHED_CANDIDATES and (now - _LAST_COMPUTE_TIME) < _CANDIDATE_CACHE_TTL:
             return _CACHED_CANDIDATES
 
-        from ..canonical_valuation import build_canonical_valuation
         from ..finance_catalog import FINANCE_SCHEMA, _schema_connection
-        from ..market_data import canonical_vnd_price
 
         # 1. Fetch all distinct symbols with canonical facts in Postgres
         try:
@@ -131,169 +338,14 @@ def compute_all_munger_candidates(force_refresh: bool = False) -> List[Dict[str,
 
     candidates: List[Dict[str, Any]] = []
 
-    def _eval_sym(sym: str) -> Optional[Dict[str, Any]]:
-        try:
-            val = build_canonical_valuation(sym, compute_munger=True)
-            if not val.get("ok"):
-                return None
-
-            munger = val.get("munger_analysis", {})
-            quality_tier = val.get("quality_tier", "UNKNOWN")
-            compounder_class = munger.get("compounder_classification", "UNKNOWN")
-            overall_quality = munger.get("overall_financial_quality", {})
-
-            # Munger Filtering Gates (Never compromise on quality / integrity)
-            accounting_status = overall_quality.get("accounting_consistency", "UNKNOWN")
-            solvency_status = overall_quality.get("balance_sheet", "UNKNOWN")
-            dilution_status = overall_quality.get("dilution", "UNKNOWN")
-            history_years = munger.get("history_years", 0)
-
-            # Hard Reject: Accounting Failure, Solvency Collapse, Destructive Dilution, Insufficient History
-            if accounting_status == "FAIL":
-                return None
-            if solvency_status in ("FAIL", "SOLVENCY_RISK"):
-                return None
-            if dilution_status == "FAIL" or dilution_status == "DESTRUCTIVE":
-                return None
-            if history_years < 2:
-                return None
-
-            # Evaluate Value Trap
-            vt = evaluate_value_trap(sym, valuation_report=val)
-            if vt.status == "HIGH_RISK" or vt.deterioration_classification == "STRUCTURAL_EVIDENCE":
-                return None
-
-            # Extract Financial Metrics
-            growth_metrics = munger.get("growth_analysis", {}).get("metrics", {})
-            prof_metrics = munger.get("profitability_analysis", {}).get("metrics", {})
-            eq_metrics = munger.get("earnings_quality", {}).get("metrics", {})
-            bs_metrics = munger.get("balance_sheet_strength", {}).get("metrics", {})
-
-            roe_val = prof_metrics.get("median_roe")
-            if roe_val is not None:
-                roe_pct = round(float(roe_val) * 100, 1)
-            else:
-                roe_pct = None
-
-            pat_cagr = growth_metrics.get("net_profit_cagr")
-            cfo_pat_val = eq_metrics.get("avg_cfo_pat")
-            cfo_pat = round(float(cfo_pat_val), 2) if cfo_pat_val is not None else None
-            de_ratio = bs_metrics.get("latest_debt_equity")
-
-            is_fin = munger.get("archetype") in ("BANK", "SECURITIES")
-
-            # Filter minimum acceptable quality threshold for Munger candidates
-            is_quality_qualified = (
-                quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE")
-                or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CONSISTENT_GROWER")
-                or (roe_pct is not None and roe_pct >= 14.0 and (pat_cagr is None or pat_cagr >= 0.05))
-            )
-
-            if not is_quality_qualified:
-                return None
-
-            current_price = val.get("current_price")
-            base_iv = val.get("base_iv")
-            bear_iv = val.get("bear_iv")
-            actual_mos = val.get("actual_mos_pct")
-            req_mos = val.get("required_mos_pct", 25.0)
-
-            # Top Warning
-            findings = munger.get("all_findings", [])
-            crit_findings = [f for f in findings if f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")]
-            if crit_findings:
-                top_f = crit_findings[0]
-                top_warning_vi = top_f.get("explanation") or top_f.get("impact") or "Cần theo dõi chu kỳ kinh doanh"
-            elif vt.top_risks:
-                top_warning_vi = vt.top_risks[0].get("title_vi", "Không có rủi ro trọng yếu")
-            else:
-                top_warning_vi = "Không có cảnh báo tài chính trọng yếu"
-
-            # Decision state
-            decision_state = munger.get("long_term_decision", {}).get("state") or val.get("verdict") or "HOLD"
-
-            # Candidate Category Labeling
-            if quality_tier == "EXCEPTIONAL" or compounder_class == "COMPOUNDER":
-                candidate_tier_code = "EXCEPTIONAL"
-                candidate_tier_vi = "Chất lượng xuất sắc"
-                rank_score = 100
-            elif quality_tier == "HIGH_QUALITY" or compounder_class == "POTENTIAL_COMPOUNDER":
-                candidate_tier_code = "HIGH_QUALITY"
-                candidate_tier_vi = "Chất lượng cao"
-                rank_score = 80
-            else:
-                candidate_tier_code = "INVESTABLE"
-                candidate_tier_vi = "Đáng xem xét"
-                rank_score = 60
-
-            # Score boosts for ROE, clean Value Trap, and MOS
-            if roe_pct is not None:
-                rank_score += min(20, roe_pct)
-            if vt.status == "CLEAR":
-                rank_score += 15
-            if actual_mos is not None and req_mos is not None and actual_mos >= req_mos:
-                rank_score += 25
-            elif actual_mos is not None and actual_mos > 0:
-                rank_score += 10
-
-            rationale_vi = _generate_candidate_rationale_vi(
-                symbol=sym,
-                quality_tier=quality_tier,
-                roe=roe_pct,
-                pat_cagr=pat_cagr,
-                cfo_pat=cfo_pat,
-                vt_status=vt.status,
-                mos=actual_mos,
-                req_mos=req_mos,
-                is_financial=is_fin,
-                top_warning_vi=top_warning_vi,
-            )
-
-            return {
-                "symbol": sym,
-                "company_name": val.get("company_name") or f"Doanh nghiệp {sym}",
-                "archetype": munger.get("archetype", "NORMAL_ENTERPRISE"),
-                "archetype_vi": "Ngân hàng" if is_fin and munger.get("archetype") == "BANK" else ("Chứng khoán" if is_fin else "Doanh nghiệp sản xuất / kinh doanh"),
-                "quality_tier": quality_tier,
-                "quality_tier_vi": candidate_tier_vi,
-                "candidate_tier_code": candidate_tier_code,
-                "compounder_classification": compounder_class,
-                "current_price": current_price,
-                "base_iv": base_iv,
-                "bear_iv": bear_iv,
-                "actual_mos_pct": actual_mos,
-                "required_mos_pct": req_mos,
-                "is_mos_qualified": (actual_mos is not None and req_mos is not None and actual_mos >= req_mos),
-                "value_trap_status": vt.status,
-                "value_trap_status_vi": "Chưa thấy dấu hiệu bẫy giá trị" if vt.status == "CLEAR" else "Có rủi ro cần theo dõi",
-                "deterioration_classification": vt.deterioration_classification,
-                "roe_pct": roe_pct,
-                "net_profit_cagr": pat_cagr,
-                "net_profit_cagr_pct": round(pat_cagr * 100, 1) if pat_cagr is not None else None,
-                "cfo_to_pat": cfo_pat if not is_fin else None,
-                "cfo_to_pat_display": f"{cfo_pat:.2f}x" if cfo_pat is not None and not is_fin else ("Không áp dụng (Bank/Securities)" if is_fin else "Chưa đủ dữ liệu"),
-                "debt_to_equity": round(float(de_ratio), 2) if de_ratio is not None and not is_fin else None,
-                "debt_to_equity_display": f"{float(de_ratio):.2f}x" if de_ratio is not None and not is_fin else ("Không áp dụng" if is_fin else "An toàn"),
-                "top_warning_vi": top_warning_vi,
-                "decision": decision_state,
-                "decision_vi": "Có thể mua" if decision_state in ("BUY", "BUY_MORE") else ("Chờ đạt biên an toàn" if decision_state == "WAIT_FOR_MOS" else "Tiếp tục nắm giữ / Theo dõi"),
-                "recommendation_reason_vi": rationale_vi,
-                "rank_score": rank_score,
-                "history_years": history_years,
-                "data_source": "Nguồn BCTC: SSI (Chuẩn hóa)",
-                "updated_at": val.get("valuation_date") or time.strftime("%Y-%m-%d"),
-            }
-        except Exception as exc:
-            logger.warning(f"Error evaluating candidate {sym}: {exc}")
-            return None
-
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-        results = list(executor.map(_eval_sym, symbols))
+        results = list(executor.map(_evaluate_candidate_symbol, symbols))
 
     candidates = [r for r in results if r is not None]
 
-    # Sort candidates: Rank Score descending (Quality -> Durability -> Financial Strength -> MOS)
+
+    # Sort candidates: Rank Score descending (Quality -> Durability -> Financial Strength -> MOS -> Liquidity)
     candidates.sort(key=lambda c: c["rank_score"], reverse=True)
 
     _CACHED_CANDIDATES = candidates
@@ -303,6 +355,7 @@ def compute_all_munger_candidates(force_refresh: bool = False) -> List[Dict[str,
 
 def get_munger_candidates(
     tier: Optional[str] = "all",
+    liquidity: Optional[str] = "all",
     search: Optional[str] = None,
     limit: int = 50,
 ) -> Dict[str, Any]:
@@ -313,6 +366,12 @@ def get_munger_candidates(
     if tier and tier.lower() not in ("all", "tat_ca", "tất cả", "*", ""):
         t_code = tier.upper().strip()
         filtered = [c for c in filtered if c["candidate_tier_code"] == t_code or c["quality_tier"] == t_code]
+
+    if liquidity and liquidity.lower() not in ("all", "tat_ca", "tất cả", "*", ""):
+        l_code = liquidity.upper().strip()
+        if not l_code.startswith("LIQUIDITY_"):
+            l_code = f"LIQUIDITY_{l_code}"
+        filtered = [c for c in filtered if c.get("liquidity_classification") == l_code]
 
     if search and search.strip():
         q = search.strip().lower()
@@ -333,5 +392,7 @@ def get_munger_candidates(
             "high_quality_count": sum(1 for c in all_candidates if c["candidate_tier_code"] == "HIGH_QUALITY"),
             "investable_count": sum(1 for c in all_candidates if c["candidate_tier_code"] == "INVESTABLE"),
             "mos_qualified_count": sum(1 for c in all_candidates if c.get("is_mos_qualified")),
+            "strong_liquidity_count": sum(1 for c in all_candidates if c.get("liquidity_classification") == "LIQUIDITY_STRONG"),
+            "acceptable_liquidity_count": sum(1 for c in all_candidates if c.get("liquidity_classification") == "LIQUIDITY_ACCEPTABLE"),
         },
     }

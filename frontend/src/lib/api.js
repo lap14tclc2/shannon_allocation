@@ -296,9 +296,10 @@ export const resolveSecurity = (symbol) => sendJSON(`/api/portfolio/securities/$
 export const resolveAllSecurities = () => sendJSON('/api/portfolio/securities/resolve', 'POST', {});
 export const getSplitAdjustment = (symbol) => getJSON(`/api/portfolio/positions/${encodeURIComponent(symbol)}/split-adjustment`);
 export const applySplitAdjustment = (symbol) => sendJSON(`/api/portfolio/positions/${encodeURIComponent(symbol)}/auto-split-adjust`, 'POST', {});
-export const getMungerCandidates = (tier = 'all', search = '', limit = 50) => {
+export const getMungerCandidates = (tier = 'all', liquidity = 'all', search = '', limit = 50) => {
   const params = new URLSearchParams();
   if (tier) params.set('tier', tier);
+  if (liquidity && liquidity !== 'all') params.set('liquidity', liquidity);
   if (search) params.set('search', search);
   if (limit) params.set('limit', String(limit));
   return getJSON(`/api/portfolio/business-candidates?${params.toString()}`);

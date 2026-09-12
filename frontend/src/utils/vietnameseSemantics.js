@@ -142,6 +142,17 @@ export const ARCHETYPE_MAP = {
   CYCLICAL: 'Doanh nghiệp mang tính chu kỳ',
 };
 
+export const LIQUIDITY_MAP = {
+  LIQUIDITY_STRONG: 'Thanh khoản tốt',
+  LIQUIDITY_ACCEPTABLE: 'Thanh khoản đủ',
+  LIQUIDITY_WEAK: 'Thanh khoản thấp',
+  LIQUIDITY_INSUFFICIENT_DATA: 'Chưa đủ dữ liệu thanh khoản',
+  STRONG: 'Thanh khoản tốt',
+  ACCEPTABLE: 'Thanh khoản đủ',
+  WEAK: 'Thanh khoản thấp',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu thanh khoản',
+};
+
 export const MARGIN_TREND_MAP = {
   EXPANDING: 'Đang mở rộng',
   STABLE: 'Ổn định',
@@ -238,6 +249,12 @@ export function formatArchetype(code) {
   if (!code) return 'Chưa xác định';
   const c = String(code).toUpperCase().trim();
   return ARCHETYPE_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatLiquidity(code) {
+  if (!code) return 'Chưa đủ dữ liệu thanh khoản';
+  const c = String(code).toUpperCase().trim();
+  return LIQUIDITY_MAP[c] || (LIQUIDITY_MAP[`LIQUIDITY_${c}`]) || STATUS_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
 }
 
 export function formatMarginTrend(trend) {

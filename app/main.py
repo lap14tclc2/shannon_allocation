@@ -1735,6 +1735,7 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
 @app.get("/api/portfolio/business-candidates")
 def api_portfolio_business_candidates(
     tier: str | None = "all",
+    liquidity: str | None = "all",
     search: str | None = None,
     limit: int = 50,
     qport_session: str | None = Cookie(default=None),
@@ -1745,6 +1746,7 @@ def api_portfolio_business_candidates(
 
     return get_munger_candidates(
         tier=tier,
+        liquidity=liquidity,
         search=search,
         limit=limit,
     )
