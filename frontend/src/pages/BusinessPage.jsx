@@ -535,22 +535,144 @@ export default function BusinessPage() {
                   )}
                 </section>
 
-                {/* 5. ĐÁNH GIÁ BẪY GIÁ TRỊ */}
-                <section className="card value-trap-card" style={{ padding: '20px' }}>
-                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Đánh Giá Bẫy Giá Trị (Value Trap Gate)</h3>
+                {/* 5. ĐIỀU TRA PHÁP Y BẪY GIÁ TRỊ (MUNGER VALUE TRAP FORENSICS) */}
+                <section className="card value-trap-card" style={{ padding: '22px' }}>
+                  <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Điều Tra Pháp Y Bẫy Giá Trị (Munger Financial Forensics)</h3>
+                      <small style={{ color: 'var(--text-muted, #718096)' }}>Đánh giá toàn diện chuỗi BCTC lịch sử đa năm nhằm phát hiện rủi ro xói mòn vốn</small>
+                    </div>
                     {renderBadge(valueTrap.status)}
                   </div>
-                  <div className="vt-details" style={{ lineHeight: 1.6, fontSize: '0.93rem' }}>
-                    <p style={{ margin: '4px 0' }}>Trạng thái Bẫy giá trị: <strong>{formatValueTrap(valueTrap.status)}</strong></p>
-                    <p style={{ margin: '4px 0' }}>Xu hướng nền tảng kinh doanh: <strong>{formatDeterioration(valueTrap.deterioration_classification)}</strong></p>
-                    {valueTrap.hard_failures && valueTrap.hard_failures.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng: <strong>{valueTrap.hard_failures.map(formatFindingTitle).join(', ')}</strong></p>
-                    )}
-                    {valueTrap.warnings && valueTrap.warnings.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý: <strong>{valueTrap.warnings.map(formatFindingTitle).join(', ')}</strong></p>
+
+                  {/* Summary & Munger Final Action */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                    <div style={{ padding: '14px', borderRadius: '8px', background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ color: 'var(--text-muted, #718096)', display: 'block', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Trạng thái bẫy giá trị</small>
+                      <strong style={{ fontSize: '1.05rem', color: valueTrap.status === 'CLEAR' ? '#16a34a' : (valueTrap.status === 'WATCH' ? '#d97706' : '#dc2626') }}>
+                        {formatValueTrap(valueTrap.status)}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '14px', borderRadius: '8px', background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ color: 'var(--text-muted, #718096)', display: 'block', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Phân loại suy giảm</small>
+                      <strong style={{ fontSize: '1.05rem' }}>
+                        {formatDeterioration(valueTrap.deterioration_classification)}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '14px', borderRadius: '8px', background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)' }}>
+                      <small style={{ color: 'var(--text-muted, #718096)', display: 'block', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Hành động khuyến nghị Munger</small>
+                      <strong style={{ fontSize: '1.05rem', color: '#0284c7' }}>
+                        {valueTrap.munger_action?.action_vi || 'Xem xét Biên an toàn'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Rationale explanation */}
+                  {valueTrap.munger_action?.munger_rationale_vi && (
+                    <div style={{ padding: '12px 16px', background: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', marginBottom: '20px', fontSize: '0.92rem', lineHeight: 1.5 }}>
+                      <strong>Kết luận điều tra:</strong> {valueTrap.munger_action.munger_rationale_vi}
+                    </div>
+                  )}
+
+                  {/* Top 3 Financial Risks */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '1.02rem', margin: '0 0 12px', fontWeight: 700 }}>
+                      3 RỦI RO TÀI CHÍNH QUAN TRỌNG NHẤT
+                    </h4>
+                    {valueTrap.top_risks && valueTrap.top_risks.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {valueTrap.top_risks.map((r, rIdx) => (
+                          <div key={rIdx} style={{ padding: '12px 16px', borderRadius: '6px', border: '1px solid #fed7aa', background: '#fffbeb', fontSize: '0.9rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <strong style={{ color: '#c2410c' }}>Rủi ro #{r.rank}: {r.title_vi}</strong>
+                              <span style={{ fontSize: '11px', padding: '2px 6px', background: '#ffedd5', borderRadius: '4px', fontWeight: 600, color: '#9a3412' }}>
+                                Mức độ: {r.severity_vi} ({r.period_vi})
+                              </span>
+                            </div>
+                            <div style={{ color: '#4b5563', margin: '3px 0' }}>{r.evidence_vi}</div>
+                            {r.consequence_vi && (
+                              <div style={{ fontSize: '0.84rem', color: '#6b7280', marginTop: '4px' }}>
+                                <strong>Hệ quả:</strong> {r.consequence_vi}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '12px 16px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: '0.92rem' }}>
+                        {valueTrap.top_risks_summary_vi || 'Không phát hiện bằng chứng tài chính đáng kể của bẫy giá trị trong dữ liệu lịch sử hiện có.'}
+                      </div>
                     )}
                   </div>
+
+                  {/* Counter-Evidence (Bằng chứng phản bác) */}
+                  {valueTrap.counter_evidence && valueTrap.counter_evidence.length > 0 && (
+                    <div style={{ marginBottom: '20px', padding: '14px 16px', borderRadius: '6px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <h4 style={{ fontSize: '0.95rem', margin: '0 0 8px', fontWeight: 700, color: '#334155' }}>
+                        Bằng Chứng Phản Bác & Yếu Tố Bù Đắp An Toàn ({valueTrap.counter_evidence.length}):
+                      </h4>
+                      <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.88rem', color: '#475569', lineHeight: 1.6 }}>
+                        {valueTrap.counter_evidence.map((c, cIdx) => (
+                          <li key={cIdx}>{c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 14-Point Value Trap Scorecard */}
+                  {valueTrap.scorecard && valueTrap.scorecard.length > 0 && (
+                    <div>
+                      <h4 style={{ fontSize: '1.02rem', margin: '0 0 12px', fontWeight: 700 }}>
+                        Bảng Điểm Pháp Y Tài Chính Tổng Hợp (14 Tiêu Chí)
+                      </h4>
+                      <div className="table-responsive">
+                        <table className="data-table" style={{ fontSize: '12px' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ width: '40px' }}>#</th>
+                              <th>Hạng mục đánh giá</th>
+                              <th style={{ width: '100px' }}>Trạng thái</th>
+                              <th style={{ width: '90px' }}>Mức độ</th>
+                              <th style={{ width: '100px' }}>Giai đoạn</th>
+                              <th>Bằng chứng & Dữ liệu ghi nhận</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {valueTrap.scorecard.map((item) => (
+                              <tr key={item.index}>
+                                <td>{item.index}</td>
+                                <td><strong>{item.name_vi}</strong></td>
+                                <td>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    background: item.status_vi === 'Đạt' || item.status_vi === 'Không suy giảm' ? '#f0fdf4' : (item.status_vi === 'Không áp dụng' ? '#f8fafc' : (item.status_vi === 'Cần theo dõi' || item.status_vi === 'Suy giảm chu kỳ' ? '#fffbeb' : '#fef2f2')),
+                                    color: item.status_vi === 'Đạt' || item.status_vi === 'Không suy giảm' ? '#166534' : (item.status_vi === 'Không áp dụng' ? '#64748b' : (item.status_vi === 'Cần theo dõi' || item.status_vi === 'Suy giảm chu kỳ' ? '#92400e' : '#991b1b')),
+                                    border: `1px solid ${item.status_vi === 'Đạt' || item.status_vi === 'Không suy giảm' ? '#bbf7d0' : (item.status_vi === 'Không áp dụng' ? '#e2e8f0' : (item.status_vi === 'Cần theo dõi' || item.status_vi === 'Suy giảm chu kỳ' ? '#fef08a' : '#fecaca'))}`,
+                                  }}>
+                                    {item.status_vi}
+                                  </span>
+                                </td>
+                                <td>{item.severity_vi}</td>
+                                <td>{item.period_vi}</td>
+                                <td style={{ whiteSpace: 'normal', minWidth: '280px', lineHeight: 1.4 }}>
+                                  {item.evidence_vi}
+                                  {item.reason_not_applicable && (
+                                    <span style={{ display: 'block', fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                                      ({item.reason_not_applicable})
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 {/* 6 & 7. ĐỊNH GIÁ & BIÊN AN TOÀN */}
