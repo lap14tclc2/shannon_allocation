@@ -319,7 +319,7 @@ def run_earnings_quality_forensics(
                 evidence_fact_ids=evidence_facts,
                 explanation=exp_text,
                 archetype=archetype,
-                impact="HIGH_EARNINGS_QUALITY_RISK",
+                impact="Rủi ro chất lượng lợi nhuận cao do dòng tiền kinh doanh phân kỳ lớn so với lợi nhuận.",
             )
         )
     elif is_moderate_divergence:
@@ -354,7 +354,7 @@ def run_earnings_quality_forensics(
                 evidence_fact_ids=evidence_facts,
                 explanation=exp_text,
                 archetype=archetype,
-                impact="MODERATE_EARNINGS_QUALITY_RISK",
+                impact="Rủi ro chất lượng lợi nhuận ở mức trung bình, dòng tiền kinh doanh phân kỳ một số năm.",
             )
         )
 
@@ -604,7 +604,7 @@ def run_receivables_forensics(
                 evidence_fact_ids=evidence_facts,
                 explanation=explanation,
                 archetype=archetype,
-                impact="REVENUE_QUALITY_RISK" if severity == FindingSeverity.HIGH.value else "MODERATE_WORKING_CAPITAL_RISK",
+                impact="Rủi ro chất lượng doanh thu cao do khoản phải thu tăng nhanh" if severity == FindingSeverity.HIGH.value else "Rủi ro vốn lưu động bị chiếm dụng trung bình",
             )
         )
 
@@ -705,7 +705,7 @@ def run_inventory_forensics(
                     evidence_fact_ids=evidence_facts,
                     explanation=f"Tồn kho ứ đọng lớn. CAGR tồn kho ({inv_cagr*100:.1f}%) vượt xa CAGR doanh thu ({rev_cagr*100:.1f}%).",
                     archetype=archetype,
-                    impact="WORKING_CAPITAL_STRESS",
+                    impact="Áp lực vốn lưu động do hàng tồn kho ứ đọng lớn",
                 )
             )
         else:
@@ -723,7 +723,7 @@ def run_inventory_forensics(
                     evidence_fact_ids=evidence_facts,
                     explanation=f"Hàng tồn kho tích tụ nhanh hơn doanh thu tiêu thụ.",
                     archetype=archetype,
-                    impact="MODERATE_INVENTORY_RISK",
+                    impact="Rủi ro tồn kho tích tụ ở mức trung bình",
                 )
             )
 
