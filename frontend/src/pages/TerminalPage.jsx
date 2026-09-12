@@ -9,6 +9,7 @@ import {
   getBuffettTerminalData,
   getPortfolioPositions,
   getSplitAdjustment,
+  getMungerCandidates,
   setCashReserve,
   updatePortfolioPosition,
 } from '../lib/api.js';
@@ -644,10 +645,10 @@ function HoldingDetailModal({ item, onClose }) {
 
   return (
     <Modal onClose={onClose}>
-      <div style={{ maxWidth: 520 }}>
+      <div style={{ maxWidth: 560 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 20 }}>
-            {item.symbol} — Chi Tiết Phân Tích
+            {item.symbol} — Chi Tiết Phân Tích &amp; Định Giá
           </h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'inherit' }}>✕</button>
         </div>
@@ -658,24 +659,26 @@ function HoldingDetailModal({ item, onClose }) {
             <strong>{formatQualityTier(item.quality_tier)}</strong>
           </div>
           <div className="metric-item">
-            <small>Quyết định</small>
+            <small>Quyết định Buffett/Munger</small>
             <strong style={{ color: '#0284c7' }}>{formatDecision(item.decision)}</strong>
           </div>
           <div className="metric-item">
             <small>Giá thị trường</small>
-            <strong>{item.price ? `${fmtNum(item.price)} ₫` : 'Chưa lấy được giá'}</strong>
+            <strong>{item.price ? `${fmtNum(item.price)} ₫` : 'Chưa có giá thị trường'}</strong>
           </div>
           <div className="metric-item">
-            <small>Base IV (Cơ sở)</small>
+            <small>Base IV (Giá trị nội tại cơ sở)</small>
             <strong>{item.base_iv ? `${fmtNum(item.base_iv)} ₫` : 'Chưa đủ dữ liệu'}</strong>
           </div>
           <div className="metric-item">
-            <small>Bear IV (Thận trọng)</small>
+            <small>Bear IV (Kịch bản thận trọng)</small>
             <strong>{item.bear_iv ? `${fmtNum(item.bear_iv)} ₫` : 'Chưa đủ dữ liệu'}</strong>
           </div>
           <div className="metric-item">
             <small>Biên an toàn (MOS)</small>
-            <strong>{item.actual_mos_pct != null ? `${Number(item.actual_mos_pct).toFixed(1)}%` : 'Chưa thể tính'}</strong>
+            <strong style={{ color: item.actual_mos_pct >= (item.required_mos_pct || 25) ? '#16a34a' : 'inherit' }}>
+              {item.actual_mos_pct != null ? `${Number(item.actual_mos_pct).toFixed(1)}%` : 'Chưa thể tính'}
+            </strong>
           </div>
           <div className="metric-item">
             <small>Trạng thái bẫy giá trị</small>
@@ -689,18 +692,28 @@ function HoldingDetailModal({ item, onClose }) {
 
         {findings.length > 0 && (
           <div style={{ marginTop: 16 }}>
-            <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>Cảnh báo tài chính phát hiện ({findings.length})</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflowY: 'auto' }}>
+            <h4 style={{ fontSize: 14, margin: '0 0 8px', color: '#c53030' }}>
+              Cảnh báo kiểm tra tài chính chuyên sâu ({findings.length})
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
               {findings.map((f, idx) => {
                 const narrative = formatFindingNarrative(f);
                 return (
-                  <div key={idx} style={{ padding: '8px 12px', background: 'var(--panel-subtle, rgba(0,0,0,0.03))', borderRadius: 6, fontSize: 12 }}>
-                    <div style={{ fontWeight: 600, color: '#dd6b20' }}>
-                      {narrative ? narrative.tieu_de : formatSafeText(f.code)}
+                  <div key={idx} style={{ padding: '8px 12px', background: 'var(--panel-subtle, rgba(0,0,0,0.03))', borderRadius: 6, border: '1px solid rgba(229,62,62,0.2)', fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, color: '#c53030', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{narrative ? narrative.tieu_de : formatSafeText(f.code)}</span>
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(229,62,62,0.1)' }}>
+                        {narrative?.muc_do_nghiem_trong || formatStatus(f.status || 'WATCH')}
+                      </span>
                     </div>
-                    <div style={{ color: 'var(--text-muted, #718096)', marginTop: 2 }}>
+                    <div style={{ color: 'var(--text, #201d18)', marginTop: 4, fontSize: 12 }}>
                       {narrative ? narrative.dieu_gi_dang_xay_ra : (f.explanation || f.impact || '')}
                     </div>
+                    {narrative?.du_lieu_chung_minh && (
+                      <div style={{ color: 'var(--text-muted, #718096)', marginTop: 2, fontSize: 11 }}>
+                        <em>Bằng chứng:</em> {narrative.du_lieu_chung_minh}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -708,13 +721,22 @@ function HoldingDetailModal({ item, onClose }) {
           </div>
         )}
 
-        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginTop: 20, display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <a
+            href={`/valuation?symbol=${item.symbol}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/valuation?symbol=${item.symbol}`); }}
+            className="btn btn-secondary"
+            style={{ textDecoration: 'none', display: 'inline-block', fontSize: 13 }}
+          >
+            Xem định giá chi tiết →
+          </a>
           <a
             href={`/business/${item.symbol}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/business/${item.symbol}`); }}
             className="btn btn-primary"
             style={{ textDecoration: 'none', display: 'inline-block', fontSize: 13 }}
           >
-            Mở trang phân tích doanh nghiệp chi tiết →
+            Mở trang doanh nghiệp →
           </a>
           <button type="button" onClick={onClose} className="btn btn-secondary" style={{ fontSize: 13 }}>
             Đóng
@@ -722,6 +744,129 @@ function HoldingDetailModal({ item, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ── Munger Candidates Section on Terminal ─────────────────────────────────────
+function TerminalCandidatesSection() {
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getMungerCandidates('all', '', 6)
+      .then((res) => {
+        if (res?.ok && res?.candidates) {
+          setCandidates(res.candidates.slice(0, 4));
+        }
+      })
+      .catch(() => setCandidates([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || candidates.length === 0) return null;
+
+  return (
+    <section className="card" style={{ marginTop: 24, padding: '20px' }}>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 18 }}>Cơ Hội Đầu Tư Đáng Chú Ý (Tiêu Chuẩn Munger)</h3>
+          <small style={{ color: 'var(--text-muted, #718096)' }}>
+            Những doanh nghiệp có chất lượng tài chính vượt trội được sàng lọc từ engine Munger
+          </small>
+        </div>
+        <a
+          href="/business"
+          onClick={(e) => { e.preventDefault(); navigate('/business'); }}
+          style={{ fontSize: 13, color: 'var(--accent, #b7791f)', fontWeight: 600, textDecoration: 'none' }}
+        >
+          Xem tất cả ứng viên →
+        </a>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        {candidates.map((c) => (
+          <div
+            key={c.symbol}
+            style={{
+              background: 'var(--panel-subtle, rgba(0,0,0,0.02))',
+              border: '1px solid var(--border, #e2e8f0)',
+              borderRadius: 10,
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontSize: 18, fontWeight: 800 }}>{c.symbol}</span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted, #718096)' }}>{c.company_name}</div>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    background: c.candidate_tier_code === 'EXCEPTIONAL' ? 'rgba(72,187,120,0.15)' : 'rgba(49,130,206,0.15)',
+                    color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#2f855a' : '#2b6cb0',
+                  }}
+                >
+                  {c.quality_tier_vi}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, margin: '10px 0' }}>
+                <div>
+                  <span style={{ color: 'var(--text-muted, #718096)' }}>ROE: </span>
+                  <strong>{c.roe_pct != null ? `${c.roe_pct}%` : 'Chưa đủ dữ liệu'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted, #718096)' }}>Tăng trưởng: </span>
+                  <strong>{c.net_profit_cagr_pct != null ? `+${c.net_profit_cagr_pct}%` : 'Ổn định'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted, #718096)' }}>MOS: </span>
+                  <strong style={{ color: c.actual_mos_pct >= (c.required_mos_pct || 25) ? '#2f855a' : 'inherit' }}>
+                    {c.actual_mos_pct != null ? `${c.actual_mos_pct.toFixed(1)}%` : 'Chưa có giá'}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted, #718096)' }}>Bẫy giá trị: </span>
+                  <strong style={{ color: c.value_trap_status === 'CLEAR' ? '#2f855a' : '#c53030' }}>
+                    {c.value_trap_status_vi}
+                  </strong>
+                </div>
+              </div>
+
+              <p style={{ fontSize: 12, color: 'var(--text, #4a5568)', margin: '8px 0 12px', lineHeight: 1.4, fontStyle: 'italic' }}>
+                "{c.recommendation_reason_vi}"
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <a
+                href={`/business/${c.symbol}`}
+                onClick={(e) => { e.preventDefault(); navigate(`/business/${c.symbol}`); }}
+                className="btn btn-secondary"
+                style={{ flex: 1, textAlign: 'center', fontSize: 12, padding: '6px 8px', textDecoration: 'none' }}
+              >
+                Xem phân tích
+              </a>
+              <a
+                href={`/valuation?symbol=${c.symbol}`}
+                onClick={(e) => { e.preventDefault(); navigate(`/valuation?symbol=${c.symbol}`); }}
+                className="btn btn-primary"
+                style={{ flex: 1, textAlign: 'center', fontSize: 12, padding: '6px 8px', textDecoration: 'none' }}
+              >
+                Định giá
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -964,6 +1109,9 @@ export default function TerminalPage() {
                 </table>
               </div>
             </section>
+
+            {/* Munger Candidates / Doanh Nghiệp Đáng Chú Ý */}
+            <TerminalCandidatesSection />
           </div>
         )}
 
