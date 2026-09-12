@@ -1125,8 +1125,7 @@ class CorrectablePortfolioService(PortfolioService):
         total_invested = float(pos.cost_basis)
 
         # Query stock dividends / bonus shares from qport_finance.dividend_canonical
-        events = []
-        cumulative_factor = 1.0
+        all_events = []
         try:
             from portfolio.finance_catalog import _schema_connection, FINANCE_SCHEMA
             with _schema_connection(FINANCE_SCHEMA) as db:
@@ -1135,16 +1134,14 @@ class CorrectablePortfolioService(PortfolioService):
                     FROM dividend_canonical
                     WHERE symbol = %s AND dividend_type IN ('STOCK_DIVIDEND', 'BONUS_SHARE', 'SPLIT')
                       AND stock_ratio IS NOT NULL AND stock_ratio > 0
-                    ORDER BY effective_event_date ASC
+                    ORDER BY effective_event_date DESC
                 """
                 rows = db.execute(sql, (sym,)).fetchall()
                 for r in rows:
-                    ratio = float(r["stock_ratio"])
-                    cumulative_factor *= (1.0 + ratio)
-                    events.append({
+                    all_events.append({
                         "event_date": str(r["effective_event_date"]),
                         "dividend_type": str(r["dividend_type"]),
-                        "stock_ratio": ratio,
+                        "stock_ratio": float(r["stock_ratio"]),
                         "quality_status": str(r.get("quality_status") or "VERIFIED"),
                     })
         except Exception:
@@ -1158,22 +1155,30 @@ class CorrectablePortfolioService(PortfolioService):
                     FROM corporate_actions
                     WHERE symbol = ? AND action_type IN ('STOCK_DIVIDEND', 'BONUS_SHARE', 'SPLIT')
                       AND stock_ratio IS NOT NULL AND stock_ratio > 0
-                    ORDER BY ex_date ASC
+                    ORDER BY ex_date DESC
                 """
                 ca_rows = db.execute(sql, (sym,)).fetchall()
-                for r in ca_rows:
+                for raw_r in ca_rows:
+                    r = dict(raw_r)
                     dt = str(r["ex_date"])
-                    if not any(e["event_date"] == dt for e in events):
-                        ratio = float(r["stock_ratio"])
-                        cumulative_factor *= (1.0 + ratio)
-                        events.append({
+                    if not any(e["event_date"] == dt for e in all_events):
+                        all_events.append({
                             "event_date": dt,
                             "dividend_type": str(r["action_type"]),
-                            "stock_ratio": ratio,
+                            "stock_ratio": float(r["stock_ratio"]),
                             "quality_status": str(r.get("verification_status") or "VERIFIED"),
                         })
         except Exception:
             pass
+
+        # Sort all events by date descending and take only the latest event
+        all_events.sort(key=lambda x: str(x.get("event_date") or ""), reverse=True)
+        events = [all_events[0]] if all_events else []
+
+        cumulative_factor = 1.0
+        if events:
+            ratio = float(events[0]["stock_ratio"])
+            cumulative_factor = 1.0 + ratio
 
         adjusted_shares = round(original_shares * cumulative_factor, 2)
         adjusted_cost = round(total_invested / adjusted_shares, 2) if adjusted_shares > 0 else original_cost
@@ -1189,6 +1194,7 @@ class CorrectablePortfolioService(PortfolioService):
             "adjusted_cost": adjusted_cost,
             "has_adjustment": cumulative_factor > 1.0001,
             "events": events,
+            "latest_event": events[0] if events else None,
         }
 
     def apply_split_adjustment(self, symbol: str, created_by: str = "auto_split_adjust") -> dict:

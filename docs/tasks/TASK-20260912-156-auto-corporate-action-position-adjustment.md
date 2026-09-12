@@ -48,16 +48,17 @@
 
 ## Validation Evidence
 
-- Unit tests: `python/portfolio/tests/test_auto_split_adjust.py` -> 2/2 passed in 4.86s.
-- Suite tests: 27/27 passed in 16.07s.
+- Unit tests: `python/portfolio/tests/test_auto_split_adjust.py` -> 3/3 passed (bao gồm test `test_only_latest_corporate_action_is_used`).
+- Suite tests: 27/27 core portfolio tests passed.
 - Frontend build: `npm --prefix frontend run build` -> 0 errors.
 
 ## Decisions
 
+- **Chỉ lấy sự kiện chia tách / cổ tức cổ phiếu gần nhất (Latest Event Only)**: Sắp xếp theo ngày hiệu lực `effective_event_date` DESC và chỉ lấy 1 sự kiện gần nhất (LIMIT 1). Tránh trường hợp nhân dồn các đợt chia tách từ nhiều năm trước mà người dùng không nắm giữ.
 - Lấy các sự kiện `STOCK_DIVIDEND`, `BONUS_SHARE`, `SPLIT` từ `dividend_canonical` / `corporate_actions` có trạng thái xác thực (`VERIFIED` / `SINGLE_SOURCE`).
 - Người dùng luôn có quyền xem trước số lượng và giá vốn mới trước khi áp dụng.
 
 ## Result
 
-- Hoàn tất tính năng tự động chuẩn hóa số lượng và giá vốn sau chia tách/cổ tức cổ phiếu.
+- Hoàn tất tính năng tự động chuẩn hóa số lượng và giá vốn sau chia tách/cổ tức cổ phiếu gần nhất.
 - Tích hợp nút ⚡ Chia tách trên từng dòng vị thế và banner gợi ý tự động điền trong modal Chỉnh sửa vị thế trên Terminal.

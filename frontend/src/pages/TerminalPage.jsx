@@ -171,8 +171,13 @@ function PositionForm({ title, initial = {}, holdingSymbols = [], onSave, onCanc
           fontSize: 12,
         }}>
           <div style={{ fontWeight: 700, color: '#0284c7', marginBottom: 4 }}>
-            ⚡ Phát hiện {splitInfo.events?.length || 1} đợt chia tách / cổ tức cổ phiếu (Hệ số tích lũy: {splitInfo.cumulative_factor}x)
+            ⚡ Cổ tức cổ phiếu / chia tách gần nhất (Hệ số: {splitInfo.cumulative_factor}x)
           </div>
+          {splitInfo.latest_event && (
+            <div style={{ color: '#4a5568', fontSize: 11, marginBottom: 6 }}>
+              • Sự kiện: {splitInfo.latest_event.dividend_type === 'STOCK_DIVIDEND' ? 'Cổ tức cổ phiếu' : (splitInfo.latest_event.dividend_type === 'BONUS_SHARE' ? 'Thưởng cổ phiếu' : 'Chia tách')} {(splitInfo.latest_event.stock_ratio * 100).toFixed(1)}% (Ngày chốt: {splitInfo.latest_event.event_date})
+            </div>
+          )}
           <div style={{ color: 'var(--text, #201d18)', marginBottom: 8, lineHeight: 1.5 }}>
             • Số lượng sau chia đề xuất: <strong>{Number(splitInfo.adjusted_shares).toLocaleString('vi-VN')} cp</strong><br />
             • Giá vốn sau chia đề xuất: <strong>{Number(splitInfo.adjusted_cost).toLocaleString('vi-VN')} ₫</strong> (Bảo toàn vốn: {Number(splitInfo.total_invested).toLocaleString('vi-VN')} ₫)
