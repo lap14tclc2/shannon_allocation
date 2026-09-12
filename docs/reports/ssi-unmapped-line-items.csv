@@ -6,7 +6,6 @@ BALANCE_SHEET,"Chi phí sản xuất, kinh doanh dở dang dài hạn"
 BALANCE_SHEET,Chênh lệch tỷ giá
 BALANCE_SHEET,Chênh lệch đánh giá lại tài sản
 BALANCE_SHEET,Chứng khoán đầu tư giữ đến ngày đáo hạn
-BALANCE_SHEET,Các khoản phải thu
 BALANCE_SHEET,Các khoản tương đương tiền
 BALANCE_SHEET,Các tài sản dài hạn khác
 BALANCE_SHEET,Cổ phiếu Quỹ
@@ -45,17 +44,10 @@ BALANCE_SHEET,Nguyên giá tài sản đầu tư
 BALANCE_SHEET,Nguồn kinh phí đã hình thành TSCĐ
 BALANCE_SHEET,Người mua trả tiền trước
 BALANCE_SHEET,Người mua trả tiền trước dài hạn
-BALANCE_SHEET,Phải thu dài hạn
-BALANCE_SHEET,Phải thu dài hạn khác
-BALANCE_SHEET,Phải thu khác
-BALANCE_SHEET,Phải thu khách hàng
-BALANCE_SHEET,Phải thu khách hàng dài hạn
 BALANCE_SHEET,Phải thu nội bộ
 BALANCE_SHEET,Phải thu nội bộ dài hạn
 BALANCE_SHEET,Phải thu thuế khác
 BALANCE_SHEET,Phải thu về XDCB
-BALANCE_SHEET,Phải thu về cho vay dài hạn
-BALANCE_SHEET,Phải thu về cho vay ngắn hạn
 BALANCE_SHEET,Phải trả dài hạn khác
 BALANCE_SHEET,Phải trả khác
 BALANCE_SHEET,Phải trả người bán
@@ -75,7 +67,6 @@ BALANCE_SHEET,Quỹ khác
 BALANCE_SHEET,Quỹ phát triển khoa học công nghệ
 BALANCE_SHEET,Quỹ đầu tư và phát triển
 BALANCE_SHEET,"Thiết bị, vật tư, phụ tùng thay thế dài hạn"
-BALANCE_SHEET,Thuế VAT phải thu
 BALANCE_SHEET,Thuế thu nhập hoãn lại phải thu
 BALANCE_SHEET,Thuế thu nhập hoãn lại phải trả
 BALANCE_SHEET,Thuế và các khoản phải trả Nhà nước
@@ -83,9 +74,7 @@ BALANCE_SHEET,Thặng dư vốn cổ phần
 BALANCE_SHEET,Tiền
 BALANCE_SHEET,Trái phiếu chuyển đổi
 BALANCE_SHEET,Trả trước dài hạn
-BALANCE_SHEET,Trả trước người bán
 BALANCE_SHEET,Trả trước người bán dài hạn
-BALANCE_SHEET,Trả trước ngắn hạn
 BALANCE_SHEET,Tài sản cố định
 BALANCE_SHEET,Tài sản dài hạn khác
 BALANCE_SHEET,Tài sản dở dang dài hạn

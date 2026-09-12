@@ -124,6 +124,7 @@
 | [TASK-20260912-143](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-143-repair-receivables-forensic-semantics.md) | Deep-Dive & Repair Receivables Forensic Semantics | completed | high | 2026-09-12 |
 | [TASK-20260912-144](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-144-audit-and-fix-munger-12d-na-metrics.md) | Deep Audit & Fix N/A Financial Metrics in Buffett-Munger 12D Matrix | completed | high | 2026-09-12 |
 | [TASK-20260912-145](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-145-full-ui-semantic-audit.md) | Full UI Semantic Audit — Remove All Internal Machine Keys From User-Facing UI | completed | high | 2026-09-12 |
+| [TASK-20260912-146](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-146-deep-financial-forensics-and-munger-pre-mortem.md) | Deep Financial Forensics & Munger Pre-Mortem Engine | completed | high | 2026-09-12 |
 
 
 

@@ -342,9 +342,9 @@ export default function BusinessPage() {
             {error && <div className="error-box" style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', borderRadius: '6px' }}>Thông báo: {error}</div>}
 
             {data && munger && (
-              <div className="business-grid" style={{ display: 'grid', gap: '20px' }}>
+              <div className="business-grid" style={{ display: 'grid', gap: '24px' }}>
                 
-                {/* 1. DECISION CARD */}
+                {/* 2. KẾT LUẬN ĐẦU TƯ CÓ CẤU TRÚC 9 PHẦN */}
                 <section className="card decision-header-card" style={{ padding: '24px', borderLeft: `6px solid ${decision.state === 'BUY' ? '#16a34a' : (decision.state === 'WAIT_FOR_MOS' ? '#0284c7' : '#dc2626')}` }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <h2 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -355,9 +355,29 @@ export default function BusinessPage() {
                       <strong>{formatClassification(munger.compounder_classification)}</strong>
                     </div>
                   </div>
+
                   <p className="summary-text" style={{ fontSize: '1.05rem', lineHeight: 1.6, margin: '8px 0 16px 0', color: 'var(--text-main, #1f2937)' }}>
                     {decision.primary_reason}
                   </p>
+
+                  {/* Structured 9-Part Conclusion Breakdown */}
+                  {munger.evidence_based_conclusion && (
+                    <div className="evidence-conclusion-box" style={{ background: 'var(--surface-soft, #f9fafb)', padding: '18px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border, #e5e7eb)', fontSize: '0.93rem', lineHeight: 1.6 }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontSize: '1.02rem', color: '#1f2937', fontWeight: 700 }}>Báo Cáo Đánh Giá Tổng Hợp BCTC (9 Yếu Tố Cốt Lõi):</h4>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <div><strong>1. Điểm mạnh tài chính:</strong> {munger.evidence_based_conclusion.diem_manh_tai_chinh?.join('; ')}</div>
+                        <div><strong>2. Điểm yếu:</strong> {munger.evidence_based_conclusion.diem_yeu?.join('; ')}</div>
+                        <div><strong>3. Warning quan trọng nhất:</strong> <span style={{ color: '#dc2626', fontWeight: 600 }}>{munger.evidence_based_conclusion.warning_quan_trong_nhat}</span></div>
+                        <div><strong>4. Xu hướng dài hạn:</strong> {munger.evidence_based_conclusion.xu_huong_dai_han}</div>
+                        <div><strong>5. Value-trap risk:</strong> {munger.evidence_based_conclusion.value_trap_risk}</div>
+                        <div><strong>6. Điều có thể phá vỡ thesis:</strong> {munger.evidence_based_conclusion.dieu_co_the_pha_vo_thesis}</div>
+                        <div><strong>7. Điều kiện củng cố thesis:</strong> {munger.evidence_based_conclusion.dieu_kien_cung_co_thesis}</div>
+                        <div><strong>8. Valuation / MOS:</strong> {munger.evidence_based_conclusion.valuation_mos}</div>
+                        <div><strong>9. Quyết định cuối cùng:</strong> <strong>{munger.evidence_based_conclusion.final_decision}</strong></div>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', paddingTop: '12px', borderTop: '1px solid var(--border, #e5e7eb)', fontSize: '0.92rem' }}>
                     <div>Biên An Toàn Thực Tế (Actual MOS): <strong style={{ color: (decision.actual_mos_pct ?? 0) >= (decision.required_mos_pct ?? 25) ? '#16a34a' : '#dc2626' }}>{formatPct(decision.actual_mos_pct)}</strong></div>
                     <div>Biên An Toàn Yêu Cầu (Required MOS): <strong>{decision.required_mos_pct !== undefined ? `${decision.required_mos_pct}%` : 'N/A'}</strong></div>
@@ -365,38 +385,7 @@ export default function BusinessPage() {
                   </div>
                 </section>
 
-                {/* 2. VALUATION & MOS CARD */}
-                <section className="card valuation-card" style={{ padding: '20px' }}>
-                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>Định Giá Chuẩn Mực & Biên An Toàn</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', textAlign: 'center' }}>
-                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
-                      <small style={{ display: 'block', color: '#6b7280' }}>Giá Thị Trường</small>
-                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.current_price)}</strong>
-                    </div>
-                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
-                      <small style={{ display: 'block', color: '#6b7280' }}>Bear IV (Thận trọng)</small>
-                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bear_iv)}</strong>
-                    </div>
-                    <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                      <small style={{ display: 'block', color: '#1d4ed8' }}>Base IV (Nội tại)</small>
-                      <strong style={{ fontSize: '1.15rem', color: '#1e40af' }}>{formatVND(valuation.base_iv)}</strong>
-                    </div>
-                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
-                      <small style={{ display: 'block', color: '#6b7280' }}>Bull IV (Lạc quan)</small>
-                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bull_iv)}</strong>
-                    </div>
-                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
-                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Thực Tế</small>
-                      <strong style={{ fontSize: '1.1rem', color: (valuation.actual_mos_pct ?? 0) >= (valuation.required_mos_pct ?? 25) ? '#16a34a' : '#dc2626' }}>{formatPct(valuation.actual_mos_pct)}</strong>
-                    </div>
-                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
-                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Yêu Cầu</small>
-                      <strong style={{ fontSize: '1.1rem' }}>{valuation.required_mos_pct ? `${valuation.required_mos_pct}%` : 'N/A'}</strong>
-                    </div>
-                  </div>
-                </section>
-
-                {/* 3. 12-DIMENSION FINANCIAL QUALITY */}
+                {/* 3. MA TRẬN CHẤT LƯỢNG TÀI CHÍNH 12 CHIỀU */}
                 <section className="card quality-matrix-card" style={{ padding: '20px' }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Ma Trận Chất Lượng Tài Chính 12 Chiều Munger</h3>
@@ -528,13 +517,43 @@ export default function BusinessPage() {
                   </div>
                 </section>
 
-                {/* 4. VALUE TRAP GATE CARD */}
+                {/* 4. CẢNH BÁO BẤT THƯỜNG TÀI CHÍNH (FORENSICS FINDINGS) */}
+                <section className="card forensics-card" style={{ padding: '20px' }}>
+                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>Cảnh Báo Bất Thường Tài Chính (Financial Forensics)</h3>
+                  {munger.all_findings && munger.all_findings.length > 0 ? (
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      {munger.all_findings.map((f, idx) => {
+                        const narrative = formatFindingNarrative(f) || {};
+                        return (
+                          <div key={idx} style={{ padding: '14px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', background: f.severity === 'CRITICAL' || f.severity === 'HIGH' ? '#fef2f2' : 'var(--surface-soft, #f9fafb)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <strong style={{ color: f.severity === 'CRITICAL' || f.severity === 'HIGH' ? '#dc2626' : '#d97706', fontSize: '0.98rem' }}>
+                                {narrative.tieu_de || formatFindingTitle(f.code)}
+                              </strong>
+                              {renderBadge(f.status || 'WATCH')}
+                            </div>
+                            <p style={{ margin: '4px 0', fontSize: '0.9rem', lineHeight: 1.5 }}>{narrative.dieu_gi_dang_xay_ra}</p>
+                            <div style={{ fontSize: '0.84rem', color: '#6b7280', marginTop: '6px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                              <span>{narrative.xu_huong_keo_dai}</span>
+                              <span>Tác động: {narrative.anh_huong_dai_han}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: '#16a34a', margin: 0, fontWeight: 600 }}>Chưa phát hiện dấu hiệu bất thường tài chính đáng kể.</p>
+                  )}
+                </section>
+
+                {/* 5. ĐÁNH GIÁ BẪY GIÁ TRỊ */}
                 <section className="card value-trap-card" style={{ padding: '20px' }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>BẪY GIÁ TRỊ</h3>
+                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Đánh Giá Bẫy Giá Trị (Value Trap Gate)</h3>
+                    {renderBadge(valueTrap.status)}
                   </div>
-                  <div className="vt-details" style={{ lineHeight: 1.6 }}>
-                    <p style={{ margin: '4px 0' }}>Đánh giá: <strong>{formatValueTrap(valueTrap.status)}</strong></p>
+                  <div className="vt-details" style={{ lineHeight: 1.6, fontSize: '0.93rem' }}>
+                    <p style={{ margin: '4px 0' }}>Trạng thái Bẫy giá trị: <strong>{formatValueTrap(valueTrap.status)}</strong></p>
                     <p style={{ margin: '4px 0' }}>Xu hướng nền tảng kinh doanh: <strong>{formatDeterioration(valueTrap.deterioration_classification)}</strong></p>
                     {valueTrap.hard_failures && valueTrap.hard_failures.length > 0 && (
                       <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng: <strong>{valueTrap.hard_failures.map(formatFindingTitle).join(', ')}</strong></p>
@@ -545,9 +564,43 @@ export default function BusinessPage() {
                   </div>
                 </section>
 
-                {/* 5. NORMALIZED EARNING POWER CARD */}
+                {/* 6 & 7. ĐỊNH GIÁ & BIÊN AN TOÀN */}
+                <section className="card valuation-card" style={{ padding: '20px' }}>
+                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '16px' }}>Định Giá Chuẩn Mực & Biên An Toàn (MOS)</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', textAlign: 'center' }}>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Giá Thị Trường</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.current_price)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Bear IV (Thận trọng)</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bear_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                      <small style={{ display: 'block', color: '#1d4ed8' }}>Base IV (Nội tại)</small>
+                      <strong style={{ fontSize: '1.15rem', color: '#1e40af' }}>{formatVND(valuation.base_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>Bull IV (Lạc quan)</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{formatVND(valuation.bull_iv)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Thực Tế</small>
+                      <strong style={{ fontSize: '1.1rem', color: (valuation.actual_mos_pct ?? 0) >= (valuation.required_mos_pct ?? 25) ? '#16a34a' : '#dc2626' }}>{formatPct(valuation.actual_mos_pct)}</strong>
+                    </div>
+                    <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
+                      <small style={{ display: 'block', color: '#6b7280' }}>MOS Yêu Cầu</small>
+                      <strong style={{ fontSize: '1.1rem' }}>{valuation.required_mos_pct ? `${valuation.required_mos_pct}%` : 'N/A'}</strong>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 8. MUNGER PRE-MORTEM (8 CÂU HỎI PHẢN BIỆN) */}
+                <ThesisChallengeSection challengeData={munger.thesis_challenge} decision={decision} />
+
+                {/* 9. SỨC MẠNH LỢI NHUẬN & BẰNG CHỨNG LỊCH SỬ */}
                 <section className="card earning-power-card" style={{ padding: '20px' }}>
-                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '12px' }}>Sức Mạnh Lợi Nhuận Chuẩn Hóa (Normalized Earning Power)</h3>
+                  <h3 style={{ fontSize: '1.15rem', marginTop: 0, marginBottom: '12px' }}>Sức Mạnh Lợi Nhuận Chuẩn Hóa & Bằng Chứng Lịch Sử</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
                     <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px' }}>
                       <small style={{ display: 'block', color: '#6b7280' }}>LNST Gần Nhất (Reported)</small>
@@ -565,13 +618,12 @@ export default function BusinessPage() {
                   <p style={{ marginTop: '12px', marginBottom: 0, fontSize: '0.88rem', color: '#6b7280' }}>{normPower.explanation}</p>
                 </section>
 
-                {/* 6. AUTOMATED MUNGER INVESTMENT THESIS CHALLENGE */}
-                <ThesisChallengeSection challengeData={munger.thesis_challenge} decision={decision} />
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-    </div>
-  );
+            </div>
+          )}
+        </div>
+      )}
+    </main>
+  </div>
+);
 }
+

@@ -46,6 +46,10 @@ class ThesisChallengeQuestion:
     evidence_fact_ids: List[str] = field(default_factory=list)
     limitations: str = ""
     confidence: str = "HIGH"
+    conclusion_vi: str = ""
+    evidence_vi: str = ""
+    risk_vi: str = ""
+    severity_vi: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -142,6 +146,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q1_detail,
             metrics={"hard_failures_count": len(hard_failures), "warnings_count": len(warnings)},
             limitations="Phân tích rủi ro dựa trên dữ liệu BCTC lịch sử; không dự đoán biến động kinh tế vĩ mô bất ngờ.",
+            conclusion_vi=q1_summary,
+            evidence_vi=f"BCTC phát hiện {len(hard_failures)} thất bại nghiêm trọng và {len(warnings)} cảnh báo. Danh sách rủi ro: {', '.join(q1_risks)}" if q1_risks else "BCTC đạt tiêu chuẩn trên các chiều phân tích chính.",
+            risk_vi=", ".join(q1_risks[:3]) if q1_risks else "Rủi ro biến động chung của thị trường.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q1_status, q1_status),
         )
     )
 
@@ -177,6 +185,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q2_detail,
             metrics={"median_roe": med_roe, "margin_trend": margin_trend},
             limitations="BCTC không thể chứng minh trực tiếp lợi thế cạnh tranh định tính (như thương hiệu hay giấy phép). Kết luận dựa trên xu hướng ROIC và biên lợi nhuận lịch sử.",
+            conclusion_vi=q2_summary,
+            evidence_vi=f"ROE trung vị: {(med_roe*100):.1f}%, Xu hướng biên lợi nhuận: {margin_trend or 'Ổn định'}." if med_roe is not None else "Chưa đủ dữ liệu ROE trung vị.",
+            risk_vi="Cạnh tranh ngành làm thu hẹp biên lợi nhuận hoặc sụt giảm tỷ suất sinh lời trên vốn.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q2_status, q2_status),
         )
     )
 
@@ -223,6 +235,11 @@ def run_thesis_challenge_analysis(
         q3_summary = "Chưa đủ dữ liệu định giá hoặc giá thị trường để tính toán kịch bản suy giảm lợi nhuận."
         q3_detail = "Cần định giá sẵn sàng (READY) để thực hiện tính toán stress test lợi nhuận."
 
+    q3_evidence_str = (
+        f"Kịch bản LN -30%: IV = {stress_q3.get('minus_30_iv', 0):,.0f} đ (MOS {stress_q3.get('minus_30_mos', 0):.1f}%). "
+        f"Kịch bản LN -50%: IV = {stress_q3.get('minus_50_iv', 0):,.0f} đ (MOS {stress_q3.get('minus_50_mos', 0):.1f}%)."
+    ) if stress_q3 else "Chưa đủ dữ liệu BCTC định giá."
+
     questions.append(
         ThesisChallengeQuestion(
             question_id="Q3_NORMALIZED_EARNINGS_STRESS",
@@ -234,6 +251,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q3_detail,
             metrics=stress_q3,
             limitations="Tính toán giả định mức sụt giảm lợi nhuận kéo dài tác động trực tiếp tỷ lệ thuận lên giá trị nội tại cơ sở.",
+            conclusion_vi=q3_summary,
+            evidence_vi=q3_evidence_str,
+            risk_vi="Sụt giảm lợi nhuận làm suy giảm giá trị nội tại, khiên bảo vệ Biên an toàn không còn đầy đủ.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q3_status, q3_status),
         )
     )
 
@@ -273,6 +294,11 @@ def run_thesis_challenge_analysis(
         q4_summary = "Chưa đủ dữ liệu định giá chuẩn để kiểm tra rủi ro sai số mô hình."
         q4_detail = "Yêu cầu dữ liệu định giá cơ sở sẵn sàng."
 
+    q4_evidence_str = (
+        f"IV cơ sở = {base_iv:,.0f} đ, IV sau haircut 30% = {stress_q4.get('haircut_iv', 0):,.0f} đ, "
+        f"MOS điều chỉnh = {stress_q4.get('stressed_mos', 0):.1f}% vs MOS yêu cầu {required_mos:.1f}%."
+    ) if stress_q4 else "Chưa đủ dữ liệu định giá cơ sở."
+
     questions.append(
         ThesisChallengeQuestion(
             question_id="Q4_VALUATION_MODEL_ERROR",
@@ -284,6 +310,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q4_detail,
             metrics=stress_q4,
             limitations="Sử dụng duy nhất một thẩm quyền Biên an toàn chuẩn (Canonical MOS Authority).",
+            conclusion_vi=q4_summary,
+            evidence_vi=q4_evidence_str,
+            risk_vi="Rủi ro sai số mô hình định giá khiến nhà đầu tư trả mức giá quá cao cho doanh nghiệp.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q4_status, q4_status),
         )
     )
 
@@ -319,6 +349,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q5_detail,
             metrics={"pbs_available": bool(pbs)},
             limitations="Biến động giá cổ phiếu -50% không tự động coi là suy giảm bản chất doanh nghiệp. Đánh giá tập trung vào khả năng tránh bị bán giải chấp/cưỡng bố.",
+            conclusion_vi=q5_summary,
+            evidence_vi=q5_detail,
+            risk_vi="Áp lực tâm lý từ biến động giá sụt giảm sâu hoặc rủi ro bán giải chấp nợ margin.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q5_status, q5_status),
         )
     )
 
@@ -358,6 +392,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q6_detail,
             metrics={"debt_to_equity": debt_eq},
             limitations="Xét riêng nền tảng tài chính BCTC; không dự đoán biến động giá cổ phiếu trên thị trường.",
+            conclusion_vi=q6_summary,
+            evidence_vi=f"Tỷ lệ Nợ/VCSH = {debt_eq:.2f}x. Trạng thái Bẫy giá trị: {value_trap.get('status', 'CLEAR')}." if debt_eq is not None else f"Tỷ lệ Nợ/VCSH chưa đủ dữ liệu. Trạng thái Bẫy giá trị: {value_trap.get('status', 'CLEAR')}.",
+            risk_vi="Gánh nặng nghĩa vụ nợ vay tài chính khi không có cơ hội giao dịch thanh khoản ngắn hạn.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q6_status, q6_status),
         )
     )
 
@@ -402,6 +440,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q7_detail,
             metrics={"classification": q7_class, "actual_mos": actual_mos, "required_mos": required_mos},
             limitations="Quy tắc bất biến: Giá cổ phiếu giảm đơn thuần TUYỆT ĐỐI KHÔNG tự động coi là cơ hội giá trị.",
+            conclusion_vi=q7_summary,
+            evidence_vi=q7_detail,
+            risk_vi="Nhầm lẫn giữa cổ phiếu giá rẻ do suy yếu cấu trúc kinh doanh và cổ phiếu dưới giá trị có Biên an toàn.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(q7_status, q7_status),
         )
     )
 
@@ -476,6 +518,7 @@ def run_thesis_challenge_analysis(
 
     q8_summary = f"Đã thiết lập {len(invalidation_criteria)} tiêu chí định lượng có thể đo lường để bác bỏ luận điểm đầu tư."
     q8_detail = "Nếu các sự kiện tài chính trên xảy ra trong thực tế, QPort sẽ tự động hạ cấp đánh giá và khuyến nghị AVOID."
+    q8_evidence_str = "; ".join([f"{c['metric']}: {c['trigger']}" for c in invalidation_criteria])
 
     questions.append(
         ThesisChallengeQuestion(
@@ -488,6 +531,10 @@ def run_thesis_challenge_analysis(
             detail_vi=q8_detail,
             metrics={"criteria_count": len(invalidation_criteria)},
             limitations="Các tiêu chí bác bỏ được theo dõi tự động qua các kỳ BCTC năm (FY) tiếp theo.",
+            conclusion_vi=q8_summary,
+            evidence_vi=q8_evidence_str,
+            risk_vi="Doanh nghiệp chạm ngưỡng suy thoái định lượng nhưng nhà đầu tư trì hoãn thoái vốn.",
+            severity_vi=STATUS_VIETNAMESE_MAP.get(ThesisChallengeAnswerStatus.RESILIENT, "Có khả năng chống chịu"),
         )
     )
 

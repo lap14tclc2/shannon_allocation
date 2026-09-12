@@ -16,7 +16,7 @@ STATUS_VIETNAMESE: Dict[str, str] = {
     "GOOD": "Tốt",
     "WATCH": "Cần theo dõi",
     "FAIL": "Không đạt",
-    "UNKNOWN": "Chưa xác định",
+    "UNKNOWN": "Chưa đủ dữ liệu",
     "NOT_APPLICABLE": "Không áp dụng",
     "MISSING": "Thiếu dữ liệu",
     "CLEAR": "Chưa phát hiện rủi ro đáng kể",
@@ -68,6 +68,27 @@ COMPARISON_VIETNAMESE: Dict[str, str] = {
     "normalized_earnings_trend < 0": "Sức kiếm tiền bình thường hóa đang có dấu hiệu suy giảm",
     "normalized_earnings_trend >= 0": "Sức kiếm tiền bình thường hóa duy trì tăng trưởng ổn định",
 }
+
+
+SYSTEM_INVARIANTS_VIETNAMESE: Dict[str, Dict[str, str]] = {
+    "NULL_NOT_ZERO": {
+        "formula": "NULL != 0",
+        "explanation": "Thiếu dữ liệu (NULL) khác với giá trị 0 thực tế.",
+    },
+    "UNKNOWN_NOT_PASS": {
+        "formula": "UNKNOWN != PASS",
+        "explanation": "Chưa đủ dữ liệu không thể mặc định coi là Đạt.",
+    },
+    "WATCH_NOT_FAIL": {
+        "formula": "WATCH != FAIL",
+        "explanation": "Chỉ tiêu thuộc diện cần theo dõi chưa mặc định là Không đạt.",
+    },
+    "NOT_APPLICABLE_NOT_UNKNOWN": {
+        "formula": "NOT_APPLICABLE != UNKNOWN",
+        "explanation": "Chỉ tiêu không áp dụng cho mô hình đặc thù khác với thiếu dữ liệu.",
+    },
+}
+
 
 
 CLASSIFICATION_VIETNAMESE: Dict[str, str] = {

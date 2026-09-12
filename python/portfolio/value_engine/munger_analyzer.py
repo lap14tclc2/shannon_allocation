@@ -347,6 +347,22 @@ def build_munger_financial_analysis(
     )
     thesis_challenge_dict = thesis_challenge_obj.to_dict()
 
+    # 13. Evidence-Based 9-Part Final Conclusion (Task 9)
+    evidence_conclusion = _build_evidence_based_conclusion(
+        symbol=ticker,
+        archetype=archetype_str,
+        compounder_class=compounder_class,
+        all_findings=all_findings,
+        hard_failures=hard_failures,
+        warnings=warnings,
+        value_trap_assessment=value_trap_assessment,
+        valuation=valuation_analysis,
+        long_term_decision=long_term_decision,
+        prof_res=prof_res,
+        growth_res=growth_res,
+        eq_res=eq_res,
+    )
+
     return FinancialBusinessAnalysis(
         symbol=ticker,
         archetype=archetype_str,
@@ -375,10 +391,122 @@ def build_munger_financial_analysis(
         valuation=valuation_analysis,
         long_term_decision=long_term_decision,
         thesis_challenge=thesis_challenge_dict,
+        evidence_based_conclusion=evidence_conclusion,
         compounder_classification=compounder_class,
         overall_financial_quality=overall_quality,
         hard_financial_failures=hard_failures,
         financial_warnings=warnings,
         all_findings=all_findings,
     )
+
+
+def _build_evidence_based_conclusion(
+    symbol: str,
+    archetype: str,
+    compounder_class: str,
+    all_findings: List[FinancialFinding],
+    hard_failures: List[str],
+    warnings: List[str],
+    value_trap_assessment: Dict[str, Any],
+    valuation: Dict[str, Any],
+    long_term_decision: Dict[str, Any],
+    prof_res: FinancialDimensionResult,
+    growth_res: FinancialDimensionResult,
+    eq_res: FinancialDimensionResult,
+) -> Dict[str, Any]:
+    """Build structured 9-part evidence-based final conclusion payload (Task 9)."""
+    from .vietnamese_presenter import (
+        get_vietnamese_classification,
+        get_vietnamese_decision,
+        get_vietnamese_finding_title,
+        get_vietnamese_status,
+        get_vietnamese_valuetrap,
+    )
+
+    strengths: List[str] = []
+    weaknesses: List[str] = []
+
+    med_roe = prof_res.metrics.get("median_roe")
+    if med_roe is not None and med_roe >= 0.15:
+        strengths.append(f"Tỷ suất sinh lời ROE trung vị đạt mức cao ({(med_roe*100):.1f}%)")
+
+    pat_cagr = growth_res.metrics.get("net_profit_cagr")
+    if pat_cagr is not None and pat_cagr >= 0.12:
+        strengths.append(f"Tăng trưởng lợi nhuận ròng mạnh mẽ ({(pat_cagr*100):.1f}%/năm)")
+
+    avg_cfo_pat = eq_res.metrics.get("avg_cfo_pat")
+    if avg_cfo_pat is not None and avg_cfo_pat >= 0.8:
+        strengths.append(f"Khả năng chuyển hóa lợi nhuận thành tiền mặt tương đối tốt (CFO/PAT trung bình {avg_cfo_pat:.2f}x)")
+
+    if not hard_failures:
+        strengths.append("Không phát hiện vi phạm hằng đẳng thức kế toán hay thất bại nghiêm trọng")
+
+    if not strengths:
+        strengths.append("Doanh nghiệp duy trì nền tảng hoạt động cơ bản")
+
+    for f in all_findings:
+        if f.severity in ("HIGH", "CRITICAL", "MEDIUM"):
+            title = get_vietnamese_finding_title(f.code)
+            if title not in weaknesses:
+                weaknesses.append(title)
+
+    if not weaknesses:
+        weaknesses.append("Chưa phát hiện điểm yếu tài chính nghiêm trọng")
+
+    top_warning = "Chưa phát hiện cảnh báo rủi ro tài chính đáng ngại"
+    if hard_failures:
+        top_warning = get_vietnamese_finding_title(hard_failures[0])
+    elif warnings:
+        top_warning = get_vietnamese_finding_title(warnings[0])
+
+    comp_vi = get_vietnamese_classification(compounder_class)
+    long_term_trend = f"Xu hướng dài hạn: {comp_vi}."
+
+    vt_status = value_trap_assessment.get("status", "CLEAR")
+    vt_vi = get_vietnamese_valuetrap(vt_status)
+    value_trap_risk = f"Đánh giá rủi ro Bẫy giá trị: {vt_vi}."
+
+    finding_codes = [f.code for f in all_findings]
+    if "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in finding_codes or "PROFIT_CASH_DIVERGENCE" in finding_codes:
+        what_breaks = "Luận điểm đầu tư sẽ suy yếu đáng kể nếu dòng tiền tiếp tục tụt lại phía sau lợi nhuận và vốn lưu động tiếp tục hút tiền."
+        conditions_to_strengthen = "Luận điểm sẽ được củng cố khi dòng tiền kinh doanh (CFO) thu hồi đạt tương ứng lợi nhuận sau thuế (CFO/PAT >= 0.8x) và tốc độ tăng khoản phải thu giảm xuống dưới tốc độ tăng doanh thu."
+    else:
+        what_breaks = "Luận điểm đầu tư sẽ suy yếu nếu hiệu suất sinh lời ROE sụt giảm dưới mức kỳ vọng tối thiểu hoặc đòn bẩy nợ vay tăng nhanh."
+        conditions_to_strengthen = "Luận điểm được củng cố khi doanh nghiệp tiếp tục duy trì ROE cao và quản trị chi phí tài chính hiệu quả."
+
+    val_status = valuation.get("status", "INCOMPLETE")
+    curr_p = valuation.get("current_price")
+    base_iv = valuation.get("base_iv")
+    act_mos = valuation.get("actual_mos_pct")
+    req_mos = valuation.get("required_mos_pct", 25.0)
+
+    if val_status == "READY" and curr_p is not None and base_iv is not None and act_mos is not None:
+        val_mos_str = f"Giá hiện tại {curr_p:,.0f} đ vs Giá trị nội tại cơ sở {base_iv:,.0f} đ (MOS thực tế {act_mos:.1f}% vs Yêu cầu {req_mos:.1f}%)."
+    else:
+        val_mos_str = "Chưa đủ dữ liệu định giá chuẩn để xác định Biên an toàn."
+
+    final_decision_str = f"{long_term_decision.get('state_vietnamese', 'WAIT_FOR_MOS')} — {long_term_decision.get('primary_reason', '')}"
+
+    full_narrative = (
+        f"Doanh nghiệp {symbol} có nền tảng tài chính được đánh giá ở nhóm '{comp_vi}'. "
+        f"Điểm mạnh chính bao gồm: {', '.join(strengths[:2])}. "
+        f"Tuy nhiên, hệ thống phát hiện cảnh báo cần lưu ý: {top_warning}. "
+        f"{what_breaks} "
+        f"Về định giá: {val_mos_str} "
+        f"Kết luận đầu tư: {final_decision_str}"
+    )
+
+    return {
+        "diem_manh_tai_chinh": strengths,
+        "diem_yeu": weaknesses,
+        "warning_quan_trong_nhat": top_warning,
+        "xu_huong_dai_han": long_term_trend,
+        "value_trap_risk": value_trap_risk,
+        "dieu_co_the_pha_vo_thesis": what_breaks,
+        "dieu_kien_cung_co_thesis": conditions_to_strengthen,
+        "valuation_mos": val_mos_str,
+        "final_decision": final_decision_str,
+        "full_narrative": full_narrative,
+    }
+
 

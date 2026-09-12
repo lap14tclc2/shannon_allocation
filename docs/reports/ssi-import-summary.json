@@ -1,5 +1,5 @@
 {
-  "scanned_at": "2026-09-11T15:41:19.658611+00:00",
+  "scanned_at": "2026-09-12T04:07:46.384890+00:00",
   "source_directory": "F:\\DATA_BCTC",
   "files_discovered": 10,
   "files_parsed": 10,
@@ -11,8 +11,8 @@
   "same_payload_group_count": 3,
   "different_payload_conflicts": 0,
   "raw_observations_count": 8400,
-  "canonical_facts_count": 750,
-  "unmapped_rows_count": 7650,
+  "canonical_facts_count": 1080,
+  "unmapped_rows_count": 7320,
   "symbols": [
     "AAA"
   ]

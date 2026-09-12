@@ -132,7 +132,7 @@ export default function ThesisChallengeSection({ challengeData, decision }) {
                 </div>
               </div>
 
-              {/* Detailed Evidence & Limitations Accordion */}
+              {/* Detailed Evidence & Structured 4-Part Pre-Mortem Accordion */}
               {isExpanded && (
                 <div
                   style={{
@@ -144,13 +144,24 @@ export default function ThesisChallengeSection({ challengeData, decision }) {
                     lineHeight: 1.6,
                   }}
                 >
-                  <p style={{ margin: '0 0 8px 0' }}>
-                    <strong>Chi tiết phân tích & Bằng chứng:</strong> {q.detail_vi}
-                  </p>
+                  <div style={{ display: 'grid', gap: '8px', marginBottom: '10px' }}>
+                    <div>
+                      <strong>1. Kết Luận:</strong> {q.conclusion_vi || q.summary_vi}
+                    </div>
+                    <div>
+                      <strong>2. Bằng Chứng BCTC (Evidence):</strong> {q.evidence_vi || q.detail_vi}
+                    </div>
+                    <div>
+                      <strong>3. Rủi Ro Tiềm Ẩn (Risk):</strong> {q.risk_vi || 'Cần theo dõi sát biến động tài chính.'}
+                    </div>
+                    <div>
+                      <strong>4. Mức Độ Nghiêm Trọng (Severity):</strong> {q.severity_vi || q.answer_status_vi || formatStatus(q.answer_status)}
+                    </div>
+                  </div>
 
                   {/* Measurable invalidation criteria if Q8 */}
                   {q.question_number === 8 && challengeData.invalidation_criteria && (
-                    <div style={{ marginTop: '8px' }}>
+                    <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
                       <strong style={{ display: 'block', marginBottom: '4px' }}>
                         Danh sách tiêu chí kích hoạt bác bỏ luận điểm:
                       </strong>
