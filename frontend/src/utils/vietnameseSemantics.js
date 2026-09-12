@@ -151,7 +151,7 @@ export const SYSTEM_INVARIANTS_MAP = {
 };
 
 export const FINDING_TITLES = {
-  RECEIVABLES_GROW_FASTER_THAN_REVENUE: 'Khoản phải thu tăng nhanh hơn doanh thu',
+  RECEIVABLES_GROW_FASTER_THAN_REVENUE: 'Khả năng thu hồi tiền bán hàng',
   INVENTORY_GROW_FASTER_THAN_REVENUE: 'Hàng tồn kho tăng nhanh hơn doanh thu',
   WEAK_CASH_CONVERSION: 'Dòng tiền kinh doanh chưa tương ứng với lợi nhuận',
   DEBT_FUNDED_LOW_QUALITY_GROWTH: 'Tăng trưởng phụ thuộc nhiều vào nợ vay',

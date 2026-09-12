@@ -275,7 +275,7 @@ def run_receivables_forensics(
     archetype: str = "NORMAL_ENTERPRISE",
     thresholds: MungerThresholdPolicy = DEFAULT_MUNGER_THRESHOLD_POLICY,
 ) -> FinancialDimensionResult:
-    """Analyze receivables growth vs revenue growth."""
+    """Analyze receivables growth vs revenue growth with 2-stage semantic validation."""
     if archetype in ("BANK", "SECURITIES"):
         return FinancialDimensionResult(
             status=DimensionStatus.NOT_APPLICABLE.value,
@@ -291,18 +291,45 @@ def run_receivables_forensics(
     by_year = history_data.get("by_year", {})
     years = history_data.get("years", [])
 
+    # STAGE A — Canonical Semantic Validation
+    semantic_statuses = [by_year.get(y, {}).get("receivables_semantic_status", "DATA_VALID") for y in years]
+    source_types = [by_year.get(y, {}).get("receivables_source_type", "TRADE_NET") for y in years]
+
+    if "DATA_CONFLICT" in semantic_statuses:
+        return FinancialDimensionResult(
+            status=DimensionStatus.UNKNOWN.value,
+            confidence=ConfidenceLevel.LOW.value,
+            metrics={"semantic_status": "DATA_CONFLICT"},
+            findings=[],
+            evidence=[],
+            missing_data=["RECEIVABLES_DATA_CONFLICT"],
+            not_applicable=[],
+            explanation="Dữ liệu các khoản phải thu xung đột ngữ cảnh (Trade Receivables > Total Receivables). Tạm hoãn phân tích.",
+        )
+
+    is_total_proxy = all(s in ("TOTAL_PROXY", "MISSING") for s in source_types) or not any(s == "TRADE_NET" for s in source_types)
+
     rec_series: List[Tuple[int, float]] = []
     rev_series: List[Tuple[int, float]] = []
+    cfo_series: List[Tuple[int, float]] = []
+    pat_series: List[Tuple[int, float]] = []
     evidence_facts: List[str] = []
 
     for y in years:
         ydict = by_year.get(y, {})
-        rec = ydict.get("receivables") or ydict.get("BS.ASSETS.RECEIVABLES")
+        rec = ydict.get("receivables")
         rev = ydict.get("revenue") or ydict.get("IS.REVENUE.TOTAL")
+        cfo = ydict.get("cfo") or ydict.get("operating_cash_flow")
+        pat = ydict.get("net_profit") or ydict.get("net_income")
+
         if rec is not None and rev is not None and float(rev) > 0:
             rec_series.append((y, float(rec)))
             rev_series.append((y, float(rev)))
-            evidence_facts.extend([f"BS.ASSETS.RECEIVABLES FY{y}", f"IS.REVENUE.TOTAL FY{y}"])
+            if cfo is not None:
+                cfo_series.append((y, float(cfo)))
+            if pat is not None:
+                pat_series.append((y, float(pat)))
+            evidence_facts.extend([f"RECEIVABLES FY{y}", f"REVENUE FY{y}"])
 
     if len(rec_series) < 3:
         return FinancialDimensionResult(
@@ -316,65 +343,149 @@ def run_receivables_forensics(
             explanation="Chưa đủ dữ liệu các khoản phải thu để đánh giá.",
         )
 
-    n_years = len(rec_series) - 1
-    rec_cagr = (rec_series[-1][1] / rec_series[0][1]) ** (1.0 / n_years) - 1.0 if rec_series[0][1] > 0 and rec_series[-1][1] > 0 else None
-    rev_cagr = (rev_series[-1][1] / rev_series[0][1]) ** (1.0 / n_years) - 1.0 if rev_series[0][1] > 0 and rev_series[-1][1] > 0 else None
-    latest_rec_ratio = rec_series[-1][1] / rev_series[-1][1]
+    # Calculate Receivable Intensity (receivables / revenue)
+    ratios: List[Tuple[int, float]] = [(y, rec / rev) for y, rec in rec_series for y_rev, rev in rev_series if y == y_rev]
+    ratio_vals = [r[1] for r in ratios]
+    latest_rec_ratio = ratio_vals[-1] if ratio_vals else 0.0
+
+    def calc_median(vals: List[float]) -> float:
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        n = len(s)
+        return (s[n//2] if n % 2 != 0 else (s[n//2 - 1] + s[n//2]) / 2.0)
+
+    ratio_3y_median = calc_median(ratio_vals[-3:])
+    ratio_5y_median = calc_median(ratio_vals[-5:])
+    ratio_hist_median = calc_median(ratio_vals)
+
+    # Calculate DSO = (Avg Receivables / Annual Revenue) * 365
+    dso_series: List[Tuple[int, float]] = []
+    for i in range(1, len(rec_series)):
+        y = rec_series[i][0]
+        prev_rec = rec_series[i-1][1]
+        curr_rec = rec_series[i][1]
+        curr_rev = rev_series[i][1]
+        avg_rec = (prev_rec + curr_rec) / 2.0
+        if curr_rev > 0:
+            dso = (avg_rec / curr_rev) * 365.0
+            dso_series.append((y, dso))
+
+    dso_vals = [d[1] for d in dso_series]
+    latest_dso = dso_vals[-1] if dso_vals else None
+    dso_3y_median = calc_median(dso_vals[-3:]) if dso_vals else None
+    dso_5y_median = calc_median(dso_vals[-5:]) if dso_vals else None
+    dso_hist_median = calc_median(dso_vals) if dso_vals else None
+    dso_3y_change = (latest_dso - dso_vals[-3]) if len(dso_vals) >= 3 and latest_dso is not None else 0.0
+    dso_5y_change = (latest_dso - dso_vals[-5]) if len(dso_vals) >= 5 and latest_dso is not None else 0.0
+
+    # Consecutive worsening DSO years
+    consecutive_worsening_dso_years = 0
+    for i in range(len(dso_vals) - 1, 0, -1):
+        if dso_vals[i] > dso_vals[i-1]:
+            consecutive_worsening_dso_years += 1
+        else:
+            break
+
+    # Multi-period CAGRs
+    n_full = len(rec_series) - 1
+    rec_cagr_full = (rec_series[-1][1] / rec_series[0][1]) ** (1.0 / n_full) - 1.0 if rec_series[0][1] > 0 and rec_series[-1][1] > 0 else 0.0
+    rev_cagr_full = (rev_series[-1][1] / rev_series[0][1]) ** (1.0 / n_full) - 1.0 if rev_series[0][1] > 0 and rev_series[-1][1] > 0 else 0.0
+
+    rec_cagr_3y = ((rec_series[-1][1] / rec_series[-4][1]) ** (1.0 / 3.0) - 1.0) if len(rec_series) >= 4 and rec_series[-4][1] > 0 and rec_series[-1][1] > 0 else rec_cagr_full
+    rev_cagr_3y = ((rev_series[-1][1] / rev_series[-4][1]) ** (1.0 / 3.0) - 1.0) if len(rev_series) >= 4 and rev_series[-4][1] > 0 and rev_series[-1][1] > 0 else rev_cagr_full
+
+    gap_3y = rec_cagr_3y - rev_cagr_3y
+    gap_full = rec_cagr_full - rev_cagr_full
+
+    # Corroborating Evidence: CFO / PAT
+    recent_cfo_sum = sum(c[1] for c in cfo_series[-3:]) if len(cfo_series) >= 3 else (sum(c[1] for c in cfo_series) if cfo_series else 0)
+    recent_pat_sum = sum(p[1] for p in pat_series[-3:]) if len(pat_series) >= 3 else (sum(p[1] for p in pat_series) if pat_series else 0)
+    cash_conversion = (recent_cfo_sum / recent_pat_sum) if recent_pat_sum > 0 else 1.0
+
+    # STAGE B — Economic Forensic Assessment & Persistence Check
+    has_growth_gap = (gap_3y > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP or gap_full > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP)
+    has_high_intensity = latest_rec_ratio > thresholds.RECEIVABLES_REVENUE_RATIO_HIGH
+    is_persistent = (consecutive_worsening_dso_years >= 2 or dso_3y_change > 15.0 or (latest_rec_ratio > ratio_hist_median + 0.05))
+    has_weak_cash_conversion = cash_conversion < 0.6 or recent_cfo_sum < 0
 
     status = DimensionStatus.PASS.value
     findings: List[FinancialFinding] = []
+    explanation = "Khả năng thu hồi tiền bán hàng bình thường."
 
-    if rec_cagr is not None and rev_cagr is not None and (rec_cagr - rev_cagr) > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP:
-        if latest_rec_ratio > thresholds.RECEIVABLES_REVENUE_RATIO_HIGH:
+    if has_growth_gap or (has_high_intensity and is_persistent):
+        # Default severity for persistent material divergence + worsening DSO + weak CFO
+        if not is_total_proxy and is_persistent and has_weak_cash_conversion and latest_rec_ratio > 0.40:
             status = DimensionStatus.FAIL.value
-            findings.append(
-                FinancialFinding(
-                    code="RECEIVABLES_GROW_FASTER_THAN_REVENUE",
-                    category="WORKING_CAPITAL",
-                    severity=FindingSeverity.HIGH.value,
-                    confidence=ConfidenceLevel.HIGH.value,
-                    status=DimensionStatus.FAIL.value,
-                    start_period=rec_series[0][0],
-                    end_period=rec_series[-1][0],
-                    metrics={"rec_cagr": rec_cagr, "rev_cagr": rev_cagr, "latest_rec_ratio": latest_rec_ratio},
-                    evidence_fact_ids=evidence_facts,
-                    explanation=f"Khoản phải thu tăng trưởng {rec_cagr*100:.1f}% vượt xa doanh thu {rev_cagr*100:.1f}%, tỷ trọng phải thu/doanh thu đạt {latest_rec_ratio*100:.1f}%.",
-                    archetype=archetype,
-                    impact="REVENUE_QUALITY_RISK",
-                )
+            severity = FindingSeverity.HIGH.value
+            explanation = (
+                f"Khoản phải thu từ khách hàng tăng vượt doanh thu (gap 3Y {gap_3y*100:.1f}%), "
+                f"thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {latest_dso:.0f} ngày), "
+                f"đồng thời dòng tiền kinh doanh yếu (CFO/PAT 3Y = {cash_conversion:.2f})."
             )
         else:
             status = DimensionStatus.WATCH.value
-            findings.append(
-                FinancialFinding(
-                    code="RECEIVABLE_INTENSITY_RISING",
-                    category="WORKING_CAPITAL",
-                    severity=FindingSeverity.MEDIUM.value,
-                    confidence=ConfidenceLevel.HIGH.value,
-                    status=DimensionStatus.WATCH.value,
-                    start_period=rec_series[0][0],
-                    end_period=rec_series[-1][0],
-                    metrics={"rec_cagr": rec_cagr, "rev_cagr": rev_cagr},
-                    evidence_fact_ids=evidence_facts,
-                    explanation=f"Tỷ lệ các khoản phải thu trên doanh thu có xu hướng tăng.",
-                    archetype=archetype,
-                    impact="MODERATE_WORKING_CAPITAL_RISK",
+            severity = FindingSeverity.MEDIUM.value
+            if is_total_proxy:
+                explanation = (
+                    f"Tổng các khoản phải thu (gồm cả chi phí trả trước/khác) tăng nhanh hơn doanh thu. "
+                    f"Dữ liệu ở dạng tổng hợp (TOTAL_PROXY), cần theo dõi thêm."
                 )
+            else:
+                dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "N/A"
+                explanation = (
+                    f"Khoản phải thu từ khách hàng tăng nhanh hơn doanh thu (gap 3Y {gap_3y*100:.1f}%), "
+                    f"tỷ lệ Phải thu/Doanh thu ở mức {latest_rec_ratio*100:.1f}% (DSO = {dso_str})."
+                )
+
+        findings.append(
+            FinancialFinding(
+                code="RECEIVABLES_GROW_FASTER_THAN_REVENUE",
+                category="WORKING_CAPITAL",
+                severity=severity,
+                confidence=ConfidenceLevel.HIGH.value if not is_total_proxy else ConfidenceLevel.MEDIUM.value,
+                status=status,
+                start_period=rec_series[0][0],
+                end_period=rec_series[-1][0],
+                metrics={
+                    "rec_cagr_3y": rec_cagr_3y,
+                    "rev_cagr_3y": rev_cagr_3y,
+                    "gap_3y": gap_3y,
+                    "latest_rec_ratio": latest_rec_ratio,
+                    "latest_dso": latest_dso,
+                    "dso_3y_change": dso_3y_change,
+                    "cash_conversion_3y": cash_conversion,
+                    "source_type": source_types[-1] if source_types else "UNKNOWN",
+                },
+                evidence_fact_ids=evidence_facts,
+                explanation=explanation,
+                archetype=archetype,
+                impact="REVENUE_QUALITY_RISK" if severity == FindingSeverity.HIGH.value else "MODERATE_WORKING_CAPITAL_RISK",
             )
+        )
 
     return FinancialDimensionResult(
         status=status,
-        confidence=ConfidenceLevel.HIGH.value if len(rec_series) >= 5 else ConfidenceLevel.MEDIUM.value,
+        confidence=ConfidenceLevel.HIGH.value if (len(rec_series) >= 5 and not is_total_proxy) else ConfidenceLevel.MEDIUM.value,
         metrics={
-            "rec_cagr": rec_cagr,
-            "rev_cagr": rev_cagr,
+            "rec_cagr_3y": rec_cagr_3y,
+            "rev_cagr_3y": rev_cagr_3y,
+            "gap_3y": gap_3y,
             "latest_rec_ratio": latest_rec_ratio,
+            "ratio_3y_median": ratio_3y_median,
+            "ratio_hist_median": ratio_hist_median,
+            "latest_dso": latest_dso,
+            "dso_3y_median": dso_3y_median,
+            "dso_3y_change": dso_3y_change,
+            "consecutive_worsening_dso_years": consecutive_worsening_dso_years,
+            "cash_conversion_3y": cash_conversion,
+            "receivables_source_type": source_types[-1] if source_types else "UNKNOWN",
         },
         findings=findings,
         evidence=evidence_facts,
         missing_data=[],
         not_applicable=[],
-        explanation="Quản lý khoản phải thu bình thường." if status == DimensionStatus.PASS.value else "Cần lưu ý các khoản phải thu đọng vốn lớn.",
+        explanation=explanation,
     )
 
 
@@ -513,11 +624,14 @@ def classify_structural_vs_cyclical_deterioration(
 
     structural_signals: List[str] = []
     cyclical_signals: List[str] = []
+    working_capital_signals: List[str] = []
 
     for f in critical_findings + high_findings:
         if f.category in ("ACCOUNTING", "STRUCTURAL_DETERIORATION", "DILUTION", "DEBT"):
             structural_signals.append(f"{f.code}: {f.explanation}")
-        elif f.category in ("EARNINGS_QUALITY", "WORKING_CAPITAL"):
+        elif f.category == "WORKING_CAPITAL":
+            working_capital_signals.append(f"{f.code}: {f.explanation}")
+        elif f.category == "EARNINGS_QUALITY":
             structural_signals.append(f"{f.code}: {f.explanation}")
 
     if roic_declining and margin_declining:
@@ -526,13 +640,14 @@ def classify_structural_vs_cyclical_deterioration(
     if durability_metrics.get("cyclical_rebound_observed") is True:
         cyclical_signals.append("Có lịch sử phục hồi mạnh sau giai đoạn đáy chu kỳ.")
 
+    # Invariant: A single working capital finding alone MUST NOT trigger POSSIBLY_STRUCTURAL or STRUCTURAL
     if len(structural_signals) >= 3:
         classification = DeteriorationClassification.STRUCTURAL.value
     elif len(structural_signals) in (1, 2):
         classification = DeteriorationClassification.POSSIBLY_STRUCTURAL.value
     elif len(cyclical_signals) > 0 and len(structural_signals) == 0:
         classification = DeteriorationClassification.LIKELY_CYCLICAL.value
-    elif len(medium_findings) > 0:
+    elif len(medium_findings) > 0 or len(working_capital_signals) > 0:
         classification = DeteriorationClassification.POSSIBLY_CYCLICAL.value
     else:
         classification = DeteriorationClassification.NO_DETERIORATION.value

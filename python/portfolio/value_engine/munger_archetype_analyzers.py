@@ -119,7 +119,7 @@ def analyze_normal_enterprise(
 
         if p is not None and e is not None and float(e) > 0:
             roe_series.append(float(p) / float(e))
-        if op is not None and (float(e) + float(d)) > 0:
+        if op is not None and e is not None and (float(e) + float(d)) > 0:
             roic_series.append(float(op) / (float(e) + float(d)))
         if p is not None and r is not None and float(r) > 0:
             margin_series.append(float(p) / float(r))

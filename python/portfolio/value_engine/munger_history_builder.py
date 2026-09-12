@@ -206,8 +206,16 @@ def build_financial_history_from_facts(
             by_year[fy]["equity"] = fval
         elif code in ("IS.SHARES.OUTSTANDING", "BS.SHARES.OUTSTANDING"):
             by_year[fy]["outstanding_shares"] = fval
-        elif code in ("BS.ASSETS.RECEIVABLES", "BS.ASSETS.SHORT_TERM_RECEIVABLES"):
-            by_year[fy]["receivables"] = fval
+        elif code in ("BS.RECEIVABLES.TRADE.NET", "BS.ASSETS.RECEIVABLES_TRADE"):
+            by_year[fy]["trade_receivables"] = fval
+        elif code in ("BS.ASSETS.RECEIVABLES", "BS.ASSETS.SHORT_TERM_RECEIVABLES", "BS.RECEIVABLES.TOTAL"):
+            by_year[fy]["total_receivables"] = fval
+        elif code == "BS.ADVANCES.SUPPLIERS":
+            by_year[fy]["advances_to_suppliers"] = fval
+        elif code == "BS.RECEIVABLES.OTHER":
+            by_year[fy]["other_receivables"] = fval
+        elif code == "BS.RECEIVABLES.PROVISION":
+            by_year[fy]["receivables_provision"] = fval
         elif code == "BS.ASSETS.INVENTORY":
             by_year[fy]["inventory"] = fval
         elif code == "BS.ASSETS.TOTAL":
@@ -218,6 +226,28 @@ def build_financial_history_from_facts(
             by_year[fy]["interest_expense"] = abs(fval)
         elif code == "CF.OPERATING.DEPRECIATION":
             by_year[fy]["depreciation"] = fval
+
+    # Explicit Priority & Semantic Conflict Resolution for Receivables across all years
+    for fy, ydict in by_year.items():
+        trade_rec = ydict.get("trade_receivables")
+        tot_rec = ydict.get("total_receivables")
+
+        if trade_rec is not None and tot_rec is not None and trade_rec > tot_rec + 1.0:
+            ydict["receivables_source_type"] = "CONFLICT"
+            ydict["receivables_semantic_status"] = "DATA_CONFLICT"
+            ydict["receivables"] = None
+        elif trade_rec is not None:
+            ydict["receivables"] = trade_rec
+            ydict["receivables_source_type"] = "TRADE_NET"
+            ydict["receivables_semantic_status"] = "DATA_VALID"
+        elif tot_rec is not None:
+            ydict["receivables"] = tot_rec
+            ydict["receivables_source_type"] = "TOTAL_PROXY"
+            ydict["receivables_semantic_status"] = "DATA_WARNING"
+        else:
+            ydict["receivables"] = None
+            ydict["receivables_source_type"] = "MISSING"
+            ydict["receivables_semantic_status"] = "DATA_INVALID"
 
     years = sorted(by_year.keys())
     min_fy = years[0] if years else 0

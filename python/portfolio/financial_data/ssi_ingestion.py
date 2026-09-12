@@ -92,10 +92,58 @@ CANONICAL_LINE_MAPPINGS: dict[str, dict[str, str]] = {
         "tong tai san dai han": "BS.ASSETS.LONG_TERM",
         "tien va tuong duong tien": "BS.ASSETS.CASH_AND_EQUIVALENTS",
         "tien va cac khoan tuong duong tien": "BS.ASSETS.CASH_AND_EQUIVALENTS",
+
+        # Customer Trade Receivables (Net)
+        "phai thu khach hang": "BS.RECEIVABLES.TRADE.NET",
+        "phai thu cua khach hang": "BS.RECEIVABLES.TRADE.NET",
+        "phai thu ngan han cua khach hang": "BS.RECEIVABLES.TRADE.NET",
+        "phai thu khach hang ngan han": "BS.RECEIVABLES.TRADE.NET",
+
+        # Supplier Advances
+        "tra truoc cho nguoi ban": "BS.ADVANCES.SUPPLIERS",
+        "tra truoic cho nguoi ban": "BS.ADVANCES.SUPPLIERS",
+        "tra truoc nguoi ban": "BS.ADVANCES.SUPPLIERS",
+        "tra truoic nguoi ban": "BS.ADVANCES.SUPPLIERS",
+        "tra truoc cho nguoi ban ngan han": "BS.ADVANCES.SUPPLIERS",
+        "tra truoic cho nguoi ban ngan han": "BS.ADVANCES.SUPPLIERS",
+        "tra truoc nguoi ban ngan han": "BS.ADVANCES.SUPPLIERS",
+        "tra truoic nguoi ban ngan han": "BS.ADVANCES.SUPPLIERS",
+        "tra truoc ngan han": "BS.ADVANCES.SUPPLIERS",
+
+        # Other Receivables
+        "phai thu khac": "BS.RECEIVABLES.OTHER",
+        "cac khoan phai thu khac": "BS.RECEIVABLES.OTHER",
+        "phai thu ngan han khac": "BS.RECEIVABLES.OTHER",
+        "cac khoan phai thu ngan han khac": "BS.RECEIVABLES.OTHER",
+        "phai thu khac cua khach hang": "BS.RECEIVABLES.OTHER",
+
+        # Doubtful Receivables Provision
+        "du phong cac khoan phai thu kho doi": "BS.RECEIVABLES.PROVISION",
+        "du phong suy giam gia tri cac khoan phai thu": "BS.RECEIVABLES.PROVISION",
+        "du phong phai thu ngan han kho doi": "BS.RECEIVABLES.PROVISION",
+        "du phong phai thu kho doi": "BS.RECEIVABLES.PROVISION",
+
+        # State Receivables
+        "thue va cac khoan phai thu cua nha nuoc": "BS.RECEIVABLES.STATE",
+        "thue vat phai thu": "BS.RECEIVABLES.STATE",
+        "thue gttg duoc khau tru": "BS.RECEIVABLES.STATE",
+
+        # Loans Receivable (Short & Long Term Assets)
+        "phai thu ve cho vay ngan han": "BS.RECEIVABLES.LOANS",
+        "phai thu ve cho vay dai han": "BS.RECEIVABLES.LOANS",
+        "phai thu ve cho vay": "BS.RECEIVABLES.LOANS",
+
+        # Long-Term Receivables
+        "phai thu dai han": "BS.RECEIVABLES.LONG_TERM",
+        "phai thu dai han khac": "BS.RECEIVABLES.LONG_TERM",
+        "phai thu khach hang dai han": "BS.RECEIVABLES.LONG_TERM",
+
+        # Aggregate Total Short-Term Receivables
         "cac khoan phai thu": "BS.ASSETS.RECEIVABLES",
         "phai thu ngan han": "BS.ASSETS.RECEIVABLES",
         "cac khoan phai thu ngan han": "BS.ASSETS.RECEIVABLES",
         "tong cac khoan phai thu": "BS.ASSETS.RECEIVABLES",
+        "cac khoan phai thu tu 2016": "BS.ASSETS.RECEIVABLES",
         "hang ton kho rong": "BS.ASSETS.INVENTORY",
         "hang ton kho": "BS.ASSETS.INVENTORY",
         "von chu so huu": "BS.EQUITY.TOTAL",

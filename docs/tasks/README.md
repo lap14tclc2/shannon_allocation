@@ -121,6 +121,7 @@
 | [TASK-20260912-140](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-140-vietnamese-semantic-presentation-layer.md) | Vietnamese Semantic Presentation Layer | completed | high | 2026-09-12 |
 | [TASK-20260912-141](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-141-automated-investment-thesis-challenge.md) | Automated Munger Investment Thesis Challenge Engine | completed | high | 2026-09-12 |
 | [TASK-20260912-142](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-142-vietnamese-semantics-overhaul-and-editable-portfolio.md) | Vietnamese Financial Semantics Overhaul & Editable Portfolio Positions & Cash | completed | high | 2026-09-12 |
+| [TASK-20260912-143](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-143-repair-receivables-forensic-semantics.md) | Deep-Dive & Repair Receivables Forensic Semantics | completed | high | 2026-09-12 |
 
 
 

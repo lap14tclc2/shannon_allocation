@@ -176,8 +176,12 @@ def build_munger_financial_analysis(
         "forensics": forensics_status,
     }
 
-    hard_failures = [f.code for f in all_findings if f.severity in (FindingSeverity.CRITICAL.value, FindingSeverity.HIGH.value)]
-    warnings = [f.code for f in all_findings if f.severity in (FindingSeverity.MEDIUM.value, FindingSeverity.LOW.value)]
+    hard_failures = [
+        f.code for f in all_findings 
+        if f.severity == FindingSeverity.CRITICAL.value 
+        or (f.severity == FindingSeverity.HIGH.value and f.category not in ("WORKING_CAPITAL",))
+    ]
+    warnings = [f.code for f in all_findings if f.code not in hard_failures]
 
     # 8. Compounder Classification
     med_roe = prof_metrics.get("median_roe")

@@ -166,10 +166,10 @@ SYSTEM_INVARIANTS_VIETNAMESE: Dict[str, Dict[str, str]] = {
 
 FINDING_NARRATIVE_TEMPLATES: Dict[str, Dict[str, str]] = {
     "RECEIVABLES_GROW_FASTER_THAN_REVENUE": {
-        "title": "Khoản phải thu tăng nhanh hơn doanh thu",
-        "what_is_happening": "Tốc độ tăng trưởng khoản phải thu lớn hơn tốc độ tăng trưởng doanh thu thuần.",
+        "title": "Khả năng thu hồi tiền bán hàng",
+        "what_is_happening": "Khoản phải thu từ khách hàng đang tăng nhanh hơn doanh thu.",
         "why_it_matters": "Một phần doanh thu ghi nhận chưa chuyển hóa tương ứng thành tiền mặt thực tế từ khách hàng.",
-        "long_term_impact": "Có thể làm tăng nguy cơ nợ xấu, nợ khó đòi hoặc phải trích lập dự phòng trong tương lai.",
+        "long_term_impact": "Có thể làm gia tăng thời gian thu tiền (DSO), gây chôn vốn lưu động hoặc đọng vốn kém hiệu quả.",
     },
     "INVENTORY_GROW_FASTER_THAN_REVENUE": {
         "title": "Hàng tồn kho tăng nhanh hơn doanh thu",
