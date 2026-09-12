@@ -42,8 +42,10 @@ def build_decision_context(
         ctx.bear_iv = valuation.get("bear_iv") or valuation.get("bear_case_iv")
         ctx.base_iv = valuation.get("base_iv") or valuation.get("intrinsic_value")
         ctx.bull_iv = valuation.get("bull_iv") or valuation.get("bull_case_iv")
-        ctx.required_mos = valuation.get("required_mos") or valuation.get("required_mos_pct")
-        ctx.actual_mos = valuation.get("actual_mos") or valuation.get("actual_mos_pct")
+        req_m = valuation.get("required_mos_pct") if valuation.get("required_mos_pct") is not None else valuation.get("required_mos")
+        ctx.required_mos = float(req_m) if req_m is not None else None
+        act_m = valuation.get("actual_mos_pct") if valuation.get("actual_mos_pct") is not None else valuation.get("actual_mos")
+        ctx.actual_mos = float(act_m) if act_m is not None else None
         ctx.valuation_confidence = valuation.get("valuation_confidence") or "UNKNOWN"
         ctx.model_status = valuation.get("model_status") or valuation.get("status") or "INVALID"
         ctx.quality_score = valuation.get("quality_score")

@@ -224,30 +224,35 @@ def build_munger_financial_analysis(
     actual_mos = val_payload.get("actual_mos_pct")
     val_confidence = val_payload.get("valuation_confidence", "MEDIUM")
 
-    # Dynamic Required MOS calculation based on evidence & risk
-    base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
-    if compounder_class == CompounderClassification.COMPOUNDER.value:
-        base_req_mos = thresholds.BASE_REQUIRED_MOS_COMPOUNDER
-    elif compounder_class == CompounderClassification.POTENTIAL_COMPOUNDER.value:
-        base_req_mos = thresholds.BASE_REQUIRED_MOS_POTENTIAL_COMPOUNDER
-    elif compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+    # Consume canonical required MOS authority from valuation engine payload
+    canonical_req_mos = val_payload.get("required_mos_pct")
+    if canonical_req_mos is not None:
+        required_mos = float(canonical_req_mos)
+    else:
+        # Dynamic fallback if valuation engine payload was not provided
         base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
-    elif compounder_class in (CompounderClassification.WEAK_BUSINESS.value, CompounderClassification.DETERIORATING_BUSINESS.value):
-        base_req_mos = thresholds.BASE_REQUIRED_MOS_WEAK
+        if compounder_class == CompounderClassification.COMPOUNDER.value:
+            base_req_mos = thresholds.BASE_REQUIRED_MOS_COMPOUNDER
+        elif compounder_class == CompounderClassification.POTENTIAL_COMPOUNDER.value:
+            base_req_mos = thresholds.BASE_REQUIRED_MOS_POTENTIAL_COMPOUNDER
+        elif compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+            base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
+        elif compounder_class in (CompounderClassification.WEAK_BUSINESS.value, CompounderClassification.DETERIORATING_BUSINESS.value):
+            base_req_mos = thresholds.BASE_REQUIRED_MOS_WEAK
 
-    addons = 0.0
-    if vt_status == "WATCH":
-        addons += thresholds.MOS_ADDON_VALUE_TRAP_WATCH
-    if history_depth == "LIMITED":
-        addons += thresholds.MOS_ADDON_LIMITED_HISTORY
-    if bs_res.status == DimensionStatus.WATCH.value:
-        addons += thresholds.MOS_ADDON_BALANCE_SHEET_WATCH
-    if val_confidence in ("LOW", "MEDIUM"):
-        addons += thresholds.MOS_ADDON_LOW_CONFIDENCE
+        addons = 0.0
+        if vt_status == "WATCH":
+            addons += thresholds.MOS_ADDON_VALUE_TRAP_WATCH
+        if history_depth == "LIMITED":
+            addons += thresholds.MOS_ADDON_LIMITED_HISTORY
+        if bs_res.status == DimensionStatus.WATCH.value:
+            addons += thresholds.MOS_ADDON_BALANCE_SHEET_WATCH
+        if val_confidence in ("LOW", "MEDIUM"):
+            addons += thresholds.MOS_ADDON_LOW_CONFIDENCE
 
-    required_mos = round(base_req_mos + addons, 1)
+        required_mos = round(base_req_mos + addons, 1)
 
-    if val_status != "READY" or actual_mos is None:
+    if val_status != "READY" or actual_mos is None or required_mos is None:
         mos_gate = "UNKNOWN"
     elif actual_mos >= required_mos:
         mos_gate = "PASS"

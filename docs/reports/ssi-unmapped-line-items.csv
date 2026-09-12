@@ -1,67 +1,50 @@
 statement_type,raw_line_name
+BALANCE_SHEET,Bất động sản đầu tư
 BALANCE_SHEET,Chi phí phải trả
 BALANCE_SHEET,Chi phí phải trả dài hạn
 BALANCE_SHEET,"Chi phí sản xuất, kinh doanh dở dang dài hạn"
-BALANCE_SHEET,Chi phí trả trước ngắn hạn
-BALANCE_SHEET,Chêch lệch tỷ giá
-BALANCE_SHEET,Chêch lệch đánh giá lại tài sản
-BALANCE_SHEET,Các khoản cho vay
-BALANCE_SHEET,Các khoản phải thu (từ 2016)
-BALANCE_SHEET,Các khoản phải trả về thuế
-BALANCE_SHEET,Các khoản trích nộp phúc lợi nhân viên
-BALANCE_SHEET,Các khoản tài chính sẵn sàng để bán (AFS)
+BALANCE_SHEET,Chênh lệch tỷ giá
+BALANCE_SHEET,Chênh lệch đánh giá lại tài sản
+BALANCE_SHEET,Chứng khoán đầu tư giữ đến ngày đáo hạn
+BALANCE_SHEET,Các khoản phải thu
 BALANCE_SHEET,Các khoản tương đương tiền
-BALANCE_SHEET,Các khoản đầu tư nắm giữ đến ngày đáo hạn (HTM)
 BALANCE_SHEET,Các tài sản dài hạn khác
-BALANCE_SHEET,Các tài sản tài chính ghi nhận thông qua lãi/lỗ (FVTPL)
-BALANCE_SHEET,"Cầm cố, thế chấp, ký quỹ và ký cược dài hạn"
-BALANCE_SHEET,"Cầm cố, thế chấp, ký quỹ và ký cược ngắn hạn"
-BALANCE_SHEET,Cổ phiếu quỹ
+BALANCE_SHEET,Cổ phiếu Quỹ
+BALANCE_SHEET,Cổ phiếu phổ thông
 BALANCE_SHEET,Cổ phiếu ưu đãi
-BALANCE_SHEET,Doanh thu chưa thực hiện
+BALANCE_SHEET,Doanh thu chưa thực hiên
 BALANCE_SHEET,Doanh thu chưa thực hiện ngắn hạn
 BALANCE_SHEET,Dữ liệu được cung cấp bởi FiinTrade
 BALANCE_SHEET,Dự phòng các khoản công nợ dài hạn
 BALANCE_SHEET,Dự phòng các khoản phải trả ngắn hạn
 BALANCE_SHEET,Dự phòng giảm giá HTK
-BALANCE_SHEET,Dự phòng giảm giá chứng khoán kinh doanh
-BALANCE_SHEET,Dự phòng giảm giá tài sản tài chính dài hạn
+BALANCE_SHEET,Dự phòng giảm giá đầu tư dài hạn
 BALANCE_SHEET,Dự phòng nợ khó đòi
 BALANCE_SHEET,Dự phòng phải thu dài hạn
-BALANCE_SHEET,Dự phòng suy giảm giá trị TSNH khác
-BALANCE_SHEET,Dự phòng suy giảm giá trị các khoản phải thu
-BALANCE_SHEET,Dự phòng suy giảm giá trị tài sản dài hạn
 BALANCE_SHEET,Dự phòng trợ cấp thôi việc
+BALANCE_SHEET,Dự phòng đầu tư ngắn hạn
 BALANCE_SHEET,GTCL TSCĐ hữu hình
+BALANCE_SHEET,GTCL Tài sản thuê tài chính
 BALANCE_SHEET,GTCL tài sản cố định vô hình
-BALANCE_SHEET,GTCL tài sản thuê tài chính
 BALANCE_SHEET,Giao dịch mua bán lại trái phiếu chính phủ
-BALANCE_SHEET,Giá trị ròng bất động sản đầu tư
-BALANCE_SHEET,Giá trị thuần đầu tư tài sản tài chính ngắn hạn
+BALANCE_SHEET,Giá trị thuần đầu tư ngắn hạn
 BALANCE_SHEET,Khấu hao lũy kế TSCĐ hữu hình
 BALANCE_SHEET,Khấu hao lũy kế TSCĐ vô hình
-BALANCE_SHEET,Khấu hao lũy kế bất động sản đầu tư
 BALANCE_SHEET,Khấu hao lũy kế tài sản thuê tài chính
-BALANCE_SHEET,LỢI NHUẬN ĐÃ PHÂN PHỐI CHO NHÀ ĐẦU TƯ
-BALANCE_SHEET,LỢI ÍCH CỦA CỔ ĐÔNG THIỂU SỐ (trước 2015)
-BALANCE_SHEET,Lợi nhuận chưa phân phối
-BALANCE_SHEET,Lợi nhuận chưa thực hiện
-BALANCE_SHEET,Lợi nhuận đã phân phối cho nhà đầu trong năm
-BALANCE_SHEET,Lợi nhuận đã thực hiện
+BALANCE_SHEET,Khấu hao lũy kế tài sản đầu tư
+BALANCE_SHEET,LNST chưa phân phối kỳ này
+BALANCE_SHEET,LNST chưa phân phối lũy kế đến cuối kỳ trước
+BALANCE_SHEET,Lãi chưa phân phối
 BALANCE_SHEET,Lợi thế thương mại
-BALANCE_SHEET,Lợi ích cổ đông thiểu số
+BALANCE_SHEET,Lợi ích cổ đông không kiểm soát
+BALANCE_SHEET,Lợi ích của cổ đông thiểu số
 BALANCE_SHEET,Nguyên giá TSCĐ hữu hình
 BALANCE_SHEET,Nguyên giá TSCĐ vô hình
-BALANCE_SHEET,Nguyên giá bất động sản đầu tư
 BALANCE_SHEET,Nguyên giá tài sản thuê tài chính
+BALANCE_SHEET,Nguyên giá tài sản đầu tư
 BALANCE_SHEET,Nguồn kinh phí đã hình thành TSCĐ
+BALANCE_SHEET,Người mua trả tiền trước
 BALANCE_SHEET,Người mua trả tiền trước dài hạn
-BALANCE_SHEET,Người mua trả tiền trước ngắn hạn
-BALANCE_SHEET,"Nhận ký quỹ, ký cược dài hạn"
-BALANCE_SHEET,"Nhận ký quỹ, ký cược ngắn hạn"
-BALANCE_SHEET,Nợ thuê tài chính dài hạn
-BALANCE_SHEET,Nợ thuê tài chính ngắn hạn
-BALANCE_SHEET,Phải thu các dịch vụ CTCK cung cấp
 BALANCE_SHEET,Phải thu dài hạn
 BALANCE_SHEET,Phải thu dài hạn khác
 BALANCE_SHEET,Phải thu khác
@@ -73,255 +56,114 @@ BALANCE_SHEET,Phải thu thuế khác
 BALANCE_SHEET,Phải thu về XDCB
 BALANCE_SHEET,Phải thu về cho vay dài hạn
 BALANCE_SHEET,Phải thu về cho vay ngắn hạn
-BALANCE_SHEET,Phải thu về hoạt động giao dịch chứng khoán
-BALANCE_SHEET,Phải thu về lỗi giao dịch CK
-BALANCE_SHEET,"Phải trả cổ tức, gốc và lãi trái phiếu"
 BALANCE_SHEET,Phải trả dài hạn khác
-BALANCE_SHEET,Phải trả hoạt động giao dịch chứng khoán
 BALANCE_SHEET,Phải trả khác
-BALANCE_SHEET,Phải trả người bán ngắn hạn
+BALANCE_SHEET,Phải trả người bán
 BALANCE_SHEET,Phải trả người lao động
 BALANCE_SHEET,Phải trả nhà cung cấp dài hạn
 BALANCE_SHEET,Phải trả nội bộ
 BALANCE_SHEET,Phải trả nội bộ dài hạn
 BALANCE_SHEET,Phải trả nội bộ về vốn kinh doanh
-BALANCE_SHEET,Phải trả tổ chức phát hành chứng khoán
-BALANCE_SHEET,Phải trả về lỗi giao dịch các tài sản tài chính
 BALANCE_SHEET,Phải trả về xây dựng cơ bản
 BALANCE_SHEET,Quyền chọn chuyển đổi trái phiếu
 BALANCE_SHEET,Quỹ bình ổn giá
-BALANCE_SHEET,Quỹ bảo vệ nhà đầu tư
 BALANCE_SHEET,Quỹ dự phòng tài chính
-BALANCE_SHEET,Quỹ dự trữ điều lệ
-BALANCE_SHEET,"Quỹ khen thưởng , phúc lợi (trước 2010)"
-BALANCE_SHEET,Quỹ khen thưởng phúc lợi
+BALANCE_SHEET,Quỹ hỗ trợ sắp xếp doanh nghiệp
+BALANCE_SHEET,"Quỹ khen thưởng, phúc lợi"
+BALANCE_SHEET,"Quỹ khen thưởng, phúc lợi (trước 2010)"
 BALANCE_SHEET,Quỹ khác
 BALANCE_SHEET,Quỹ phát triển khoa học công nghệ
 BALANCE_SHEET,Quỹ đầu tư và phát triển
 BALANCE_SHEET,"Thiết bị, vật tư, phụ tùng thay thế dài hạn"
-BALANCE_SHEET,Thuế VAT được khấu trừ
-BALANCE_SHEET,Thuế giá trị gia tăng được khấu trừ
+BALANCE_SHEET,Thuế VAT phải thu
 BALANCE_SHEET,Thuế thu nhập hoãn lại phải thu
 BALANCE_SHEET,Thuế thu nhập hoãn lại phải trả
+BALANCE_SHEET,Thuế và các khoản phải trả Nhà nước
 BALANCE_SHEET,Thặng dư vốn cổ phần
 BALANCE_SHEET,Tiền
-BALANCE_SHEET,Tiền chi nộp quỹ hỗ trợ thanh toán
-BALANCE_SHEET,Trái phiếu chuyển đổi dài hạn
-BALANCE_SHEET,Trái phiếu chuyển đổi ngắn hạn
-BALANCE_SHEET,Trái phiếu phát hành dài hạn
-BALANCE_SHEET,Trái phiếu phát hành ngắn hạn
+BALANCE_SHEET,Trái phiếu chuyển đổi
 BALANCE_SHEET,Trả trước dài hạn
 BALANCE_SHEET,Trả trước người bán
 BALANCE_SHEET,Trả trước người bán dài hạn
+BALANCE_SHEET,Trả trước ngắn hạn
 BALANCE_SHEET,Tài sản cố định
 BALANCE_SHEET,Tài sản dài hạn khác
 BALANCE_SHEET,Tài sản dở dang dài hạn
 BALANCE_SHEET,Tài sản lưu động khác
 BALANCE_SHEET,Tài sản thiếu chờ xử lý
-BALANCE_SHEET,Tài sản tài chính dài hạn
-BALANCE_SHEET,Tài sản tài chính ngắn hạn
-BALANCE_SHEET,Tạm ứng
 BALANCE_SHEET,TỔNG CỘNG NGUỒN VỐN
-BALANCE_SHEET,Tổng các khoản phải thu
-BALANCE_SHEET,Vay nợ ngắn hạn
-BALANCE_SHEET,Vay quỹ hỗ trợ thanh toán
-BALANCE_SHEET,Vay tài sản tài chính dài hạn
-BALANCE_SHEET,Vay tài sản tài chính ngắn hạn
-BALANCE_SHEET,Vay và nợ thuê tài sàn tài chính dài hạn
-BALANCE_SHEET,"Vật tư văn phòng, công cụ, dụng cụ"
 BALANCE_SHEET,Vốn Ngân sách nhà nước và quỹ khác
 BALANCE_SHEET,Vốn góp
 BALANCE_SHEET,Vốn khác
 BALANCE_SHEET,Vốn kinh doanh ở các đơn vị trực thuộc
 BALANCE_SHEET,Vốn ngân sách nhà nước
 BALANCE_SHEET,Vốn và các quỹ
-BALANCE_SHEET,Vốn đầu tư của chủ sở hữu
 BALANCE_SHEET,Xây dựng cơ bản dở dang
-BALANCE_SHEET,Xây dựng cơ bản dở dang (trước 2015)
 BALANCE_SHEET,https://fiintrade.vn/
-BALANCE_SHEET,Đánh giá BĐSĐT theo giá trị hợp lý
-BALANCE_SHEET,Đánh giá TSCĐHH theo giá trị hợp lý
-BALANCE_SHEET,Đánh giá TSCĐTTC theo giá trị hợp lý
-BALANCE_SHEET,Đánh giá TSCĐVH theo giá trị hợp lý
-BALANCE_SHEET,Đầu tư chứng khoán dài hạn
 BALANCE_SHEET,Đầu tư dài hạn
 BALANCE_SHEET,Đầu tư dài hạn khác
+BALANCE_SHEET,Đầu tư ngắn hạn
+BALANCE_SHEET,Đầu tư nắm giữ đến ngày đáo hạn
 BALANCE_SHEET,Đầu tư vào các công ty con
-BALANCE_SHEET,Đầu tư vào công ty liên kết
-CASH_FLOW,"(+) Tăng, (-) giảm các khoản trích nộp phúc lợi nhân viên"
-CASH_FLOW,"(+) Tăng, (-) giảm phải trả Tổ chức phát hành chứng khoán"
-CASH_FLOW,"(+) Tăng, (-) giảm phải trả cho người bán"
-CASH_FLOW,"(+) Tăng, (-) giảm phải trả khác"
-CASH_FLOW,"(+) Tăng, (-) giảm phải trả người lao động"
-CASH_FLOW,"(+) Tăng, (-) giảm phải trả về lỗi giao dịch các tài sản tài chính"
-CASH_FLOW,"(+) Tăng, (-) giảm thuế TNDN CTCK đã nộp"
-CASH_FLOW,"(+) Tăng, (-) giảm thuế và các khoản phải nộp Nhà nước"
-CASH_FLOW,"(-) Tăng, (+) giảm chi phí phải trả (không bao gồm chi phí lãi vay)"
-CASH_FLOW,"(-) Tăng, (+) giảm các khoản phải thu các dịch vụ CTCK cung cấp"
-CASH_FLOW,"(-) Tăng, (+) giảm các khoản phải thu khác"
-CASH_FLOW,"(-) Tăng, (+) giảm các khoản phải thu về lỗi giao dịch các TSTC"
-CASH_FLOW,"(-) Tăng, (+) giảm phải thu bán các tài sản tài chính ghi nhận thông qua lãi/lỗ FVTPL"
-CASH_FLOW,"(-) Tăng, (+) giảm phải thu và dự thu cổ tức, tiền lãi các tài sản tài chính"
-CASH_FLOW,Chi phí dự phòng suy giảm giá trị các khoản đầu tư tài chính dài hạn
+BALANCE_SHEET,Đầu tư vào công ty liên doanh
+CASH_FLOW,( Tăng)/giảm chi phí trả trước
+CASH_FLOW,(Tăng)/giảm chứng khoán kinh doanh
+CASH_FLOW,(Tăng)/giảm các khoản phải thu
+CASH_FLOW,(Tăng)/giảm hàng tồn kho
+CASH_FLOW,Chi phí dự phòng
 CASH_FLOW,Chi phí lãi vay
-CASH_FLOW,"Chi phí phải trả, chi phí trả trước"
-CASH_FLOW,Các khoản dự phòng
-CASH_FLOW,Các khoản tương đương tiền
+CASH_FLOW,Chi phí lãi vay đã trả
+CASH_FLOW,"Chi trả cho việc mua lại, trả lại cổ phiếu"
 CASH_FLOW,Các khoản điều chỉnh khác
-CASH_FLOW,"Cổ tức, lợi nhuận đã trả cho chủ sở hữ"
+CASH_FLOW,Cổ tức và tiền lãi nhận được
+CASH_FLOW,Cổ tức đã trả
 CASH_FLOW,Dữ liệu được cung cấp bởi FiinTrade
-CASH_FLOW,Dự thu tiền lãi
-CASH_FLOW,Giảm các doanh thu phi tiền tệ
-CASH_FLOW,Hoàn nhập chi phí dự phòng
-CASH_FLOW,Hoàn nhập suy giảm giá trị của các tài sản tài chính sẵn sàng để bán
-CASH_FLOW,Lãi khác
-CASH_FLOW,Lãi từ thanh lý các khoản cho vay và phải thu
-CASH_FLOW,"Lãi từ thanh lý các khoản đầu tư vào công ty con và công ty liên doanh, liên kết"
-CASH_FLOW,Lãi từ thanh lý các tài sản tài chính sẵn sàng để bán khi phân loại lại
-CASH_FLOW,"Lãi từ thanh lý tài sản cố định, BĐSĐT"
-CASH_FLOW,Lãi về ghi nhận chêch lệch đánh giá theo giá trị hợp lý tài sản tài chính sẵn sàng để bán AFS khi phân loại lại
-CASH_FLOW,Lãi đánh giá giá trị các công cụ tài chính phái sinh cho mục đích phòng ngừa
-CASH_FLOW,Lãi đánh giá giá trị các công nợ tài chính thông qua kết quả kinh doanh
-CASH_FLOW,Lãi đánh giá giá trị tài sản tài chính ghi nhận thông qua lãi/lỗ FVTPL
-CASH_FLOW,"Lãi, lỗ chêch lệch tỷ giá hối đoái chưa thực hiện"
-CASH_FLOW,"Lãi, lỗ hoạt động đầu tư"
-CASH_FLOW,Lưu chuyển thuần từ hoạt động kinh doanh chứng khoán
-CASH_FLOW,Lưu chuyển thuần từ hoạt động tài chính
+CASH_FLOW,Lãi trước thuế
+CASH_FLOW,Lãi/(lỗ) chênh lệch tỷ giá chưa thực hiện
+CASH_FLOW,Lãi/(lỗ) từ hoạt động đầu tư
+CASH_FLOW,Lãi/(lỗ) từ thanh lý tài sản cố định
+CASH_FLOW,Lãi/lỗ trước những thay đổi vốn lưu động
 CASH_FLOW,Lưu chuyển tiền thuần trong kỳ
-CASH_FLOW,Lưu chuyển từ hoạt động đầu tư
-CASH_FLOW,Lỗ khác
-CASH_FLOW,Lỗ suy giảm giá trị các khoản cho vay
-CASH_FLOW,Lỗ suy giảm giá trị các khoản đầu tư nắm giữ đến ngày đáo hạn
-CASH_FLOW,Lỗ từ thanh lý TSCĐ
-CASH_FLOW,"Lỗ từ thanh lý các khoản đầu tư vào công ty con và công ty liên doanh, liên kết"
-CASH_FLOW,Lỗ từ thanh lý các tài sản tài chính sẵn sàng để bán
-CASH_FLOW,Lỗ về ghi nhận chêch lệch đánh giá theo giá trị hợp lý tài sản tài chính sẵn sàng để bán AFS khi phân loại lại
-CASH_FLOW,Lỗ đánh giá giá các công cụ tài chính phát sinh cho mục đích phòng ngừa rủi ro
-CASH_FLOW,Lỗ đánh giá giá trị các công cụ tài chính phái sinh
-CASH_FLOW,Lỗ đánh giá giá trị các công nợ tài chính ghi nhận thông qua KQKD
-CASH_FLOW,Lỗ đánh giá giá trị các tài sản tài chính ghi nhận thông qua lãi/lỗ FVTPL
-CASH_FLOW,Lợi nhuận trước thuế
-CASH_FLOW,Lợi nhuận từ hoạt động kinh doanh trước thay đổi vốn lưu động
+CASH_FLOW,Lưu chuyển tiền thuần từ các hoạt động sản xuất kinh doanh
+CASH_FLOW,Lưu chuyển tiền tệ ròng từ hoạt động đầu tư
+CASH_FLOW,Lưu chuyển tiền tệ từ hoạt động tài chính
 CASH_FLOW,Phân bổ lợi thế thương mại
-CASH_FLOW,"Suy giảm giá trị của các tài sản cố định, BĐSĐT"
-CASH_FLOW,Suy giảm giá trị của các tài sản tài chính sẵn sàng để bán
-CASH_FLOW,Thay đổi tài sản và nợ phải trả hoạt động
-CASH_FLOW,"Tiền chi cho vay, mua các công cụ nợ của đơn vị khác"
-CASH_FLOW,Tiền chi khác cho hoạt động kinh doanh
-CASH_FLOW,Tiền chi trả gốc nợ vay khác
-CASH_FLOW,Tiền chi trả gốc vay Quỹ Hỗ Trợ thanh toán
-CASH_FLOW,Tiền chi trả nợ gốc vay
-CASH_FLOW,Tiền chi trả nợ gốc vay tài sản tài chính
-CASH_FLOW,Tiền chi trả nợ thuê tài chính
-CASH_FLOW,"Tiền chi trả vốn góp cho các chủ sở hữu, mua lại cổ phiếu của doanh nghiệp đã phát hành"
-CASH_FLOW,Tiền chi đầu tư góp vốn vào đơn vị khác
-CASH_FLOW,"Tiền chi để mua sắm, xây dựng TSCĐ và các tài sản dài hạn khác"
-CASH_FLOW,Tiền lãi vay đã trả
-CASH_FLOW,"Tiền mặt, tiền gửi ngân hàng đầu kỳ"
-CASH_FLOW,"Tiền thu hồi cho vay, bán lại các công cụ nợ của đơn vị khác"
-CASH_FLOW,Tiền thu hồi đầu tư vào đơn vị khác
-CASH_FLOW,Tiền thu khác từ hoạt động kinh doanh
-CASH_FLOW,"Tiền thu lãi cho vay, cổ tức và lợi nhuận được chia"
-CASH_FLOW,"Tiền thu từ phát hành cổ phiếu, nhận vốn góp của chủ sở hữu"
-CASH_FLOW,"Tiền thu từ thanh lý, nhượng bán TSCĐ và các tài sản dài hạn khác"
-CASH_FLOW,Tiền vay Quỹ Hỗ Trợ thanh toán
-CASH_FLOW,Tiền vay khác
-CASH_FLOW,"Tiền vay ngắn hạn, dài hạn nhận được"
-CASH_FLOW,Tiền và các khoản tương đương tiền đầu kỳ
-CASH_FLOW,Tiền và các khoảng tương đương tiền cuối kỳ
-CASH_FLOW,Tăng các chi phí tiền tệ
-CASH_FLOW,Tăng/giảm Trái phiếu chuyển đổi - Cấu phần nợ
-CASH_FLOW,Tăng/giảm Trái phiếu phát hành
-CASH_FLOW,Tăng/giảm chi phí trả trước
-CASH_FLOW,Tăng/giảm chứng khoán kinh doanh
-CASH_FLOW,Tăng/giảm các khoản cho vay
-CASH_FLOW,Tăng/giảm các khoản phải thu bán các tài sản tài chính
-CASH_FLOW,Tăng/giảm các khoản đầu tư giữ đến ngày đáo hạn
-CASH_FLOW,Tăng/giảm các tài sản khác
-CASH_FLOW,Tăng/giảm hàng tồn kho
-CASH_FLOW,Tăng/giảm tài sản tài chính ghi nhận thông qua lãi lỗ
-CASH_FLOW,Tăng/giảm tài sản tài chính sẵn sàng để bán AFS
-CASH_FLOW,Tăng/giảm vay Quỹ hỗ trợ Thanh toán
-CASH_FLOW,Tăng/giảm vay tài sản tài chính
-CASH_FLOW,Tăng/giảm vay và nợ thuê tài sản tài chính
+CASH_FLOW,Thu lãi và cổ tức
+CASH_FLOW,Thuế thu nhập doanh nghiệp đã trả
+CASH_FLOW,Tiền chi khác từ các hoạt động kinh doanh
+CASH_FLOW,Tiền cho vay hoặc mua công cụ nợ
+CASH_FLOW,Tiền lãi đã nhận
+CASH_FLOW,Tiền mua tài sản cố định và các tài sản dài hạn khác
+CASH_FLOW,Tiền thanh toán vốn gốc đi thuê tài chính
+CASH_FLOW,Tiền thu khác từ các hoạt động kinh doanh
+CASH_FLOW,Tiền thu từ cho vay hoặc thu từ phát hành công cụ nợ
+CASH_FLOW,Tiền thu từ phát hành cổ phiếu và vốn góp
+CASH_FLOW,Tiền thu từ việc bán các khoản đầu tư vào các doanh nghiệp khác
+CASH_FLOW,Tiền thu được các khoản đi vay
+CASH_FLOW,Tiền thu được từ thanh lý tài sản cố định
+CASH_FLOW,Tiền và tương đương tiền cuối kỳ
+CASH_FLOW,Tiền và tương đương tiền đầu kỳ
+CASH_FLOW,Tiển trả các khoản đi vay
+CASH_FLOW,Tăng/(giảm) các khoản phải trả
 CASH_FLOW,https://fiintrade.vn/
-CASH_FLOW,Điều chỉnh cho các khoản
-CASH_FLOW,Ảnh hưởng của thay đổi tỷ giá hối đoán quy đổi ngoại tệ
-INCOME_STATEMENT,"CP dự phòng TSTC, xử lý tổn thất các khoản phải thu khó đòi và lỗ suy giảm TSTC và CP đi vay"
-INCOME_STATEMENT,Chi phí các dịch vụ khác
-INCOME_STATEMENT,Chi phí dự phòng suy giảm giá trị các khoản đầu tư tài chính dài hạn
-INCOME_STATEMENT,Chi phí giao dịch mua các tài sản tài chính FVTPL
-INCOME_STATEMENT,Chi phí hoạt đông tư vấn tài chính
-INCOME_STATEMENT,"Chi phí hoạt động bảo lãnh, đại lý phát hành chứng khoán"
-INCOME_STATEMENT,Chi phí hoạt động kinh doanh
-INCOME_STATEMENT,Chi phí hoạt động tự doanh
-INCOME_STATEMENT,"Chi phí hoạt động đấu giá, ủy thác"
+CASH_FLOW,Đầu tư vào các doanh nghiệp khác
+CASH_FLOW,Ảnh hưởng của chênh lệch tỷ giá
 INCOME_STATEMENT,Chi phí khác
-INCOME_STATEMENT,"Chi phí lãi vay, lỗ từ các khoản cho vay và phải thu"
-INCOME_STATEMENT,Chi phí lưu ký chứng khoán
-INCOME_STATEMENT,Chi phí môi giới chứng khoán
 INCOME_STATEMENT,Chi phí thuế thu nhập doanh nghiệp
-INCOME_STATEMENT,Chi phí thuế thu nhập hiện hành
-INCOME_STATEMENT,Chi phí thuế thu nhập hoãn lại
 INCOME_STATEMENT,Chi phí tài chính
-INCOME_STATEMENT,Chi phí tài chính khác
-INCOME_STATEMENT,Chi phí tư vấn đầu tư chứng khoán
-INCOME_STATEMENT,Chêch lệch giảm đánh giá lại các tài sản tài chính FVTPL
-INCOME_STATEMENT,Chêch lệch lãi tỷ giá hối đoái đã và chưa thực hiện
-INCOME_STATEMENT,Chêch lệch lỗ tỷ giá hối đoái đã và chưa thực hiện
-INCOME_STATEMENT,Chêch lệch tăng đánh giá lại các tài sản tài chính thông qua lãi/lỗ
-INCOME_STATEMENT,Các khoản giảm trừ doanh thu
-INCOME_STATEMENT,"Cổ tức, tiền lãi phát sinh từ tài sản tài chính FVTPL"
-INCOME_STATEMENT,Doanh thu bảo lãnh phát hành chứng khoán
-INCOME_STATEMENT,Doanh thu hoạt động môi giới chứng khoán
-INCOME_STATEMENT,Doanh thu hoạt động tài chính
-INCOME_STATEMENT,Doanh thu hoạt động tư vấn tài chính
-INCOME_STATEMENT,Doanh thu hoạt động tư vấn đầu tư chứng khoán
-INCOME_STATEMENT,"Doanh thu hoạt động đầu tư chứng khoán, góp vốn"
-INCOME_STATEMENT,"Doanh thu hoạt động ủy thác, đấu giá"
-INCOME_STATEMENT,Doanh thu khác
-INCOME_STATEMENT,Doanh thu khác về đầu tư
-INCOME_STATEMENT,Doanh thu lưu ký chứng khoán
-INCOME_STATEMENT,Doanh thu đại lý phát hành chứng khoán
-INCOME_STATEMENT,"Doanh thu, dự thu cổ tức, lãi tiền gửi không cố định phát sinh trong kỳ"
+INCOME_STATEMENT,Các khoản giảm trừ
 INCOME_STATEMENT,Dữ liệu được cung cấp bởi FiinTrade
 INCOME_STATEMENT,EBIT
 INCOME_STATEMENT,EBITDA
-INCOME_STATEMENT,Kết quả hoạt động
-INCOME_STATEMENT,"LNST trích các Quỹ dự trữ điều lệ, Quỹ dự phòng tài chính và RR nghề nghiệp theo quy định điều lệ Công ty"
-INCOME_STATEMENT,Lãi bán các tài sản tài chính
-INCOME_STATEMENT,"Lãi bán, thanh lý các khoản đầu tư vào công ty con, liên kết, liên doanh"
+INCOME_STATEMENT,Giá vốn hàng bán
 INCOME_STATEMENT,Lãi cơ bản trên cổ phiếu
-INCOME_STATEMENT,Lãi từ các công cụ phát sinh phòng ngừa rủi ro
-INCOME_STATEMENT,Lãi từ các khoản cho vay và phải thu
-INCOME_STATEMENT,Lãi từ các khoản đầu tư nắm giữ đến ngày đáo hạn (HTM)
-INCOME_STATEMENT,Lãi từ các tài sản tài chính ghi nhận thông qua lãi/lỗ ( FVTPL)
-INCOME_STATEMENT,Lãi từ các tài sản tài chính sẵn sàng để bán (AFS)
-INCOME_STATEMENT,Lãi/lỗ chêch lệch tỷ giá của hoạt động tại nước ngoài
-INCOME_STATEMENT,"Lãi/lỗ toàn diện khác được chia từ hoạt động đầu tư vào công ty con, đầu tư liên kết, liên doanh"
-INCOME_STATEMENT,"Lãi/lỗ từ các khoản đầu tư vào công ty con, công ty liên kết, liên doanh chưa chia"
-INCOME_STATEMENT,Lãi/lỗ từ công ty liên doanh (trước 2015)
-INCOME_STATEMENT,"Lãi/lỗ từ công ty liên doanh, liên kết"
-INCOME_STATEMENT,Lãi/lỗ từ đánh giá lại các công cụ tài chính phái sinh
-INCOME_STATEMENT,Lãi/lỗ từ đánh giá lại các khoản đầu tư giữ đến ngày đáo hạn
-INCOME_STATEMENT,Lãi/lỗ từ đánh giá lại các tài sản tài chính sẵn sàng để bán
-INCOME_STATEMENT,Lãi/lỗ đánh giá công cụ phái sinh
-INCOME_STATEMENT,Lãi/lỗ đánh giá lại tài sản cố định theo mô hình giá trị hợp lý
-INCOME_STATEMENT,Lỗ bán các tài sản tài chính
-INCOME_STATEMENT,"Lỗ bán, thanh lý các khoản đầu tư vào công ty con, liên kết, liên doanh"
-INCOME_STATEMENT,Lỗ các khoản đầu tư nắm giữ đến ngày đáo hạn (HTM)
-INCOME_STATEMENT,Lỗ các tài sản tài chính ghi nhận thông qua lãi lỗ (FVTPL)
-INCOME_STATEMENT,Lỗ từ các tài sản tài chính phái sinh phòng ngừa rủi ro
-INCOME_STATEMENT,Lỗ và ghi nhận chêch lệch đánh giá theo giá trị hợp lý tài sản tài chính sẵn sàng để bán (AFS)
-INCOME_STATEMENT,Lợi nhuận chưa thực hiện
-INCOME_STATEMENT,Lợi nhuận đã thực hiện
-INCOME_STATEMENT,Lợi ích cổ đông thiểu số
-INCOME_STATEMENT,Thu cho thuê sử dụng tài sản
-INCOME_STATEMENT,Thu nhập (lỗ) toàn diện khác sau thuế TNDN
+INCOME_STATEMENT,Lãi trên cổ phiếu pha loãng
+INCOME_STATEMENT,Lãi/(lỗ) từ công ty liên doanh
+INCOME_STATEMENT,Lãi/(lỗ) từ công ty liên doanh  (từ năm 2015)
+INCOME_STATEMENT,Lợi ích của cổ đông thiểu số
 INCOME_STATEMENT,Thu nhập khác
-INCOME_STATEMENT,Thu nhập khác ròng
-INCOME_STATEMENT,Thu nhập pha loãng trên cổ phiếu
-INCOME_STATEMENT,Thu nhập thuần trên cổ phiếu phổ thông
-INCOME_STATEMENT,Thu nhập toàn diện phân bổ cho chủ sở hữu
-INCOME_STATEMENT,Thu nhập toàn diện phân bổ cho cổ đông không kiểm soát
+INCOME_STATEMENT,"Thu nhập khác, ròng"
+INCOME_STATEMENT,Thu nhập tài chính
+INCOME_STATEMENT,Thuế thu nhập doanh nghiệp – hiện thời
+INCOME_STATEMENT,Thuế thu nhập doanh nghiệp – hoãn lại
 INCOME_STATEMENT,https://fiintrade.vn/

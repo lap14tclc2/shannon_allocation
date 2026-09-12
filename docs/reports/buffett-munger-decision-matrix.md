@@ -1,3 +1,4 @@
+
 # Buffett-Munger Canonical Decision Precedence Matrix
 
 **Document Status**: Canonical Reference  

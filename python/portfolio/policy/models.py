@@ -77,8 +77,19 @@ class InvestmentDecisionContext:
 
     as_of: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+    @property
+    def required_mos_pct(self) -> float | None:
+        return self.required_mos
+
+    @property
+    def actual_mos_pct(self) -> float | None:
+        return self.actual_mos
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["required_mos_pct"] = self.required_mos
+        d["actual_mos_pct"] = self.actual_mos
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> InvestmentDecisionContext:

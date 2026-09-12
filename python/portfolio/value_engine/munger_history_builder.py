@@ -184,7 +184,7 @@ def build_financial_history_from_facts(
         by_year[fy][code] = fval
 
         # Map canonical aliases to user-friendly keys
-        if code == "IS.REVENUE.TOTAL":
+        if code in ("IS.REVENUE.TOTAL", "IS.REVENUE.NET"):
             by_year[fy]["revenue"] = fval
         elif code in ("IS.PROFIT.NET", "IS.NET_INCOME"):
             by_year[fy]["net_profit"] = fval
@@ -206,7 +206,7 @@ def build_financial_history_from_facts(
             by_year[fy]["equity"] = fval
         elif code in ("IS.SHARES.OUTSTANDING", "BS.SHARES.OUTSTANDING"):
             by_year[fy]["outstanding_shares"] = fval
-        elif code == "BS.ASSETS.RECEIVABLES":
+        elif code in ("BS.ASSETS.RECEIVABLES", "BS.ASSETS.SHORT_TERM_RECEIVABLES"):
             by_year[fy]["receivables"] = fval
         elif code == "BS.ASSETS.INVENTORY":
             by_year[fy]["inventory"] = fval

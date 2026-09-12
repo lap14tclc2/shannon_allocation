@@ -540,7 +540,12 @@ def build_canonical_valuation(
     actual_mos = float(report.public_mos) if report.public_mos is not None else (float(report.margin_of_safety_pct) if report.margin_of_safety_pct is not None else None)
     if actual_mos is None and base_iv_val is not None and base_iv_val > 0 and curr_price_float > 0:
         actual_mos = float(round((Decimal(str(base_iv_val)) - Decimal(str(curr_price_float))) / Decimal(str(base_iv_val)) * Decimal("100"), 2))
-    req_mos = float(report.margin_of_safety_analysis.get("required_margin_of_safety_pct") or 25.0) if isinstance(report.margin_of_safety_analysis, dict) else 25.0
+    mos_analysis_dict = report.margin_of_safety_analysis if isinstance(report.margin_of_safety_analysis, dict) else {}
+    req_mos = None
+    if mos_analysis_dict.get("required_mos_pct") is not None:
+        req_mos = float(mos_analysis_dict["required_mos_pct"])
+    elif mos_analysis_dict.get("required_margin_of_safety_pct") is not None:
+        req_mos = float(mos_analysis_dict["required_margin_of_safety_pct"])
     quality_score = report.quality_scorecard.get("total_score") if isinstance(report.quality_scorecard, dict) else (report.assessment.quality_score if getattr(report, "assessment", None) else 0)
     quality_tier = report.quality_scorecard.get("tier") if isinstance(report.quality_scorecard, dict) else (str(report.assessment.quality_tier.value if hasattr(report.assessment.quality_tier, "value") else report.assessment.quality_tier) if getattr(report, "assessment", None) else "UNKNOWN")
     val_conf = str(report.confidence_level.value if hasattr(report.confidence_level, "value") else report.confidence_level)
@@ -553,6 +558,7 @@ def build_canonical_valuation(
         "base_iv": base_iv_val,
         "bull_iv": bull_iv_val,
         "actual_mos_pct": actual_mos,
+        "required_mos_pct": req_mos,
         "valuation_confidence": val_conf,
         "quality_tier": quality_tier,
     }
@@ -561,9 +567,6 @@ def build_canonical_valuation(
         from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
         munger_obj = build_munger_financial_analysis(ticker, existing_history=financial_history, valuation_data=val_summary)
         munger_analysis = munger_obj.to_dict()
-        munger_val = munger_analysis.get("valuation", {})
-        if munger_val.get("required_mos_pct") is not None:
-            req_mos = munger_val.get("required_mos_pct")
     else:
         munger_analysis = {}
 
@@ -582,6 +585,7 @@ def build_canonical_valuation(
         "quality_score": quality_score,
         "quality_tier": quality_tier,
         "valuation_confidence": val_conf,
+        "status": "READY" if (base_iv_val is not None and base_iv_val > 0) else "INCOMPLETE",
         "model_status": report.model_status,
         "hard_rejects": hard_rejects,
         "financial_history": financial_history,          # ONE internal domain field
