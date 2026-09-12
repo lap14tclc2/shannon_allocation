@@ -1,4 +1,4 @@
-"""Vietnamese Semantic Presentation Layer for QPort (Task 140).
+"""Vietnamese Semantic Presentation Layer for QPort (Task 140, Task 145).
 
 Separates machine calculation semantics from investor-facing Vietnamese explanations.
 
@@ -16,8 +16,9 @@ STATUS_VIETNAMESE: Dict[str, str] = {
     "GOOD": "Tốt",
     "WATCH": "Cần theo dõi",
     "FAIL": "Không đạt",
-    "UNKNOWN": "Chưa đủ dữ liệu",
+    "UNKNOWN": "Chưa xác định",
     "NOT_APPLICABLE": "Không áp dụng",
+    "MISSING": "Thiếu dữ liệu",
     "CLEAR": "Chưa phát hiện rủi ro đáng kể",
     "HIGH_RISK": "Rủi ro cao",
     "INFO": "Thông tin",
@@ -25,6 +26,12 @@ STATUS_VIETNAMESE: Dict[str, str] = {
     "MEDIUM": "Rủi ro trung bình",
     "HIGH": "Rủi ro cao",
     "CRITICAL": "Rủi ro rất cao",
+    "READY": "Sẵn sàng",
+    "PARTIAL": "Khả thi một phần",
+    "INSUFFICIENT": "Chưa đủ dữ liệu",
+    "RESILIENT": "Khả năng chống chịu tốt",
+    "VULNERABLE": "Dễ bị tổn thương",
+    "EXTREME": "Cực đoan",
 }
 
 
@@ -33,12 +40,15 @@ DECISION_VIETNAMESE: Dict[str, str] = {
     "BUY_MORE": "Có thể mua thêm",
     "HOLD": "Tiếp tục nắm giữ",
     "HOLD_NO_NEW_CAPITAL": "Tiếp tục nắm giữ, chưa phân bổ thêm vốn",
-    "WAIT_FOR_MOS": "Chờ mức giá có biên an toàn tốt hơn",
+    "WAIT_FOR_MOS": "Chờ biên an toàn",
     "BUILD_RESERVE_FIRST": "Ưu tiên củng cố quỹ dự phòng trước",
     "REVIEW_BUSINESS": "Cần xem xét thêm dữ liệu doanh nghiệp",
+    "BUSINESS_REVIEW_INCOMPLETE": "Đánh giá doanh nghiệp chưa hoàn tất",
     "AVOID": "Chưa phù hợp để đầu tư",
     "SELL_REVIEW": "Cần xem xét lại luận điểm nắm giữ",
     "SELL": "Cân nhắc thoái vốn",
+    "REDUCE": "Cân nhắc giảm tỷ trọng",
+    "KEEP_CASH": "Ưu tiên giữ tiền mặt",
 }
 
 
@@ -75,6 +85,7 @@ VALUETRAP_VIETNAMESE: Dict[str, str] = {
     "WATCH": "Có dấu hiệu cần theo dõi",
     "HIGH_RISK": "Nguy cơ bẫy giá trị cao",
     "INSUFFICIENT_DATA": "Chưa đủ dữ liệu để đánh giá",
+    "UNPROTECTED": "Kịch bản thận trọng chưa được bảo vệ",
 }
 
 DETERIORATION_VIETNAMESE: Dict[str, str] = {
@@ -84,6 +95,7 @@ DETERIORATION_VIETNAMESE: Dict[str, str] = {
     "POSSIBLY_STRUCTURAL": "Có dấu hiệu suy giảm có thể mang tính cấu trúc",
     "STRUCTURAL": "Đã phát hiện suy giảm mang tính cấu trúc",
     "UNKNOWN": "Chưa đủ dữ liệu để xác định",
+    "NEUTRAL": "Trung tính",
 }
 
 ARCHETYPE_VIETNAMESE: Dict[str, str] = {
@@ -96,6 +108,13 @@ ARCHETYPE_VIETNAMESE: Dict[str, str] = {
     "CYCLICAL": "Doanh nghiệp mang tính chu kỳ",
 }
 
+MARGIN_TREND_VIETNAMESE: Dict[str, str] = {
+    "EXPANDING": "Đang mở rộng",
+    "STABLE": "Ổn định",
+    "DECLINING": "Đang thu hẹp",
+    "NOT_APPLICABLE": "Không áp dụng",
+}
+
 METRIC_NAMES_VIETNAMESE: Dict[str, str] = {
     "revenue_growth": "Tăng trưởng doanh thu",
     "revenue_cagr": "Tăng trưởng doanh thu thuần",
@@ -103,73 +122,63 @@ METRIC_NAMES_VIETNAMESE: Dict[str, str] = {
     "median_roe": "ROE trung vị",
     "margin_trend": "Xu hướng biên lợi nhuận",
     "pat_volatility": "Mức ổn định của lợi nhuận",
+    "profit_volatility": "Mức ổn định của lợi nhuận",
     "avg_cfo_pat": "Khả năng chuyển lợi nhuận thành dòng tiền",
     "latest_debt_equity": "Mức nợ so với vốn chủ sở hữu",
+    "debt_equity_ratio": "Mức nợ so với vốn chủ sở hữu",
+    "annual_share_growth": "Tăng trưởng số lượng cổ phiếu",
+    "share_cagr": "Tăng trưởng số lượng cổ phiếu",
     "dilution": "Mức pha loãng cổ phiếu",
     "accounting_consistency": "Tính nhất quán của báo cáo tài chính",
     "forensics": "Kiểm tra dấu hiệu bất thường",
 }
 
 
-def get_vietnamese_classification(code: str) -> str:
-    """Return investor-facing Vietnamese translation for compounder classification."""
-    if not code:
-        return "Chưa xác định"
-    return CLASSIFICATION_VIETNAMESE.get(str(code).upper(), str(code))
-
-
-def get_vietnamese_valuetrap(code: str) -> str:
-    """Return investor-facing Vietnamese translation for ValueTrap assessment status."""
-    if not code:
-        return "Chưa xác định"
-    return VALUETRAP_VIETNAMESE.get(str(code).upper(), str(code))
-
-
-def get_vietnamese_deterioration(code: str) -> str:
-    """Return investor-facing Vietnamese translation for deterioration classification."""
-    if not code:
-        return "Chưa xác định"
-    return DETERIORATION_VIETNAMESE.get(str(code).upper(), str(code))
-
-
-def get_vietnamese_archetype(code: str) -> str:
-    """Return investor-facing Vietnamese translation for economic archetype."""
-    if not code:
-        return "Chưa xác định"
-    return ARCHETYPE_VIETNAMESE.get(str(code).upper(), str(code))
-
-
-
-SYSTEM_INVARIANTS_VIETNAMESE: Dict[str, Dict[str, str]] = {
-    "NULL_NOT_ZERO": {
-        "formula": "NULL != 0",
-        "title": "Bất biến dữ liệu thiếu",
-        "explanation": "Thiếu dữ liệu tài chính không được tự ý quy đổi thành giá trị bằng không.",
-    },
-    "UNKNOWN_NOT_PASS": {
-        "formula": "UNKNOWN != PASS",
-        "title": "Bất biến nghi vấn chưa rõ",
-        "explanation": "Chưa đủ dữ liệu kiểm chứng không đồng nghĩa với doanh nghiệp đạt tiêu chuẩn.",
-    },
-    "WATCH_NOT_FAIL": {
-        "formula": "WATCH != FAIL",
-        "title": "Bất biến cảnh báo theo dõi",
-        "explanation": "Tín hiệu cần theo dõi không tự động coi là vi phạm nghiêm trọng để loại bỏ cổ phiếu.",
-    },
-    "NOT_APPLICABLE_NOT_UNKNOWN": {
-        "formula": "NOT_APPLICABLE != UNKNOWN",
-        "title": "Bất biến tính đặc thù mô hình",
-        "explanation": "Chỉ tiêu không áp dụng cho đặc thù ngành (như Ngân hàng/Chứng khoán) khác hoàn toàn với việc thiếu dữ liệu.",
-    },
+FINDING_TITLES: Dict[str, str] = {
+    "RECEIVABLES_GROW_FASTER_THAN_REVENUE": "Khoản phải thu tăng nhanh hơn doanh thu",
+    "PROFIT_CASH_DIVERGENCE": "Lợi nhuận tăng nhưng dòng tiền không theo kịp",
+    "WEAK_CASH_CONVERSION": "Dòng tiền kinh doanh chưa tương ứng với lợi nhuận",
+    "INVENTORY_BUILDUP": "Hàng tồn kho gia tăng bất thường",
+    "INVENTORY_GROWTH_EXCEEDS_SALES": "Hàng tồn kho tăng nhanh hơn doanh thu",
+    "INVENTORY_GROW_FASTER_THAN_REVENUE": "Hàng tồn kho tăng nhanh hơn doanh thu",
+    "DEBT_FUNDED_LOW_QUALITY_GROWTH": "Tăng trưởng phụ thuộc nhiều vào nợ vay",
+    "EXCESSIVE_DEBT_LEVERAGE": "Đòn bẩy tài chính ở mức cao",
+    "UNSTABLE_EARNINGS_HISTORY": "Biến động lợi nhuận bất ổn qua các năm",
+    "WEAK_PROFITABILITY_ROE": "Tỷ suất sinh lời trên vốn chủ sở hữu (ROE) khiêm tốn",
+    "PER_SHARE_VALUE_DILUTION": "Lợi nhuận trên mỗi cổ phiếu (EPS) bị pha loãng",
+    "ACCOUNTING_IDENTITY_DISCREPANCY": "Lệch dữ liệu phương trình kế toán",
+    "WEAK_BANK_ROE": "ROE ngân hàng ở mức thấp so với tiêu chuẩn",
+    "LOW_BANK_CAPITAL_ADEQUACY": "Tỷ lệ an toàn vốn chủ sở hữu ngân hàng mỏng",
+    "WEAK_SECURITIES_ROE": "ROE công ty chứng khoán ở mức thấp",
+    "TRADING_INCOME_DEPENDENCE": "Phụ thuộc lớn vào hoạt động tự doanh / FVTPL",
+    "SECURITIES_HIGH_LEVERAGE": "Đòn bẩy công ty chứng khoán ở mức cao",
 }
 
 
 FINDING_NARRATIVE_TEMPLATES: Dict[str, Dict[str, str]] = {
     "RECEIVABLES_GROW_FASTER_THAN_REVENUE": {
-        "title": "Khả năng thu hồi tiền bán hàng",
+        "title": "Khoản phải thu tăng nhanh hơn doanh thu",
         "what_is_happening": "Khoản phải thu từ khách hàng đang tăng nhanh hơn doanh thu.",
         "why_it_matters": "Một phần doanh thu ghi nhận chưa chuyển hóa tương ứng thành tiền mặt thực tế từ khách hàng.",
         "long_term_impact": "Có thể làm gia tăng thời gian thu tiền (DSO), gây chôn vốn lưu động hoặc đọng vốn kém hiệu quả.",
+    },
+    "PROFIT_CASH_DIVERGENCE": {
+        "title": "Lợi nhuận tăng nhưng dòng tiền không theo kịp",
+        "what_is_happening": "Dòng tiền từ hoạt động kinh doanh (CFO) không tăng tương ứng với đà tăng lợi nhuận sau thuế.",
+        "why_it_matters": "Lợi nhuận báo cáo tăng nhưng tiền mặt đọng ở tài sản lưu động hoặc phải thu.",
+        "long_term_impact": "Nguy cơ trích lập dự phòng hoặc suy giảm chất lượng lợi nhuận trong tương lai.",
+    },
+    "INVENTORY_BUILDUP": {
+        "title": "Hàng tồn kho gia tăng bất thường",
+        "what_is_happening": "Tồn kho tích lũy tăng cao so với quy mô kinh doanh.",
+        "why_it_matters": "Gây chôn vốn và gia tăng chi phí quản lý hàng tồn kho.",
+        "long_term_impact": "Rủi ro giảm giá trị tồn kho khi nhu cầu thị trường chậm lại.",
+    },
+    "INVENTORY_GROWTH_EXCEEDS_SALES": {
+        "title": "Hàng tồn kho tăng nhanh hơn doanh thu",
+        "what_is_happening": "Tốc độ tăng trưởng hàng tồn kho vượt tốc độ tăng doanh thu.",
+        "why_it_matters": "Tồn kho ứ đọng làm chôn vốn lưu động và tăng chi phí lưu kho, bảo quản.",
+        "long_term_impact": "Nguy cơ giảm giá trị hàng tồn kho và phải trích lập giảm giá tồn kho khi thị trường biến động.",
     },
     "INVENTORY_GROW_FASTER_THAN_REVENUE": {
         "title": "Hàng tồn kho tăng nhanh hơn doanh thu",
@@ -219,21 +228,96 @@ FINDING_NARRATIVE_TEMPLATES: Dict[str, Dict[str, str]] = {
         "why_it_matters": "Dữ liệu kế toán thô cần được kiểm tra đối soát nguồn trước khi sử dụng.",
         "long_term_impact": "Yêu cầu rà soát mapping dữ liệu SSI để đảm bảo tính chính xác.",
     },
+    "WEAK_BANK_ROE": {
+        "title": "ROE ngân hàng ở mức thấp so với tiêu chuẩn",
+        "what_is_happening": "Tỷ suất lợi nhuận trên vốn chủ sở hữu (ROE) của ngân hàng chưa đạt ngưỡng khuyến nghị.",
+        "why_it_matters": "Khả năng tự tích lũy vốn rủi ro của ngân hàng bị hạn chế.",
+        "long_term_impact": "Ngân hàng có thể phải phát hành thêm cổ phiếu để đáp ứng chuẩn an toàn vốn Basel.",
+    },
+    "LOW_BANK_CAPITAL_ADEQUACY": {
+        "title": "Tỷ lệ an toàn vốn chủ sở hữu ngân hàng mỏng",
+        "what_is_happening": "Tỷ lệ Vốn chủ sở hữu / Tổng tài sản ở mức thấp so với trung bình ngành.",
+        "why_it_matters": "Đòn bẩy tài sản cao làm giảm đệm chống đỡ khi nợ xấu gia tăng.",
+        "long_term_impact": "Cần thận trọng đánh giá tỷ lệ nợ xấu nhóm 3–5 và trích lập dự phòng rủi ro tín dụng.",
+    },
+    "WEAK_SECURITIES_ROE": {
+        "title": "ROE công ty chứng khoán ở mức thấp",
+        "what_is_happening": "Hiệu quả sử dụng vốn của công ty chứng khoán chưa tối ưu.",
+        "why_it_matters": "Nguồn vốn cho vay cho vay ký quỹ (margin) hoặc tự doanh đạt lợi suất thấp.",
+        "long_term_impact": "Cạnh tranh hạ phí môi giới (zero-fee) bào mòn biên lợi nhuận.",
+    },
+    "TRADING_INCOME_DEPENDENCE": {
+        "title": "Phụ thuộc lớn vào hoạt động tự doanh / FVTPL",
+        "what_is_happening": "Lợi nhuận ròng biến động phụ thuộc phần lớn vào danh mục tài sản tự doanh (FVTPL).",
+        "why_it_matters": "Lợi nhuận không đến từ phí dịch vụ môi giới cố định mà biến động theo thị trường.",
+        "long_term_impact": "Độ bền lợi nhuận kém ổn định, biến động mạnh khi thị trường chứng khoán điều chỉnh.",
+    },
+    "SECURITIES_HIGH_LEVERAGE": {
+        "title": "Đòn bẩy công ty chứng khoán ở mức cao",
+        "what_is_happening": "Tỷ lệ nợ vay / vốn chủ sở hữu của công ty chứng khoán tăng nhanh.",
+        "why_it_matters": "Nguồn vốn vay ngân hàng để tài trợ margin hoặc tự doanh tạo chi phí tài chính.",
+        "long_term_impact": "Nguy cơ rủi ro thanh khoản khi thanh khoản thị trường sụt giảm.",
+    },
 }
+
+
+def get_vietnamese_finding_title(code: str) -> str:
+    """Return investor-facing Vietnamese title for a finding code."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    if c_upper in FINDING_TITLES:
+        return FINDING_TITLES[c_upper]
+    # Safe fallback formatting
+    return c_upper.lower().replace("_", " ").title()
+
+
+def get_vietnamese_classification(code: str) -> str:
+    """Return investor-facing Vietnamese translation for compounder classification."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return CLASSIFICATION_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
+
+
+def get_vietnamese_valuetrap(code: str) -> str:
+    """Return investor-facing Vietnamese translation for ValueTrap assessment status."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return VALUETRAP_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
+
+
+def get_vietnamese_deterioration(code: str) -> str:
+    """Return investor-facing Vietnamese translation for deterioration classification."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return DETERIORATION_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
+
+
+def get_vietnamese_archetype(code: str) -> str:
+    """Return investor-facing Vietnamese translation for economic archetype."""
+    if not code:
+        return "Chưa xác định"
+    c_upper = str(code).upper().strip()
+    return ARCHETYPE_VIETNAMESE.get(c_upper, c_upper.lower().replace("_", " "))
 
 
 def get_vietnamese_status(status_code: str) -> str:
     """Return investor-facing Vietnamese translation for internal status code."""
     if not status_code:
         return "Chưa xác định"
-    return STATUS_VIETNAMESE.get(str(status_code).upper(), str(status_code))
+    s_upper = str(status_code).upper().strip()
+    return STATUS_VIETNAMESE.get(s_upper, s_upper.lower().replace("_", " "))
 
 
 def get_vietnamese_decision(decision_code: str) -> str:
     """Return investor-facing Vietnamese translation for internal decision code."""
     if not decision_code:
         return "Chưa xác định"
-    return DECISION_VIETNAMESE.get(str(decision_code).upper(), str(decision_code))
+    d_upper = str(decision_code).upper().strip()
+    return DECISION_VIETNAMESE.get(d_upper, d_upper.lower().replace("_", " "))
 
 
 def get_vietnamese_comparison(comparison_expr: str) -> str:
@@ -266,9 +350,9 @@ def generate_vietnamese_finding_narrative(
     metrics = metrics or {}
     tmpl = FINDING_NARRATIVE_TEMPLATES.get(code, {})
 
-    title = tmpl.get("title", code.replace("_", " ").title())
+    title = tmpl.get("title", get_vietnamese_finding_title(code))
     what_happening = tmpl.get(
-        "what_is_happening", f"Phát hiện chỉ tiêu {code} thuộc diện đánh giá tài chính."
+        "what_is_happening", f"Phát hiện chỉ tiêu {title} thuộc diện đánh giá tài chính."
     )
     why_matters = tmpl.get(
         "why_it_matters", "Chỉ tiêu này ảnh hưởng trực tiếp đến chất lượng tài sản và dòng tiền."

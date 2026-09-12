@@ -4,7 +4,7 @@ import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import ThesisChallengeSection from '../components/ThesisChallengeSection.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
-import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative } from '../utils/vietnameseSemantics.js';
+import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative, formatMarginTrend, formatFindingTitle } from '../utils/vietnameseSemantics.js';
 
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
@@ -422,7 +422,7 @@ export default function BusinessPage() {
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
                         ROE Trung Vị: {munger.profitability_analysis?.metrics?.median_roe !== undefined ? `${(munger.profitability_analysis.metrics.median_roe * 100).toFixed(1)}%` : 'N/A'}<br/>
-                        Xu hướng Biên LN: {munger.profitability_analysis?.metrics?.margin_trend || 'N/A'}
+                        Xu hướng Biên LN: {formatMarginTrend(munger.profitability_analysis?.metrics?.margin_trend)}
                       </div>
                     </div>
 
@@ -537,10 +537,10 @@ export default function BusinessPage() {
                     <p style={{ margin: '4px 0' }}>Đánh giá: <strong>{formatValueTrap(valueTrap.status)}</strong></p>
                     <p style={{ margin: '4px 0' }}>Xu hướng nền tảng kinh doanh: <strong>{formatDeterioration(valueTrap.deterioration_classification)}</strong></p>
                     {valueTrap.hard_failures && valueTrap.hard_failures.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng: <strong>{valueTrap.hard_failures.join(', ')}</strong></p>
+                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng: <strong>{valueTrap.hard_failures.map(formatFindingTitle).join(', ')}</strong></p>
                     )}
                     {valueTrap.warnings && valueTrap.warnings.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý: <strong>{valueTrap.warnings.join(', ')}</strong></p>
+                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý: <strong>{valueTrap.warnings.map(formatFindingTitle).join(', ')}</strong></p>
                     )}
                   </div>
                 </section>

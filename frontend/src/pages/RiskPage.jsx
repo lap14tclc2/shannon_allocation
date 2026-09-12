@@ -27,9 +27,19 @@ function SeverityPill({ severity = 'NORMAL', labelOverride }) {
     UNKNOWN: 'Chưa đủ dữ liệu',
   };
   const tone = toneMap[severity] || 'neutral';
-  const label = labelOverride || labelMap[severity] || severity;
+  const label = labelOverride || labelMap[severity] || (severity ? String(severity).toLowerCase().replace(/_/g, ' ') : 'Chưa xác định');
   return <span className={`risk-level risk-level-${tone}`}>{label}</span>;
 }
+
+const RISK_CATEGORY_VI = {
+  CONCENTRATION: 'Tập trung vị thế',
+  VALUATION: 'Định giá & Biên an toàn',
+  BUSINESS_QUALITY: 'Chất lượng doanh nghiệp',
+  SOLVENCY: 'Khả năng thanh toán',
+  VOLATILITY: 'Biến động thị trường',
+  PORTFOLIO_DIVERSIFICATION: 'Đa dạng hóa danh mục',
+  CAPITAL_ALLOCATION: 'Phân bổ vốn',
+};
 
 function RiskWarningCard({ warning }) {
   const {
@@ -54,7 +64,7 @@ function RiskWarningCard({ warning }) {
       <div className="risk-insight-top">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span className="eyebrow" style={{ margin: 0, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em' }}>
-            {category.replace(/_/g, ' ')}
+            {RISK_CATEGORY_VI[category] || (category ? String(category).toLowerCase().replace(/_/g, ' ') : 'Rủi ro')}
           </span>
           {affected_symbols.length > 0 && affected_symbols.map(s => (
             <span key={s} style={{ background: 'var(--surface-soft, rgba(0,0,0,0.06))', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>

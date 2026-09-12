@@ -1,5 +1,5 @@
 /**
- * Centralized Vietnamese Semantic Presentation Layer for QPort.
+ * Centralized Vietnamese Semantic Presentation Layer for QPort (Task 140, Task 145).
  *
  * Separates machine calculation semantics from investor-facing Vietnamese explanations.
  * Converts internal codes, raw math operators, and findings into natural financial Vietnamese
@@ -11,8 +11,9 @@ export const STATUS_MAP = {
   GOOD: 'Tốt',
   WATCH: 'Cần theo dõi',
   FAIL: 'Không đạt',
-  UNKNOWN: 'Chưa đủ dữ liệu',
+  UNKNOWN: 'Chưa xác định',
   NOT_APPLICABLE: 'Không áp dụng',
+  MISSING: 'Thiếu dữ liệu',
   CLEAR: 'Chưa phát hiện rủi ro đáng kể',
   HIGH_RISK: 'Rủi ro cao',
   INFO: 'Thông tin',
@@ -20,6 +21,12 @@ export const STATUS_MAP = {
   MEDIUM: 'Rủi ro trung bình',
   HIGH: 'Rủi ro cao',
   CRITICAL: 'Rủi ro rất cao',
+  READY: 'Sẵn sàng',
+  PARTIAL: 'Khả thi một phần',
+  INSUFFICIENT: 'Chưa đủ dữ liệu',
+  RESILIENT: 'Khả năng chống chịu tốt',
+  VULNERABLE: 'Dễ bị tổn thương',
+  EXTREME: 'Cực đoan',
 };
 
 export const DECISION_MAP = {
@@ -27,12 +34,15 @@ export const DECISION_MAP = {
   BUY_MORE: 'Có thể mua thêm',
   HOLD: 'Tiếp tục nắm giữ',
   HOLD_NO_NEW_CAPITAL: 'Tiếp tục nắm giữ, chưa phân bổ thêm vốn',
-  WAIT_FOR_MOS: 'Chờ mức giá có biên an toàn tốt hơn',
+  WAIT_FOR_MOS: 'Chờ biên an toàn',
   BUILD_RESERVE_FIRST: 'Ưu tiên củng cố quỹ dự phòng trước',
   REVIEW_BUSINESS: 'Cần xem xét thêm dữ liệu doanh nghiệp',
+  BUSINESS_REVIEW_INCOMPLETE: 'Đánh giá doanh nghiệp chưa hoàn tất',
   AVOID: 'Chưa phù hợp để đầu tư',
   SELL_REVIEW: 'Cần xem xét lại luận điểm nắm giữ',
   SELL: 'Cân nhắc thoái vốn',
+  REDUCE: 'Cân nhắc giảm tỷ trọng',
+  KEEP_CASH: 'Ưu tiên giữ tiền mặt',
 };
 
 export const CLASSIFICATION_MAP = {
@@ -50,6 +60,7 @@ export const VALUETRAP_MAP = {
   WATCH: 'Có dấu hiệu cần theo dõi',
   HIGH_RISK: 'Nguy cơ bẫy giá trị cao',
   INSUFFICIENT_DATA: 'Chưa đủ dữ liệu để đánh giá',
+  UNPROTECTED: 'Kịch bản thận trọng chưa được bảo vệ',
 };
 
 export const DETERIORATION_MAP = {
@@ -59,6 +70,7 @@ export const DETERIORATION_MAP = {
   POSSIBLY_STRUCTURAL: 'Có dấu hiệu suy giảm có thể mang tính cấu trúc',
   STRUCTURAL: 'Đã phát hiện suy giảm mang tính cấu trúc',
   UNKNOWN: 'Chưa đủ dữ liệu để xác định',
+  NEUTRAL: 'Trung tính',
 };
 
 export const ARCHETYPE_MAP = {
@@ -71,6 +83,13 @@ export const ARCHETYPE_MAP = {
   CYCLICAL: 'Doanh nghiệp mang tính chu kỳ',
 };
 
+export const MARGIN_TREND_MAP = {
+  EXPANDING: 'Đang mở rộng',
+  STABLE: 'Ổn định',
+  DECLINING: 'Đang thu hẹp',
+  NOT_APPLICABLE: 'Không áp dụng',
+};
+
 export const METRIC_MAP = {
   revenue_growth: 'Tăng trưởng doanh thu',
   revenue_cagr: 'Tăng trưởng doanh thu thuần',
@@ -78,37 +97,16 @@ export const METRIC_MAP = {
   median_roe: 'ROE trung vị',
   margin_trend: 'Xu hướng biên lợi nhuận',
   pat_volatility: 'Mức ổn định lợi nhuận',
+  profit_volatility: 'Mức ổn định lợi nhuận',
   avg_cfo_pat: 'Khả năng chuyển lợi nhuận thành dòng tiền',
   latest_debt_equity: 'Mức nợ so với vốn chủ sở hữu',
+  debt_equity_ratio: 'Mức nợ so với vốn chủ sở hữu',
+  annual_share_growth: 'Tăng trưởng số lượng cổ phiếu',
+  share_cagr: 'Tăng trưởng số lượng cổ phiếu',
   dilution: 'Mức pha loãng cổ phiếu',
   accounting_consistency: 'Tính nhất quán của báo cáo tài chính',
   forensics: 'Kiểm tra dấu hiệu bất thường',
 };
-
-export function formatClassification(code) {
-  if (!code) return 'Chưa xác định';
-  return CLASSIFICATION_MAP[String(code).toUpperCase()] || String(code);
-}
-
-export function formatValueTrap(code) {
-  if (!code) return 'Chưa xác định';
-  return VALUETRAP_MAP[String(code).toUpperCase()] || String(code);
-}
-
-export function formatDeterioration(code) {
-  if (!code) return 'Chưa xác định';
-  return DETERIORATION_MAP[String(code).toUpperCase()] || String(code);
-}
-
-export function formatArchetype(code) {
-  if (!code) return 'Chưa xác định';
-  return ARCHETYPE_MAP[String(code).toUpperCase()] || String(code);
-}
-
-export function formatMetricName(code) {
-  if (!code) return '';
-  return METRIC_MAP[String(code).toLowerCase()] || String(code).replace(/_/g, ' ');
-}
 
 export const COMPARISON_MAP = {
   'actual_mos >= required_mos': 'Biên an toàn đạt yêu cầu',
@@ -127,60 +125,84 @@ export const COMPARISON_MAP = {
   'normalized_earnings_trend >= 0': 'Sức kiếm tiền bình thường hóa duy trì ổn định',
 };
 
-export const SYSTEM_INVARIANTS_MAP = {
-  NULL_NOT_ZERO: {
-    formula: 'NULL != 0',
-    title: 'Dữ liệu thiếu (NULL)',
-    explanation: 'Thiếu dữ liệu không được xem là giá trị bằng không.',
-  },
-  UNKNOWN_NOT_PASS: {
-    formula: 'UNKNOWN != PASS',
-    title: 'Chưa đủ dữ liệu',
-    explanation: 'Chưa đủ dữ liệu để kết luận đạt.',
-  },
-  WATCH_NOT_FAIL: {
-    formula: 'WATCH != FAIL',
-    title: 'Cảnh báo theo dõi',
-    explanation: 'Cần theo dõi, nhưng chưa đủ bằng chứng để kết luận không đạt.',
-  },
-  NOT_APPLICABLE_NOT_UNKNOWN: {
-    formula: 'NOT_APPLICABLE != UNKNOWN',
-    title: 'Không áp dụng',
-    explanation: 'Chỉ tiêu không phù hợp với loại hình doanh nghiệp, không phải do thiếu dữ liệu.',
-  },
-};
-
 export const FINDING_TITLES = {
-  RECEIVABLES_GROW_FASTER_THAN_REVENUE: 'Khả năng thu hồi tiền bán hàng',
-  INVENTORY_GROW_FASTER_THAN_REVENUE: 'Hàng tồn kho tăng nhanh hơn doanh thu',
+  RECEIVABLES_GROW_FASTER_THAN_REVENUE: 'Khoản phải thu tăng nhanh hơn doanh thu',
+  PROFIT_CASH_DIVERGENCE: 'Lợi nhuận tăng nhưng dòng tiền không theo kịp',
   WEAK_CASH_CONVERSION: 'Dòng tiền kinh doanh chưa tương ứng với lợi nhuận',
+  INVENTORY_BUILDUP: 'Hàng tồn kho gia tăng bất thường',
+  INVENTORY_GROWTH_EXCEEDS_SALES: 'Hàng tồn kho tăng nhanh hơn doanh thu',
+  INVENTORY_GROW_FASTER_THAN_REVENUE: 'Hàng tồn kho tăng nhanh hơn doanh thu',
   DEBT_FUNDED_LOW_QUALITY_GROWTH: 'Tăng trưởng phụ thuộc nhiều vào nợ vay',
   EXCESSIVE_DEBT_LEVERAGE: 'Đòn bẩy tài chính ở mức cao',
   UNSTABLE_EARNINGS_HISTORY: 'Biến động lợi nhuận bất ổn qua các năm',
   WEAK_PROFITABILITY_ROE: 'Tỷ suất sinh lời trên vốn chủ sở hữu (ROE) khiêm tốn',
   PER_SHARE_VALUE_DILUTION: 'Lợi nhuận trên mỗi cổ phiếu (EPS) bị pha loãng',
   ACCOUNTING_IDENTITY_DISCREPANCY: 'Lệch dữ liệu phương trình kế toán',
+  WEAK_BANK_ROE: 'ROE ngân hàng ở mức thấp so với tiêu chuẩn',
+  LOW_BANK_CAPITAL_ADEQUACY: 'Tỷ lệ an toàn vốn chủ sở hữu ngân hàng mỏng',
+  WEAK_SECURITIES_ROE: 'ROE công ty chứng khoán ở mức thấp',
+  TRADING_INCOME_DEPENDENCE: 'Phụ thuộc lớn vào hoạt động tự doanh / FVTPL',
+  SECURITIES_HIGH_LEVERAGE: 'Đòn bẩy công ty chứng khoán ở mức cao',
 };
 
-/**
- * Format status code to investor Vietnamese
- */
 export function formatStatus(status) {
   if (!status) return 'Chưa xác định';
-  return STATUS_MAP[String(status).toUpperCase()] || String(status);
+  const s = String(status).toUpperCase().trim();
+  return STATUS_MAP[s] || (s.includes('_') ? s.toLowerCase().replace(/_/g, ' ') : s);
 }
 
-/**
- * Format investment decision state to investor Vietnamese
- */
 export function formatDecision(decision) {
   if (!decision) return 'Chưa xác định';
-  return DECISION_MAP[String(decision).toUpperCase()] || String(decision);
+  const d = String(decision).toUpperCase().trim();
+  return DECISION_MAP[d] || (d.includes('_') ? d.toLowerCase().replace(/_/g, ' ') : d);
 }
 
-/**
- * Format math comparison expression to human readable Vietnamese
- */
+export function formatClassification(code) {
+  if (!code) return 'Chưa xác định';
+  const c = String(code).toUpperCase().trim();
+  return CLASSIFICATION_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatValueTrap(code) {
+  if (!code) return 'Chưa xác định';
+  const c = String(code).toUpperCase().trim();
+  return VALUETRAP_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatDeterioration(code) {
+  if (!code) return 'Chưa xác định';
+  const c = String(code).toUpperCase().trim();
+  return DETERIORATION_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatArchetype(code) {
+  if (!code) return 'Chưa xác định';
+  const c = String(code).toUpperCase().trim();
+  return ARCHETYPE_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
+}
+
+export function formatMarginTrend(trend) {
+  if (!trend) return 'Chưa xác định';
+  const t = String(trend).toUpperCase().trim();
+  return MARGIN_TREND_MAP[t] || (t.includes('_') ? t.toLowerCase().replace(/_/g, ' ') : t);
+}
+
+export function formatFindingTitle(code) {
+  if (!code) return 'Chưa xác định';
+  const uCode = String(code).toUpperCase().trim();
+  if (FINDING_TITLES[uCode]) return FINDING_TITLES[uCode];
+  if (uCode.includes('_')) {
+    return uCode.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+  return uCode;
+}
+
+export function formatMetricName(code) {
+  if (!code) return 'Chưa xác định';
+  const norm = String(code).toLowerCase().trim();
+  return METRIC_MAP[norm] || norm.replace(/_/g, ' ');
+}
+
 export function formatComparison(expr) {
   if (!expr) return '';
   const norm = String(expr).trim();
@@ -196,20 +218,16 @@ export function formatComparison(expr) {
     .replace(/_/g, ' ');
 }
 
-/**
- * Format a finding object into structured 6-question investor narrative
- */
 export function formatFindingNarrative(finding) {
   if (!finding) return null;
 
-  // Use pre-computed backend vietnamese_explanation if provided
   if (finding.vietnamese_explanation) {
     return finding.vietnamese_explanation;
   }
 
   const code = finding.code || '';
   const statusStr = formatStatus(finding.status || 'WATCH');
-  const title = FINDING_TITLES[code] || (code ? code.replace(/_/g, ' ').toUpperCase() : 'Cảnh báo tài chính');
+  const title = formatFindingTitle(code);
 
   return {
     tieu_de: title,

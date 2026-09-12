@@ -10,6 +10,7 @@ import {
   listPortfolioTransactionAudit,
   listPortfolioTransactions,
 } from './api.js';
+import { formatStatus, formatValueTrap, formatDeterioration, formatFindingTitle, formatMarginTrend } from '../utils/vietnameseSemantics.js';
 
 const EXPORT_SCHEMA = 'qport-ai-export-v6';
 
@@ -648,18 +649,18 @@ export async function downloadBusinessMungerAIExport(data) {
     table(
       ['Chiều đánh giá', 'Trạng thái', 'Thông số & Chi tiết'],
       [
-        ['1. Tăng trưởng (Growth)', quality.growth || 'N/A', `Revenue CAGR: ${munger.growth_analysis?.metrics?.revenue_cagr != null ? pct(munger.growth_analysis.metrics.revenue_cagr) : 'N/A'}, Profit CAGR: ${munger.growth_analysis?.metrics?.net_profit_cagr != null ? pct(munger.growth_analysis.metrics.net_profit_cagr) : 'N/A'}`],
-        ['2. Sinh lời (Profitability)', quality.profitability || 'N/A', `Median ROE: ${munger.profitability_analysis?.metrics?.median_roe != null ? `${num(munger.profitability_analysis.metrics.median_roe * 100, 1)}%` : 'N/A'}, Margin Trend: ${munger.profitability_analysis?.metrics?.margin_trend || 'N/A'}`],
-        ['3. Độ bền lợi nhuận', quality.durability || 'N/A', `Volatility: ${munger.earnings_durability?.metrics?.pat_volatility != null ? `${num(munger.earnings_durability.metrics.pat_volatility * 100, 1)}%` : 'N/A'}`],
-        ['4. Chất lượng lợi nhuận', quality.earnings_quality || 'N/A', `CFO/PAT: ${munger.earnings_quality?.metrics?.avg_cfo_pat != null ? `${munger.earnings_quality.metrics.avg_cfo_pat}x` : 'N/A'}`],
-        ['5. Bảng cân đối kế toán', quality.balance_sheet || 'N/A', `Cơ cấu Tài sản & Nguồn vốn`],
-        ['6. Nợ & Thanh khoản', quality.debt_liquidity || 'N/A', `Debt/Equity: ${munger.debt_liquidity?.metrics?.latest_debt_equity != null ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}`],
-        ['7. Hiệu quả sử dụng vốn', quality.capital_efficiency || 'N/A', `Tạo giá trị LN giữ lại`],
-        ['8. Phân bổ vốn quản trị', quality.capital_allocation || 'N/A', `Tích lũy tài sản`],
-        ['9. Pha loãng cổ phiếu', quality.dilution || 'N/A', `Tăng trưởng cổ phiếu/năm`],
-        ['10. Nhất quán kế toán', quality.accounting_consistency || 'N/A', `Hằng đẳng thức BCTC`],
-        ['11. Điều tra BCTC (Forensics)', quality.forensics || 'N/A', `Phát hiện bất thường`],
-        ['12. Dòng tiền thuần', quality.cash_flow_quality || 'N/A', `Chuyển hóa dòng tiền`],
+        ['1. Tăng trưởng (Growth)', formatStatus(quality.growth), `Revenue CAGR: ${munger.growth_analysis?.metrics?.revenue_cagr != null ? pct(munger.growth_analysis.metrics.revenue_cagr) : 'N/A'}, Profit CAGR: ${munger.growth_analysis?.metrics?.net_profit_cagr != null ? pct(munger.growth_analysis.metrics.net_profit_cagr) : 'N/A'}`],
+        ['2. Sinh lời (Profitability)', formatStatus(quality.profitability), `Median ROE: ${munger.profitability_analysis?.metrics?.median_roe != null ? `${num(munger.profitability_analysis.metrics.median_roe * 100, 1)}%` : 'N/A'}, Margin Trend: ${formatMarginTrend(munger.profitability_analysis?.metrics?.margin_trend)}`],
+        ['3. Độ bền lợi nhuận', formatStatus(quality.durability), `Volatility: ${munger.earnings_durability?.metrics?.pat_volatility != null ? `${num(munger.earnings_durability.metrics.pat_volatility * 100, 1)}%` : 'N/A'}`],
+        ['4. Chất lượng lợi nhuận', formatStatus(quality.earnings_quality), `CFO/PAT: ${munger.earnings_quality?.metrics?.avg_cfo_pat != null ? `${munger.earnings_quality.metrics.avg_cfo_pat}x` : 'N/A'}`],
+        ['5. Bảng cân đối kế toán', formatStatus(quality.balance_sheet), `Cơ cấu Tài sản & Nguồn vốn`],
+        ['6. Nợ & Thanh khoản', formatStatus(quality.debt_liquidity), `Debt/Equity: ${munger.debt_liquidity?.metrics?.latest_debt_equity != null ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}`],
+        ['7. Hiệu quả sử dụng vốn', formatStatus(quality.capital_efficiency), `Tạo giá trị LN giữ lại`],
+        ['8. Phân bổ vốn quản trị', formatStatus(quality.capital_allocation), `Tích lũy tài sản`],
+        ['9. Pha loãng cổ phiếu', formatStatus(quality.dilution), `Tăng trưởng cổ phiếu/năm`],
+        ['10. Nhất quán kế toán', formatStatus(quality.accounting_consistency), `Hằng đẳng thức BCTC`],
+        ['11. Điều tra BCTC (Forensics)', formatStatus(quality.forensics), `Phát hiện bất thường`],
+        ['12. Dòng tiền thuần', formatStatus(quality.cash_flow_quality), `Chuyển hóa dòng tiền`],
       ]
     ),
     ``,
@@ -670,17 +671,17 @@ export async function downloadBusinessMungerAIExport(data) {
     `- **Giải thích**: ${normPower.explanation || '-'}`,
     ``,
     `## 6. Đánh Giá Bẫy Giá Trị (Value Trap Assessment)`,
-    `- **Trạng thái**: ${valueTrap.status || 'CLEAR'}`,
-    `- **Phân loại suy giảm**: ${valueTrap.deterioration_classification || 'NEUTRAL'}`,
-    `- **Rủi ro nghiêm trọng (Hard Failures)**: ${valueTrap.hard_failures?.length ? valueTrap.hard_failures.join(', ') : 'Không có'}`,
-    `- **Cảnh báo (Warnings)**: ${valueTrap.warnings?.length ? valueTrap.warnings.join(', ') : 'Không có'}`,
+    `- **Trạng thái**: ${formatValueTrap(valueTrap.status)}`,
+    `- **Phân loại suy giảm**: ${formatDeterioration(valueTrap.deterioration_classification)}`,
+    `- **Rủi ro nghiêm trọng (Hard Failures)**: ${valueTrap.hard_failures?.length ? valueTrap.hard_failures.map(formatFindingTitle).join(', ') : 'Không có'}`,
+    `- **Cảnh báo (Warnings)**: ${valueTrap.warnings?.length ? valueTrap.warnings.map(formatFindingTitle).join(', ') : 'Không có'}`,
     `- **Diễn giải**: ${valueTrap.explanation || '-'}`,
     ``,
     `## 7. Forensic Findings & Pre-Commitment Checklist`,
     munger.all_findings?.length
       ? table(
-          ['Mã phát hiện', 'Mức độ', 'Trạng thái', 'Mô tả / Bằng chứng'],
-          munger.all_findings.map(f => [f.code, f.severity, f.status, f.message || f.code])
+          ['Phát hiện tài chính', 'Mức độ', 'Trạng thái', 'Mô tả / Bằng chứng'],
+          munger.all_findings.map(f => [formatFindingTitle(f.code), formatStatus(f.severity), formatStatus(f.status), f.explanation || f.message || formatFindingTitle(f.code)])
         )
       : '_Không có phát hiện bất thường nghiêm trọng._',
     ``,
