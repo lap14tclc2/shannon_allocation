@@ -62,12 +62,17 @@ def analyze_normal_enterprise(
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
     share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else None
 
+    latest_shares = float(sh_list[-1]) if (sh_list and float(sh_list[-1]) > 0) else None
     eps_list = []
     for y in years:
         p = by_year[y].get("net_profit")
-        s = by_year[y].get("outstanding_shares")
-        if p is not None and s is not None and float(s) > 0:
-            eps_list.append(float(p) / float(s))
+        if p is not None:
+            if latest_shares:
+                eps_list.append(float(p) / latest_shares)
+            else:
+                s = by_year[y].get("outstanding_shares")
+                if s is not None and float(s) > 0:
+                    eps_list.append(float(p) / float(s))
     eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     growth_findings: List[FinancialFinding] = []
@@ -388,12 +393,17 @@ def analyze_bank(
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
     share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else 0.0
 
+    latest_shares = float(sh_list[-1]) if (sh_list and float(sh_list[-1]) > 0) else None
     eps_list = []
     for y in years:
         p = by_year[y].get("net_profit")
-        s = by_year[y].get("outstanding_shares")
-        if p is not None and s is not None and float(s) > 0:
-            eps_list.append(float(p) / float(s))
+        if p is not None:
+            if latest_shares:
+                eps_list.append(float(p) / latest_shares)
+            else:
+                s = by_year[y].get("outstanding_shares")
+                if s is not None and float(s) > 0:
+                    eps_list.append(float(p) / float(s))
     eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     roe_series = []
@@ -634,12 +644,17 @@ def analyze_securities(
     eq_cagr = (eq_list[-1] / eq_list[0]) ** (1.0 / (len(eq_list) - 1)) - 1.0 if len(eq_list) >= 2 and eq_list[0] > 0 and eq_list[-1] > 0 else None
     share_cagr = (sh_list[-1] / sh_list[0]) ** (1.0 / (len(sh_list) - 1)) - 1.0 if len(sh_list) >= 2 and sh_list[0] > 0 and sh_list[-1] > 0 else None
 
+    latest_shares = float(sh_list[-1]) if (sh_list and float(sh_list[-1]) > 0) else None
     eps_list = []
     for y in years:
         p = by_year[y].get("net_profit")
-        s = by_year[y].get("outstanding_shares")
-        if p is not None and s is not None and float(s) > 0:
-            eps_list.append(float(p) / float(s))
+        if p is not None:
+            if latest_shares:
+                eps_list.append(float(p) / latest_shares)
+            else:
+                s = by_year[y].get("outstanding_shares")
+                if s is not None and float(s) > 0:
+                    eps_list.append(float(p) / float(s))
     eps_cagr = (eps_list[-1] / eps_list[0]) ** (1.0 / (len(eps_list) - 1)) - 1.0 if len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[-1] > 0 else None
 
     roe_series = []

@@ -127,6 +127,10 @@
 | [TASK-20260912-146](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-146-deep-financial-forensics-and-munger-pre-mortem.md) | Deep Financial Forensics & Munger Pre-Mortem Engine | completed | high | 2026-09-12 |
 | [TASK-20260912-147](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-147-deep-audit-and-fix-na-null-metrics.md) | Deep Audit & Fix N/A / Null Metrics across 12-Dimension Financial Engine | completed | high | 2026-09-12 |
 | [TASK-20260912-148](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-148-complete-enum-leakage-audit.md) | Complete Enum Leakage Audit & Centralized Presentation Layer Upgrade | completed | high | 2026-09-12 |
+| [TASK-20260912-149](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-149-fix-validation-gate-classification.md) | Fix validation gate classification bugs (cycle/unit/excluded_years) | completed | high | 2026-09-12 |
+| [TASK-20260912-150](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-150-terminal-portfolio-position-management.md) | Terminal Portfolio Position Management | completed | high | 2026-09-12 |
+| [TASK-20260912-151](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-151-terminal-position-modal-ux.md) | Terminal Position Modal Input Colors & Symbol Suggest Search | completed | high | 2026-09-12 |
+| [TASK-20260912-152](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-152-corporate-action-normalization.md) | Corporate Action Normalization for Dividend and Stock Split | completed | high | 2026-09-12 |
 
 
 

@@ -941,3 +941,137 @@ class CorrectablePortfolioService(PortfolioService):
             "gips_claim": "NONE",
         }
         return result
+
+    # ------------------------------------------------------------------
+    # Terminal Portfolio Position Management (TASK-150)
+    # ------------------------------------------------------------------
+
+    def positions_view(self) -> dict:
+        """Lightweight positions view for Terminal — no risk pipeline.
+
+        Returns per-position: symbol, shares/quantity, average_cost, price,
+        invested_value, market_value, unrealized_pnl, unrealized_pnl_pct,
+        weight, has_complex_ledger.
+        """
+        state = self.current_state()
+        symbols = sorted(
+            p for p, pos in state.positions.items() if (pos.shares or 0) > 0
+        )
+        prices = self.store.latest_prices(symbols) if symbols else {}
+        rows, equity_value = self._mark_to_market(state, prices)
+
+        # Build per-symbol event-type sets (to flag complex ledger positions)
+        symbol_types: dict[str, set] = {}
+        for ev in effective_events(self.store):
+            if ev.symbol:
+                symbol_types.setdefault(ev.symbol, set()).add(ev.event_type)
+
+        positions = []
+        for r in rows:
+            if (r.get("shares") or 0) <= 0:
+                continue
+            sym = r["symbol"]
+            has_complex = any(
+                et != EventType.POSITION_IMPORT
+                for et in symbol_types.get(sym, set())
+            )
+            invested = float(r.get("cost_value") or 0.0)
+            pnl = r.get("unrealized_pnl")
+            pnl_pct = None
+            if pnl is not None and invested > 0:
+                pnl_pct = round(pnl / invested * 100, 2)
+            positions.append({
+                **r,
+                "quantity": r.get("shares"),
+                "invested_value": invested,
+                "market_price": r.get("price"),
+                "unrealized_pnl_pct": pnl_pct,
+                "has_complex_ledger": has_complex,
+            })
+
+        has_market_prices = any(p.get("price") is not None for p in positions)
+        total_invested = sum(p["invested_value"] for p in positions)
+        total_market = equity_value if has_market_prices else 0.0
+        cash_reserve = float(self.store.get_meta("cash_reserve_vnd") or 0)
+
+        portfolio_value = (total_market if has_market_prices else total_invested) + cash_reserve
+        summary = {
+            "total_invested": total_invested,
+            "total_market_value": total_market if has_market_prices else None,
+            "cash_reserve": cash_reserve,
+            "total_portfolio_value": portfolio_value,
+            "unrealized_pnl": round(total_market - total_invested, 2) if has_market_prices and total_invested > 0 else None,
+            "unrealized_pnl_pct": round((total_market - total_invested) / total_invested * 100, 2) if has_market_prices and total_invested > 0 else None,
+        }
+        return {"ok": True, "positions": positions, "cash_reserve": cash_reserve, "summary": summary}
+
+    def add_position(self, symbol: str, quantity, average_cost, created_by: str = "terminal") -> dict:
+        """Add a new position via POSITION_IMPORT. Rejects if symbol already has shares > 0."""
+        from .validation import InputValidationError as _IVE
+        sym = str(symbol or "").strip().upper()
+        state = self.current_state()
+        if sym in state.positions and (state.positions[sym].shares or 0) > 0:
+            raise _IVE("DUPLICATE_POSITION", f"{sym} đã có trong danh mục. Hãy chỉnh sửa vị thế hiện tại.", "symbol")
+        return self.append_event({
+            "event_type": "POSITION_IMPORT",
+            "symbol": sym,
+            "quantity": float(quantity),
+            "price": float(average_cost),
+            "event_date": self.today_vn(),
+            "note": "Thêm vị thế từ Terminal",
+        }, created_by=created_by)
+
+    def update_position(self, symbol: str, quantity, average_cost, created_by: str = "terminal") -> dict:
+        """Replace position quantity/avg_cost via soft-delete + new POSITION_IMPORT.
+
+        Rejects if the symbol has non-POSITION_IMPORT ledger events (complex ledger).
+        """
+        from .validation import InputValidationError as _IVE
+        sym = str(symbol or "").strip().upper()
+        all_events = [e for e in effective_events(self.store) if e.symbol == sym]
+
+        if not all_events:
+            raise _IVE("POSITION_NOT_FOUND", f"Không tìm thấy vị thế {sym}.", "symbol")
+
+        non_import = [e for e in all_events if e.event_type != EventType.POSITION_IMPORT]
+        if non_import:
+            raise _IVE(
+                "COMPLEX_LEDGER",
+                f"{sym} có lịch sử giao dịch phức tạp. Hãy sử dụng trang Giao Dịch để chỉnh sửa.",
+                "symbol",
+            )
+
+        for ev in all_events:
+            self.delete_event(int(ev.id), "Cập nhật vị thế từ Terminal", created_by=created_by)
+
+        return self.append_event({
+            "event_type": "POSITION_IMPORT",
+            "symbol": sym,
+            "quantity": float(quantity),
+            "price": float(average_cost),
+            "event_date": self.today_vn(),
+            "note": "Cập nhật vị thế từ Terminal",
+        }, created_by=created_by)
+
+    def delete_position(self, symbol: str, created_by: str = "terminal") -> dict:
+        """Soft-delete all effective events for symbol — removes position from portfolio."""
+        from .validation import InputValidationError as _IVE
+        sym = str(symbol or "").strip().upper()
+        all_events = [e for e in effective_events(self.store) if e.symbol == sym]
+
+        if not all_events:
+            raise _IVE("POSITION_NOT_FOUND", f"Không tìm thấy vị thế {sym}.", "symbol")
+
+        deleted = 0
+        for ev in all_events:
+            try:
+                self.delete_event(int(ev.id), "Xóa vị thế từ Terminal", created_by=created_by)
+                deleted += 1
+            except Exception:
+                pass  # Skip auto-generated events protected by ledger invariants
+        return {"ok": True, "symbol": sym, "deleted_events": deleted}
+
+    def get_cash(self) -> dict:
+        """Return current cash reserve amount."""
+        raw = self.store.get_meta("cash_reserve_vnd")
+        return {"ok": True, "cash_reserve": float(raw) if raw is not None else 0.0}

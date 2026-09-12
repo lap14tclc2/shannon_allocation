@@ -188,6 +188,16 @@ export async function listPortfolioSnapshots() { const d = await getJSON('/api/p
 export const getPortfolioPreferences = () => getJSON('/api/portfolio/preferences');
 export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/reference-weights', 'POST', { weights });
 export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
+export const getPortfolioCash = () => getJSON('/api/portfolio/cash');
+
+// Terminal Portfolio Position Management (TASK-150)
+export const getPortfolioPositions = () => getJSON('/api/portfolio/positions');
+export const addPortfolioPosition = (symbol, quantity, averageCost) =>
+  sendJSON('/api/portfolio/positions', 'POST', { symbol, quantity, average_cost: averageCost });
+export const updatePortfolioPosition = (symbol, quantity, averageCost) =>
+  sendJSON(`/api/portfolio/positions/${encodeURIComponent(String(symbol).toUpperCase())}`, 'PUT', { quantity, average_cost: averageCost });
+export const deletePortfolioPosition = (symbol) =>
+  sendJSON(`/api/portfolio/positions/${encodeURIComponent(String(symbol).toUpperCase())}`, 'DELETE', null);
 export const getActivityLog = (params = {}) => {
   const query = new URLSearchParams();
   for (const key of ['page', 'page_size', 'category', 'actor_type', 'status', 'q']) {

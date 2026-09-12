@@ -1454,6 +1454,61 @@ def portfolio_cash_reserve(
     return portfolio(require_portfolio_user(qport_session)).set_cash_reserve(body.get("amount"))
 
 
+# ------------------------------------------------------------------
+# Terminal Portfolio Position Management (TASK-150)
+# ------------------------------------------------------------------
+
+@app.get("/api/portfolio/positions")
+def portfolio_positions_view(qport_session: str | None = Cookie(default=None)):
+    return portfolio(require_portfolio_user(qport_session)).positions_view()
+
+
+@app.post("/api/portfolio/positions")
+def portfolio_add_position(
+    request: Request,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    svc = portfolio(user)
+    result = svc.add_position(
+        body.get("symbol", ""),
+        body.get("quantity"),
+        body.get("average_cost"),
+        created_by=user["username"],
+    )
+    return JSONResponse(status_code=201, content=jsonable_encoder(result))
+
+
+@app.put("/api/portfolio/positions/{symbol}")
+def portfolio_update_position(
+    symbol: str,
+    body: dict = Body(default_factory=dict),
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    return portfolio(user).update_position(
+        symbol,
+        body.get("quantity"),
+        body.get("average_cost"),
+        created_by=user["username"],
+    )
+
+
+@app.delete("/api/portfolio/positions/{symbol}")
+def portfolio_delete_position(
+    symbol: str,
+    qport_session: str | None = Cookie(default=None),
+):
+    user = require_portfolio_user(qport_session)
+    return portfolio(user).delete_position(symbol, created_by=user["username"])
+
+
+@app.get("/api/portfolio/cash")
+def portfolio_get_cash(qport_session: str | None = Cookie(default=None)):
+    return portfolio(require_portfolio_user(qport_session)).get_cash()
+
+
 @app.post("/api/portfolio/reconciliation")
 def portfolio_reconciliation(
     body: dict = Body(default_factory=dict),

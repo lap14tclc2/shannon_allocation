@@ -1,7 +1,7 @@
 ---
 id: TASK-20260912-149
 title: Fix validation gate classification bugs (cycle/unit/excluded_years)
-status: in-progress
+status: completed
 created: 2026-09-12
 ---
 
@@ -21,10 +21,10 @@ created: 2026-09-12
 - `excluded_years` dict shape was API design error; tests contract requires int list
 
 ## Acceptance Criteria
-- [ ] `test_gate_detects_dgc_structural_break_and_cycle_extremes` passes
-- [ ] `test_gate_valuation_handling_use_policies` passes
-- [ ] `test_normalization_window_evidence_in_report` passes
-- [ ] `test_gate_unit_jump_is_unit_mapping_error` passes
+- [x] `test_gate_detects_dgc_structural_break_and_cycle_extremes` passes
+- [x] `test_gate_valuation_handling_use_policies` passes
+- [x] `test_normalization_window_evidence_in_report` passes
+- [x] `test_gate_unit_jump_is_unit_mapping_error` passes
 
 ## Implementation Tasks
 - [x] `validation_gate.py`: insert `year in set(cycle_years)` → CYCLICAL_EXTREME before R>=0.15
