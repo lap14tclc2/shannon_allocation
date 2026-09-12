@@ -117,6 +117,7 @@
 | [TASK-20260911-132C](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-132C-ssi-canonical-semantics-repair.md) | SSI Canonical Semantics Repair | completed | high | 2026-09-11 |
 | [TASK-20260911-136](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-136-munger-financial-analysis-engine.md) | Munger-Style Full Financial Statement Analysis Engine | completed | high | 2026-09-11 |
 | [TASK-20260911-137](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260911-137-munger-business-valuation-integration.md) | Munger Business Workspace + Valuation/MOS Decision Integration | completed | high | 2026-09-11 |
+| [TASK-20260912-138](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-138-business-workspace-ai-export-button.md) | Business Workspace AI Export Button | completed | high | 2026-09-12 |
 
 
 

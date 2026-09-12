@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import { navigate } from '../lib/navigation.js';
+import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
 
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
@@ -10,6 +11,8 @@ export default function BusinessPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [exportingAI, setExportingAI] = useState(false);
+  const [exportMsg, setExportMsg] = useState('');
 
   useEffect(() => {
     const pathParts = window.location.pathname.split('/');
@@ -63,6 +66,21 @@ export default function BusinessPage() {
     const cleanSym = searchInput.trim().toUpperCase();
     if (cleanSym) {
       navigate(`/business/${cleanSym}`);
+    }
+  };
+
+  const handleExportAI = async () => {
+    if (!data || exportingAI) return;
+    setExportingAI(true);
+    setExportMsg('');
+    try {
+      const filename = await downloadBusinessMungerAIExport(data);
+      setExportMsg(`Đã xuất file báo cáo ${filename} thành công. Báo cáo chứa đầy đủ BCTC 12 chiều Munger, Bẫy giá trị, Định giá & JSON payload cho AI.`);
+      setTimeout(() => setExportMsg(''), 6000);
+    } catch (err) {
+      setExportMsg(`Không thể xuất báo cáo cho AI: ${err.message}`);
+    } finally {
+      setExportingAI(false);
     }
   };
 
@@ -267,16 +285,59 @@ export default function BusinessPage() {
                 )}
               </div>
 
-              {/* Quick switch search bar */}
-              <div style={{ minWidth: '260px', maxWidth: '320px' }}>
-                <SymbolSuggestInput
-                  value=""
-                  onSelectSecurity={handleSelectSymbol}
-                  placeholder="Tra cứu doanh nghiệp khác..."
-                  holdingSymbols={portfolioSymbols}
-                />
+              {/* Action Buttons & Search */}
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary export-ai-btn"
+                  onClick={handleExportAI}
+                  disabled={exportingAI || loading || !data}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#0284c7',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.9rem',
+                    whiteSpace: 'nowrap',
+                    height: '42px',
+                  }}
+                >
+                  <span aria-hidden="true">🤖</span> {exportingAI ? 'Đang xuất…' : 'Xuất dữ liệu cho AI'}
+                </button>
+                <div style={{ minWidth: '220px', maxWidth: '300px' }}>
+                  <SymbolSuggestInput
+                    value=""
+                    onSelectSecurity={handleSelectSymbol}
+                    placeholder="Tra cứu doanh nghiệp khác..."
+                    holdingSymbols={portfolioSymbols}
+                  />
+                </div>
               </div>
             </header>
+
+            {exportMsg && (
+              <div
+                className="export-status-banner"
+                style={{
+                  padding: '12px 16px',
+                  marginBottom: '20px',
+                  background: '#ecfdf5',
+                  border: '1px solid #6ee7b7',
+                  color: '#065f46',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.92rem',
+                }}
+              >
+                {exportMsg}
+              </div>
+            )}
 
             {loading && <div className="loading-state" style={{ padding: '40px', textAlign: 'center', fontSize: '1.1rem' }}>Đang thực thi phân tích BCTC Munger cho {symbol}...</div>}
             {error && <div className="error-box" style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', borderRadius: '6px' }}>Thông báo: {error}</div>}

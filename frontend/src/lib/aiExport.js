@@ -605,3 +605,104 @@ export async function downloadReportAIExport(symbol, report) {
   };
   return downloadSymbolAIExport(item, report);
 }
+
+/** Export Business Munger Financial Statement Analysis for AI consumption. */
+export async function downloadBusinessMungerAIExport(data) {
+  const symbol = String(data?.symbol || '').toUpperCase();
+  if (!symbol) return null;
+  const munger = data?.munger_analysis || {};
+  const val = munger.valuation || data?.canonical_valuation || {};
+  const decision = munger.long_term_decision || {};
+  const quality = munger.overall_financial_quality || {};
+  const valueTrap = munger.value_trap_assessment || {};
+  const normPower = munger.normalized_earning_power || {};
+  const generatedAt = new Date().toISOString();
+
+  const lines = [
+    `# QPort Munger BCTC Analysis — ${symbol} (${generatedAt.slice(0, 10)})`,
+    ``,
+    `## 1. Executive Metadata`,
+    `- **Symbol**: ${symbol}`,
+    `- **Archetype**: ${munger.archetype || 'N/A'}`,
+    `- **Lịch sử BCTC**: ${munger.history_years || 0} năm (FY${munger.history_start}–FY${munger.history_end})`,
+    `- **Nguồn dữ liệu**: ${String(munger.provider || 'SSI').toUpperCase()}`,
+    `- **Độ sẵn sàng dữ liệu**: ${munger.data_readiness || 'INSUFFICIENT'}`,
+    `- **Phân loại Doanh nghiệp**: ${munger.compounder_classification || 'N/A'}`,
+    `- **Bẫy giá trị**: ${valueTrap.status || 'CLEAR'} (${valueTrap.deterioration_classification || 'NEUTRAL'})`,
+    ``,
+    `## 2. Quyết Định BCTC Dài Hạn (Long-Term Decision)`,
+    `- **Trạng thái**: **${decision.state || 'WAIT_FOR_MOS'}**`,
+    `- **Lý do cốt lõi**: ${decision.primary_reason || '-'}`,
+    `- **Biên An Toàn Thực Tế (Actual MOS)**: ${decision.actual_mos_pct != null ? `${num(decision.actual_mos_pct, 1)}%` : 'N/A'}`,
+    `- **Biên An Toàn Yêu Cầu (Required MOS)**: ${decision.required_mos_pct != null ? `${decision.required_mos_pct}%` : 'N/A'}`,
+    `- **Cổng MOS**: ${decision.mos_gate || 'UNKNOWN'}`,
+    ``,
+    `## 3. Định Giá Chuẩn Mực & Margin of Safety`,
+    `- **Giá thị trường**: ${money(val.current_price)}`,
+    `- **Bear IV (Thận trọng)**: ${money(val.bear_iv)}`,
+    `- **Base IV (Nội tại)**: ${money(val.base_iv)}`,
+    `- **Bull IV (Lạc quan)**: ${money(val.bull_iv)}`,
+    `- **Độ tin cậy định giá**: ${val.valuation_confidence || 'MEDIUM'}`,
+    ``,
+    `## 4. Ma Trận Chất Lượng Tài Chính 12 Chiều Munger`,
+    table(
+      ['Chiều đánh giá', 'Trạng thái', 'Thông số & Chi tiết'],
+      [
+        ['1. Tăng trưởng (Growth)', quality.growth || 'N/A', `Revenue CAGR: ${munger.growth_analysis?.metrics?.revenue_cagr != null ? pct(munger.growth_analysis.metrics.revenue_cagr) : 'N/A'}, Profit CAGR: ${munger.growth_analysis?.metrics?.net_profit_cagr != null ? pct(munger.growth_analysis.metrics.net_profit_cagr) : 'N/A'}`],
+        ['2. Sinh lời (Profitability)', quality.profitability || 'N/A', `Median ROE: ${munger.profitability_analysis?.metrics?.median_roe != null ? `${num(munger.profitability_analysis.metrics.median_roe * 100, 1)}%` : 'N/A'}, Margin Trend: ${munger.profitability_analysis?.metrics?.margin_trend || 'N/A'}`],
+        ['3. Độ bền lợi nhuận', quality.durability || 'N/A', `Volatility: ${munger.earnings_durability?.metrics?.pat_volatility != null ? `${num(munger.earnings_durability.metrics.pat_volatility * 100, 1)}%` : 'N/A'}`],
+        ['4. Chất lượng lợi nhuận', quality.earnings_quality || 'N/A', `CFO/PAT: ${munger.earnings_quality?.metrics?.avg_cfo_pat != null ? `${munger.earnings_quality.metrics.avg_cfo_pat}x` : 'N/A'}`],
+        ['5. Bảng cân đối kế toán', quality.balance_sheet || 'N/A', `Cơ cấu Tài sản & Nguồn vốn`],
+        ['6. Nợ & Thanh khoản', quality.debt_liquidity || 'N/A', `Debt/Equity: ${munger.debt_liquidity?.metrics?.latest_debt_equity != null ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}`],
+        ['7. Hiệu quả sử dụng vốn', quality.capital_efficiency || 'N/A', `Tạo giá trị LN giữ lại`],
+        ['8. Phân bổ vốn quản trị', quality.capital_allocation || 'N/A', `Tích lũy tài sản`],
+        ['9. Pha loãng cổ phiếu', quality.dilution || 'N/A', `Tăng trưởng cổ phiếu/năm`],
+        ['10. Nhất quán kế toán', quality.accounting_consistency || 'N/A', `Hằng đẳng thức BCTC`],
+        ['11. Điều tra BCTC (Forensics)', quality.forensics || 'N/A', `Phát hiện bất thường`],
+        ['12. Dòng tiền thuần', quality.cash_flow_quality || 'N/A', `Chuyển hóa dòng tiền`],
+      ]
+    ),
+    ``,
+    `## 5. Sức Mạnh Lợi Nhuận Chuẩn Hóa (Normalized Earning Power)`,
+    `- **LNST Gần Nhất (Reported)**: ${money(normPower.reported_latest)}`,
+    `- **LNST Chuẩn Hóa 5 Năm**: ${money(normPower.normalized_5y)}`,
+    `- **LNST Chuẩn Hóa 10 Năm**: ${money(normPower.normalized_10y)}`,
+    `- **Giải thích**: ${normPower.explanation || '-'}`,
+    ``,
+    `## 6. Đánh Giá Bẫy Giá Trị (Value Trap Assessment)`,
+    `- **Trạng thái**: ${valueTrap.status || 'CLEAR'}`,
+    `- **Phân loại suy giảm**: ${valueTrap.deterioration_classification || 'NEUTRAL'}`,
+    `- **Rủi ro nghiêm trọng (Hard Failures)**: ${valueTrap.hard_failures?.length ? valueTrap.hard_failures.join(', ') : 'Không có'}`,
+    `- **Cảnh báo (Warnings)**: ${valueTrap.warnings?.length ? valueTrap.warnings.join(', ') : 'Không có'}`,
+    `- **Diễn giải**: ${valueTrap.explanation || '-'}`,
+    ``,
+    `## 7. Forensic Findings & Pre-Commitment Checklist`,
+    munger.all_findings?.length
+      ? table(
+          ['Mã phát hiện', 'Mức độ', 'Trạng thái', 'Mô tả / Bằng chứng'],
+          munger.all_findings.map(f => [f.code, f.severity, f.status, f.message || f.code])
+        )
+      : '_Không có phát hiện bất thường nghiêm trọng._',
+    ``,
+    `## 8. Machine-Readable Payload for AI`,
+    `\`\`\`json`,
+    JSON.stringify(data, null, 2),
+    `\`\`\``,
+    ``,
+    `---`,
+    `*Generated ${generatedAt} · QPort Munger Analysis AI Export for ${symbol}*`,
+  ];
+
+  const markdown = lines.join('\n');
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `qport-munger-${symbol.toLowerCase()}-${generatedAt.slice(0, 10)}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return anchor.download;
+}
+
