@@ -146,7 +146,7 @@ export default function BusinessPage() {
   return (
     <div className="wealth-app-shell">
       <AppNav active="valuation" />
-      <main className="wealth-main-content">
+      <main className="wealth-main-content" style={{ maxWidth: '1380px', margin: '0 auto', padding: '84px 24px 48px 24px', boxSizing: 'border-box' }}>
         {!symbol ? (
           /* Landing Workspace View */
           <div className="business-landing-container">

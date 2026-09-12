@@ -23,7 +23,7 @@ export default function HistoryPage() {
   return (
     <div className="wealth-app-shell">
       <AppNav active="performance" />
-      <main className="wealth-main-content">
+      <main className="wealth-main-content" style={{ maxWidth: '1380px', margin: '0 auto', padding: '84px 24px 48px 24px', boxSizing: 'border-box' }}>
         <header className="page-header">
           <div>
             <span className="eyebrow">Không Gian Lịch Sử Tích Sản</span>

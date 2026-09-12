@@ -75,7 +75,7 @@ export default function CapitalPage() {
   return (
     <div className="wealth-app-shell">
       <AppNav active="allocation" />
-      <main className="wealth-main-content">
+      <main className="wealth-main-content" style={{ maxWidth: '1380px', margin: '0 auto', padding: '84px 24px 48px 24px', boxSizing: 'border-box' }}>
         <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <span className="eyebrow">Không Gian Quản Lý Vốn Cá Nhân</span>
