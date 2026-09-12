@@ -200,13 +200,7 @@ class ValuationEngine:
             for h in (financial_history or [])
             if h.get("fiscal_year") is not None
         })
-        excluded = [
-            {
-                "year": y,
-                "reason": "PREVIOUS_REGIME" if y not in inc_set else ("HISTORICAL_YEAR_NOT_USED" if norm_method == "LATEST_FY" else "MISSING_OR_UNAVAILABLE_FINANCIALS"),
-            }
-            for y in candidate if y not in input_set
-        ]
+        excluded = [y for y in candidate if y not in input_set]
         used = len(norm_inputs)
         note_text = (
             f"Dùng số liệu năm tài chính mới nhất ({fiscal_year}) theo mô hình LATEST_FY."

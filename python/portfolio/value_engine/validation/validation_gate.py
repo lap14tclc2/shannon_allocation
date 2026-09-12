@@ -178,12 +178,14 @@ def _classify_year(
     mat_score = round(float(materiality.get("impact_pct") or 0.0) / 100.0, 3)
     iso_score = round((1.0 - A) * (1.0 - C), 3)
 
-    # 1. Unit/mapping error (Layer 1) — REJECT_FACT.
+    _cycle_set = set(cycle_years)
+
+    # 1. Unit/mapping error (Layer 1) — REJECT_FACT + block.
     if unit_error_year:
         classification = "UNIT_MAPPING_ERROR_CANDIDATE"
         confidence = "LOW"
         include = False
-        block = False
+        block = True
         exclude_metric = list(anom_metrics or ["revenue"])
         rule_name = "LAYER1_UNIT_OR_SCALE_JUMP"
         rule_score = 1.0
@@ -197,7 +199,17 @@ def _classify_year(
         rule_name = "CONFIRMED_REGIME_LEVEL_SHIFT"
         rule_score = R
         rule_threshold = 0.08
-    # 2b. Structural break candidate (level shift not splitting final regime)
+    # 2b. Cycle extreme — trust detect_cycle_extremes (uses future-look mean-reversion).
+    #     Must precede STRUCTURAL_BREAK_CANDIDATE: high P makes CY=A*C*M*(1-P)≈0,
+    #     causing cycle peaks to fall through to STRUCTURAL_BREAK_CANDIDATE or SUSPICIOUS.
+    elif year in _cycle_set:
+        classification = "CYCLICAL_EXTREME"
+        confidence = "HIGH"
+        include = True
+        rule_name = "CYCLE_DETECTOR_CONFIRMED_EXTREME"
+        rule_score = max(CY, 0.01)
+        rule_threshold = 0.0
+    # 2c. Structural break candidate (level shift not splitting final regime)
     elif R >= 0.15:
         classification = "STRUCTURAL_BREAK_CANDIDATE"
         confidence = "MEDIUM"
@@ -206,7 +218,7 @@ def _classify_year(
         rule_name = "PERSISTENT_LEVEL_SHIFT_CANDIDATE"
         rule_score = R
         rule_threshold = 0.15
-    # 3. Cyclical extreme — require genuine multi-metric cycle confirmation (A>=0.4, C>=0.4, CY>=0.05)
+    # 3. CY-score cyclical extreme (fallback when year not in pre-detected cycle_years)
     elif CY >= 0.05 and A >= 0.35 and C >= 0.35:
         classification = "CYCLICAL_EXTREME"
         confidence = "HIGH"
