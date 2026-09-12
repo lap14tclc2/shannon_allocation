@@ -132,6 +132,18 @@
   line-height: 1.4;
 }
 
+.table-btn-val {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  text-decoration: none;
+}
+
+.table-btn-val:hover {
+  background: #dcfce7;
+  border-color: #16a34a;
+}
+
 .table-btn-split {
   color: #0284c7;
   border-color: #bae6fd;

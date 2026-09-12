@@ -4,6 +4,7 @@ import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import ThesisChallengeSection from '../components/ThesisChallengeSection.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
+import { getMungerCandidates } from '../lib/api.js';
 import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative, formatMarginTrend, formatFindingTitle, formatPct, formatVND, formatRatioX, formatDebtEquity, formatCfoPat } from '../utils/vietnameseSemantics.js';
 
 export default function BusinessPage() {
@@ -16,6 +17,12 @@ export default function BusinessPage() {
   const [exportingAI, setExportingAI] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
+  // Candidates state
+  const [candidatesData, setCandidatesData] = useState(null);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [selectedCandidateTier, setSelectedCandidateTier] = useState('all');
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
+
   useEffect(() => {
     const pathParts = window.location.pathname.split('/');
     const targetSym = pathParts.length > 2 && pathParts[2] ? pathParts[2].trim().toUpperCase() : null;
@@ -25,8 +32,19 @@ export default function BusinessPage() {
       fetchBusinessData(targetSym);
     } else {
       fetchPortfolioSymbols();
+      fetchCandidates('all');
     }
   }, [window.location.pathname]);
+
+  const fetchCandidates = (tier = 'all') => {
+    setCandidatesLoading(true);
+    getMungerCandidates(tier)
+      .then((res) => {
+        if (res && res.ok) setCandidatesData(res);
+      })
+      .catch(() => {})
+      .finally(() => setCandidatesLoading(false));
+  };
 
   const fetchPortfolioSymbols = () => {
     fetch('/api/portfolio/terminal')
@@ -217,12 +235,12 @@ export default function BusinessPage() {
             </section>
 
             {/* Current Portfolio Section */}
-            <section className="card portfolio-symbols-card" style={{ padding: '24px' }}>
+            <section className="card portfolio-symbols-card" style={{ marginBottom: '24px', padding: '24px' }}>
               <div className="card-header" style={{ marginBottom: '12px' }}>
-                <h3>Danh mục hiện tại ({portfolioSymbols.length} vị thế)</h3>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Danh mục hiện tại ({portfolioSymbols.length} vị thế)</h3>
               </div>
               <p className="muted" style={{ marginBottom: '16px', fontSize: '0.9rem' }}>
-                Chọn một vị thế trong danh mục để xem phân tích tài chính Munger & Biên an toàn:
+                Chọn một vị thế trong danh mục để xem phân tích tài chính Munger &amp; Biên an toàn:
               </p>
               <div className="symbol-buttons-grid" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 {portfolioSymbols.map((sym) => (
@@ -246,6 +264,255 @@ export default function BusinessPage() {
                   </button>
                 ))}
               </div>
+            </section>
+
+            {/* Munger Investment Candidates Section */}
+            <section className="card candidates-section-card" style={{ padding: '24px' }}>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <span className="eyebrow" style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: '#0284c7', fontWeight: 700, letterSpacing: '0.05em' }}>
+                    Sàng lọc cơ hội đầu tư dài hạn
+                  </span>
+                  <h2 style={{ fontSize: '1.45rem', margin: '4px 0 6px 0', fontWeight: 800 }}>
+                    Cổ phiếu tiềm năng theo tiêu chuẩn Munger
+                  </h2>
+                  <p className="muted" style={{ margin: 0, fontSize: '0.92rem' }}>
+                    Doanh nghiệp có chất lượng tài chính vượt trội, sức mạnh bảng cân đối an toàn và không phát hiện dấu hiệu bẫy giá trị (Nguồn BCTC: SSI).
+                  </p>
+                </div>
+                {candidatesData?.summary && (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', padding: '4px 10px', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '4px', fontWeight: 600 }}>
+                      {candidatesData.summary.exceptional_count} Xuất sắc
+                    </span>
+                    <span style={{ fontSize: '12px', padding: '4px 10px', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 600 }}>
+                      {candidatesData.summary.high_quality_count} Chất lượng cao
+                    </span>
+                    <span style={{ fontSize: '12px', padding: '4px 10px', background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e0', borderRadius: '4px', fontWeight: 600 }}>
+                      {candidatesData.summary.investable_count} Đáng xem xét
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Tier Filter Tabs */}
+              <div className="candidate-tier-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'all', label: 'Tất cả ứng viên' },
+                  { key: 'exceptional', label: 'Chất lượng xuất sắc' },
+                  { key: 'high_quality', label: 'Chất lượng cao' },
+                  { key: 'investable', label: 'Đáng xem xét' },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCandidateTier(tab.key);
+                      fetchCandidates(tab.key);
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '12px',
+                      fontWeight: selectedCandidateTier === tab.key ? 700 : 500,
+                      borderRadius: '4px',
+                      border: selectedCandidateTier === tab.key ? '1px solid #0284c7' : '1px solid var(--border, #cbd5e0)',
+                      background: selectedCandidateTier === tab.key ? '#0284c7' : 'var(--panel-subtle, #f7fafc)',
+                      color: selectedCandidateTier === tab.key ? '#ffffff' : 'inherit',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {candidatesLoading && (
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted, #718096)', fontSize: '0.95rem' }}>
+                  Đang quét và tính toán ứng viên Munger từ cơ sở dữ liệu BCTC chuẩn hóa…
+                </div>
+              )}
+
+              {!candidatesLoading && (!candidatesData?.candidates || candidatesData.candidates.length === 0) && (
+                <div style={{ padding: '24px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', textAlign: 'center', color: 'var(--text-muted, #718096)', fontSize: '0.92rem' }}>
+                  Chưa có mã nào đáp ứng đủ tiêu chuẩn lọc trong nhóm này.
+                </div>
+              )}
+
+              {/* Candidates Grid */}
+              {!candidatesLoading && candidatesData?.candidates && candidatesData.candidates.length > 0 && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '18px' }}>
+                    {(showAllCandidates ? candidatesData.candidates : candidatesData.candidates.slice(0, 6)).map((c) => (
+                      <div
+                        key={c.symbol}
+                        className="candidate-card"
+                        style={{
+                          border: '1px solid var(--border, #e2e8f0)',
+                          borderRadius: '8px',
+                          padding: '18px',
+                          background: 'var(--panel, #ffffff)',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '14px',
+                        }}
+                      >
+                        <div>
+                          {/* Card Header: Symbol & Badges */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <strong style={{ fontSize: '1.25rem', color: 'var(--text, #1a202c)' }}>{c.symbol}</strong>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #718096)' }}>{c.archetype_vi}</span>
+                              </div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted, #718096)', marginTop: '2px' }}>
+                                {c.company_name}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: c.candidate_tier_code === 'EXCEPTIONAL' ? '#f0fdf4' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#eff6ff' : '#f8fafc'),
+                                color: c.candidate_tier_code === 'EXCEPTIONAL' ? '#15803d' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#1d4ed8' : '#475569'),
+                                border: `1px solid ${c.candidate_tier_code === 'EXCEPTIONAL' ? '#86efac' : (c.candidate_tier_code === 'HIGH_QUALITY' ? '#93c5fd' : '#cbd5e0')}`,
+                              }}>
+                                {c.quality_tier_vi}
+                              </span>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                background: c.value_trap_status === 'CLEAR' ? '#f0fdf4' : '#fffbeb',
+                                color: c.value_trap_status === 'CLEAR' ? '#166534' : '#92400e',
+                                border: `1px solid ${c.value_trap_status === 'CLEAR' ? '#bbf7d0' : '#fef08a'}`,
+                              }}>
+                                {c.value_trap_status_vi}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 6 Key Financial Metrics Grid */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '8px',
+                            background: 'var(--surface-soft, #f8fafc)',
+                            padding: '10px 12px',
+                            borderRadius: '6px',
+                            margin: '10px 0',
+                            border: '1px solid var(--border-subtle, #f1f5f9)',
+                            fontSize: '11px',
+                          }}>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>ROE Trung Vị</div>
+                              <strong style={{ fontSize: '13px', color: c.roe_pct >= 18 ? '#15803d' : 'inherit' }}>
+                                {c.roe_pct != null ? `${c.roe_pct}%` : 'Chưa đủ dữ liệu'}
+                              </strong>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>Tăng Trưởng LNST</div>
+                              <strong style={{ fontSize: '13px', color: (c.net_profit_cagr_pct || 0) > 10 ? '#15803d' : 'inherit' }}>
+                                {c.net_profit_cagr_pct != null ? `${c.net_profit_cagr_pct > 0 ? '+' : ''}${c.net_profit_cagr_pct}%` : 'Chưa tính'}
+                              </strong>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>CFO / PAT</div>
+                              <strong style={{ fontSize: '13px' }}>
+                                {c.cfo_to_pat_display}
+                              </strong>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>Nợ / Vốn CSH</div>
+                              <strong style={{ fontSize: '13px' }}>
+                                {c.debt_to_equity_display}
+                              </strong>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>Giá / Base IV</div>
+                              <strong style={{ fontSize: '12px' }}>
+                                {c.current_price ? `${(c.current_price / 1000).toFixed(1)}k` : '—'} / {c.base_iv ? `${(c.base_iv / 1000).toFixed(1)}k` : '—'}
+                              </strong>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>Biên An Toàn (MOS)</div>
+                              <strong style={{ fontSize: '13px', color: (c.actual_mos_pct || 0) >= (c.required_mos_pct || 25) ? '#15803d' : '#dd6b20' }}>
+                                {c.actual_mos_pct != null ? `${c.actual_mos_pct.toFixed(1)}%` : '—'}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Recommendation Rationale */}
+                          <div style={{ fontSize: '12px', lineHeight: 1.5, color: '#334155', marginTop: '6px' }}>
+                            <strong>Lý do đề xuất:</strong> {c.recommendation_reason_vi}
+                          </div>
+
+                          {/* Top Warning if any */}
+                          {c.top_warning_vi && c.top_warning_vi !== 'Không có cảnh báo tài chính trọng yếu' && (
+                            <div style={{ fontSize: '11px', color: '#c2410c', marginTop: '6px', display: 'flex', gap: '4px' }}>
+                              <span>⚠️</span>
+                              <span><strong>Cảnh báo:</strong> {c.top_warning_vi}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Footer: Navigation button */}
+                        <div style={{ borderTop: '1px solid var(--border-subtle, #f1f5f9)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted, #94a3b8)' }}>
+                            {c.data_source}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/business/${c.symbol}`)}
+                            style={{
+                              padding: '6px 14px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              borderRadius: '4px',
+                              border: 'none',
+                              background: '#0284c7',
+                              color: '#ffffff',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            Xem phân tích chi tiết →
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Toggle view all button */}
+                  {candidatesData.candidates.length > 6 && (
+                    <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllCandidates(!showAllCandidates)}
+                        style={{
+                          padding: '8px 24px',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: '1px solid #0284c7',
+                          background: 'transparent',
+                          color: '#0284c7',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showAllCandidates ? '↑ Thu gọn danh sách' : `↓ Xem tất cả (${candidatesData.candidates.length} mã ứng viên)`}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </section>
           </div>
         ) : (

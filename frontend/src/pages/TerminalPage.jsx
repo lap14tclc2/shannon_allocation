@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import AppNav from '../components/AppNav.jsx';
 import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
+import { navigate } from '../lib/navigation.js';
 import {
   addPortfolioPosition,
   applySplitAdjustment,
@@ -508,9 +509,23 @@ function PortfolioSection({ onRefreshTerminal }) {
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {p.has_complex_ledger ? (
-                          <a href="/transactions" style={{ fontSize: 12, color: '#718096' }}>Lịch sử sổ cái</a>
+                          <div className="table-action-group">
+                            <a
+                              href={`/valuation?symbol=${p.symbol}`}
+                              onClick={(e) => { e.preventDefault(); navigate(`/valuation?symbol=${p.symbol}`); }}
+                              className="table-btn table-btn-val"
+                              title="Xem định giá DCF/RIM và Biên an toàn"
+                            >Định giá</a>
+                            <a href="/transactions" style={{ fontSize: 12, color: '#718096', marginLeft: 4 }}>Lịch sử sổ cái</a>
+                          </div>
                         ) : (
                           <div className="table-action-group">
+                            <a
+                              href={`/valuation?symbol=${p.symbol}`}
+                              onClick={(e) => { e.preventDefault(); navigate(`/valuation?symbol=${p.symbol}`); }}
+                              className="table-btn table-btn-val"
+                              title="Xem định giá DCF/RIM và Biên an toàn"
+                            >Định giá</a>
                             <button
                               onClick={() => handleAutoSplit(p.symbol)}
                               title="Tự động chuẩn hóa số lượng và giá vốn sau chia tách/cổ tức cổ phiếu"

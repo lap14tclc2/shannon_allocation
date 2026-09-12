@@ -1731,6 +1731,25 @@ def api_portfolio_terminal(qport_session: str | None = Cookie(default=None)):
     }
 
 
+@app.get("/api/portfolio/business/candidates")
+@app.get("/api/portfolio/business-candidates")
+def api_portfolio_business_candidates(
+    tier: str | None = "all",
+    search: str | None = None,
+    limit: int = 50,
+    qport_session: str | None = Cookie(default=None),
+):
+    """Get Munger long-term investment candidates across canonical universe."""
+    require_portfolio_user(qport_session)
+    from portfolio.value_engine.munger_candidates import get_munger_candidates
+
+    return get_munger_candidates(
+        tier=tier,
+        search=search,
+        limit=limit,
+    )
+
+
 @app.get("/api/portfolio/business/{symbol}")
 def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Business Workspace detail endpoint."""

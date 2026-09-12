@@ -721,22 +721,46 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
 }
 
 export default function ValuationPage({ symbols = [], locale = 'vi' }) {
-  const normalized = useMemo(() => [...new Set(symbols.map(value => String(value || '').toUpperCase()).filter(Boolean))], [symbols]);
+  const querySymbol = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('symbol') || window.location.hash.replace('#valuation-', ''))?.trim().toUpperCase()
+    : null;
+
+  const allSymbols = useMemo(() => {
+    const list = [...(symbols || [])];
+    if (querySymbol && !list.map(s => String(s || '').toUpperCase()).includes(querySymbol)) {
+      list.unshift(querySymbol);
+    }
+    return list;
+  }, [symbols, querySymbol]);
+
+  const normalized = useMemo(() => [...new Set(allSymbols.map(value => String(value || '').toUpperCase()).filter(Boolean))], [allSymbols]);
   const symbolKey = normalized.join(',');
   const [reports, setReports] = useState({});
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState(querySymbol || null);
 
   const activeSymbol = selectedSymbol && normalized.includes(selectedSymbol) ? selectedSymbol : (normalized[0] || null);
 
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
+  useEffect(() => {
+    if (querySymbol && normalized.includes(querySymbol)) {
+      setSelectedSymbol(querySymbol);
+      setTimeout(() => {
+        const el = document.getElementById(`valuation-${querySymbol}`) || document.getElementById('valuation-detail-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    }
+  }, [querySymbol, normalized]);
+
   function handleSelectSymbol(sym) {
     setSelectedSymbol(sym);
     setTimeout(() => {
-      const el = document.getElementById('valuation-detail-section');
+      const el = document.getElementById(`valuation-${sym}`) || document.getElementById('valuation-detail-section');
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }

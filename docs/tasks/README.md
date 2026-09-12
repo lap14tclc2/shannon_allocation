@@ -135,7 +135,8 @@
 | [TASK-20260912-154](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-154-deep-munger-financial-decision.md) | Deep Audit & Refactor Munger BCTC-Only Decision Engine | completed | high | 2026-09-12 |
 | [TASK-20260912-155](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-155-terminal-semantic-data-completeness.md) | Terminal Semantic + Portfolio Data Completeness Audit | completed | high | 2026-09-12 |
 | [TASK-20260912-156](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-156-auto-corporate-action-position-adjustment.md) | Auto Corporate Action Position & Cost Basis Adjustment | completed | high | 2026-09-12 |
-| [TASK-20260912-157](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-157-deep-value-trap-munger-financial-forensics.md) | Deep Value-Trap Analysis — Munger Long-Term Financial Forensics | in-progress | high | 2026-09-12 |
+| [TASK-20260912-157](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-157-deep-value-trap-munger-financial-forensics.md) | Deep Value-Trap Analysis — Munger Long-Term Financial Forensics | completed | high | 2026-09-12 |
+| [TASK-20260912-158](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-158-business-munger-candidates-valuation-navigation.md) | Business Munger Candidates & Portfolio Valuation Navigation | in-progress | high | 2026-09-12 |
 
 
 
