@@ -4,7 +4,7 @@ import SymbolSuggestInput from '../components/SymbolSuggestInput.jsx';
 import ThesisChallengeSection from '../components/ThesisChallengeSection.jsx';
 import { navigate } from '../lib/navigation.js';
 import { downloadBusinessMungerAIExport } from '../lib/aiExport.js';
-import { formatStatus, formatDecision, formatFindingNarrative } from '../utils/vietnameseSemantics.js';
+import { formatStatus, formatDecision, formatClassification, formatValueTrap, formatDeterioration, formatArchetype, formatMetricName, formatFindingNarrative } from '../utils/vietnameseSemantics.js';
 
 export default function BusinessPage() {
   const [symbol, setSymbol] = useState(null);
@@ -352,7 +352,7 @@ export default function BusinessPage() {
                     </h2>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ fontSize: '0.85rem', color: '#6b7280', display: 'block' }}>Phân loại Doanh nghiệp</span>
-                      <strong>{munger.compounder_classification || 'N/A'}</strong>
+                      <strong>{formatClassification(munger.compounder_classification)}</strong>
                     </div>
                   </div>
                   <p className="summary-text" style={{ fontSize: '1.05rem', lineHeight: 1.6, margin: '8px 0 16px 0', color: 'var(--text-main, #1f2937)' }}>
@@ -531,18 +531,17 @@ export default function BusinessPage() {
                 {/* 4. VALUE TRAP GATE CARD */}
                 <section className="card value-trap-card" style={{ padding: '20px' }}>
                   <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cổng Bẫy Giá Trị (Value Trap Assessment)</h3>
-                    {renderBadge(valueTrap.status)}
+                    <h3 style={{ fontSize: '1.15rem', margin: 0 }}>BẪY GIÁ TRỊ</h3>
                   </div>
                   <div className="vt-details" style={{ lineHeight: 1.6 }}>
-                    <p style={{ margin: '4px 0' }}>Phân loại suy giảm cấu trúc: <strong>{valueTrap.deterioration_classification || 'NEUTRAL'}</strong></p>
+                    <p style={{ margin: '4px 0' }}>Đánh giá: <strong>{formatValueTrap(valueTrap.status)}</strong></p>
+                    <p style={{ margin: '4px 0' }}>Xu hướng nền tảng kinh doanh: <strong>{formatDeterioration(valueTrap.deterioration_classification)}</strong></p>
                     {valueTrap.hard_failures && valueTrap.hard_failures.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng (Hard Failures): <strong>{valueTrap.hard_failures.join(', ')}</strong></p>
+                      <p style={{ margin: '4px 0', color: '#dc2626' }}>Rủi ro nghiêm trọng: <strong>{valueTrap.hard_failures.join(', ')}</strong></p>
                     )}
                     {valueTrap.warnings && valueTrap.warnings.length > 0 && (
-                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý (Warnings): <strong>{valueTrap.warnings.join(', ')}</strong></p>
+                      <p style={{ margin: '4px 0', color: '#d97706' }}>Cảnh báo cần lưu ý: <strong>{valueTrap.warnings.join(', ')}</strong></p>
                     )}
-                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9rem', color: '#6b7280' }}>{valueTrap.explanation}</p>
                   </div>
                 </section>
 

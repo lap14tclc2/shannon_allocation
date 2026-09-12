@@ -8,10 +8,25 @@ from portfolio.value_engine.vietnamese_presenter import (
     SYSTEM_INVARIANTS_VIETNAMESE,
     enrich_finding_dict,
     generate_vietnamese_finding_narrative,
+    get_vietnamese_archetype,
+    get_vietnamese_classification,
     get_vietnamese_comparison,
     get_vietnamese_decision,
+    get_vietnamese_deterioration,
     get_vietnamese_status,
+    get_vietnamese_valuetrap,
 )
+
+
+def test_classification_valuetrap_deterioration_translations():
+    assert get_vietnamese_classification("POTENTIAL_COMPOUNDER") == "Doanh nghiệp có tiềm năng tăng trưởng giá trị dài hạn"
+    assert get_vietnamese_classification("COMPOUNDER") == "Doanh nghiệp tích lũy giá trị dài hạn"
+    assert get_vietnamese_valuetrap("CLEAR") == "Chưa phát hiện dấu hiệu bẫy giá trị đáng kể"
+    assert get_vietnamese_valuetrap("HIGH_RISK") == "Nguy cơ bẫy giá trị cao"
+    assert get_vietnamese_deterioration("NO_DETERIORATION") == "Chưa phát hiện xu hướng suy giảm đáng kể"
+    assert get_vietnamese_deterioration("STRUCTURAL") == "Đã phát hiện suy giảm mang tính cấu trúc"
+    assert get_vietnamese_archetype("NORMAL_ENTERPRISE") == "Doanh nghiệp sản xuất / thương mại thông thường"
+    assert get_vietnamese_archetype("BANK") == "Ngân hàng thương mại"
 
 
 def test_status_translations():

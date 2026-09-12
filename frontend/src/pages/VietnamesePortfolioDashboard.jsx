@@ -7,6 +7,7 @@ import { money, pct, signedMoney } from '../lib/format.js';
 import { deriveHoldingBooks } from '../lib/holdingBooks.js';
 import { getDividendHistories, listPortfolioTransactions } from '../lib/api.js';
 import { refreshDashboard, selectRefreshStatus } from '../lib/store.js';
+import PortfolioEditModal from '../components/PortfolioEditModal.jsx';
 import { Metric } from '../components/MetricCard.jsx';
 
 function currentVietnamYear() {
@@ -34,6 +35,15 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
   const [holdingTransactions, setHoldingTransactions] = useState([]);
   const [holdingSourceLoading, setHoldingSourceLoading] = useState(false);
   const [holdingSourceError, setHoldingSourceError] = useState('');
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalMode, setEditModalMode] = useState('ADD_POSITION');
+  const [editModalData, setEditModalData] = useState({});
+
+  function openModal(mode = 'ADD_POSITION', data = {}) {
+    setEditModalMode(mode);
+    setEditModalData(data);
+    setEditModalOpen(true);
+  }
 
   const portfolio = dashboard.portfolio || {};
   const portfolioContext = dashboard.portfolio_context || {};
@@ -165,8 +175,10 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
           <span>{dataLoading ? 'Đang tải dữ liệu giá…' : market.market_date ? `Dữ liệu giá đến ${market.market_date}` : 'Dữ liệu giá: chưa sẵn sàng'}</span>
         </div>
       </div>
-      <div className="hero-actions">
-        <a className="btn-primary" href="/transactions">+ Thêm giao dịch</a>
+      <div className="hero-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button className="btn-primary" type="button" onClick={() => openModal('ADD_POSITION')}>+ Thêm vị thế</button>
+        <button className="btn-secondary" type="button" onClick={() => openModal('ADD_CASH')}>+ Nạp tiền</button>
+        <button className="btn-secondary" type="button" onClick={() => openModal('WITHDRAW_CASH')}>Rút tiền</button>
         <button className="btn-secondary" type="button" onClick={sync} disabled={syncing}>{syncing ? 'Đang cập nhật…' : '↻ Cập nhật dữ liệu'}</button>
       </div>
     </header>
@@ -248,19 +260,23 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
           <h2>Cổ phiếu đang nắm giữ</h2>
           <p className="muted">Mở từng mã để xem cổ phiếu đang nằm tại DNSE, TCBS hoặc CTCK nào. Khi bán, QPort chỉ dùng số cổ ở đúng CTCK và tài khoản đã chọn.</p>
         </div>
-        {positions.length > 6 && <input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu…" aria-label="Tìm mã cổ phiếu" />}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button className="btn-small btn-primary" type="button" onClick={() => openModal('ADD_POSITION')}>+ Thêm vị thế</button>
+          {positions.length > 6 && <input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu…" aria-label="Tìm mã cổ phiếu" />}
+        </div>
       </div>
 
       {dataLoading && positions.length === 0 ? <div className="dashboard-loading-skeleton" role="status" aria-label="Đang tải danh sách cổ phiếu" /> : positions.length === 0 ? <div className="empty-state">
         <h3>Chưa có cổ phiếu trong danh mục</h3>
         <p>Hãy nhập danh mục hiện có hoặc ghi giao dịch mua đầu tiên.</p>
-        <a className="btn-primary" href="/transactions">Nhập danh mục ban đầu</a>
+        <button className="btn-primary" type="button" onClick={() => openModal('ADD_POSITION')}>+ Thêm vị thế ban đầu</button>
       </div> : visiblePositions.length === 0 ? <div className="empty-state compact-empty">Không tìm thấy mã phù hợp.</div> : <HoldingSourceTree
         positions={visiblePositions}
         holdingBooks={holdingBooks}
         locale={locale}
         loading={holdingSourceLoading}
         error={holdingSourceError}
+        onEditPosition={(symbol, book) => openModal('EDIT_POSITION', { symbol, ...book })}
       />}
     </section>
 
@@ -285,5 +301,19 @@ export default function VietnamesePortfolioDashboard({ dashboard = {}, locale = 
         <DividendTree rows={latestDividendTreeRows} locale={locale} root="symbol" openLatest />
       ) : dividendLoading ? <div className="dividend-tree-placeholder">Đang tải dữ liệu cổ tức…</div> : <div className="empty-state compact-empty">Chưa tìm thấy sự kiện cổ tức nào đến năm {currentYear} cho các mã hiện đang nắm giữ.</div>}
     </section>}
+
+    <PortfolioEditModal
+      isOpen={editModalOpen}
+      onClose={() => setEditModalOpen(false)}
+      initialMode={editModalMode}
+      initialData={editModalData}
+      holdingSymbols={positions.map(p => p.symbol)}
+      transactions={holdingTransactions}
+      onSuccess={() => {
+        sync();
+        listPortfolioTransactions().then(rows => setHoldingTransactions(rows || [])).catch(() => {});
+      }}
+      locale={locale}
+    />
   </div>;
 }

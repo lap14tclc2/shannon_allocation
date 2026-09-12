@@ -29,7 +29,7 @@ function sellHref(book) {
   return `/transactions?${params.toString()}`;
 }
 
-export default function HoldingSourceTree({ positions = [], holdingBooks = [], locale = 'vi', loading = false, error = '' }) {
+export default function HoldingSourceTree({ positions = [], holdingBooks = [], locale = 'vi', loading = false, error = '', onEditPosition }) {
   const [selectedValuationSymbol, setSelectedValuationSymbol] = useState(null);
 
   return (
@@ -90,8 +90,29 @@ export default function HoldingSourceTree({ positions = [], holdingBooks = [], l
                             ? <>
                               <a className="btn-small" href={buyHref(book)}>Mua thêm cổ phiếu</a>
                               <a className="btn-small btn-sell" href={sellHref(book)}>Bán cổ phiếu</a>
+                              {onEditPosition && (
+                                <button
+                                  type="button"
+                                  className="btn-small btn-secondary"
+                                  onClick={() => onEditPosition(symbol, book)}
+                                  title={`Chỉnh sửa vị thế ${symbol}`}
+                                >
+                                  Chỉnh sửa
+                                </button>
+                              )}
                             </>
-                            : <span className="status-pill">Cần gán CTCK trước khi mua/bán</span>}
+                            : <>
+                              <span className="status-pill">Cần gán CTCK trước khi mua/bán</span>
+                              {onEditPosition && (
+                                <button
+                                  type="button"
+                                  className="btn-small btn-secondary"
+                                  onClick={() => onEditPosition(symbol, book)}
+                                >
+                                  Chỉnh sửa
+                                </button>
+                              )}
+                            </>}
                         </div>
                       </article>;
                     })}

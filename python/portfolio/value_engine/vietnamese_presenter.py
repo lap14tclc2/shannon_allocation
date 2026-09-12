@@ -60,6 +60,86 @@ COMPARISON_VIETNAMESE: Dict[str, str] = {
 }
 
 
+CLASSIFICATION_VIETNAMESE: Dict[str, str] = {
+    "COMPOUNDER": "Doanh nghiệp tích lũy giá trị dài hạn",
+    "POTENTIAL_COMPOUNDER": "Doanh nghiệp có tiềm năng tăng trưởng giá trị dài hạn",
+    "AVERAGE_BUSINESS": "Doanh nghiệp có chất lượng trung bình",
+    "CYCLICAL_QUALITY": "Doanh nghiệp chất lượng mang tính chu kỳ",
+    "WEAK_BUSINESS": "Chất lượng doanh nghiệp còn yếu",
+    "DETERIORATING_BUSINESS": "Nền tảng kinh doanh đang suy yếu",
+    "INSUFFICIENT_DATA": "Chưa đủ dữ liệu để đánh giá",
+}
+
+VALUETRAP_VIETNAMESE: Dict[str, str] = {
+    "CLEAR": "Chưa phát hiện dấu hiệu bẫy giá trị đáng kể",
+    "WATCH": "Có dấu hiệu cần theo dõi",
+    "HIGH_RISK": "Nguy cơ bẫy giá trị cao",
+    "INSUFFICIENT_DATA": "Chưa đủ dữ liệu để đánh giá",
+}
+
+DETERIORATION_VIETNAMESE: Dict[str, str] = {
+    "NO_DETERIORATION": "Chưa phát hiện xu hướng suy giảm đáng kể",
+    "LIKELY_CYCLICAL": "Suy giảm có khả năng mang tính chu kỳ",
+    "POSSIBLY_CYCLICAL": "Có dấu hiệu suy giảm mang tính chu kỳ",
+    "POSSIBLY_STRUCTURAL": "Có dấu hiệu suy giảm có thể mang tính cấu trúc",
+    "STRUCTURAL": "Đã phát hiện suy giảm mang tính cấu trúc",
+    "UNKNOWN": "Chưa đủ dữ liệu để xác định",
+}
+
+ARCHETYPE_VIETNAMESE: Dict[str, str] = {
+    "NORMAL_ENTERPRISE": "Doanh nghiệp sản xuất / thương mại thông thường",
+    "BANK": "Ngân hàng thương mại",
+    "SECURITIES": "Công ty chứng khoán",
+    "REAL_ESTATE": "Bất động sản",
+    "INSURANCE": "Bảo hiểm",
+    "HOLDING": "Công ty quản lý / đầu tư vốn",
+    "CYCLICAL": "Doanh nghiệp mang tính chu kỳ",
+}
+
+METRIC_NAMES_VIETNAMESE: Dict[str, str] = {
+    "revenue_growth": "Tăng trưởng doanh thu",
+    "revenue_cagr": "Tăng trưởng doanh thu thuần",
+    "net_profit_cagr": "Tăng trưởng lợi nhuận sau thuế",
+    "median_roe": "ROE trung vị",
+    "margin_trend": "Xu hướng biên lợi nhuận",
+    "pat_volatility": "Mức ổn định của lợi nhuận",
+    "avg_cfo_pat": "Khả năng chuyển lợi nhuận thành dòng tiền",
+    "latest_debt_equity": "Mức nợ so với vốn chủ sở hữu",
+    "dilution": "Mức pha loãng cổ phiếu",
+    "accounting_consistency": "Tính nhất quán của báo cáo tài chính",
+    "forensics": "Kiểm tra dấu hiệu bất thường",
+}
+
+
+def get_vietnamese_classification(code: str) -> str:
+    """Return investor-facing Vietnamese translation for compounder classification."""
+    if not code:
+        return "Chưa xác định"
+    return CLASSIFICATION_VIETNAMESE.get(str(code).upper(), str(code))
+
+
+def get_vietnamese_valuetrap(code: str) -> str:
+    """Return investor-facing Vietnamese translation for ValueTrap assessment status."""
+    if not code:
+        return "Chưa xác định"
+    return VALUETRAP_VIETNAMESE.get(str(code).upper(), str(code))
+
+
+def get_vietnamese_deterioration(code: str) -> str:
+    """Return investor-facing Vietnamese translation for deterioration classification."""
+    if not code:
+        return "Chưa xác định"
+    return DETERIORATION_VIETNAMESE.get(str(code).upper(), str(code))
+
+
+def get_vietnamese_archetype(code: str) -> str:
+    """Return investor-facing Vietnamese translation for economic archetype."""
+    if not code:
+        return "Chưa xác định"
+    return ARCHETYPE_VIETNAMESE.get(str(code).upper(), str(code))
+
+
+
 SYSTEM_INVARIANTS_VIETNAMESE: Dict[str, Dict[str, str]] = {
     "NULL_NOT_ZERO": {
         "formula": "NULL != 0",

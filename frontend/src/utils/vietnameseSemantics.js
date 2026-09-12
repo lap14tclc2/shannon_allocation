@@ -35,6 +35,81 @@ export const DECISION_MAP = {
   SELL: 'Cân nhắc thoái vốn',
 };
 
+export const CLASSIFICATION_MAP = {
+  COMPOUNDER: 'Doanh nghiệp tích lũy giá trị dài hạn',
+  POTENTIAL_COMPOUNDER: 'Doanh nghiệp có tiềm năng tăng trưởng giá trị dài hạn',
+  AVERAGE_BUSINESS: 'Doanh nghiệp có chất lượng trung bình',
+  CYCLICAL_QUALITY: 'Doanh nghiệp chất lượng mang tính chu kỳ',
+  WEAK_BUSINESS: 'Chất lượng doanh nghiệp còn yếu',
+  DETERIORATING_BUSINESS: 'Nền tảng kinh doanh đang suy yếu',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu để đánh giá',
+};
+
+export const VALUETRAP_MAP = {
+  CLEAR: 'Chưa phát hiện dấu hiệu bẫy giá trị đáng kể',
+  WATCH: 'Có dấu hiệu cần theo dõi',
+  HIGH_RISK: 'Nguy cơ bẫy giá trị cao',
+  INSUFFICIENT_DATA: 'Chưa đủ dữ liệu để đánh giá',
+};
+
+export const DETERIORATION_MAP = {
+  NO_DETERIORATION: 'Chưa phát hiện xu hướng suy giảm đáng kể',
+  LIKELY_CYCLICAL: 'Suy giảm có khả năng mang tính chu kỳ',
+  POSSIBLY_CYCLICAL: 'Có dấu hiệu suy giảm mang tính chu kỳ',
+  POSSIBLY_STRUCTURAL: 'Có dấu hiệu suy giảm có thể mang tính cấu trúc',
+  STRUCTURAL: 'Đã phát hiện suy giảm mang tính cấu trúc',
+  UNKNOWN: 'Chưa đủ dữ liệu để xác định',
+};
+
+export const ARCHETYPE_MAP = {
+  NORMAL_ENTERPRISE: 'Doanh nghiệp sản xuất / thương mại thông thường',
+  BANK: 'Ngân hàng thương mại',
+  SECURITIES: 'Công ty chứng khoán',
+  REAL_ESTATE: 'Bất động sản',
+  INSURANCE: 'Bảo hiểm',
+  HOLDING: 'Công ty quản lý / đầu tư vốn',
+  CYCLICAL: 'Doanh nghiệp mang tính chu kỳ',
+};
+
+export const METRIC_MAP = {
+  revenue_growth: 'Tăng trưởng doanh thu',
+  revenue_cagr: 'Tăng trưởng doanh thu thuần',
+  net_profit_cagr: 'Tăng trưởng lợi nhuận sau thuế',
+  median_roe: 'ROE trung vị',
+  margin_trend: 'Xu hướng biên lợi nhuận',
+  pat_volatility: 'Mức ổn định lợi nhuận',
+  avg_cfo_pat: 'Khả năng chuyển lợi nhuận thành dòng tiền',
+  latest_debt_equity: 'Mức nợ so với vốn chủ sở hữu',
+  dilution: 'Mức pha loãng cổ phiếu',
+  accounting_consistency: 'Tính nhất quán của báo cáo tài chính',
+  forensics: 'Kiểm tra dấu hiệu bất thường',
+};
+
+export function formatClassification(code) {
+  if (!code) return 'Chưa xác định';
+  return CLASSIFICATION_MAP[String(code).toUpperCase()] || String(code);
+}
+
+export function formatValueTrap(code) {
+  if (!code) return 'Chưa xác định';
+  return VALUETRAP_MAP[String(code).toUpperCase()] || String(code);
+}
+
+export function formatDeterioration(code) {
+  if (!code) return 'Chưa xác định';
+  return DETERIORATION_MAP[String(code).toUpperCase()] || String(code);
+}
+
+export function formatArchetype(code) {
+  if (!code) return 'Chưa xác định';
+  return ARCHETYPE_MAP[String(code).toUpperCase()] || String(code);
+}
+
+export function formatMetricName(code) {
+  if (!code) return '';
+  return METRIC_MAP[String(code).toLowerCase()] || String(code).replace(/_/g, ' ');
+}
+
 export const COMPARISON_MAP = {
   'actual_mos >= required_mos': 'Biên an toàn đạt yêu cầu',
   'actual_mos < required_mos': 'Biên an toàn chưa đạt yêu cầu',
