@@ -20,3 +20,11 @@ def test_valuation_page_explains_models_and_database_source():
     assert "Kịch bản" in page
     assert "Chiết khấu" in page
     assert "fallback" not in page.lower()
+
+
+def test_valuation_page_bank_solvency_adaptation():
+    page = (ROOT / "frontend" / "src" / "pages" / "ValuationPage.jsx").read_text(encoding="utf-8")
+    assert "Pháo đài Tài chính · Đòn bẩy TS" in page
+    assert "Đòn bẩy Tài sản" in page
+    assert "Tỷ lệ Đệm vốn (VCSH/TS)" in page
+    assert "Đòn bẩy Tài sản (TS/VCSH)" in page

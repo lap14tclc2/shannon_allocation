@@ -351,38 +351,81 @@ function ValuationCard({ symbol, report, error, locale }) {
           <p className="pillar-desc">{report.value_investor_pillars.earnings_quality?.diagnosis}</p>
         </div>
 
-        <div className={`pillar-card pillar-${report.value_investor_pillars.financial_fortress?.status?.toLowerCase() || 'strong'}`}>
-          <div className="pillar-header">
-            <span className="pillar-num">02</span>
-            <span className="pillar-title">Pháo đài Tài chính · Nợ / VCSH</span>
-            <span className="pillar-badge">
-              {report.value_investor_pillars.financial_fortress?.status === 'STRONG' ? 'Rất Vững' : report.value_investor_pillars.financial_fortress?.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
-            </span>
-          </div>
-          <div className="pillar-metric">
-            <span className="pillar-val">{report.value_investor_pillars.financial_fortress?.debt_to_equity_ratio != null ? `${report.value_investor_pillars.financial_fortress.debt_to_equity_ratio}x` : (report.value_investor_pillars.financial_fortress?.net_debt_vnd === 0 ? '0x' : '—')}</span>
-            <span className="pillar-sub">Nợ / Vốn chủ sở hữu (D/E)</span>
-          </div>
-          <div className="pillar-metric-list">
-            <div className="pillar-metric-item">
-              <span className="pm-label">Tổng nợ vay</span>
-              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.total_debt_vnd != null ? money(report.value_investor_pillars.financial_fortress.total_debt_vnd, locale) : '—'}</span>
+        {(() => {
+          const fortress = report.value_investor_pillars.financial_fortress || {};
+          const isBank = fortress.is_bank || report.archetype_profile?.archetype === 'BANK';
+          const isSec = fortress.is_financial && !isBank;
+
+          const title = isBank
+            ? 'Pháo đài Tài chính · Đòn bẩy TS'
+            : (isSec ? 'Pháo đài Tài chính · Đòn bẩy TS' : 'Pháo đài Tài chính · Nợ / VCSH');
+
+          const mainVal = isBank || isSec
+            ? (fortress.bank_leverage != null ? `${fortress.bank_leverage}x` : (fortress.solvency_display || 'An toàn'))
+            : (fortress.debt_to_equity_ratio != null ? `${fortress.debt_to_equity_ratio}x` : (fortress.net_debt_vnd === 0 ? '0x' : '—'));
+
+          const subLabel = isBank
+            ? `Đòn bẩy Tài sản${fortress.equity_to_assets_pct != null ? ` · Đệm vốn ${fortress.equity_to_assets_pct}%` : ''}`
+            : (isSec ? 'Đòn bẩy Tài sản (TS/VCSH)' : 'Nợ / Vốn chủ sở hữu (D/E)');
+
+          return (
+            <div className={`pillar-card pillar-${fortress.status?.toLowerCase() || 'strong'}`}>
+              <div className="pillar-header">
+                <span className="pillar-num">02</span>
+                <span className="pillar-title">{title}</span>
+                <span className="pillar-badge">
+                  {fortress.status === 'STRONG' || fortress.status === 'FORTRESS' ? 'Rất Vững' : fortress.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
+                </span>
+              </div>
+              <div className="pillar-metric">
+                <span className="pillar-val">{mainVal}</span>
+                <span className="pillar-sub">{subLabel}</span>
+              </div>
+              <div className="pillar-metric-list">
+                {isBank ? (
+                  <>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Tổng tài sản</span>
+                      <span className="pm-val">{fortress.total_assets_vnd != null ? money(fortress.total_assets_vnd, locale) : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Vốn chủ sở hữu</span>
+                      <span className="pm-val">{fortress.total_equity_vnd != null ? money(fortress.total_equity_vnd, locale) : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Tỷ lệ Đệm vốn (VCSH/TS)</span>
+                      <span className="pm-val">{fortress.equity_to_assets_pct != null ? `${fortress.equity_to_assets_pct}%` : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Đòn bẩy Tài sản (TS/VCSH)</span>
+                      <span className="pm-val">{fortress.bank_leverage != null ? `${fortress.bank_leverage}x` : '—'}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Tổng nợ vay</span>
+                      <span className="pm-val">{fortress.total_debt_vnd != null ? money(fortress.total_debt_vnd, locale) : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Tiền mặt & tương đương</span>
+                      <span className="pm-val">{fortress.total_cash_vnd != null ? money(fortress.total_cash_vnd, locale) : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">Nợ ròng (Nợ − Tiền)</span>
+                      <span className="pm-val">{fortress.net_debt_vnd != null ? money(fortress.net_debt_vnd, locale) : '—'}</span>
+                    </div>
+                    <div className="pillar-metric-item">
+                      <span className="pm-label">{fortress.debt_payback_years === 0 ? 'Trả hết nợ bằng dòng tiền' : 'Nợ ròng / EBITDA'}</span>
+                      <span className="pm-val">{fortress.net_debt_to_ebitda != null ? `${fortress.net_debt_to_ebitda}x` : (fortress.debt_payback_years === 0 ? '0 năm' : '—')}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="pillar-desc">{fortress.diagnosis}</p>
             </div>
-            <div className="pillar-metric-item">
-              <span className="pm-label">Tiền mặt & tương đương</span>
-              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.total_cash_vnd != null ? money(report.value_investor_pillars.financial_fortress.total_cash_vnd, locale) : '—'}</span>
-            </div>
-            <div className="pillar-metric-item">
-              <span className="pm-label">Nợ ròng (Nợ − Tiền)</span>
-              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.net_debt_vnd != null ? money(report.value_investor_pillars.financial_fortress.net_debt_vnd, locale) : '—'}</span>
-            </div>
-            <div className="pillar-metric-item">
-              <span className="pm-label">{report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? 'Trả hết nợ bằng dòng tiền' : 'Nợ ròng / EBITDA'}</span>
-              <span className="pm-val">{report.value_investor_pillars.financial_fortress?.net_debt_to_ebitda != null ? `${report.value_investor_pillars.financial_fortress.net_debt_to_ebitda}x` : (report.value_investor_pillars.financial_fortress?.debt_payback_years === 0 ? '0 năm' : '—')}</span>
-            </div>
-          </div>
-          <p className="pillar-desc">{report.value_investor_pillars.financial_fortress?.diagnosis}</p>
-        </div>
+          );
+        })()}
 
         <div className={`pillar-card pillar-${report.value_investor_pillars.capital_allocation?.status?.toLowerCase() || 'good'}`}>
           <div className="pillar-header">

@@ -975,31 +975,45 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
                 </div>
               )}
 
-              {pillars.financial_fortress && (
-                <div className="v-pillar-card">
-                  <div className="v-pillar-head">
-                    <span className="v-pillar-name">2. Pháo đài Tài chính</span>
-                    {pillars.financial_fortress.status && (
-                      <span className="v-pillar-tag">
-                        {pillars.financial_fortress.status === 'STRONG' ? 'Rất Vững' : pillars.financial_fortress.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
-                      </span>
+              {pillars.financial_fortress && (() => {
+                const fort = pillars.financial_fortress;
+                const isBank = fort.is_bank || arch.archetype === 'BANK';
+                const isSec = fort.is_financial && !isBank;
+
+                const name = isBank
+                  ? '2. Pháo đài Tài chính · Đòn bẩy TS'
+                  : (isSec ? '2. Pháo đài Tài chính · Đòn bẩy TS' : '2. Pháo đài Tài chính · Nợ / VCSH');
+
+                const mainVal = isBank || isSec
+                  ? (fort.bank_leverage != null ? `${fort.bank_leverage}x` : (fort.solvency_display || 'An toàn'))
+                  : (fort.debt_payback_years === 0 ? '0 năm' : (fort.debt_payback_years != null ? `${fort.debt_payback_years} năm` : (fort.solvency_display || '0x')));
+
+                const subLabel = isBank
+                  ? `Đòn bẩy Tài sản${fort.equity_to_assets_pct != null ? ` · Đệm vốn ${fort.equity_to_assets_pct}%` : ''}`
+                  : (isSec
+                    ? 'Đòn bẩy Tài sản (TS/VCSH)'
+                    : (fort.debt_payback_years === 0 ? 'Tiền mặt ròng (Không áp lực nợ)' : 'Thời gian trả hết Nợ bằng Dòng tiền'));
+
+                return (
+                  <div className="v-pillar-card">
+                    <div className="v-pillar-head">
+                      <span className="v-pillar-name">{name}</span>
+                      {fort.status && (
+                        <span className="v-pillar-tag">
+                          {fort.status === 'STRONG' || fort.status === 'FORTRESS' ? 'Rất Vững' : fort.status === 'HEALTHY' ? 'Lành mạnh' : 'Cần chú ý'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="v-pillar-metric">
+                      <span className="v-pillar-val">{mainVal}</span>
+                      <span className="v-pillar-sub">{subLabel}</span>
+                    </div>
+                    {fort.diagnosis && (
+                      <p className="v-pillar-desc">{fort.diagnosis}</p>
                     )}
                   </div>
-                  {pillars.financial_fortress.debt_payback_years != null && (
-                    <div className="v-pillar-metric">
-                      <span className="v-pillar-val">
-                        {pillars.financial_fortress.debt_payback_years === 0 ? '0 năm' : `${pillars.financial_fortress.debt_payback_years} năm`}
-                      </span>
-                      <span className="v-pillar-sub">
-                        {pillars.financial_fortress.debt_payback_years === 0 ? 'Tiền mặt ròng (Không áp lực nợ)' : 'Thời gian trả hết Nợ bằng Dòng tiền'}
-                      </span>
-                    </div>
-                  )}
-                  {pillars.financial_fortress.diagnosis && (
-                    <p className="v-pillar-desc">{pillars.financial_fortress.diagnosis}</p>
-                  )}
-                </div>
-              )}
+                );
+              })()}
 
               {pillars.capital_allocation && (
                 <div className="v-pillar-card">

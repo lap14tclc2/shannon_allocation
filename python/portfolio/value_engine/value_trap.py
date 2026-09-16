@@ -288,15 +288,18 @@ def evaluate_value_trap(
     rev_cagr_3y = None
     inv_cagr_3y = None
 
+    latest_rec_ratio = (rec_series[-1][1] / rev_series[-1][1]) if (rec_series and rev_series and rev_series[-1][1] > 0) else 0.0
+    latest_inv_ratio = (inv_series[-1][1] / rev_series[-1][1]) if (inv_series and rev_series and rev_series[-1][1] > 0) else 0.0
+
     if len(rev_series) >= 3 and len(rec_series) >= 3:
         rec_cagr_3y = _calc_cagr(rec_series[-3][1], rec_series[-1][1], 2)
         rev_cagr_3y = _calc_cagr(rev_series[-3][1], rev_series[-1][1], 2)
-        if rec_cagr_3y is not None and rev_cagr_3y is not None and rec_cagr_3y > rev_cagr_3y + 0.10:
+        if rec_cagr_3y is not None and rev_cagr_3y is not None and rec_cagr_3y > rev_cagr_3y + 0.10 and latest_rec_ratio > 0.15:
             wc_drag_cause = f"Khoản phải thu tăng nhanh hơn doanh thu (+{(rec_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch 3 năm)"
 
     if len(rev_series) >= 3 and len(inv_series) >= 3:
         inv_cagr_3y = _calc_cagr(inv_series[-3][1], inv_series[-1][1], 2)
-        if inv_cagr_3y is not None and rev_cagr_3y is not None and inv_cagr_3y > rev_cagr_3y + 0.10:
+        if inv_cagr_3y is not None and rev_cagr_3y is not None and inv_cagr_3y > rev_cagr_3y + 0.10 and latest_inv_ratio > 0.10:
             if wc_drag_cause.startswith("Khoản"):
                 wc_drag_cause += f" kết hợp hàng tồn kho tích tụ (+{(inv_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch)"
             else:

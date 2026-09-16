@@ -262,14 +262,19 @@ def run_earnings_quality_forensics(
         cagr_pat = (pat_series[-1] / pat_series[0]) ** (1.0 / (len(pat_series) - 1)) - 1.0 if pat_series[0] > 0 and pat_series[-1] > 0 else None
         cagr_cfo = (cfo_series[-1] / cfo_series[0]) ** (1.0 / (len(cfo_series) - 1)) - 1.0 if cfo_series[0] > 0 and cfo_series[-1] > 0 else None
 
-    # Contradiction Detection (e.g. Mean = 3.08x due to one outlier year, but CFO < PAT in multiple years)
-    has_outlier_distortion = (mean_cfo_pat >= 1.5 or weighted_cfo_pat >= 1.5) and (years_cfo_lt_pat >= total_valid_years * 0.40 or years_cfo_negative >= 1)
+    # Outlier distortion detection:
+    # Occurs when high arithmetic mean (>= 1.5x) or weighted average masks persistent weak cash conversion (median < 0.8x and >= 40% of years CFO < PAT).
+    has_outlier_distortion = bool(
+        (mean_cfo_pat >= 1.5 or weighted_cfo_pat >= 1.5)
+        and median_cfo_pat < 0.80
+        and years_cfo_lt_pat >= max(2, int(total_valid_years * 0.40))
+    )
     contradiction_explanation = ""
     if has_outlier_distortion:
         contradiction_explanation = (
-            f"Lưu ý phân kỳ dòng tiền: Tỷ lệ CFO/PAT trung bình số học cao ({mean_cfo_pat:.2f}x) do có năm phát sinh dòng tiền đột biến (như doanh thu nhận trước/khách hàng trả trước), "
-            f"nhưng trong {total_valid_years} năm có tới {years_cfo_lt_pat} năm dòng tiền CFO thấp hơn LNST ({years_cfo_negative} năm CFO âm). "
-            f"Khả năng chuyển hóa tiền mặt thực tế không ổn định qua các năm."
+            f"Lưu ý phân kỳ dòng tiền: Tỷ lệ CFO/PAT trung bình số học cao ({mean_cfo_pat:.2f}x) do có năm phát sinh dòng tiền đột biến, "
+            f"nhưng trung vị chỉ đạt {median_cfo_pat:.2f}x và có {years_cfo_lt_pat}/{total_valid_years} năm CFO thấp hơn LNST. "
+            f"Khả năng chuyển hóa tiền mặt thực tế cần theo dõi thận trọng."
         )
 
     findings: List[FinancialFinding] = []
@@ -277,15 +282,15 @@ def run_earnings_quality_forensics(
 
     # Check Divergence Rules
     is_severe_divergence = (
-        (median_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO and years_cfo_lt_pat >= total_valid_years * 0.50)
-        or years_cfo_negative >= thresholds.PERSISTENT_NEGATIVE_CFO_YEARS
-        or (weighted_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO)
+        (median_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO and years_cfo_lt_pat >= max(3, int(total_valid_years * 0.50)))
+        or (years_cfo_negative >= thresholds.PERSISTENT_NEGATIVE_CFO_YEARS and median_cfo_pat < 1.0)
+        or (weighted_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO and median_cfo_pat < thresholds.NORMAL_CFO_PAT_WATCH_RATIO)
     )
 
     is_moderate_divergence = (
         median_cfo_pat < thresholds.NORMAL_CFO_PAT_PASS_RATIO
-        or years_cfo_lt_pat >= total_valid_years * 0.40
-        or (cagr_pat is not None and cagr_cfo is not None and (cagr_pat - cagr_cfo) > thresholds.PROFIT_CASH_DIVERGENCE_CAGR_GAP)
+        or (years_cfo_lt_pat >= max(3, int(total_valid_years * 0.45)) and median_cfo_pat < 1.0)
+        or (cagr_pat is not None and cagr_cfo is not None and (cagr_pat - cagr_cfo) > thresholds.PROFIT_CASH_DIVERGENCE_CAGR_GAP and median_cfo_pat < 1.0 and cfo_trend == "DETERIORATING")
         or has_outlier_distortion
     )
 
@@ -310,6 +315,7 @@ def run_earnings_quality_forensics(
                 metrics={
                     "mean_cfo_pat": round(mean_cfo_pat, 2),
                     "median_cfo_pat": round(median_cfo_pat, 2),
+                    "avg_cfo_pat": round(median_cfo_pat, 2),
                     "weighted_cfo_pat": round(weighted_cfo_pat, 2),
                     "years_cfo_lt_pat": years_cfo_lt_pat,
                     "years_cfo_negative": years_cfo_negative,
@@ -345,6 +351,7 @@ def run_earnings_quality_forensics(
                 metrics={
                     "mean_cfo_pat": round(mean_cfo_pat, 2),
                     "median_cfo_pat": round(median_cfo_pat, 2),
+                    "avg_cfo_pat": round(median_cfo_pat, 2),
                     "weighted_cfo_pat": round(weighted_cfo_pat, 2),
                     "years_cfo_lt_pat": years_cfo_lt_pat,
                     "years_cfo_negative": years_cfo_negative,
@@ -358,7 +365,18 @@ def run_earnings_quality_forensics(
             )
         )
 
-    final_explanation = "Chất lượng lợi nhuận tốt, dòng tiền kinh doanh bảo chứng lợi nhuận qua các năm." if status == DimensionStatus.PASS.value else (exp_text if findings else "Chất lượng lợi nhuận cần theo dõi.")
+    if status == DimensionStatus.PASS.value:
+        if years_cfo_lt_pat > 0 or years_cfo_negative > 0:
+            neg_info = f", trong đó có {years_cfo_negative} năm CFO âm" if years_cfo_negative > 0 else ""
+            final_explanation = (
+                f"Khả năng chuyển hóa lợi nhuận thành dòng tiền nhìn chung tốt (CFO/PAT trung vị {median_cfo_pat:.2f}x), "
+                f"nhưng từng xuất hiện một số năm CFO thấp hơn LNST ({years_cfo_lt_pat}/{total_valid_years} năm{neg_info}). "
+                f"Cần theo dõi tính ổn định của dòng tiền qua chu kỳ."
+            )
+        else:
+            final_explanation = f"Chất lượng lợi nhuận tốt (CFO/PAT trung vị {median_cfo_pat:.2f}x), dòng tiền kinh doanh bảo chứng lợi nhuận qua các năm."
+    else:
+        final_explanation = exp_text if findings else "Chất lượng lợi nhuận cần theo dõi."
 
     return FinancialDimensionResult(
         status=status,
@@ -366,6 +384,7 @@ def run_earnings_quality_forensics(
         metrics={
             "mean_cfo_pat": round(mean_cfo_pat, 2),
             "median_cfo_pat": round(median_cfo_pat, 2),
+            "avg_cfo_pat": round(median_cfo_pat, 2),
             "weighted_cfo_pat": round(weighted_cfo_pat, 2),
             "years_cfo_lt_pat": years_cfo_lt_pat,
             "years_cfo_negative": years_cfo_negative,
@@ -508,6 +527,22 @@ def run_receivables_forensics(
             "receivables_faster": gap > 0.05,
         })
 
+    # Recent divergence pattern (evaluating the most recent 2-3 years)
+    recent_consecutive_gap = 0
+    for entry in reversed(yearly_growth_comparison[-3:]):
+        if entry["receivables_faster"]:
+            recent_consecutive_gap += 1
+        else:
+            break
+
+    recent_divergence_pattern = "NORMAL"
+    if recent_consecutive_gap >= 3:
+        recent_divergence_pattern = "ACCELERATING"
+    elif recent_consecutive_gap >= 2:
+        recent_divergence_pattern = "PERSISTENT"
+    elif recent_consecutive_gap == 1:
+        recent_divergence_pattern = "TEMPORARY"
+
     divergence_pattern = "NORMAL"
     if max_consecutive_gap_years >= 3 or gap_widening_years >= 2:
         divergence_pattern = "ACCELERATING"
@@ -612,14 +647,18 @@ def run_receivables_forensics(
     has_recent_gap = bool(has_3y_data and gap_3y is not None and gap_3y > thresholds.RECEIVABLES_GROWTH_GAP_3Y_WATCH)
     has_strong_recent_gap = bool(has_3y_data and gap_3y is not None and gap_3y > thresholds.RECEIVABLES_GROWTH_GAP_3Y_HIGH)
     has_historical_gap = bool(gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL and not is_low_base)
+    is_recent_trend_healthy = bool(
+        (has_3y_data and gap_3y is not None and gap_3y <= 0.0)
+        or (len(yearly_growth_comparison) >= 2 and all(not e["receivables_faster"] for e in yearly_growth_comparison[-2:]))
+    )
 
     # CASE C: Confirmed Forensic Deterioration (FAIL)
-    # Requires: (Recent strong gap OR persistent gap) AND High Materiality AND Confirmed Weak Cash Conversion
+    # Requires: (Recent strong gap OR persistent gap into latest years) AND High Materiality AND Confirmed Weak Cash Conversion
     is_confirmed_fail = (
-        (has_strong_recent_gap or (has_recent_gap and divergence_pattern in ("PERSISTENT", "ACCELERATING")))
+        (has_strong_recent_gap or (has_recent_gap and (recent_divergence_pattern in ("PERSISTENT", "ACCELERATING") or max_consecutive_gap_years >= 3)))
         and is_material_high
         and cash_status == "WEAK"
-        and (dso_3y_change > thresholds.RECEIVABLES_DSO_INCREASE_WATCH_DAYS or divergence_pattern in ("PERSISTENT", "ACCELERATING"))
+        and (dso_3y_change > thresholds.RECEIVABLES_DSO_INCREASE_WATCH_DAYS or divergence_pattern in ("PERSISTENT", "ACCELERATING") or not is_recent_trend_healthy)
     )
     if is_confirmed_fail:
         status = DimensionStatus.FAIL.value
@@ -628,9 +667,9 @@ def run_receivables_forensics(
         cfo_str = f"{cash_conversion:.2f}x" if cash_conversion is not None else "N/A"
         explanation = (
             f"Cảnh báo rủi ro chất lượng doanh thu và công nợ: Khoản phải thu tăng nhanh hơn doanh thu liên tiếp ({divergence_pattern}), "
-            f"gap 3Y {gap_3y*100:.1f}%, tỷ lệ Phải thu/Doanh thu ở mức cao ({latest_rec_ratio*100:.1f}%), "
+            f"gap 3Y {((gap_3y or gap_full)*100):.1f}%, tỷ lệ Phải thu/Doanh thu ở mức cao ({latest_rec_ratio*100:.1f}%), "
             f"thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {dso_str}), "
-            f"chất lượng dòng tiền CFO/PAT suy giảm ({cfo_str}). Cần giám sát chặt chẽ nguy cơ ứ đọng công nợ."
+            f"chất lượng dòng tiền CFO/PAT ({cfo_str}). Cần giám sát chặt chẽ nguy cơ ứ đọng công nợ."
         )
         findings.append(
             FinancialFinding(
@@ -663,14 +702,14 @@ def run_receivables_forensics(
             )
         )
 
-    # CASE B: Forensic WATCH (Signal needing monitoring, not structural collapse)
-    elif (has_recent_gap) or (has_historical_gap and divergence_pattern in ("PERSISTENT", "ACCELERATING")) or (is_material_high and divergence_pattern in ("PERSISTENT", "ACCELERATING")) or (gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL and not is_low_base and cash_status == "UNKNOWN"):
+    # CASE B: Forensic WATCH (Active recent signal needing monitoring)
+    elif (has_recent_gap and not is_recent_trend_healthy) or (has_recent_gap and is_material_high):
         status = DimensionStatus.WATCH.value
         severity = FindingSeverity.MEDIUM.value
         dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "Chưa đủ dữ liệu"
         gap_info = f"gap 3Y {gap_3y*100:.1f}%" if gap_3y is not None else f"gap dài hạn {gap_full*100:.1f}%"
         explanation = (
-            f"Khoản phải thu có tín hiệu tăng nhanh hơn doanh thu (mô hình: {divergence_pattern}, {gap_info}), "
+            f"Khoản phải thu có tín hiệu tăng nhanh hơn doanh thu trong giai đoạn gần đây (mô hình: {recent_divergence_pattern}, {gap_info}), "
             f"tỷ lệ Phải thu/Doanh thu đạt {latest_rec_ratio*100:.1f}% (DSO = {dso_str}). Cần theo dõi chính sách công nợ."
         )
         findings.append(
@@ -704,7 +743,15 @@ def run_receivables_forensics(
             )
         )
 
-    # CASE A: Low-base historical gap with healthy recent metrics (PASS)
+    # CASE A1: Historical gap but recent trend normalized / healthy (PASS)
+    elif has_historical_gap and is_recent_trend_healthy:
+        status = DimensionStatus.PASS.value
+        explanation = (
+            "Trong lịch sử từng có giai đoạn phải thu tăng nhanh hơn doanh thu, "
+            "nhưng xu hướng gần đây chưa cho thấy vấn đề tương tự và tỷ trọng công nợ duy trì ở mức an toàn."
+        )
+
+    # CASE A2: Low-base historical gap with healthy recent metrics (PASS)
     elif is_low_base and gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL:
         status = DimensionStatus.PASS.value
         explanation = (
@@ -712,8 +759,8 @@ def run_receivables_forensics(
             "nhưng xu hướng gần đây và tỷ trọng công nợ duy trì ở mức an toàn."
         )
 
-    # CASE A: Recent 3Y trend healthy (PASS)
-    elif has_3y_data and gap_3y is not None and gap_3y <= 0:
+    # CASE A3: Recent 3Y trend healthy (PASS)
+    elif is_recent_trend_healthy:
         status = DimensionStatus.PASS.value
         explanation = (
             "Không có bằng chứng khoản phải thu tăng nhanh hơn doanh thu trong giai đoạn gần đây. "
@@ -791,12 +838,16 @@ def run_inventory_forensics(
 
     inv_series: List[Tuple[int, float]] = []
     rev_series: List[Tuple[int, float]] = []
+    asset_series: List[Tuple[int, float]] = []
     evidence_facts: List[str] = []
 
     for y in years:
         ydict = by_year.get(y, {})
         inv = ydict.get("inventory") or ydict.get("BS.ASSETS.INVENTORY")
         rev = ydict.get("revenue") or ydict.get("IS.REVENUE.TOTAL")
+        assets = ydict.get("total_assets") or ydict.get("BS.ASSETS.TOTAL")
+        if assets is not None and float(assets) > 0:
+            asset_series.append((y, float(assets)))
         if inv is not None and rev is not None and float(rev) > 0:
             inv_series.append((y, float(inv)))
             rev_series.append((y, float(rev)))
@@ -819,10 +870,36 @@ def run_inventory_forensics(
     rev_cagr = (rev_series[-1][1] / rev_series[0][1]) ** (1.0 / n_years) - 1.0 if rev_series[0][1] > 0 and rev_series[-1][1] > 0 else None
     latest_inv_ratio = inv_series[-1][1] / rev_series[-1][1]
 
+    latest_assets = asset_series[-1][1] if asset_series else None
+    latest_inv_asset_ratio = (inv_series[-1][1] / latest_assets) if (latest_assets and latest_assets > 0) else None
+
+    # Recent 3Y trend
+    has_3y_inv = len(inv_series) >= 4 and inv_series[-4][1] > 0 and rev_series[-4][1] > 0
+    if has_3y_inv:
+        inv_cagr_3y = (inv_series[-1][1] / inv_series[-4][1]) ** (1.0 / 3.0) - 1.0
+        rev_cagr_3y = (rev_series[-1][1] / rev_series[-4][1]) ** (1.0 / 3.0) - 1.0
+        gap_3y = inv_cagr_3y - rev_cagr_3y
+    else:
+        inv_cagr_3y = None
+        rev_cagr_3y = None
+        gap_3y = None
+
     status = DimensionStatus.PASS.value
     findings: List[FinancialFinding] = []
+    explanation = "Tốc độ luân chuyển hàng tồn kho và quy mô dự trữ ở mức bình thường."
 
-    if inv_cagr is not None and rev_cagr is not None and (inv_cagr - rev_cagr) > thresholds.INVENTORY_VS_REVENUE_CAGR_GAP:
+    is_immaterial = (
+        latest_inv_ratio < 0.08
+        or (latest_inv_asset_ratio is not None and latest_inv_asset_ratio < 0.05)
+    )
+
+    if is_immaterial:
+        status = DimensionStatus.PASS.value
+        explanation = f"Hàng tồn kho chiếm tỷ trọng không đáng kể ({latest_inv_ratio*100:.1f}% doanh thu), không phát sinh rủi ro ứ đọng vốn lưu động."
+    elif has_3y_inv and gap_3y is not None and gap_3y <= 0.0:
+        status = DimensionStatus.PASS.value
+        explanation = "Trong lịch sử từng có giai đoạn tồn kho tăng nhanh hơn doanh thu, nhưng xu hướng gần đây và tỷ trọng hiện tại duy trì ở mức an toàn."
+    elif inv_cagr is not None and rev_cagr is not None and (inv_cagr - rev_cagr) > thresholds.INVENTORY_VS_REVENUE_CAGR_GAP:
         if latest_inv_ratio > thresholds.INVENTORY_REVENUE_RATIO_HIGH:
             status = DimensionStatus.FAIL.value
             findings.append(
@@ -841,7 +918,7 @@ def run_inventory_forensics(
                     impact="Áp lực vốn lưu động do hàng tồn kho ứ đọng lớn",
                 )
             )
-        else:
+        elif (gap_3y is not None and gap_3y > 0.05) or not has_3y_inv:
             status = DimensionStatus.WATCH.value
             findings.append(
                 FinancialFinding(
@@ -864,15 +941,19 @@ def run_inventory_forensics(
         status=status,
         confidence=ConfidenceLevel.HIGH.value if len(inv_series) >= 5 else ConfidenceLevel.MEDIUM.value,
         metrics={
-            "inv_cagr": inv_cagr,
-            "rev_cagr": rev_cagr,
-            "latest_inv_ratio": latest_inv_ratio,
+            "inv_cagr": round(inv_cagr, 4) if inv_cagr is not None else None,
+            "rev_cagr": round(rev_cagr, 4) if rev_cagr is not None else None,
+            "inv_cagr_3y": round(inv_cagr_3y, 4) if inv_cagr_3y is not None else None,
+            "rev_cagr_3y": round(rev_cagr_3y, 4) if rev_cagr_3y is not None else None,
+            "gap_3y": round(gap_3y, 4) if gap_3y is not None else None,
+            "latest_inv_ratio": round(latest_inv_ratio, 4),
+            "latest_inv_asset_ratio": round(latest_inv_asset_ratio, 4) if latest_inv_asset_ratio is not None else None,
         },
         findings=findings,
         evidence=evidence_facts,
         missing_data=[],
         not_applicable=[],
-        explanation="Vòng quay và mức tồn kho nằm trong tầm kiểm soát." if status == DimensionStatus.PASS.value else "Cần theo dõi tốc độ ứ đọng hàng tồn kho.",
+        explanation=explanation,
     )
 
 

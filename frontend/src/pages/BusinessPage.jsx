@@ -119,44 +119,17 @@ export default function BusinessPage() {
         throw new Error('Không tìm thấy nội dung báo cáo.');
       }
 
-      // Hide no-print elements temporarily during PDF capture
-      const noPrintEls = element.querySelectorAll('.no-print');
-      noPrintEls.forEach((el) => { el.style.display = 'none'; });
+      // Small delay to ensure React state (forceExpand=true) fully updates DOM before canvas capture
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
-      const html2pdfModule = await import('html2pdf.js');
-      const html2pdf = html2pdfModule.default || html2pdfModule;
-
-      const opt = {
-        margin: [10, 8, 10, 8],
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      };
-
-      await html2pdf().set(opt).from(element).save();
-
-      // Restore controls
-      noPrintEls.forEach((el) => { el.style.display = ''; });
+      const { exportElementToPDF } = await import('../lib/pdfExport.js');
+      await exportElementToPDF(element, filename);
 
       setExportMsg(`Đã tải về tệp PDF ${filename} thành công.`);
       setTimeout(() => setExportMsg(''), 6000);
     } catch (err) {
-      console.warn('Direct PDF export error, falling back to print dialog:', err);
-      // Fallback to window.print if html2pdf fails
-      try {
-        const cleanSym = String(symbol || 'BUSINESS').toUpperCase();
-        document.title = `Bao_Cao_BCTC_Munger_${cleanSym}_${new Date().toISOString().slice(0, 10)}`;
-        window.print();
-      } catch (printErr) {
-        setExportMsg(`Không thể xuất tệp PDF: ${err.message}`);
-      }
+      console.error('Direct PDF export error:', err);
+      setExportMsg(`Không thể xuất tệp PDF: ${err.message}`);
     } finally {
       setExportingPDF(false);
     }
@@ -835,7 +808,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.earnings_quality)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Tỷ lệ CFO/PAT: {formatCfoPat(munger.earnings_quality?.metrics?.avg_cfo_pat)}
+                        Tỷ lệ CFO/PAT: {formatCfoPat(munger.earnings_quality?.metrics?.median_cfo_pat ?? munger.earnings_quality?.metrics?.avg_cfo_pat ?? munger.earnings_quality?.metrics?.mean_cfo_pat)}
                       </div>
                     </div>
 
@@ -977,15 +950,15 @@ export default function BusinessPage() {
                     <div style={{ padding: '14px', borderRadius: '8px', background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)' }}>
                       <small style={{ color: 'var(--text-muted, #718096)', display: 'block', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Hành động khuyến nghị Munger</small>
                       <strong style={{ fontSize: '1.05rem', color: '#0284c7' }}>
-                        {valueTrap.munger_action?.action_vi || 'Xem xét Biên an toàn'}
+                        {decision.state_vietnamese || valueTrap.munger_action?.action_vi || 'Xem xét Biên an toàn'}
                       </strong>
                     </div>
                   </div>
 
                   {/* Rationale explanation */}
-                  {valueTrap.munger_action?.munger_rationale_vi && (
+                  {(decision.primary_reason || valueTrap.munger_action?.munger_rationale_vi) && (
                     <div style={{ padding: '12px 16px', background: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', marginBottom: '20px', fontSize: '0.92rem', lineHeight: 1.5 }}>
-                      <strong>Kết luận điều tra:</strong> {valueTrap.munger_action.munger_rationale_vi}
+                      <strong>Kết luận điều tra:</strong> {decision.primary_reason || valueTrap.munger_action?.munger_rationale_vi}
                     </div>
                   )}
 
@@ -1179,7 +1152,7 @@ export default function BusinessPage() {
                 </section>
 
                 {/* 8. MUNGER PRE-MORTEM (8 CÂU HỎI PHẢN BIỆN) */}
-                <ThesisChallengeSection challengeData={munger.thesis_challenge} decision={decision} />
+                <ThesisChallengeSection challengeData={munger.thesis_challenge} decision={decision} forceExpand={exportingPDF} />
 
                 {/* 9. SỨC MẠNH LỢI NHUẬN & BẰNG CHỨNG LỊCH SỬ */}
                 <section className="card earning-power-card" style={{ padding: '20px' }}>

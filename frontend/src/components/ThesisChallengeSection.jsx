@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { formatStatus } from '../utils/vietnameseSemantics.js';
 
-export default function ThesisChallengeSection({ challengeData, decision }) {
+export default function ThesisChallengeSection({ challengeData, decision, forceExpand = false }) {
   const [expandedCards, setExpandedCards] = useState({});
 
   if (!challengeData || !challengeData.questions) {
@@ -81,7 +81,7 @@ export default function ThesisChallengeSection({ challengeData, decision }) {
       {/* 8 Question Cards Grid */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {questions.map((q) => {
-          const isExpanded = expandedCards[q.question_number];
+          const isExpanded = forceExpand || !!expandedCards[q.question_number];
           const isWarning = q.answer_status === 'WATCH' || q.answer_status === 'VULNERABLE';
           const borderColor = q.answer_status === 'VULNERABLE' ? '#fca5a5' : q.answer_status === 'WATCH' ? '#fde68a' : '#e5e7eb';
           const bgColor = q.answer_status === 'VULNERABLE' ? '#fff5f5' : q.answer_status === 'WATCH' ? '#fffbeb' : 'var(--surface-soft, #f9fafb)';
@@ -118,6 +118,7 @@ export default function ThesisChallengeSection({ challengeData, decision }) {
                   {getStatusBadge(q.answer_status, q.answer_status_vi)}
                   <button
                     type="button"
+                    className="no-print"
                     style={{
                       background: 'none',
                       border: 'none',

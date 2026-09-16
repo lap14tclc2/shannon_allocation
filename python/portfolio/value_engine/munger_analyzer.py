@@ -185,11 +185,17 @@ def build_munger_financial_analysis(
 
     norm_exp = "Chưa đủ dữ liệu lợi nhuận chuẩn hóa."
     if norm_5y and reported_latest:
-        norm_exp = f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} VND so với gần nhất {reported_latest:,.0f} VND (Biến động CV: {earnings_volatility*100:.1f}%)."
         if is_peak_earnings:
-            norm_exp += " Cảnh báo: Lợi nhuận gần nhất cao hơn đáng kể so với mức bình thường hóa 5 năm (khả năng chạm đỉnh chu kỳ/biên lợi nhuận đột biến)."
+            norm_exp = (
+                f"LNST hiện tại ({reported_latest:,.0f} đ) cao hơn đáng kể mức bình thường hóa lịch sử (5 năm: {norm_5y:,.0f} đ, biến động CV: {earnings_volatility*100:.1f}%); "
+                f"cần kiểm tra khả năng đây là lợi nhuận ở vùng cao của chu kỳ (Cảnh báo định giá / biên an toàn, không phải lỗi chất lượng kinh doanh cốt lõi)."
+            )
         elif is_trough_earnings:
-            norm_exp += " Ghi chú: Lợi nhuận gần nhất đang ở vùng đáy chu kỳ hoặc chịu chi phí bất thường."
+            norm_exp = (
+                f"Lợi nhuận gần nhất ({reported_latest:,.0f} đ) đang ở vùng đáy chu kỳ hoặc chịu chi phí bất thường so với mức bình thường hóa 5 năm ({norm_5y:,.0f} đ)."
+            )
+        else:
+            norm_exp = f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} đ so với gần nhất {reported_latest:,.0f} đ (Biến động CV: {earnings_volatility*100:.1f}%)."
 
     normalized_earning_power = {
         "reported_latest": reported_latest,
@@ -234,7 +240,7 @@ def build_munger_financial_analysis(
     ]
     warnings = [f.code for f in all_findings if f.code not in hard_failures]
 
-    # 8. Compounder Classification
+    # 8. Compounder Classification (Separating strong historical growth from durable compounder economics)
     med_roe = prof_metrics.get("median_roe")
     pat_cagr = growth_metrics.get("net_profit_cagr")
     eps_cagr = growth_metrics.get("eps_cagr")
@@ -245,7 +251,10 @@ def build_munger_financial_analysis(
     elif structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value):
         compounder_class = CompounderClassification.DETERIORATING_BUSINESS.value
     elif med_roe is not None and med_roe >= thresholds.ROE_PASS and pat_cagr is not None and pat_cagr >= 0.12 and not hard_failures:
-        if eps_cagr is not None and eps_cagr >= 0.10:
+        if earnings_volatility >= 0.60:
+            # Highly cyclical business with strong peak growth
+            compounder_class = CompounderClassification.CYCLICAL_QUALITY.value if hasattr(CompounderClassification, "CYCLICAL_QUALITY") else CompounderClassification.POTENTIAL_COMPOUNDER.value
+        elif eps_cagr is not None and eps_cagr >= 0.10:
             compounder_class = CompounderClassification.COMPOUNDER.value
         else:
             compounder_class = CompounderClassification.POTENTIAL_COMPOUNDER.value
@@ -335,22 +344,27 @@ def build_munger_financial_analysis(
     # 11. Core Deterministic Munger Decision (Anti False-BUY Gate & Separation of Quality vs MOS)
     decision_state = "WAIT_FOR_MOS"
     decision_reason = ""
+    primary_blocker_gate = ""
 
     has_forensic_red_flags = bool(hard_failures or vt_status == "HIGH_RISK" or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value))
     has_forensic_warnings = bool("WEAK_CASH_CONVERSION" in warnings or "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in warnings or "ACCOUNTING_IDENTITY_DISCREPANCY" in warnings or earnings_volatility >= 0.60)
 
     if has_forensic_red_flags:
         decision_state = "AVOID"
+        primary_blocker_gate = "FORENSIC_GATE" if hard_failures else "VALUE_TRAP_GATE"
         fail_reasons = hard_failures if hard_failures else ([f"Bẫy giá trị rủi ro cao ({get_vietnamese_valuetrap(vt_status)})"] if vt_status == "HIGH_RISK" else [f"Doanh nghiệp suy giảm cấu trúc ({get_vietnamese_deterioration(structural_class)})"])
         decision_reason = f"Phát hiện rủi ro tài chính nghiêm trọng ({', '.join(fail_reasons)})."
     elif data_readiness == "INSUFFICIENT":
         decision_state = "REVIEW_BUSINESS"
+        primary_blocker_gate = "DATA_READINESS_GATE"
         decision_reason = "Chưa đủ dữ liệu tài chính lịch sử (dưới 3-5 năm) để hoàn thành đánh giá BCTC."
-    elif compounder_class == CompounderClassification.WEAK_BUSINESS.value:
+    elif compounder_class in (CompounderClassification.WEAK_BUSINESS.value, CompounderClassification.DETERIORATING_BUSINESS.value):
         decision_state = "AVOID"
+        primary_blocker_gate = "BUSINESS_QUALITY_GATE"
         decision_reason = "Doanh nghiệp có chất lượng tài chính yếu, không đạt tiêu chí tích sản dài hạn."
     elif val_status != "READY" or actual_mos is None:
         decision_state = "REVIEW_BUSINESS"
+        primary_blocker_gate = "VALUATION_GATE"
         decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
     elif mos_gate == "PASS":
         # Munger Invariant: When MOS passes (actual_mos >= required_mos), MOS gate is PASS.
@@ -375,6 +389,7 @@ def build_munger_financial_analysis(
             decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%). Đạt chuẩn mua tích sản."
     else:  # mos_gate == "FAIL"
         decision_state = "WAIT_FOR_MOS"
+        primary_blocker_gate = "MOS_GATE"
         decision_reason = f"Doanh nghiệp có chất lượng ({get_vietnamese_classification(compounder_class)}) nhưng mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đạt Biên an toàn yêu cầu ({required_mos:.1f}%). Kiên nhẫn chờ đạt biên an toàn."
 
     # Machine-readable Decision Trace
@@ -406,21 +421,35 @@ def build_munger_financial_analysis(
     decision_trace = {
         "decision": decision_state,
         "decision_vietnamese": get_vietnamese_decision(decision_state),
-        "mos_gate": mos_gate,
-        "mos_gate_vietnamese": get_vietnamese_status(mos_gate),
+        "decision_authority": "MUNGER_BCTC_PIPELINE",
+        "bctc_readiness": data_readiness,
         "quality_gate": quality_gate_status,
+        "quality_gate_source": "BUSINESS_QUALITY_GATE",
         "quality_gate_vietnamese": get_vietnamese_status(quality_gate_status),
+        "forensic_gate": forensics_status,
+        "forensic_gate_source": "FORENSIC_GATE",
+        "forensic_gate_vietnamese": get_vietnamese_status(forensics_status),
         "value_trap_gate": vt_status,
+        "value_trap_gate_source": "VALUE_TRAP_GATE",
         "value_trap_gate_vietnamese": get_vietnamese_valuetrap(vt_status),
+        "valuation_gate": val_status,
+        "valuation_gate_source": "VALUATION_GATE",
+        "mos_gate": mos_gate,
+        "mos_gate_source": "MOS_GATE",
+        "mos_gate_vietnamese": get_vietnamese_status(mos_gate),
+        "primary_blocker_gate": primary_blocker_gate,
+        "valuation_confidence": val_confidence,
         "blocking_reasons": blocking_reasons,
         "supporting_evidence": supporting_evidence,
         "critical_risks": critical_risks,
+        "primary_reason": decision_reason,
     }
 
     long_term_decision = {
         "state": decision_state,
         "state_vietnamese": get_vietnamese_decision(decision_state),
         "primary_reason": decision_reason,
+        "primary_blocker_gate": primary_blocker_gate,
         "actual_mos_pct": actual_mos,
         "required_mos_pct": required_mos,
         "mos_gate": mos_gate,
@@ -429,6 +458,7 @@ def build_munger_financial_analysis(
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,
         "has_forensic_warnings": has_forensic_warnings,
+        "valuation_confidence": val_confidence,
         "decision_trace": decision_trace,
     }
 

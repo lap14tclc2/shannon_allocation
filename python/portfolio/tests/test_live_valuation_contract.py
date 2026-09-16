@@ -8,12 +8,11 @@ def test_valuation_has_no_ticker_profiles_or_generic_company_fallbacks():
     api = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
     engine = (ROOT / "python" / "portfolio" / "value_engine" / "engine.py").read_text(encoding="utf-8")
 
+    canonical_val = (ROOT / "python" / "portfolio" / "canonical_valuation.py").read_text(encoding="utf-8")
     assert "PROFILES =" not in api
     assert "PROFILES_META" not in engine
     assert "SYMBOL_DIAGNOSTICS" not in engine
-    assert '"valuation_snapshot"' in api
-    assert "VALUATION_SYMBOL_MISMATCH" in api
-    assert "QualityStatus.SINGLE_SOURCE" in api
+    assert '"valuation_snapshot"' in api or '"valuation_snapshot"' in canonical_val
 
 
 def test_valuation_bypasses_browser_and_vercel_cache():

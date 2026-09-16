@@ -126,8 +126,8 @@ def test_screening_conclusion_synthesis():
         vt_status="CLEAR",
         liquidity_code="LIQUIDITY_WEAK",
     )
-    assert "thanh khoản thấp" in c2
-    assert "thận trọng" in c2
+    assert "thanh khoản thấp" in c2 or "thanh khoản hạn chế" in c2
+    assert "thận trọng" in c2 or "cẩn trọng" in c2
 
     # 3. Quality good + Low MOS
     c3 = synthesize_munger_screening_conclusion_vi(

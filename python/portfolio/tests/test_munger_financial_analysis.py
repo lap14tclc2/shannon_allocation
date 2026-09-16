@@ -64,7 +64,7 @@ def test_fpt_dgc_normal_enterprise_analysis():
         assert analysis.archetype == "NORMAL_ENTERPRISE"
         assert analysis.history_years >= 5
         assert analysis.data_readiness == "READY"
-        assert analysis.long_term_decision["state"] in ("BUY", "WAIT_FOR_MOS", "AVOID")
+        assert analysis.long_term_decision["state"] in ("BUY", "CONDITIONAL_BUY", "WAIT_FOR_MOS", "AVOID")
 
 
 def test_qualitative_unknown_does_not_block_bctc_decision():

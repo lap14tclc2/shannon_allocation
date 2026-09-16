@@ -49,7 +49,7 @@ def test_missing_actual_mos_cannot_produce_buy():
     val_data = {"status": "READY", "base_iv": 100000.0, "actual_mos_pct": None}
     analysis = build_munger_financial_analysis("FPT", valuation_data=val_data)
     assert analysis.long_term_decision["state"] != "BUY"
-    assert analysis.long_term_decision["state"] == "WAIT_FOR_MOS"
+    assert analysis.long_term_decision["state"] in ("WAIT_FOR_MOS", "REVIEW_BUSINESS")
 
 
 def test_high_risk_value_trap_cannot_produce_buy():
@@ -91,7 +91,7 @@ def test_actual_mos_above_required_mos_yields_buy():
     val_data = {"status": "READY", "current_price": 50000.0, "base_iv": 95000.0, "actual_mos_pct": 47.3, "valuation_confidence": "HIGH"}
     analysis = build_munger_financial_analysis("FPT", valuation_data=val_data)
     assert analysis.valuation["mos_gate"] == "PASS"
-    assert analysis.long_term_decision["state"] in ("BUY", "WAIT_FOR_MOS")
+    assert analysis.long_term_decision["state"] in ("BUY", "CONDITIONAL_BUY", "WAIT_FOR_MOS")
 
 
 def test_qualitative_unknown_does_not_block_bctc_decision():

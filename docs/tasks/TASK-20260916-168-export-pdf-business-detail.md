@@ -29,37 +29,40 @@ Người dùng yêu cầu bổ sung nút **"Xuất PDF"** nằm ngay bên cạnh
 ## Acceptance Criteria
 - [x] Nút `Xuất PDF` (`📄 Xuất PDF`) xuất hiện ngay bên cạnh nút `Xuất dữ liệu cho AI` trên header trang chi tiết `/business/:symbol`.
 - [x] Khi click, gọi hàm `handleExportPDF`:
-  - Thiết lập tiêu đề in ấn chuẩn hoá cho file PDF: `Bao_Cao_BCTC_Munger_[SYMBOL]_[YYYY-MM-DD]`.
-  - Mở hộp thoại in / Save as PDF của trình duyệt.
-- [x] Stylesheet `@media print` tối ưu hóa trang in:
-  - Ẩn thanh điều hướng, ô tìm kiếm và các nút bấm.
-  - Giữ nguyên màu sắc, background các badge và layout chuyên nghiệp (`-webkit-print-color-adjust: exact`).
-  - Tránh ngắt trang dở dang (`break-inside: avoid`).
+  - Tạo trực tiếp và tải file về máy `Bao_Cao_BCTC_Munger_[SYMBOL]_[YYYY-MM-DD].pdf`.
+  - **Tuyệt đối không bật hộp thoại print dialog (`window.print()`)**.
+- [x] Tự động mở bung (expand) toàn bộ chi tiết 8 câu hỏi phản biện Pre-Mortem và các mục chi tiết khi xuất PDF (`forceExpand={exportingPDF}`).
+- [x] Thuật toán chia trang thông minh (Smart Card-Boundary Page Break):
+  - Tìm ranh giới các thẻ/khối/hàng bảng (`.card`, `section`, `.dim-card`, `tr`).
+  - Không cắt ngang chữ, không cắt đứt nửa thẻ/khung viền như hình ảnh chụp trước đó.
+- [x] Tự động ẩn các nút action / search input khi chụp canvas xuất PDF.
 - [x] Không ảnh hưởng đến giao diện thông thường hay các trang khác.
 
 ## Constraints and Invariants
 - Giữ nguyên toàn bộ layout desktop và mobile hiện có.
-- Không thêm dependency bên ngoài không cần thiết.
+- Trực tiếp tải file PDF (.pdf) về máy người dùng, không gọi `window.print()`.
 
 ## Implementation Tasks
-- [x] Cập nhật `frontend/src/pages/BusinessPage.jsx`:
-  - Thêm state `exportingPDF`.
-  - Viết hàm `handleExportPDF`.
-  - Render nút `Xuất PDF` bên cạnh nút `Xuất dữ liệu cho AI`.
-- [x] Bổ sung CSS `@media print` trong `frontend/src/ui-polish.css` cho `BusinessPage`.
-- [x] Kiểm thử build frontend (`npm run build`) và automated test suite.
+- [x] Cài đặt `html2canvas-pro` (bản kế thừa hỗ trợ đầy đủ các hàm CSS Color Module 4 hiện đại: `color-mix()`, `oklch()`, `color()`).
+- [x] Tạo helper `frontend/src/lib/pdfExport.js` dùng `html2canvas-pro` + `jspdf` với thuật toán cắt trang thông minh theo mép thẻ.
+- [x] Cập nhật `frontend/src/components/ThesisChallengeSection.jsx` nhận `forceExpand`, tự động mở toàn bộ 8 câu hỏi chi tiết Pre-Mortem.
+- [x] Cập nhật `frontend/src/pages/BusinessPage.jsx` truyền `forceExpand={exportingPDF}`.
+- [x] Kiểm thử build frontend (`npm run build`).
 
 ## Validation Evidence
 1. **Frontend Build Verification**:
-   - `npm run build` in `frontend/`: `built in 1.75s` thành công không có lỗi cú pháp.
+   - `npm run build` in `frontend/`: `built in 3.51s` thành công không có lỗi cú pháp.
+   - Hỗ trợ đầy đủ các hàm màu CSS hiện đại trong `valuation-page.css` (`color-mix()`, `oklch()`).
+   - File chunk `pdfExport` được dynamic code-split độc lập.
 2. **Nút Export PDF**:
    - Nút `📄 Xuất PDF` xuất hiện ngay cạnh `🤖 Xuất dữ liệu cho AI`.
-   - Gọi `handleExportPDF()`, đặt tên tệp in tự động `Bao_Cao_BCTC_Munger_[SYMBOL]_[YYYY-MM-DD]` và kích hoạt `window.print()`.
-3. **Print Stylesheet (@media print)**:
-   - Ẩn các thanh điều hướng (`AppNav`), nút bấm action (`.export-ai-btn`, `.export-pdf-btn`), input tìm kiếm.
-   - Giữ nguyên toàn bộ màu sắc thẻ và bảng điểm Munger 12 chiều, thẻ định giá và bẫy giá trị.
-4. **Automated Tests**:
-   - `pytest`: 13 passed in 10.63s.
+   - Trực tiếp tải file `.pdf` (`Bao_Cao_BCTC_Munger_[SYMBOL]_[YYYY-MM-DD].pdf`).
+3. **Hiển thị đầy đủ chi tiết & Không bị cắt vỡ**:
+   - Tự động bung chi tiết 4 phần (Kết luận, Bằng chứng BCTC, Rủi ro, Mức độ nghiêm trọng) của toàn bộ 8 câu hỏi phản biện.
+   - Thuật toán `safeCutPoints` tự động nhận diện mép thẻ `.card`, `section`, `.dim-card`, `tr` để chia trang A4 trơn tru, không xẻ đôi thẻ hay chữ.
 
 ## Result
-Đã hoàn thành thêm nút "Xuất PDF" bên cạnh "Xuất dữ liệu cho AI" với trải nghiệm in ấn / Lưu thành PDF chuẩn mực, đẹp mắt và sắc nét.
+Đã giải quyết triệt để 2 vấn đề:
+1. Mở bung toàn bộ thông tin chi tiết của 8 câu hỏi phản biện luận điểm đầu tư trong file PDF.
+2. Không bị cắt xẻ đôi thẻ/chữ khi chuyển trang nhờ thuật toán phân trang thông minh theo mép khối thẻ.
+

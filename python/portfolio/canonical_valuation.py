@@ -423,6 +423,33 @@ def build_canonical_valuation(
     fortress_status = "FORTRESS" if (is_financial or net_debt_calc == 0) else ("STRONG" if (debt_payback_years is not None and debt_payback_years < 3.0) else "MODERATE")
     fortress_diag = "Cơ cấu tài chính chuẩn mực." if is_financial else ("Pháo đài tiền mặt ròng dồi dào." if net_debt_calc == 0 else f"Khả năng hoàn trả nợ ({debt_payback_years} năm).")
 
+    latest_equity_vnd = float(latest_hist.get("equity") or 0)
+    latest_assets_vnd = float(latest_hist.get("total_assets") or 0)
+    total_debt_vnd = float(latest_hist.get("total_debt") or 0)
+    total_cash_vnd = float(latest_hist.get("cash_and_equivalents") or 0)
+    debt_to_equity_ratio = round(total_debt_vnd / latest_equity_vnd, 2) if (latest_equity_vnd > 0 and not is_bank) else None
+
+    bank_leverage = round(latest_assets_vnd / latest_equity_vnd, 2) if (latest_equity_vnd > 0 and latest_assets_vnd > 0 and (is_bank or is_securities)) else None
+    equity_to_assets_pct = round((latest_equity_vnd / latest_assets_vnd) * 100, 1) if (latest_assets_vnd > 0 and (is_bank or is_securities)) else None
+
+    if is_bank:
+        solvency_label = "Đòn bẩy TS (TS/VCSH)"
+        if bank_leverage is not None:
+            solvency_display = f"{bank_leverage:.1f}x"
+            if equity_to_assets_pct is not None:
+                solvency_display += f" (Đệm vốn {equity_to_assets_pct}%)"
+            fortress_diag = f"Đòn bẩy tài sản {bank_leverage:.1f}x, đệm vốn chủ sở hữu {equity_to_assets_pct}% đảm bảo an toàn thanh khoản ngân hàng."
+        else:
+            solvency_display = "Đòn bẩy an toàn"
+            fortress_diag = "Cơ cấu vốn và đệm thanh khoản ngân hàng chuẩn mực."
+    elif is_securities:
+        solvency_label = "Đòn bẩy TS (TS/VCSH)"
+        solvency_display = f"{bank_leverage:.1f}x" if bank_leverage is not None else "Đòn bẩy an toàn"
+        fortress_diag = f"Đòn bẩy tài sản CTCK đạt {bank_leverage}x" if bank_leverage is not None else "Đòn bẩy tài chính công ty chứng khoán an toàn."
+    else:
+        solvency_label = "Nợ / Vốn CSH"
+        solvency_display = f"{debt_to_equity_ratio}x" if debt_to_equity_ratio is not None else ("0x" if net_debt_calc == 0 else "—")
+
     shares_series = [(h["fiscal_year"], h["shares_outstanding"]) for h in financial_history if h.get("shares_outstanding") is not None]
     share_dilution_5y = None
     dilution = None
@@ -468,11 +495,6 @@ def build_canonical_valuation(
     else:
         cap_status = "WATCH"
 
-    latest_equity_vnd = float(latest_hist.get("equity") or 0)
-    total_debt_vnd = float(latest_hist.get("total_debt") or 0)
-    total_cash_vnd = float(latest_hist.get("cash_and_equivalents") or 0)
-    debt_to_equity_ratio = round(total_debt_vnd / latest_equity_vnd, 2) if latest_equity_vnd > 0 else None
-
     value_investor_pillars = {
         "earnings_quality": earnings_quality,
         "financial_fortress": {
@@ -480,7 +502,14 @@ def build_canonical_valuation(
             "total_debt_vnd": total_debt_vnd,
             "total_cash_vnd": total_cash_vnd,
             "total_equity_vnd": latest_equity_vnd,
+            "total_assets_vnd": latest_assets_vnd,
             "debt_to_equity_ratio": debt_to_equity_ratio,
+            "bank_leverage": bank_leverage,
+            "equity_to_assets_pct": equity_to_assets_pct,
+            "is_bank": is_bank,
+            "is_financial": is_financial,
+            "solvency_label": solvency_label,
+            "solvency_display": solvency_display,
             "debt_payback_years": debt_payback_years,
             "net_debt_to_ebitda": net_debt_to_ebitda,
             "status": fortress_status,
