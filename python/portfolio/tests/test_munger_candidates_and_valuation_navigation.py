@@ -10,6 +10,7 @@ Verifies:
 
 from __future__ import annotations
 
+import os
 import pytest
 from portfolio.value_engine.munger_candidates import (
     compute_all_munger_candidates,
@@ -18,6 +19,7 @@ from portfolio.value_engine.munger_candidates import (
 )
 
 
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="Requires PostgreSQL database connection")
 def test_munger_candidates_generation_and_ranking():
     """Verify candidates are discovered from canonical facts and ranked by quality score."""
     candidates = compute_all_munger_candidates(force_refresh=True)
@@ -61,6 +63,7 @@ def test_munger_candidates_filtering_and_rationale():
     assert "undefined" not in rationale
 
 
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="Requires PostgreSQL database connection")
 def test_munger_candidates_disqualifies_severe_value_trap():
     """Verify company with structural deterioration is disqualified from candidate list."""
     from portfolio.value_engine.value_trap import ValueTrapAssessment

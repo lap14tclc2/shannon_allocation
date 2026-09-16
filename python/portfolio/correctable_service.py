@@ -957,6 +957,16 @@ class CorrectablePortfolioService(PortfolioService):
         symbols = sorted(
             p for p, pos in state.positions.items() if (pos.shares or 0) > 0
         )
+        if symbols:
+            today_str = self.today_vn() if hasattr(self, "today_vn") else _now_utc_day()
+            today_d = datetime.fromisoformat(today_str).date() if isinstance(today_str, str) else today_str
+            for sym in symbols:
+                try:
+                    latest_p = self.store.latest_price(sym)
+                    if not latest_p or not latest_p.get("trading_date") or str(latest_p.get("trading_date")) < str(today_str):
+                        self._sync_symbol(sym, today_d)
+                except Exception:
+                    pass
         prices = self.store.latest_prices(symbols) if symbols else {}
         rows, equity_value = self._mark_to_market(state, prices)
 

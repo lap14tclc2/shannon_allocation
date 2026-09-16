@@ -17,6 +17,7 @@ Tests:
 
 from __future__ import annotations
 
+import os
 import pytest
 from portfolio.financial_data.ssi_ingestion import map_ssi_line_item, normalize_string, CANONICAL_LINE_MAPPINGS
 from portfolio.value_engine.munger_analyzer import build_munger_financial_analysis
@@ -155,6 +156,7 @@ def test_canonical_required_mos_single_authority():
     assert analysis.long_term_decision["required_mos_pct"] == 40.0
 
 
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="Requires PostgreSQL database connection")
 def test_runtime_mos_consistency_across_layers():
     """10. Runtime required MOS is consistent across canonical valuation, munger, and decision context."""
     val = build_canonical_valuation("FPT", market_price=70000.0)
@@ -182,6 +184,7 @@ def test_missing_mos_does_not_silently_default():
     assert ctx.required_mos_pct is None
 
 
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="Requires PostgreSQL database connection")
 def test_golden_symbols_integration(postgresql_db=None):
     """12. Integration check for golden symbols (ACB, DGC, FPT, VIX)."""
     for sym in ["ACB", "DGC", "FPT", "VIX"]:

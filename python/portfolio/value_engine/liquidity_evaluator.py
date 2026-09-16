@@ -48,22 +48,22 @@ def classify_liquidity(
         return (
             "LIQUIDITY_STRONG",
             "Thanh khoản tốt",
-            "Cổ phiếu có thanh khoản dồi dào, thuận lợi cho việc giải ngân và tái cấu trúc vị thế quy mô lớn.",
+            "Cổ phiếu có thanh khoản dồi dào (>10 tỷ/ngày), thuận lợi cho việc giải ngân và tái cấu trúc vị thế quy mô lớn.",
         )
 
-    # 2. Acceptable Liquidity: >= 1.0 Billion VND/day and >= 60% coverage
-    if (avg_val_20d_billion >= 1.0 or (avg_vol_20d and avg_vol_20d >= 50_000)) and coverage_pct >= 60.0:
+    # 2. Acceptable Liquidity: >= 5.0 Billion VND/day and >= 60% coverage
+    if (avg_val_20d_billion >= 5.0 or (avg_vol_20d and avg_vol_20d >= 200_000)) and coverage_pct >= 60.0:
         return (
             "LIQUIDITY_ACCEPTABLE",
             "Thanh khoản đủ",
-            "Thanh khoản đáp ứng yêu cầu giao dịch bình thường, có thể giải ngân theo từng đợt.",
+            "Thanh khoản đáp ứng yêu cầu giao dịch (>5 tỷ/ngày), có thể giải ngân theo từng đợt.",
         )
 
-    # 3. Weak Liquidity: < 1.0 Billion VND/day or < 60% coverage
+    # 3. Weak Liquidity: < 5.0 Billion VND/day or < 60% coverage
     return (
         "LIQUIDITY_WEAK",
         "Thanh khoản thấp",
-        "Thanh khoản thấp, cần thận trọng khi xây dựng hoặc thoát vị thế để tránh rủi ro trượt giá.",
+        "Thanh khoản thấp (<5 tỷ/ngày), cần thận trọng khi xây dựng hoặc thoát vị thế để tránh rủi ro trượt giá.",
     )
 
 

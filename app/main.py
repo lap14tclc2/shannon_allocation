@@ -1737,6 +1737,7 @@ def api_portfolio_business_candidates(
     tier: str | None = "all",
     liquidity: str | None = "all",
     search: str | None = None,
+    min_val_billion: float | None = None,
     limit: int = 50,
     qport_session: str | None = Cookie(default=None),
 ):
@@ -1748,6 +1749,7 @@ def api_portfolio_business_candidates(
         tier=tier,
         liquidity=liquidity,
         search=search,
+        min_val_billion=min_val_billion,
         limit=limit,
     )
 

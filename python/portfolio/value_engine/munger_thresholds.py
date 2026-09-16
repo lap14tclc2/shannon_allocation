@@ -25,9 +25,19 @@ class MungerThresholdPolicy:
     PROFIT_CASH_DIVERGENCE_CAGR_GAP: float = 0.15  # PAT CAGR - CFO CAGR > 15%
     PERSISTENT_NEGATIVE_CFO_YEARS: int = 3  # CFO negative 3+ years out of 5
 
-    # Receivables Forensics
-    RECEIVABLES_VS_REVENUE_CAGR_GAP: float = 0.10  # Receivables CAGR - Revenue CAGR > 10%
-    RECEIVABLES_REVENUE_RATIO_HIGH: float = 0.40   # Receivables / Revenue > 40%
+    # Receivables Forensics (Evidence-Based Multi-Signal Thresholds)
+    RECEIVABLES_VS_REVENUE_CAGR_GAP: float = 0.10          # Legacy alias (10Y gap threshold)
+    RECEIVABLES_GROWTH_GAP_3Y_WATCH: float = 0.05          # Recent 3Y gap > 5% triggers preliminary watch
+    RECEIVABLES_GROWTH_GAP_3Y_HIGH: float = 0.12           # Recent 3Y gap > 12% indicates strong acceleration
+    RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL: float = 0.10    # 10Y gap > 10% (historical signal only, not a sole trigger)
+    RECEIVABLES_MATERIALITY_LOW: float = 0.15              # Receivables / Revenue < 15% is low materiality
+    RECEIVABLES_MATERIALITY_HIGH: float = 0.35             # Receivables / Revenue > 35% is high materiality
+    RECEIVABLES_ASSETS_RATIO_HIGH: float = 0.25            # Receivables / Total Assets > 25% is high asset concentration
+    RECEIVABLES_DSO_HIGH_DAYS: float = 90.0                # DSO > 90 days indicates slow collection cycle
+    RECEIVABLES_DSO_INCREASE_WATCH_DAYS: float = 15.0      # DSO 3Y increase > 15 days indicates lengthening cycle
+    RECEIVABLES_LOW_BASE_RATIO_THRESHOLD: float = 0.05     # Base-year Receivables / Revenue < 5% indicates low-base effect
+    RECEIVABLES_CFO_PAT_CONCERN: float = 0.60              # 3Y CFO / PAT < 0.6x indicates weak cash conversion
+    RECEIVABLES_REVENUE_RATIO_HIGH: float = 0.40           # Legacy alias (Receivables / Revenue > 40%)
     RECEIVABLES_REVENUE_RATIO_RISING_PERSISTENT_YEARS: int = 3
 
     # Inventory Forensics (Normal Enterprise)

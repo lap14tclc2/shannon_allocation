@@ -436,6 +436,7 @@ def run_receivables_forensics(
     rev_series: List[Tuple[int, float]] = []
     cfo_series: List[Tuple[int, float]] = []
     pat_series: List[Tuple[int, float]] = []
+    asset_series: List[Tuple[int, float]] = []
     evidence_facts: List[str] = []
 
     for y in years:
@@ -444,6 +445,7 @@ def run_receivables_forensics(
         rev = ydict.get("revenue") or ydict.get("IS.REVENUE.TOTAL")
         cfo = ydict.get("cfo") or ydict.get("operating_cash_flow")
         pat = ydict.get("net_profit") or ydict.get("net_income")
+        assets = ydict.get("total_assets") or ydict.get("BS.ASSETS.TOTAL")
 
         if rec is not None and rev is not None and float(rev) > 0:
             rec_series.append((y, float(rec)))
@@ -452,6 +454,8 @@ def run_receivables_forensics(
                 cfo_series.append((y, float(cfo)))
             if pat is not None:
                 pat_series.append((y, float(pat)))
+            if assets is not None and float(assets) > 0:
+                asset_series.append((y, float(assets)))
             evidence_facts.extend([f"RECEIVABLES FY{y}", f"REVENUE FY{y}"])
 
     if len(rec_series) < 3:
@@ -466,7 +470,9 @@ def run_receivables_forensics(
             explanation="Chưa đủ dữ liệu các khoản phải thu để đánh giá.",
         )
 
-    # Calculate Yearly YoY Comparisons
+    # ---------------------------------------------------------
+    # 1. AXIS E: YEAR-OVER-YEAR PERSISTENCE & PATTERN
+    # ---------------------------------------------------------
     yearly_growth_comparison: List[Dict[str, Any]] = []
     gap_widening_years = 0
     consecutive_gap_years = 0
@@ -502,7 +508,6 @@ def run_receivables_forensics(
             "receivables_faster": gap > 0.05,
         })
 
-    # Pattern Classification: TEMPORARY vs PERSISTENT vs ACCELERATING
     divergence_pattern = "NORMAL"
     if max_consecutive_gap_years >= 3 or gap_widening_years >= 2:
         divergence_pattern = "ACCELERATING"
@@ -511,18 +516,37 @@ def run_receivables_forensics(
     elif max_consecutive_gap_years == 1:
         divergence_pattern = "TEMPORARY"
 
-    # Multi-period CAGRs
+    # ---------------------------------------------------------
+    # 2. AXIS A: LONG-TERM TREND & LOW-BASE DETECTION
+    # ---------------------------------------------------------
     n_full = len(rec_series) - 1
     rec_cagr_full = (rec_series[-1][1] / rec_series[0][1]) ** (1.0 / n_full) - 1.0 if rec_series[0][1] > 0 and rec_series[-1][1] > 0 else 0.0
     rev_cagr_full = (rev_series[-1][1] / rev_series[0][1]) ** (1.0 / n_full) - 1.0 if rev_series[0][1] > 0 and rev_series[-1][1] > 0 else 0.0
-
-    rec_cagr_3y = ((rec_series[-1][1] / rec_series[-4][1]) ** (1.0 / 3.0) - 1.0) if len(rec_series) >= 4 and rec_series[-4][1] > 0 and rec_series[-1][1] > 0 else rec_cagr_full
-    rev_cagr_3y = ((rev_series[-1][1] / rev_series[-4][1]) ** (1.0 / 3.0) - 1.0) if len(rev_series) >= 4 and rev_series[-4][1] > 0 and rev_series[-1][1] > 0 else rev_cagr_full
-
-    gap_3y = rec_cagr_3y - rev_cagr_3y
     gap_full = rec_cagr_full - rev_cagr_full
 
-    # Ratios and DSO
+    base_rec_ratio = (rec_series[0][1] / rev_series[0][1]) if rev_series[0][1] > 0 else 0.0
+    base_asset_ratio = (rec_series[0][1] / asset_series[0][1]) if (asset_series and asset_series[0][1] > 0) else None
+    is_low_base = bool(
+        base_rec_ratio < thresholds.RECEIVABLES_LOW_BASE_RATIO_THRESHOLD
+        or (base_asset_ratio is not None and base_asset_ratio < 0.03)
+    )
+
+    # ---------------------------------------------------------
+    # 3. AXIS B: RECENT TREND (3Y CAGR GAP)
+    # ---------------------------------------------------------
+    has_3y_data = len(rec_series) >= 4 and rec_series[-4][1] > 0 and rev_series[-4][1] > 0
+    if has_3y_data:
+        rec_cagr_3y = (rec_series[-1][1] / rec_series[-4][1]) ** (1.0 / 3.0) - 1.0
+        rev_cagr_3y = (rev_series[-1][1] / rev_series[-4][1]) ** (1.0 / 3.0) - 1.0
+        gap_3y = rec_cagr_3y - rev_cagr_3y
+    else:
+        rec_cagr_3y = None
+        rev_cagr_3y = None
+        gap_3y = None
+
+    # ---------------------------------------------------------
+    # 4. AXIS C: MATERIALITY & DSO METRICS
+    # ---------------------------------------------------------
     ratios = [rec / rev for (_, rec), (_, rev) in zip(rec_series, rev_series)]
     latest_rec_ratio = ratios[-1] if ratios else 0.0
 
@@ -533,8 +557,11 @@ def run_receivables_forensics(
         n = len(s)
         return (s[n//2] if n % 2 != 0 else (s[n//2 - 1] + s[n//2]) / 2.0)
 
-    ratio_3y_median = calc_median(ratios[-3:])
+    ratio_3y_median = calc_median(ratios[-3:]) if len(ratios) >= 3 else latest_rec_ratio
     ratio_hist_median = calc_median(ratios)
+
+    latest_assets = asset_series[-1][1] if asset_series else None
+    latest_rec_asset_ratio = (rec_series[-1][1] / latest_assets) if (latest_assets and latest_assets > 0) else None
 
     dso_series: List[Tuple[int, float]] = []
     for i in range(1, len(rec_series)):
@@ -549,36 +576,62 @@ def run_receivables_forensics(
     dso_3y_median = calc_median(dso_vals[-3:]) if dso_vals else None
     dso_3y_change = (latest_dso - dso_vals[-3]) if len(dso_vals) >= 3 and latest_dso is not None else 0.0
 
-    # Corroborating cash conversion
-    recent_cfo_sum = sum(c[1] for c in cfo_series[-3:]) if len(cfo_series) >= 3 else (sum(c[1] for c in cfo_series) if cfo_series else 0)
-    recent_pat_sum = sum(p[1] for p in pat_series[-3:]) if len(pat_series) >= 3 else (sum(p[1] for p in pat_series) if pat_series else 0)
-    cash_conversion = (recent_cfo_sum / recent_pat_sum) if recent_pat_sum > 0 else 1.0
+    is_material_low = (
+        latest_rec_ratio < thresholds.RECEIVABLES_MATERIALITY_LOW
+        and (latest_dso is None or latest_dso < 60.0)
+    )
+    is_material_high = (
+        latest_rec_ratio > thresholds.RECEIVABLES_MATERIALITY_HIGH
+        or (latest_dso is not None and latest_dso > thresholds.RECEIVABLES_DSO_HIGH_DAYS)
+        or (latest_rec_asset_ratio is not None and latest_rec_asset_ratio > thresholds.RECEIVABLES_ASSETS_RATIO_HIGH)
+    )
+    materiality_status = "LOW" if is_material_low else ("HIGH" if is_material_high else "MODERATE")
 
-    has_growth_gap = (gap_3y > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP or gap_full > thresholds.RECEIVABLES_VS_REVENUE_CAGR_GAP)
-    has_high_intensity = latest_rec_ratio > thresholds.RECEIVABLES_REVENUE_RATIO_HIGH
+    # ---------------------------------------------------------
+    # 5. AXIS D: CASH CONVERSION CORROBORATION
+    # ---------------------------------------------------------
+    has_cfo_data = bool(len(cfo_series) >= 3 and len(pat_series) >= 3)
+    if has_cfo_data:
+        recent_cfo_sum = sum(c[1] for c in cfo_series[-3:])
+        recent_pat_sum = sum(p[1] for p in pat_series[-3:])
+        cash_conversion = (recent_cfo_sum / recent_pat_sum) if recent_pat_sum > 0 else (1.0 if recent_cfo_sum >= 0 else 0.0)
+        cash_status = "HEALTHY" if cash_conversion >= 0.80 else ("WEAK" if cash_conversion < thresholds.RECEIVABLES_CFO_PAT_CONCERN else "MODERATE")
+    else:
+        cash_conversion = None
+        cash_status = "UNKNOWN"
 
+    # ---------------------------------------------------------
+    # 6. MULTI-SIGNAL EVIDENCE SYNTHESIS & SEVERITY MATRIX
+    # ---------------------------------------------------------
     status = DimensionStatus.PASS.value
+    severity = FindingSeverity.INFO.value
     findings: List[FinancialFinding] = []
     explanation = "Khả năng thu hồi tiền bán hàng bình thường, không có dấu hiệu nới lỏng chính sách bán chịu."
 
-    if has_growth_gap or (has_high_intensity and divergence_pattern in ("PERSISTENT", "ACCELERATING")):
-        if not is_total_proxy and divergence_pattern in ("PERSISTENT", "ACCELERATING"):
-            status = DimensionStatus.FAIL.value if (cash_conversion < 0.6 or latest_rec_ratio > 0.40) else DimensionStatus.WATCH.value
-            severity = FindingSeverity.HIGH.value
-            explanation = (
-                f"Khoản phải thu tăng nhanh hơn doanh thu liên tiếp {max_consecutive_gap_years} năm ({divergence_pattern}), "
-                f"gap 3Y {gap_3y*100:.1f}%, thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {latest_dso:.0f} ngày), "
-                f"dòng tiền CFO/PAT 3Y ({cash_conversion:.2f}x). Cần giám sát chặt chẽ nguy cơ ứ đọng công nợ."
-            )
-        else:
-            status = DimensionStatus.WATCH.value
-            severity = FindingSeverity.MEDIUM.value
-            dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "Chưa đủ dữ liệu"
-            explanation = (
-                f"Khoản phải thu tăng nhanh hơn doanh thu (mô hình: {divergence_pattern}, gap 3Y {gap_3y*100:.1f}%), "
-                f"tỷ lệ Phải thu/Doanh thu đạt {latest_rec_ratio*100:.1f}% (DSO = {dso_str}). Cần theo dõi chính sách công nợ."
-            )
+    # Evidence conditions
+    has_recent_gap = bool(has_3y_data and gap_3y is not None and gap_3y > thresholds.RECEIVABLES_GROWTH_GAP_3Y_WATCH)
+    has_strong_recent_gap = bool(has_3y_data and gap_3y is not None and gap_3y > thresholds.RECEIVABLES_GROWTH_GAP_3Y_HIGH)
+    has_historical_gap = bool(gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL and not is_low_base)
 
+    # CASE C: Confirmed Forensic Deterioration (FAIL)
+    # Requires: (Recent strong gap OR persistent gap) AND High Materiality AND Confirmed Weak Cash Conversion
+    is_confirmed_fail = (
+        (has_strong_recent_gap or (has_recent_gap and divergence_pattern in ("PERSISTENT", "ACCELERATING")))
+        and is_material_high
+        and cash_status == "WEAK"
+        and (dso_3y_change > thresholds.RECEIVABLES_DSO_INCREASE_WATCH_DAYS or divergence_pattern in ("PERSISTENT", "ACCELERATING"))
+    )
+    if is_confirmed_fail:
+        status = DimensionStatus.FAIL.value
+        severity = FindingSeverity.HIGH.value
+        dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "N/A"
+        cfo_str = f"{cash_conversion:.2f}x" if cash_conversion is not None else "N/A"
+        explanation = (
+            f"Cảnh báo rủi ro chất lượng doanh thu và công nợ: Khoản phải thu tăng nhanh hơn doanh thu liên tiếp ({divergence_pattern}), "
+            f"gap 3Y {gap_3y*100:.1f}%, tỷ lệ Phải thu/Doanh thu ở mức cao ({latest_rec_ratio*100:.1f}%), "
+            f"thời gian thu tiền DSO tăng {dso_3y_change:.0f} ngày (hiện tại {dso_str}), "
+            f"chất lượng dòng tiền CFO/PAT suy giảm ({cfo_str}). Cần giám sát chặt chẽ nguy cơ ứ đọng công nợ."
+        )
         findings.append(
             FinancialFinding(
                 code="RECEIVABLES_GROW_FASTER_THAN_REVENUE",
@@ -589,47 +642,127 @@ def run_receivables_forensics(
                 start_period=rec_series[0][0],
                 end_period=rec_series[-1][0],
                 metrics={
-                    "rec_cagr_3y": rec_cagr_3y,
-                    "rev_cagr_3y": rev_cagr_3y,
-                    "gap_3y": gap_3y,
-                    "gap_full": gap_full,
-                    "latest_rec_ratio": latest_rec_ratio,
-                    "latest_dso": latest_dso,
-                    "dso_3y_change": dso_3y_change,
-                    "divergence_pattern": divergence_pattern,
-                    "max_consecutive_gap_years": max_consecutive_gap_years,
-                    "cash_conversion_3y": cash_conversion,
+                    "long_term_gap": round(gap_full, 4),
+                    "recent_gap": round(gap_3y, 4) if gap_3y is not None else None,
+                    "receivables_to_revenue": round(latest_rec_ratio, 4),
+                    "receivables_to_assets": round(latest_rec_asset_ratio, 4) if latest_rec_asset_ratio is not None else None,
+                    "dso": round(latest_dso, 1) if latest_dso is not None else None,
+                    "dso_3y_change": round(dso_3y_change, 1) if dso_3y_change is not None else None,
+                    "cfo_pat": round(cash_conversion, 2) if cash_conversion is not None else None,
+                    "persistence": divergence_pattern,
+                    "low_base_distortion": is_low_base,
+                    "materiality_status": materiality_status,
+                    "cash_conversion_status": cash_status,
+                    "semantic_key": "receivables_growth_vs_revenue",
                     "yearly_growth_comparison": yearly_growth_comparison,
                 },
                 evidence_fact_ids=evidence_facts,
                 explanation=explanation,
                 archetype=archetype,
-                impact="Rủi ro chất lượng doanh thu cao do khoản phải thu tăng nhanh" if severity == FindingSeverity.HIGH.value else "Rủi ro vốn lưu động bị chiếm dụng trung bình",
+                impact="Rủi ro chất lượng doanh thu cao do khoản phải thu tăng nhanh",
             )
         )
 
+    # CASE B: Forensic WATCH (Signal needing monitoring, not structural collapse)
+    elif (has_recent_gap) or (has_historical_gap and divergence_pattern in ("PERSISTENT", "ACCELERATING")) or (is_material_high and divergence_pattern in ("PERSISTENT", "ACCELERATING")) or (gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL and not is_low_base and cash_status == "UNKNOWN"):
+        status = DimensionStatus.WATCH.value
+        severity = FindingSeverity.MEDIUM.value
+        dso_str = f"{latest_dso:.0f} ngày" if latest_dso is not None else "Chưa đủ dữ liệu"
+        gap_info = f"gap 3Y {gap_3y*100:.1f}%" if gap_3y is not None else f"gap dài hạn {gap_full*100:.1f}%"
+        explanation = (
+            f"Khoản phải thu có tín hiệu tăng nhanh hơn doanh thu (mô hình: {divergence_pattern}, {gap_info}), "
+            f"tỷ lệ Phải thu/Doanh thu đạt {latest_rec_ratio*100:.1f}% (DSO = {dso_str}). Cần theo dõi chính sách công nợ."
+        )
+        findings.append(
+            FinancialFinding(
+                code="RECEIVABLES_GROW_FASTER_THAN_REVENUE",
+                category="WORKING_CAPITAL",
+                severity=severity,
+                confidence=ConfidenceLevel.HIGH.value if (not is_total_proxy and has_3y_data) else ConfidenceLevel.MEDIUM.value,
+                status=status,
+                start_period=rec_series[0][0],
+                end_period=rec_series[-1][0],
+                metrics={
+                    "long_term_gap": round(gap_full, 4),
+                    "recent_gap": round(gap_3y, 4) if gap_3y is not None else None,
+                    "receivables_to_revenue": round(latest_rec_ratio, 4),
+                    "receivables_to_assets": round(latest_rec_asset_ratio, 4) if latest_rec_asset_ratio is not None else None,
+                    "dso": round(latest_dso, 1) if latest_dso is not None else None,
+                    "dso_3y_change": round(dso_3y_change, 1) if dso_3y_change is not None else None,
+                    "cfo_pat": round(cash_conversion, 2) if cash_conversion is not None else None,
+                    "persistence": divergence_pattern,
+                    "low_base_distortion": is_low_base,
+                    "materiality_status": materiality_status,
+                    "cash_conversion_status": cash_status,
+                    "semantic_key": "receivables_growth_vs_revenue",
+                    "yearly_growth_comparison": yearly_growth_comparison,
+                },
+                evidence_fact_ids=evidence_facts,
+                explanation=explanation,
+                archetype=archetype,
+                impact="Rủi ro vốn lưu động bị chiếm dụng trung bình",
+            )
+        )
+
+    # CASE A: Low-base historical gap with healthy recent metrics (PASS)
+    elif is_low_base and gap_full > thresholds.RECEIVABLES_GROWTH_GAP_10Y_HISTORICAL:
+        status = DimensionStatus.PASS.value
+        explanation = (
+            "Phải thu từng tăng nhanh hơn doanh thu trong dài hạn do quy mô ban đầu rất nhỏ (hiệu ứng số gốc), "
+            "nhưng xu hướng gần đây và tỷ trọng công nợ duy trì ở mức an toàn."
+        )
+
+    # CASE A: Recent 3Y trend healthy (PASS)
+    elif has_3y_data and gap_3y is not None and gap_3y <= 0:
+        status = DimensionStatus.PASS.value
+        explanation = (
+            "Không có bằng chứng khoản phải thu tăng nhanh hơn doanh thu trong giai đoạn gần đây. "
+            "Tốc độ tăng trưởng doanh thu tương đương hoặc vượt trội so với công nợ."
+        )
+
+    else:
+        status = DimensionStatus.PASS.value
+        explanation = "Khả năng thu hồi tiền bán hàng bình thường, không có dấu hiệu nới lỏng chính sách bán chịu."
+
+    confidence_score = (
+        ConfidenceLevel.HIGH.value
+        if (len(rec_series) >= 5 and not is_total_proxy and has_3y_data and has_cfo_data)
+        else (ConfidenceLevel.MEDIUM.value if len(rec_series) >= 3 else ConfidenceLevel.LOW.value)
+    )
+
     return FinancialDimensionResult(
         status=status,
-        confidence=ConfidenceLevel.HIGH.value if (len(rec_series) >= 5 and not is_total_proxy) else ConfidenceLevel.MEDIUM.value,
+        confidence=confidence_score,
         metrics={
-            "rec_cagr_3y": rec_cagr_3y,
-            "rev_cagr_3y": rev_cagr_3y,
-            "gap_3y": gap_3y,
-            "gap_full": gap_full,
-            "latest_rec_ratio": latest_rec_ratio,
-            "ratio_3y_median": ratio_3y_median,
-            "ratio_hist_median": ratio_hist_median,
-            "latest_dso": latest_dso,
-            "dso_3y_median": dso_3y_median,
-            "dso_3y_change": dso_3y_change,
+            "long_term_gap": round(gap_full, 4),
+            "recent_gap": round(gap_3y, 4) if gap_3y is not None else None,
+            "receivables_to_revenue": round(latest_rec_ratio, 4),
+            "receivables_to_assets": round(latest_rec_asset_ratio, 4) if latest_rec_asset_ratio is not None else None,
+            "dso": round(latest_dso, 1) if latest_dso is not None else None,
+            "dso_3y_change": round(dso_3y_change, 1) if dso_3y_change is not None else None,
+            "cfo_pat": round(cash_conversion, 2) if cash_conversion is not None else None,
+            "persistence": divergence_pattern,
+            "low_base_distortion": is_low_base,
+            "materiality_status": materiality_status,
+            "cash_conversion_status": cash_status,
+            "semantic_key": "receivables_growth_vs_revenue",
+            "rec_cagr_3y": round(rec_cagr_3y, 4) if rec_cagr_3y is not None else None,
+            "rev_cagr_3y": round(rev_cagr_3y, 4) if rev_cagr_3y is not None else None,
+            "gap_3y": round(gap_3y, 4) if gap_3y is not None else None,
+            "gap_full": round(gap_full, 4),
+            "latest_rec_ratio": round(latest_rec_ratio, 4),
+            "ratio_3y_median": round(ratio_3y_median, 4),
+            "ratio_hist_median": round(ratio_hist_median, 4),
+            "latest_dso": round(latest_dso, 1) if latest_dso is not None else None,
+            "dso_3y_median": round(dso_3y_median, 1) if dso_3y_median is not None else None,
             "divergence_pattern": divergence_pattern,
             "max_consecutive_gap_years": max_consecutive_gap_years,
-            "cash_conversion_3y": cash_conversion,
+            "cash_conversion_3y": round(cash_conversion, 2) if cash_conversion is not None else None,
             "yearly_growth_comparison": yearly_growth_comparison,
         },
         findings=findings,
         evidence=evidence_facts,
-        missing_data=[],
+        missing_data=[] if has_cfo_data else ["RECENT_CFO_PAT_HISTORY"],
         not_applicable=[],
         explanation=explanation,
     )

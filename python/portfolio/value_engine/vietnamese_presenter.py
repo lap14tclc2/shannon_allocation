@@ -44,7 +44,7 @@ DECISION_VIETNAMESE: Dict[str, str] = {
     "WAIT_FOR_QUALITY_CONFIRMATION": "Chờ xác nhận chất lượng tài chính",
     "HOLD": "Tiếp tục nắm giữ",
     "HOLD_NO_NEW_CAPITAL": "Tiếp tục nắm giữ, chưa phân bổ thêm vốn",
-    "WAIT_FOR_MOS": "Chờ đạt biên an toàn",
+    "WAIT_FOR_MOS": "Chờ biên an toàn",
     "BUILD_RESERVE_FIRST": "Ưu tiên củng cố quỹ dự phòng trước",
     "REVIEW_BUSINESS": "Cần xem xét thêm dữ liệu doanh nghiệp",
     "BUSINESS_REVIEW_INCOMPLETE": "Đánh giá doanh nghiệp chưa hoàn tất",

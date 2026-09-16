@@ -34,16 +34,17 @@ _CANDIDATE_CACHE_TTL: float = 600.0  # 10 minutes cache
 
 
 def _generate_candidate_rationale_vi(
-    symbol: str,
-    quality_tier: str,
-    roe: Optional[float],
-    pat_cagr: Optional[float],
-    cfo_pat: Optional[float],
-    vt_status: str,
-    mos: Optional[float],
-    req_mos: Optional[float],
-    is_financial: bool,
-    top_warning_vi: str,
+    symbol: Optional[str] = None,
+    quality_tier: Optional[str] = None,
+    roe: Optional[float] = None,
+    pat_cagr: Optional[float] = None,
+    cfo_pat: Optional[float] = None,
+    vt_status: str = "CLEAR",
+    mos: Optional[float] = None,
+    req_mos: Optional[float] = None,
+    is_financial: bool = False,
+    top_warning_vi: Optional[str] = None,
+    **kwargs: Any,
 ) -> str:
     """Generate professional semantic Vietnamese explanation of why company is recommended."""
     reasons = []
@@ -92,11 +93,14 @@ def _generate_candidate_rationale_vi(
     return f"{formatted_base}.{val_context}"
 
 
+_build_recommendation_reason_vi = _generate_candidate_rationale_vi
+
+
 def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
     """Evaluate a single symbol against Munger candidate standards and attach liquidity assessment."""
     try:
         from ..canonical_valuation import build_canonical_valuation
-        from .value_trap_detector import evaluate_value_trap
+        from .value_trap import evaluate_value_trap
 
         val = build_canonical_valuation(sym, compute_munger=True)
         if not val.get("ok"):
@@ -231,6 +235,11 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         liq = evaluate_symbol_liquidity(sym)
         liq_code = liq.get("classification", "LIQUIDITY_INSUFFICIENT_DATA")
 
+        # Hard Reject: Illiquid stocks with trading value < 5.0 Billion VND/day
+        avg_val_20b = liq.get("avg_trading_value_20d_billion")
+        if avg_val_20b is not None and avg_val_20b < 5.0:
+            return None
+
         synthesis_conclusion = synthesize_munger_screening_conclusion_vi(
             quality_tier=quality_tier,
             compounder_class=compounder_class,
@@ -357,6 +366,7 @@ def get_munger_candidates(
     tier: Optional[str] = "all",
     liquidity: Optional[str] = "all",
     search: Optional[str] = None,
+    min_val_billion: Optional[float] = None,
     limit: int = 50,
 ) -> Dict[str, Any]:
     """Get filtered Munger candidate list for frontend presentation."""
@@ -372,6 +382,15 @@ def get_munger_candidates(
         if not l_code.startswith("LIQUIDITY_"):
             l_code = f"LIQUIDITY_{l_code}"
         filtered = [c for c in filtered if c.get("liquidity_classification") == l_code]
+
+    try:
+        min_val = float(min_val_billion) if min_val_billion is not None else 5.0
+        filtered = [
+            c for c in filtered
+            if (c.get("liquidity", {}).get("avg_trading_value_20d_billion") or 0.0) >= min_val
+        ]
+    except (ValueError, TypeError):
+        pass
 
     if search and search.strip():
         q = search.strip().lower()

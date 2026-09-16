@@ -141,4 +141,6 @@
 | [TASK-20260912-160](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-160-munger-deep-financial-analysis.md) | Deep Munger Financial Analysis — Upgrade QPort Buffett Terminal | completed | high | 2026-09-12 |
 | [TASK-20260912-161](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-161-global-munger-financial-decision-audit.md) | Global Audit & Fix — Munger Financial Decision Engine for All Symbols | completed | high | 2026-09-12 |
 | [TASK-20260912-162](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260912-162-munger-liquidity-gate-and-semantic-audit.md) | Munger Stock Screening — Liquidity Gate + Full Semantic UI Audit | verified | high | 2026-09-12 |
-
+| [TASK-20260916-163](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-163-auto-fetch-latest-market-price-positions.md) | Auto-Fetch Latest Market Price on Positions View | in-progress | high | 2026-09-16 |
+| [TASK-20260916-164](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-164-munger-candidates-liquidity-threshold-5b.md) | Munger Candidates Liquidity Threshold >= 5B VND/day & Volume Calculation Logic | completed | high | 2026-09-16 |
+| [TASK-20260916-165](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-165-evidence-based-receivables-forensic-gate.md) | Evidence-Based Receivables Forensic Gate & Low-Base Multi-Signal Synthesis | completed | high | 2026-09-16 |
