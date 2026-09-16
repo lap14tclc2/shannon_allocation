@@ -309,6 +309,7 @@ def build_canonical_valuation(
             shares_val = items.get("IS.SHARES.OUTSTANDING")
             debt_val = items.get("BS.DEBT.TOTAL")
             cash_val = items.get("BS.ASSETS.CASH_AND_EQUIVALENTS")
+            assets_val = items.get("BS.ASSETS.TOTAL")
             rev_val = items.get("IS.REVENUE.TOTAL") or items.get("IS.REVENUE.NET")
             rec_val = items.get("BS.ASSETS.RECEIVABLES_SHORT_TERM") or items.get("BS.ASSETS.SHORT_TERM")
             inv_val = items.get("BS.ASSETS.INVENTORY")
@@ -326,6 +327,7 @@ def build_canonical_valuation(
             fcf_scaled = (cfo_scaled - capex_scaled) if (cfo_scaled is not None and capex_scaled is not None) else None
             debt_scaled = to_vnd(debt_val)
             cash_scaled = to_vnd(cash_val)
+            assets_scaled = to_vnd(assets_val)
             rec_scaled = to_vnd(rec_val)
             inv_scaled = to_vnd(inv_val)
             rev_scaled = to_vnd(rev_val)
@@ -339,6 +341,7 @@ def build_canonical_valuation(
                 "revenue": rev_scaled,
                 "net_profit": np_scaled,
                 "equity": eq_scaled,
+                "total_assets": assets_scaled,
                 "roe": roe_hist,
                 "operating_cash_flow": cfo_scaled,
                 "free_cash_flow": fcf_scaled,

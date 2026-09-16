@@ -477,9 +477,11 @@ export default function BusinessPage() {
                               </strong>
                             </div>
                             <div>
-                              <div style={{ color: 'var(--text-muted, #718096)' }}>Nợ / Vốn CSH</div>
-                              <strong style={{ fontSize: '13px' }}>
-                                {c.debt_to_equity_display}
+                              <div style={{ color: 'var(--text-muted, #718096)' }}>
+                                {c.solvency_metric_label || (c.archetype === 'BANK' ? 'Đòn bẩy TS (TS/VCSH)' : 'Nợ / Vốn CSH')}
+                              </div>
+                              <strong style={{ fontSize: '12px' }}>
+                                {c.solvency_metric_display || c.debt_to_equity_display}
                               </strong>
                             </div>
                             <div>

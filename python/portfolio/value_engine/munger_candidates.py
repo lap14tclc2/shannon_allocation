@@ -38,6 +38,7 @@ _IS_COMPUTING: bool = False
 def _generate_candidate_rationale_vi(
     symbol: Optional[str] = None,
     quality_tier: Optional[str] = None,
+    compounder_class: Optional[str] = None,
     roe: Optional[float] = None,
     pat_cagr: Optional[float] = None,
     cfo_pat: Optional[float] = None,
@@ -46,9 +47,15 @@ def _generate_candidate_rationale_vi(
     req_mos: Optional[float] = None,
     is_financial: bool = False,
     top_warning_vi: Optional[str] = None,
+    decision_state: Optional[str] = None,
     **kwargs: Any,
 ) -> str:
-    """Generate professional semantic Vietnamese explanation of why company is recommended."""
+    """Generate professional semantic Vietnamese explanation of why company is recommended.
+    
+    Buffett-Munger Principle: Separates 'Cheap Valuation' from 'Wonderful Business'.
+    A high MOS with poor ROE or missing CFO/PAT is treated as unproven economic quality,
+    never praised as an outright buy recommendation.
+    """
     reasons = []
 
     # 1. Profitability & Quality
@@ -56,12 +63,16 @@ def _generate_candidate_rationale_vi(
         reasons.append(f"Hiệu quả sinh lời trên vốn (ROE trung vị {roe:.1f}%) duy trì ở mức vượt trội")
     elif roe is not None and roe >= 14.0:
         reasons.append(f"Hiệu quả sinh lời trên vốn (ROE {roe:.1f}%) ổn định trên mức trung bình thị trường")
+    elif roe is not None and roe < 10.0:
+        reasons.append(f"Hiệu quả sinh lời trên vốn còn khiêm tốn (ROE {roe:.1f}%)")
 
     # 2. Growth
     if pat_cagr is not None and pat_cagr >= 0.15:
         reasons.append(f"lợi nhuận sau thuế tăng trưởng bền vững (+{pat_cagr*100:.1f}% CAGR)")
     elif pat_cagr is not None and pat_cagr > 0.0:
         reasons.append(f"lợi nhuận duy trì tăng trưởng dương (+{pat_cagr*100:.1f}% CAGR)")
+    elif pat_cagr is not None and pat_cagr <= 0.0:
+        reasons.append(f"tăng trưởng lợi nhuận suy giảm ({pat_cagr*100:.1f}% CAGR)")
 
     # 3. Cash flow conversion
     if not is_financial:
@@ -69,6 +80,8 @@ def _generate_candidate_rationale_vi(
             reasons.append("chất lượng chuyển hóa lợi nhuận thành dòng tiền tự do (CFO/PAT) lành mạnh")
         elif cfo_pat is not None and cfo_pat < 0.60:
             reasons.append("dòng tiền kinh doanh chịu áp lực đọng vốn tạm thời")
+        elif cfo_pat is None:
+            reasons.append("dữ liệu dòng tiền CFO/PAT chưa đầy đủ (chưa xác nhận được chất lượng tiền mặt)")
 
     # 4. Value trap & Solvency
     if vt_status == "CLEAR":
@@ -84,9 +97,21 @@ def _generate_candidate_rationale_vi(
     formatted_base = base_text[0].upper() + base_text[1:] if base_text else ""
 
     # Valuation context
+    is_quality_questionable = (
+        (roe is not None and roe < 10.0)
+        or (not is_financial and cfo_pat is None)
+        or vt_status == "WATCH"
+        or decision_state in ("AVOID", "REVIEW_BUSINESS")
+        or compounder_class == "WEAK_BUSINESS"
+    )
     if mos is not None and req_mos is not None:
         if mos >= req_mos:
-            val_context = f" Đặc biệt, thị giá đang chiết khấu hấp dẫn với Biên an toàn thực tế đạt {mos:.1f}% (vượt mức yêu cầu {req_mos:.0f}%)."
+            if is_quality_questionable:
+                val_context = f" Giá đang thấp đáng kể so với giá trị nội tại ước tính (MOS {mos:.1f}%), nhưng chất lượng kinh tế của doanh nghiệp chưa đủ thuyết phục (ROE thấp/dữ liệu dòng tiền chưa đầy đủ). Cần xác minh earning power trước khi xem xét đầu tư (rẻ nhưng chất lượng kinh tế chưa được chứng minh)."
+            else:
+                val_context = f" Đặc biệt, thị giá đang chiết khấu hấp dẫn với Biên an toàn thực tế đạt {mos:.1f}% (vượt mức yêu cầu {req_mos:.0f}%)."
+        elif mos < 0:
+            val_context = f" Thị giá hiện tại cao hơn giá trị thực (MOS âm {mos:.1f}%), chưa hấp dẫn để giải ngân."
         else:
             val_context = f" Tuy nhiên, Biên an toàn hiện tại ({mos:.1f}%) chưa đạt mức chiết khấu yêu cầu ({req_mos:.0f}%), nhà đầu tư nên kiên nhẫn chờ điểm mua tối ưu."
     else:
@@ -150,14 +175,47 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         cfo_pat_val = eq_metrics.get("avg_cfo_pat")
         cfo_pat = round(float(cfo_pat_val), 2) if cfo_pat_val is not None else None
         de_ratio = bs_metrics.get("latest_debt_equity")
+        bank_leverage = bs_metrics.get("bank_leverage")
+        equity_assets_ratio = bs_metrics.get("equity_assets_ratio")
 
-        is_fin = munger.get("archetype") in ("BANK", "SECURITIES")
+        archetype = munger.get("archetype", "NORMAL_ENTERPRISE")
+        is_fin = archetype in ("BANK", "SECURITIES")
+
+        # Bank Solvency Metric: Banks do not use Debt/Equity. Expose Bank Leverage & Capital Cushion.
+        if archetype == "BANK":
+            solvency_metric_label = "Đòn bẩy TS (TS/VCSH)"
+            if bank_leverage is not None:
+                solvency_metric_display = f"{bank_leverage:.1f}x"
+                if equity_assets_ratio is not None:
+                    solvency_metric_display += f" (Đệm vốn {equity_assets_ratio*100:.1f}%)"
+            elif equity_assets_ratio is not None:
+                solvency_metric_display = f"Đệm vốn {equity_assets_ratio*100:.1f}%"
+            else:
+                solvency_metric_display = "Vốn CSH vững chắc"
+        elif archetype == "SECURITIES":
+            solvency_metric_label = "Đòn bẩy TS (TS/VCSH)"
+            solvency_metric_display = f"{float(de_ratio):.2f}x" if de_ratio is not None else "Đòn bẩy an toàn"
+        else:
+            solvency_metric_label = "Nợ / Vốn CSH"
+            solvency_metric_display = f"{float(de_ratio):.2f}x" if de_ratio is not None else "An toàn"
+
+        # Core Decision state
+        decision_state = munger.get("long_term_decision", {}).get("state") or val.get("verdict") or "HOLD"
+
+        # Munger Quality Floor Gate: A cheap price (high MOS) cannot rescue a bad business.
+        # Hard Reject: WEAK_BUSINESS, AVOID decision, sub-par ROE (< 8.0%), or destructive deterioration
+        if compounder_class in ("WEAK_BUSINESS", "DETERIORATING_BUSINESS"):
+            return None
+        if decision_state == "AVOID":
+            return None
+        if roe_pct is not None and roe_pct < 8.0:
+            return None
 
         # Filter minimum acceptable quality threshold for Munger candidates
         is_quality_qualified = (
-            quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE")
+            quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY")
             or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CONSISTENT_GROWER")
-            or (roe_pct is not None and roe_pct >= 14.0 and (pat_cagr is None or pat_cagr >= 0.05))
+            or (roe_pct is not None and roe_pct >= 12.0 and (pat_cagr is None or pat_cagr >= 0.05))
         )
 
         if not is_quality_qualified:
@@ -180,8 +238,9 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         else:
             top_warning_vi = "Không có cảnh báo tài chính trọng yếu"
 
-        # Decision state
-        decision_state = munger.get("long_term_decision", {}).get("state") or val.get("verdict") or "HOLD"
+        hard_failures_count = len([f for f in crit_findings if f.get("severity") in ("CRITICAL", "HIGH") and f.get("status") == "FAIL"])
+        if hard_failures_count > 0:
+            return None
 
         # Candidate Category Labeling
         if quality_tier == "EXCEPTIONAL" or compounder_class == "COMPOUNDER":
@@ -230,6 +289,8 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
             vt_status=vt.status,
             mos=actual_mos,
             req_mos=req_mos,
+            compounder_class=compounder_class,
+            decision_state=decision_state,
         )
 
         # Evaluate real market liquidity from qport_finance.market_prices
@@ -242,7 +303,6 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         if avg_val_20b is not None and avg_val_20b < 5.0:
             return None
 
-        hard_failures_count = len([f for f in crit_findings if f.get("severity") in ("CRITICAL", "HIGH") and f.get("status") == "FAIL"])
         synthesis_conclusion = synthesize_munger_screening_conclusion_vi(
             quality_tier=quality_tier,
             compounder_class=compounder_class,
@@ -260,9 +320,23 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
             rank_score += 5
 
         is_mos_pass = bool(actual_mos is not None and req_mos is not None and actual_mos >= req_mos)
-        mos_code = "MOS_QUALIFIED" if is_mos_pass else ("MOS_NEGATIVE" if (actual_mos is not None and actual_mos < 0) else "MOS_BELOW_REQUIRED")
-        mos_status_vi = "Đạt biên an toàn (Xem xét mua)" if is_mos_pass else ("Thị giá cao hơn giá trị thực (Tiếp tục theo dõi)" if (actual_mos is not None and actual_mos < 0) else "Chưa đạt biên an toàn (Tiếp tục theo dõi)")
-        price_status_vi = "Đạt biên an toàn" if is_mos_pass else ("Chưa hấp dẫn (Cao hơn định giá)" if (actual_mos is not None and actual_mos < 0) else "Chờ chiết khấu thêm")
+        if is_mos_pass:
+            if (roe_pct is not None and roe_pct < 12.0) or (cfo_pat is None and not is_fin):
+                mos_code = "MOS_QUALIFIED_QUALITY_UNPROVEN"
+                mos_status_vi = "Đạt MOS nhưng chất lượng chưa được chứng minh"
+                price_status_vi = "Đạt MOS (Cần thẩm định chất lượng)"
+            else:
+                mos_code = "MOS_QUALIFIED"
+                mos_status_vi = "Đạt biên an toàn (Xem xét mua)"
+                price_status_vi = "Đạt biên an toàn"
+        elif actual_mos is not None and actual_mos < 0:
+            mos_code = "MOS_NEGATIVE"
+            mos_status_vi = "Thị giá cao hơn giá trị thực (Tiếp tục theo dõi)"
+            price_status_vi = "Chưa hấp dẫn (Cao hơn định giá)"
+        else:
+            mos_code = "MOS_BELOW_REQUIRED"
+            mos_status_vi = "Chưa đạt biên an toàn (Tiếp tục theo dõi)"
+            price_status_vi = "Chờ chiết khấu thêm"
 
         return {
             "symbol": sym,
@@ -290,8 +364,12 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
             "net_profit_cagr_pct": round(pat_cagr * 100, 1) if pat_cagr is not None else None,
             "cfo_to_pat": cfo_pat if not is_fin else None,
             "cfo_to_pat_display": f"{cfo_pat:.2f}x" if cfo_pat is not None and not is_fin else ("Không áp dụng (Bank/Securities)" if is_fin else "Chưa đủ dữ liệu"),
+            "solvency_metric_label": solvency_metric_label,
+            "solvency_metric_display": solvency_metric_display,
+            "bank_leverage": round(float(bank_leverage), 2) if bank_leverage is not None else None,
+            "equity_assets_ratio_pct": round(float(equity_assets_ratio) * 100, 1) if equity_assets_ratio is not None else None,
             "debt_to_equity": round(float(de_ratio), 2) if de_ratio is not None and not is_fin else None,
-            "debt_to_equity_display": f"{float(de_ratio):.2f}x" if de_ratio is not None and not is_fin else ("Không áp dụng" if is_fin else "An toàn"),
+            "debt_to_equity_display": solvency_metric_display if is_fin else (f"{float(de_ratio):.2f}x" if de_ratio is not None else "An toàn"),
             "liquidity": {
                 "classification": liq.get("classification"),
                 "classification_vi": liq.get("classification_vi"),
