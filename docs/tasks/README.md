@@ -144,3 +144,4 @@
 | [TASK-20260916-163](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-163-auto-fetch-latest-market-price-positions.md) | Auto-Fetch Latest Market Price on Positions View | in-progress | high | 2026-09-16 |
 | [TASK-20260916-164](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-164-munger-candidates-liquidity-threshold-5b.md) | Munger Candidates Liquidity Threshold >= 5B VND/day & Volume Calculation Logic | completed | high | 2026-09-16 |
 | [TASK-20260916-165](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-165-evidence-based-receivables-forensic-gate.md) | Evidence-Based Receivables Forensic Gate & Low-Base Multi-Signal Synthesis | completed | high | 2026-09-16 |
+| [TASK-20260916-166](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-166-munger-candidates-api-performance-optimization.md) | Munger Candidates API Performance Optimization (2.9m -> Sub-second) | completed | high | 2026-09-16 |

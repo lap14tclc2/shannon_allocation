@@ -184,7 +184,7 @@ def synthesize_munger_screening_conclusion_vi(
     hard_failures_count: int = 0,
 ) -> str:
     """Synthesize holistic conclusion combining Quality, Valuation, Value Trap & Liquidity."""
-    is_high_quality = quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY") or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER")
+    is_high_quality = quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY", "INVESTABLE") or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CONSISTENT_GROWER")
     is_mos_qualified = mos is not None and req_mos is not None and mos >= req_mos
     is_liquidity_ok = liquidity_code in ("LIQUIDITY_STRONG", "LIQUIDITY_ACCEPTABLE")
 
@@ -192,12 +192,14 @@ def synthesize_munger_screening_conclusion_vi(
         return "Rủi ro tài chính / bẫy giá trị cao, không phù hợp đầu tư"
 
     if is_high_quality and is_mos_qualified and is_liquidity_ok:
-        return "Đạt tiêu chuẩn Munger — thanh khoản tốt"
+        return "Đạt tiêu chuẩn Munger — có thể xem xét mua (thanh khoản tốt)"
 
     if is_high_quality and is_mos_qualified and not is_liquidity_ok:
-        return "Đạt tiêu chuẩn tài chính nhưng thanh khoản thấp, cần thận trọng khi giải ngân"
+        return "Đạt tiêu chuẩn tài chính và giá, nhưng thanh khoản hạn chế — cần thận trọng khi giải ngân"
 
     if is_high_quality and not is_mos_qualified and is_liquidity_ok:
+        if mos is not None and mos < 0:
+            return "Doanh nghiệp chất lượng tốt nhưng thị giá cao hơn giá trị thực, tiếp tục theo dõi"
         return "Doanh nghiệp tốt nhưng giá chưa đủ hấp dẫn, tiếp tục theo dõi"
 
     if is_high_quality and not is_mos_qualified and not is_liquidity_ok:
@@ -207,6 +209,6 @@ def synthesize_munger_screening_conclusion_vi(
         return "Định giá hấp dẫn nhưng chất lượng tài chính chưa đạt chuẩn Munger"
 
     if vt_status == "WATCH":
-        return "Có rủi ro chu kỳ BCTC cần theo dõi thêm"
+        return "Doanh nghiệp đạt chuẩn cơ bản, có rủi ro chu kỳ cần theo dõi thêm"
 
-    return "Chưa đủ điều kiện đầu tư dài hạn theo tiêu chuẩn Munger"
+    return "Doanh nghiệp trong danh sách theo dõi Munger — tiếp tục quan sát"

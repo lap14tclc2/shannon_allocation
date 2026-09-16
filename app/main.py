@@ -66,6 +66,16 @@ _requested_portfolio_id: ContextVar[int | None] = ContextVar(
 )
 
 
+@app.on_event("startup")
+def app_startup_warmup():
+    """Warm up expensive candidate evaluation caches asynchronously on application startup."""
+    try:
+        from portfolio.value_engine.munger_candidates import warm_munger_candidates_cache_async
+        warm_munger_candidates_cache_async()
+    except Exception:
+        pass
+
+
 class ApiError(Exception):
     def __init__(self, status: int, error: str, code: str, field: str | None = None) -> None:
         super().__init__(error)

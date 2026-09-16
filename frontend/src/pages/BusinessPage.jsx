@@ -48,12 +48,11 @@ export default function BusinessPage() {
   };
 
   const fetchPortfolioSymbols = () => {
-    fetch('/api/portfolio/terminal')
+    fetch('/api/portfolio/holding-symbols')
       .then((res) => res.json())
       .then((res) => {
-        if (res.ok && res.holdings_matrix && res.holdings_matrix.length > 0) {
-          const syms = res.holdings_matrix.map((h) => h.symbol).filter(Boolean);
-          if (syms.length > 0) setPortfolioSymbols(syms);
+        if (res.ok && res.symbols && res.symbols.length > 0) {
+          setPortfolioSymbols(res.symbols);
         }
       })
       .catch(() => {});
