@@ -146,3 +146,4 @@
 | [TASK-20260916-165](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-165-evidence-based-receivables-forensic-gate.md) | Evidence-Based Receivables Forensic Gate & Low-Base Multi-Signal Synthesis | completed | high | 2026-09-16 |
 | [TASK-20260916-166](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-166-munger-candidates-api-performance-optimization.md) | Munger Candidates API Performance Optimization (2.9m -> Sub-second) | completed | high | 2026-09-16 |
 | [TASK-20260916-167](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-167-bank-solvency-metric-and-munger-quality-floor.md) | Bank Solvency Metric & Munger Quality Floor Gate (DDV Cheap vs Good Business Separation) | completed | high | 2026-09-16 |
+| [TASK-20260916-168](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-168-export-pdf-business-detail.md) | Export PDF Feature on Business Analysis Detail Page | completed | medium | 2026-09-16 |

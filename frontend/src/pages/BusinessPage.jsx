@@ -15,6 +15,7 @@ export default function BusinessPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [exportingAI, setExportingAI] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
   // Candidates state
@@ -102,6 +103,26 @@ export default function BusinessPage() {
     } finally {
       setExportingAI(false);
     }
+  };
+
+  const handleExportPDF = () => {
+    if (!data || exportingPDF) return;
+    setExportingPDF(true);
+    const originalTitle = document.title;
+    const cleanSym = String(symbol || 'BUSINESS').toUpperCase();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    document.title = `Bao_Cao_BCTC_Munger_${cleanSym}_${dateStr}`;
+
+    setTimeout(() => {
+      try {
+        window.print();
+      } finally {
+        setTimeout(() => {
+          document.title = originalTitle;
+          setExportingPDF(false);
+        }, 600);
+      }
+    }, 120);
   };
 
   const GOLDEN_CANDIDATES = ['ACB', 'FPT', 'DGC', 'VIX', 'AAA', 'AAH'];
@@ -607,7 +628,7 @@ export default function BusinessPage() {
               </div>
 
               {/* Action Buttons & Search */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="no-print" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-primary export-ai-btn"
@@ -630,6 +651,30 @@ export default function BusinessPage() {
                   }}
                 >
                   <span aria-hidden="true">🤖</span> {exportingAI ? 'Đang xuất…' : 'Xuất dữ liệu cho AI'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary export-pdf-btn"
+                  onClick={handleExportPDF}
+                  disabled={exportingPDF || loading || !data}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#0f766e',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.9rem',
+                    whiteSpace: 'nowrap',
+                    height: '42px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <span aria-hidden="true">📄</span> {exportingPDF ? 'Đang chuẩn bị PDF…' : 'Xuất PDF'}
                 </button>
                 <div style={{ minWidth: '220px', maxWidth: '300px' }}>
                   <SymbolSuggestInput

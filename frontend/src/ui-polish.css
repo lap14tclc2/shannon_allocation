@@ -307,3 +307,78 @@ button,
     width: 100%;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Print & PDF Export Stylesheet (Munger Analysis Detail & Reports)
+   ───────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide navigation, export action buttons, search, and non-printable elements */
+  nav,
+  header.wealth-header,
+  .app-nav,
+  .wealth-nav-header,
+  .export-ai-btn,
+  .export-pdf-btn,
+  .export-status-banner,
+  .no-print,
+  .symbol-suggest-wrap,
+  .search-form,
+  .candidate-shortcuts,
+  .candidate-tier-tabs,
+  .candidate-liquidity-tabs,
+  button,
+  .btn {
+    display: none !important;
+  }
+
+  /* Reset layout and backgrounds for high-resolution vector PDF rendering */
+  body,
+  html,
+  .wealth-app-shell,
+  .wealth-main-content,
+  .business-detail-container {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    font-size: 10.5pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Cards and sections formatting */
+  .card,
+  section.card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 14px !important;
+    padding: 14px !important;
+  }
+
+  /* Prevent awkward page cuts */
+  h1, h2, h3, h4, .card-header {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  table, tr, td, th {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Page layout: A4 Portrait with standard margins */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 12mm 10mm;
+  }
+}
