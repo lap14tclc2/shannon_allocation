@@ -105,24 +105,61 @@ export default function BusinessPage() {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!data || exportingPDF) return;
     setExportingPDF(true);
-    const originalTitle = document.title;
-    const cleanSym = String(symbol || 'BUSINESS').toUpperCase();
-    const dateStr = new Date().toISOString().slice(0, 10);
-    document.title = `Bao_Cao_BCTC_Munger_${cleanSym}_${dateStr}`;
+    setExportMsg('Đang tạo và tải về tệp PDF báo cáo BCTC...');
+    try {
+      const cleanSym = String(symbol || 'BUSINESS').toUpperCase();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `Bao_Cao_BCTC_Munger_${cleanSym}_${dateStr}.pdf`;
 
-    setTimeout(() => {
-      try {
-        window.print();
-      } finally {
-        setTimeout(() => {
-          document.title = originalTitle;
-          setExportingPDF(false);
-        }, 600);
+      const element = document.getElementById('business-detail-report') || document.querySelector('.business-detail-container');
+      if (!element) {
+        throw new Error('Không tìm thấy nội dung báo cáo.');
       }
-    }, 120);
+
+      // Hide no-print elements temporarily during PDF capture
+      const noPrintEls = element.querySelectorAll('.no-print');
+      noPrintEls.forEach((el) => { el.style.display = 'none'; });
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      const opt = {
+        margin: [10, 8, 10, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      };
+
+      await html2pdf().set(opt).from(element).save();
+
+      // Restore controls
+      noPrintEls.forEach((el) => { el.style.display = ''; });
+
+      setExportMsg(`Đã tải về tệp PDF ${filename} thành công.`);
+      setTimeout(() => setExportMsg(''), 6000);
+    } catch (err) {
+      console.warn('Direct PDF export error, falling back to print dialog:', err);
+      // Fallback to window.print if html2pdf fails
+      try {
+        const cleanSym = String(symbol || 'BUSINESS').toUpperCase();
+        document.title = `Bao_Cao_BCTC_Munger_${cleanSym}_${new Date().toISOString().slice(0, 10)}`;
+        window.print();
+      } catch (printErr) {
+        setExportMsg(`Không thể xuất tệp PDF: ${err.message}`);
+      }
+    } finally {
+      setExportingPDF(false);
+    }
   };
 
   const GOLDEN_CANDIDATES = ['ACB', 'FPT', 'DGC', 'VIX', 'AAA', 'AAH'];
@@ -604,7 +641,7 @@ export default function BusinessPage() {
           </div>
         ) : (
           /* Detail Workspace View */
-          <div className="business-detail-container">
+          <div className="business-detail-container" id="business-detail-report">
             <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <a
