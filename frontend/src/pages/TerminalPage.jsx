@@ -325,6 +325,7 @@ function PortfolioSection({ onRefreshTerminal }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshingPrices, setRefreshingPrices] = useState(false);
+  const [modal, setModal] = useState(null); // {type, row}
 
   const load = useCallback((refresh = false) => {
     if (refresh) {
