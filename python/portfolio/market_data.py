@@ -128,7 +128,9 @@ class AutoMarketData:
     def _clone_frame(frame: pd.DataFrame) -> pd.DataFrame:
         return frame.copy(deep=True)
 
-    def _provider_history(self, provider: MarketDataProvider, symbol: str, start: str, end: str) -> pd.DataFrame:
+    def _provider_history(self, provider: MarketDataProvider, symbol: str, start: str, end: str, force_refresh: bool = False) -> pd.DataFrame:
+        if force_refresh:
+            return provider.daily_history(symbol, start, end)
         key = (provider.name, symbol.upper(), start, end)
         return cached_external_call(
             "market-history",
@@ -138,22 +140,26 @@ class AutoMarketData:
             clone=self._clone_frame,
         )
 
-    def daily_history(self,symbol,start,end):
-        errors=[]
+    def daily_history(self, symbol, start, end, force_refresh: bool = False):
+        errors = []
         for provider in self.providers:
             try:
-                df=self._provider_history(provider,symbol,start,end)
-                if not df.empty:return df
-            except Exception as exc: errors.append(f"{provider.name}: {exc}")
+                df = self._provider_history(provider, symbol, start, end, force_refresh=force_refresh)
+                if not df.empty:
+                    return df
+            except Exception as exc:
+                errors.append(f"{provider.name}: {exc}")
         raise MarketDataError(f"All providers failed for {symbol}: {' | '.join(errors)}")
 
-    def daily_history_with_source(self,symbol,start,end):
-        errors=[]
+    def daily_history_with_source(self, symbol, start, end, force_refresh: bool = False):
+        errors = []
         for provider in self.providers:
             try:
-                df=self._provider_history(provider,symbol,start,end)
-                if not df.empty:return df,provider.name
-            except Exception as exc: errors.append(f"{provider.name}: {exc}")
+                df = self._provider_history(provider, symbol, start, end, force_refresh=force_refresh)
+                if not df.empty:
+                    return df, provider.name
+            except Exception as exc:
+                errors.append(f"{provider.name}: {exc}")
         raise MarketDataError(f"All providers failed for {symbol}: {' | '.join(errors)}")
 
     def health(self):

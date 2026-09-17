@@ -184,6 +184,7 @@ def test_portfolio_persists_across_service_instances(tmp_path):
 
 def test_market_price_unavailable_graceful(svc):
     # No market prices ingested → price should be None
+    svc._sync_symbol = lambda *args, **kwargs: None
     _add(svc, "FPT", 3000, 73800)
     view = svc.positions_view()
     pos = view["positions"][0]
@@ -271,3 +272,27 @@ def test_complex_ledger_blocks_terminal_edit(svc):
     fpt = next((p for p in view["positions"] if p["symbol"] == "FPT"), None)
     assert fpt is not None
     assert fpt["has_complex_ledger"] is True
+
+
+# ── 21. Force refresh market price sync ─────────────────────────────────────────
+
+def test_positions_view_force_refresh(svc):
+    """Verify positions_view(force_refresh=True) invokes live sync."""
+    _add(svc, "FPT", 3000, 73800)
+    # Seed an old price
+    svc.store.upsert_market_prices([{"symbol": "FPT", "close": 70000, "trading_date": "2026-09-01"}])
+    
+    # Mock _sync_symbol to simulate live price update
+    sync_called = []
+    def fake_sync(sym, today, force=False):
+        sync_called.append((sym, force))
+        svc.store.upsert_market_prices([{"symbol": sym, "close": 75000, "trading_date": "2026-09-17"}])
+        return {"ok": True}
+
+    svc._sync_symbol = fake_sync
+    res = svc.positions_view(force_refresh=True)
+    assert len(sync_called) == 1
+    assert sync_called[0] == ("FPT", True)
+    fpt = next(p for p in res["positions"] if p["symbol"] == "FPT")
+    assert fpt["market_price"] == 75000
+    assert fpt["unrealized_pnl"] == (75000 - 73800) * 3000

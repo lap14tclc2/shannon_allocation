@@ -324,15 +324,22 @@ function PortfolioSection({ onRefreshTerminal }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null); // {type, row}
+  const [refreshingPrices, setRefreshingPrices] = useState(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const load = useCallback((refresh = false) => {
+    if (refresh) {
+      setRefreshingPrices(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
-    getPortfolioPositions()
+    getPortfolioPositions(refresh)
       .then(setData)
       .catch((err) => setError(err.message || 'Không thể tải danh mục.'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshingPrices(false);
+      });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -395,12 +402,16 @@ function PortfolioSection({ onRefreshTerminal }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => load()}
+            onClick={() => {
+              load(true);
+              if (onRefreshTerminal) onRefreshTerminal();
+            }}
+            disabled={loading || refreshingPrices}
             className="btn btn-secondary"
             style={{ fontSize: 13, padding: '6px 12px' }}
-            title="Tải lại dữ liệu giá và danh mục"
+            title="Gọi API lấy giá mới nhất từ sàn giao dịch và cập nhật lại danh mục"
           >
-            Làm mới giá
+            {refreshingPrices ? 'Đang cập nhật giá mới…' : '↻ Làm mới giá'}
           </button>
           <button
             onClick={() => setModal({ type: 'add' })}

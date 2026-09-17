@@ -1469,8 +1469,11 @@ def portfolio_cash_reserve(
 # ------------------------------------------------------------------
 
 @app.get("/api/portfolio/positions")
-def portfolio_positions_view(qport_session: str | None = Cookie(default=None)):
-    return portfolio(require_portfolio_user(qport_session)).positions_view()
+def portfolio_positions_view(
+    refresh: bool = Query(default=False),
+    qport_session: str | None = Cookie(default=None),
+):
+    return portfolio(require_portfolio_user(qport_session)).positions_view(force_refresh=refresh)
 
 
 @app.post("/api/portfolio/positions")

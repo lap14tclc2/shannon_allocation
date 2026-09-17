@@ -190,8 +190,10 @@ export const setReferenceWeights = (weights) => sendJSON('/api/portfolio/referen
 export const setCashReserve = (amount) => sendJSON('/api/portfolio/cash-reserve', 'POST', { amount });
 export const getPortfolioCash = () => getJSON('/api/portfolio/cash');
 
-// Terminal Portfolio Position Management (TASK-150)
-export const getPortfolioPositions = () => getJSON('/api/portfolio/positions');
+export const getPortfolioPositions = (refresh = false) => {
+  const url = refresh ? '/api/portfolio/positions?refresh=true' : '/api/portfolio/positions';
+  return getJSON(url);
+};
 export const addPortfolioPosition = (symbol, quantity, averageCost) =>
   sendJSON('/api/portfolio/positions', 'POST', { symbol, quantity, average_cost: averageCost });
 export const updatePortfolioPosition = (symbol, quantity, averageCost) =>

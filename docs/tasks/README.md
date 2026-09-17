@@ -155,4 +155,5 @@
 | [TASK-20260917-175](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-175-bfc-final-semantic-consistency.md) | Final Audit BFC Munger Output — Decision Semantics, Earnings Durability & Stress-Test Integrity | completed | high | 2026-09-17 |
 | [TASK-20260917-176](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-176-valuation-page-munger-semantic-consistency.md) | Apply Munger Decision Semantics, Normalized Earnings, and Decision Consistency to Valuation Page | completed | high | 2026-09-17 |
 | [TASK-20260917-177](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-177-liquidity-filters-turnover-thresholds.md) | Thay đổi bộ lọc thanh khoản thành các ngưỡng giá trị giao dịch thực tế (> 1 tỷ, > 5 tỷ, > 10 tỷ, > 20 tỷ) | completed | high | 2026-09-17 |
+| [TASK-20260917-178](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-178-force-live-market-price-refresh.md) | Gọi API lấy giá thị trường mới nhất trực tiếp từ sàn khi bấm nút Làm mới giá | completed | high | 2026-09-17 |
 

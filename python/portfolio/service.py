@@ -524,20 +524,57 @@ class PortfolioService:
             ],
         }
 
-    def _sync_symbol(self, symbol: str, today: date) -> dict:
+    def _sync_symbol(self, symbol: str, today: date, force: bool = False) -> dict:
         latest = self.store.latest_price(symbol)
         count_before = int(self.store.market_price_count(symbol) or 0)
         symbol_events = [e for e in self.store.list_events() if e.symbol and e.symbol.upper() == symbol.upper()]
         earliest_event = min((date.fromisoformat(e.event_date) for e in symbol_events), default=None)
-        if latest and count_before >= 260:
+        if latest and count_before >= 260 and not force:
             start_date = date.fromisoformat(latest["trading_date"]) - timedelta(days=10)
+        elif latest and force:
+            start_date = today - timedelta(days=30)
         else:
             risk_lookback_start = today - timedelta(days=550)
             event_start = (earliest_event - timedelta(days=10)) if earliest_event else risk_lookback_start
             start_date = min(risk_lookback_start, event_start)
-        df, source = self.market.daily_history_with_source(symbol, start_date.isoformat(), today.isoformat())
+        df, source = self.market.daily_history_with_source(symbol, start_date.isoformat(), today.isoformat(), force_refresh=force)
         rows = frame_to_price_rows(symbol, df, source=source)
         self.store.upsert_market_prices(rows)
+
+        try:
+            from .finance_catalog import _schema_connection, FINANCE_SCHEMA
+            with _schema_connection(FINANCE_SCHEMA) as fdb:
+                f_data = [
+                    (
+                        r["symbol"].upper(),
+                        r["trading_date"],
+                        r.get("open"),
+                        r.get("high"),
+                        r.get("low"),
+                        float(r["close"]),
+                        r.get("volume"),
+                        r.get("source", "vndirect"),
+                    )
+                    for r in rows if r.get("close") is not None
+                ]
+                if f_data:
+                    fdb.executemany(
+                        """
+                        INSERT INTO market_prices (symbol, trading_date, open, high, low, close, volume, source)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (symbol, trading_date) DO UPDATE SET
+                            open = EXCLUDED.open,
+                            high = EXCLUDED.high,
+                            low = EXCLUDED.low,
+                            close = EXCLUDED.close,
+                            volume = EXCLUDED.volume,
+                            source = EXCLUDED.source
+                        """,
+                        f_data,
+                    )
+        except Exception:
+            pass
+
         count_after = int(self.store.market_price_count(symbol) or 0)
         return {
             "symbol": symbol,

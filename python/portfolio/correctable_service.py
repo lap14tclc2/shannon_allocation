@@ -946,7 +946,7 @@ class CorrectablePortfolioService(PortfolioService):
     # Terminal Portfolio Position Management (TASK-150)
     # ------------------------------------------------------------------
 
-    def positions_view(self) -> dict:
+    def positions_view(self, force_refresh: bool = False) -> dict:
         """Lightweight positions view for Terminal — no risk pipeline.
 
         Returns per-position: symbol, shares/quantity, average_cost, price,
@@ -963,8 +963,8 @@ class CorrectablePortfolioService(PortfolioService):
             for sym in symbols:
                 try:
                     latest_p = self.store.latest_price(sym)
-                    if not latest_p or not latest_p.get("trading_date") or str(latest_p.get("trading_date")) < str(today_str):
-                        self._sync_symbol(sym, today_d)
+                    if force_refresh or not latest_p or not latest_p.get("trading_date"):
+                        self._sync_symbol(sym, today_d, force=force_refresh)
                 except Exception:
                     pass
         prices = self.store.latest_prices(symbols) if symbols else {}
