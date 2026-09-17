@@ -24,6 +24,7 @@ Thumbs.db
 
 # Scratch & Temporary DBs
 scratch/
+DATA_BCTC/
 *.sqlite
 *.sqlite3
 *.log
