@@ -199,8 +199,8 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
             solvency_metric_label = "Nợ / Vốn CSH"
             solvency_metric_display = f"{float(de_ratio):.2f}x" if de_ratio is not None else "An toàn"
 
-        # Core Decision state
-        decision_state = munger.get("long_term_decision", {}).get("state") or val.get("verdict") or "HOLD"
+        # Core Decision state from canonical Munger engine
+        decision_state = munger.get("long_term_decision", {}).get("state") or "UNKNOWN"
 
         # Munger Quality Floor Gate: A cheap price (high MOS) cannot rescue a bad business.
         # Hard Reject: WEAK_BUSINESS, AVOID decision, sub-par ROE (< 8.0%), or destructive deterioration

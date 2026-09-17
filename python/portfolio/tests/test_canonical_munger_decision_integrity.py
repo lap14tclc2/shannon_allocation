@@ -571,3 +571,136 @@ def test_liquidity_real_data_bfc_and_hah():
     assert hah_liq["trading_day_coverage_pct"] >= 85.0
     assert hah_liq["latest_price"] is not None
 
+
+# ==============================================================================
+# Task 184: Deterministic 17-Point Golden Matrix Suite
+# ==============================================================================
+
+def test_golden_matrix_04_critical_forensic_failure_blocks_buy():
+    """Point 4: Critical forensic accounting failure -> Blocker decision (AVOID, not BUY)."""
+    # Create history with severe balance sheet violation (Assets != Liabilities + Equity by 1400B)
+    history = _make_sample_history()
+    for h in history:
+        h["total_liabilities"] = 500e9
+        h["equity"] = 1000e9
+        h["total_assets"] = 100e9  # Severe violation: 100B != 500B + 1000B
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    munger = build_munger_financial_analysis("GM_FORENSIC_CRITICAL", existing_history=history, valuation_data=val_data)
+    dec = munger.to_dict()["long_term_decision"]
+    assert dec["state"] == "AVOID"
+    assert dec["decision_trace"]["forensic_gate"] == "FAIL"
+    assert len(dec["blocking_reasons"]) > 0
+
+
+def test_golden_matrix_05_value_trap_high_risk_blocks_buy():
+    """Point 5: Value trap HIGH_RISK -> Blocker decision (AVOID, not BUY)."""
+    # Create severe structural deterioration (collapsing profits & CFO)
+    pats = [500e9, 200e9, 50e9, -100e9, -300e9]
+    cfos = [300e9, 50e9, -80e9, -200e9, -400e9]
+    revenues = [2000e9, 1500e9, 1000e9, 700e9, 400e9]
+    equities = [1000e9, 800e9, 600e9, 400e9, 100e9]
+    history = _make_sample_history(pats=pats, cfos=cfos, revenues=revenues, equities=equities)
+    val_data = {
+        "status": "READY",
+        "current_price": 10000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 87.5,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    munger = build_munger_financial_analysis("GM_VALUE_TRAP", existing_history=history, valuation_data=val_data)
+    dec = munger.to_dict()["long_term_decision"]
+    assert dec["state"] == "AVOID"
+    assert dec["decision_trace"]["quality_gate"] == "FAIL" or dec["decision_trace"]["value_trap_gate"] == "FAIL"
+    assert len(dec["blocking_reasons"]) > 0
+
+
+def test_golden_matrix_06_valuation_not_ready_produces_no_buy():
+    """Point 6: Valuation NOT_READY / missing IV -> no BUY (REVIEW_BUSINESS / WAIT_FOR_DATA)."""
+    history = _make_sample_history()
+    val_data = {
+        "status": "NOT_READY",
+        "current_price": 40000.0,
+        "base_iv": None,
+        "bear_iv": None,
+        "bull_iv": None,
+        "actual_mos_pct": None,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "LOW",
+        "quality_tier": "INVESTABLE",
+    }
+    munger = build_munger_financial_analysis("GM_VAL_NOT_READY", existing_history=history, valuation_data=val_data)
+    dec = munger.to_dict()["long_term_decision"]
+    assert dec["state"] != "BUY"
+    assert dec["state"] != "BUY_MORE"
+    assert dec["mos_gate"] == "UNKNOWN"
+    assert dec["state"] in ("REVIEW_BUSINESS", "WAIT_FOR_DATA", "HOLD")
+
+
+def test_golden_matrix_07_unresolved_share_basis_blocks_trusted_buy():
+    """Point 7: Unresolved share basis -> Valuation not ready / no trusted BUY."""
+    from portfolio.value_engine.share_basis import resolve_canonical_share_basis
+    basis = resolve_canonical_share_basis("UNRESOLVED_SYM", bctc_shares=None, bctc_fiscal_year=None, bctc_period_end=None)
+    assert basis.is_compatible_with_current_price is False or basis.status != "VALID"
+    assert basis.status in ("INSUFFICIENT_DATA", "UNRESOLVED_MISMATCH", "CONFLICTED")
+
+
+def test_golden_matrix_15_pure_stock_split_preserves_economic_mos():
+    """Point 15: Pure stock split preserves economic MOS."""
+    from portfolio.value_engine.share_basis import calculate_canonical_mos
+    # Pre-split: IV = 100,000, Price = 50,000 -> MOS = 50%
+    mos_pre = calculate_canonical_mos(market_price=50000.0, intrinsic_value_per_share=100000.0)
+    # Post-split 1:10: IV = 10,000, Price = 5,000 -> MOS = 50%
+    mos_post = calculate_canonical_mos(market_price=5000.0, intrinsic_value_per_share=10000.0)
+    assert mos_pre == float(50.0) or mos_pre == 50.0
+    assert mos_post == float(50.0) or mos_post == 50.0
+    assert mos_pre == mos_post
+
+
+def test_golden_matrix_16_economic_dilution_not_normalized_away():
+    """Point 16: Economic dilution (ESOP / Rights) does not get treated as non-economic split."""
+    from portfolio.corporate_action_normalizer import CorporateActionEvent, CorporateActionType
+    split_ev = CorporateActionEvent(symbol="X", action_type=CorporateActionType.STOCK_SPLIT.value, effective_date="2024-01-01", split_factor=2.0)
+    stock_div = CorporateActionEvent(symbol="X", action_type=CorporateActionType.STOCK_DIVIDEND.value, effective_date="2024-01-01", stock_ratio=0.1)
+    bonus_ev = CorporateActionEvent(symbol="X", action_type=CorporateActionType.BONUS_SHARES.value, effective_date="2024-01-01", stock_ratio=0.1)
+    esop_ev = CorporateActionEvent(symbol="X", action_type=CorporateActionType.ESOP.value, effective_date="2024-01-01")
+    rights_ev = CorporateActionEvent(symbol="X", action_type=CorporateActionType.RIGHTS_ISSUE.value, effective_date="2024-01-01")
+    new_shares_ev = CorporateActionEvent(symbol="X", action_type=CorporateActionType.NEW_SHARE_ISSUANCE.value, effective_date="2024-01-01")
+
+    assert split_ev.is_non_economic is True
+    assert stock_div.is_non_economic is True
+    assert bonus_ev.is_non_economic is True
+    assert esop_ev.is_non_economic is False
+    assert rights_ev.is_non_economic is False
+    assert new_shares_ev.is_non_economic is False
+
+
+def test_golden_matrix_17_missing_data_never_silently_becomes_pass_or_buy():
+    """Point 17: Missing data never silently becomes PASS / CLEAR / BUY."""
+    from portfolio.value_engine.liquidity_evaluator import classify_liquidity
+    # Missing volume & turnover -> INSUFFICIENT_DATA, never PASS
+    code, vi_label, _ = classify_liquidity(avg_val_20d_billion=None, avg_vol_20d=0, coverage_pct=0.0, trading_days=0)
+    assert code == "LIQUIDITY_INSUFFICIENT_DATA"
+    assert code != "LIQUIDITY_STRONG"
+    assert code != "LIQUIDITY_ACCEPTABLE"
+
+    # Empty history -> Data readiness NOT_READY, Decision NOT BUY
+    munger_empty = build_munger_financial_analysis("GM_EMPTY", existing_history=[], valuation_data=None)
+    dec_empty = munger_empty.to_dict()["long_term_decision"]
+    assert dec_empty["state"] != "BUY"
+    assert dec_empty["state"] != "BUY_MORE"
+
+
