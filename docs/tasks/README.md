@@ -158,5 +158,6 @@
 | [TASK-20260917-178](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-178-force-live-market-price-refresh.md) | Gọi API lấy giá thị trường mới nhất trực tiếp từ sàn khi bấm nút Làm mới giá | completed | high | 2026-09-17 |
 | [TASK-20260917-179](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-179-business-api-live-price-mos.md) | API Business phải lấy giá hiện tại để tính MOS | completed | high | 2026-09-17 |
 | [TASK-20260917-180](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-180-canonical-share-basis-mos-integrity.md) | Canonical Share Basis, Corporate Action & MOS Integrity Audit | completed | high | 2026-09-17 |
+| [TASK-20260917-181](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-181-corporate-action-economic-classification-audit.md) | Complete Corporate Action Economic Classification Audit | completed | high | 2026-09-17 |
 
 

@@ -125,6 +125,50 @@ def test_case_d_economic_dilution_distinguished_from_split():
     assert dilution["non_economic_share_change_pct"] == 0.0
 
 
+def test_corporate_action_types_strictly_distinguished():
+    """Proves that QPort strictly distinguishes non-economic splits from economic dilution."""
+    # 1. Non-economic events
+    non_economic_types = ["STOCK_SPLIT", "REVERSE_SPLIT", "STOCK_DIVIDEND", "BONUS_SHARES", "BONUS_SHARE", "SPLIT"]
+    for act in non_economic_types:
+        evt = CorporateActionEvent(symbol="TEST", action_type=act, effective_date="2025-06-01", stock_ratio=0.2)
+        assert evt.is_non_economic is True, f"{act} should be non-economic"
+        assert evt.is_economic_dilution is False, f"{act} should NOT be economic dilution"
+
+    # 2. Economic dilution events
+    economic_types = ["NEW_SHARE_ISSUANCE", "STOCK_ISSUE", "ESOP", "RIGHTS_ISSUE", "MA_SHARE_ISSUANCE", "MA_ISSUANCE", "OTHER_DILUTION"]
+    for act in economic_types:
+        evt = CorporateActionEvent(symbol="TEST", action_type=act, effective_date="2025-06-01", stock_ratio=0.2)
+        assert evt.is_economic_dilution is True, f"{act} should be economic dilution"
+        assert evt.is_non_economic is False, f"{act} should NOT be non-economic"
+
+
+def test_missing_corporate_action_not_silently_ignored():
+    """Missing corporate action data does not silently assume 0% dilution."""
+    # Shares increased from 1bn to 1.3bn with NO corporate actions logged
+    dilution = classify_share_change(
+        shares_old=1_000_000_000,
+        shares_new=1_300_000_000,
+        non_economic_events=[],
+        economic_events=[],
+    )
+    assert dilution["classification"] == "UNEXPLAINED_SHARE_CHANGE"
+    assert dilution["unexplained_share_change_pct"] == 30.0
+    assert dilution["confirmed_economic_dilution_pct"] is None
+    assert dilution["non_economic_share_change_pct"] == 0.0
+
+
+def test_stock_dividend_normalization_does_not_mask_actual_dilution():
+    """Stock dividend normalizer only adjusts non-economic events and excludes cash issuances."""
+    events = [
+        CorporateActionEvent(symbol="TEST", action_type="STOCK_DIVIDEND", effective_date="2025-06-01", stock_ratio=0.15),
+        CorporateActionEvent(symbol="TEST", action_type="NEW_SHARE_ISSUANCE", effective_date="2025-08-01", stock_ratio=0.30),
+    ]
+    # calculate_cumulative_multiplier ONLY multiplies non-economic events
+    mult = calculate_cumulative_multiplier(events, from_date_or_year="2025-01-01", to_date_or_year="2025-12-31")
+    # Only 1.15 (from stock dividend), the 1.30 issuance is NOT multiplied into share basis factor
+    assert round(mult, 4) == 1.1500
+
+
 def test_case_e_share_count_basis_mismatch_detected():
     """CASE E — Unresolved / Conflicted share count basis blocks confident MOS calculation."""
     unresolved_basis = ShareBasis(
