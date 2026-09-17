@@ -80,8 +80,7 @@ def test_canonical_market_price_and_mos_reproducibility():
 
 
 def test_conditional_buy_separates_blockers_from_monitoring():
-    """AC5 & AC6: CONDITIONAL_BUY explains non-fatal monitoring signals without blocking."""
-    # BFC-like case: High ROE, good PAT growth, but CV volatility ~ 43.9%
+    """AC5 & AC6: CONDITIONAL_BUY exposes explicit condition and separates blockers from monitoring signals."""
     pats = [100e9, 250e9, 120e9, 310e9, 309.9e9]
     history = [
         {"fiscal_year": 2020 + i, "net_profit": pats[i], "revenue": 2000e9 + i * 100e9, "equity": 1000e9 + i * 150e9, "operating_cash_flow": 220e9, "total_debt": 300e9}
@@ -106,11 +105,101 @@ def test_conditional_buy_separates_blockers_from_monitoring():
     dec = m_dict["long_term_decision"]
     assert dec["state"] == "CONDITIONAL_BUY"
     assert dec["mos_gate"] == "PASS"
-    assert "Điều kiện mua đã đạt theo các cổng chính" in dec["primary_reason"]
-    assert "chỉ tiêu cần tiếp tục theo dõi" in dec["primary_reason"]
+    assert len(dec["conditions"]) > 0
+    assert dec["conditions"][0]["metric"] == "bear_iv_headroom"
+    assert dec["conditions"][0]["threshold"] == 45000.0
+    assert dec["blocking_reasons"] == []
+    assert len(dec["monitoring_reasons"]) > 0
     assert dec["watch_coexistence_rationale"] is not None
     assert "không phải lỗi chặn mua (Hard Blocker)" in dec["watch_coexistence_rationale"]
+
+
+def test_buy_when_all_hard_gates_pass_with_monitoring_signals():
+    """P0: When all hard gates pass and no conditional condition, decision is BUY with monitoring signals separated."""
+    pats = [100e9, 250e9, 120e9, 310e9, 309.9e9]
+    history = [
+        {"fiscal_year": 2020 + i, "net_profit": pats[i], "revenue": 2000e9 + i * 100e9, "equity": 1000e9 + i * 150e9, "operating_cash_flow": 220e9, "total_debt": 300e9}
+        for i in range(5)
+    ]
+
+    val_data = {
+        "status": "READY",
+        "current_price": 48600.0,
+        "base_iv": 147901.0,
+        "bear_iv": 90000.0,
+        "bull_iv": 180000.0,
+        "actual_mos_pct": 67.1,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+
+    munger = build_munger_financial_analysis("BFC_BUY_TEST", existing_history=history, valuation_data=val_data)
+    m_dict = munger.to_dict()
+
+    dec = m_dict["long_term_decision"]
+    assert dec["state"] == "BUY"
+    assert dec["mos_gate"] == "PASS"
+    assert dec["blocking_reasons"] == []
     assert len(dec["monitoring_reasons"]) > 0
+    assert "Độ biến động LNST lịch sử tương đối cao" in " ".join(dec["monitoring_reasons"])
+    assert "Đạt chuẩn mua tích sản" in dec["primary_reason"]
+    assert dec["conditions"] == []
+
+
+def test_earnings_durability_vs_volatility_separation():
+    """P1: Earnings durability (persistence) is separated from volatility (CV)."""
+    pats = [100e9, 250e9, 120e9, 310e9, 309.9e9]
+    history = [
+        {"fiscal_year": 2020 + i, "net_profit": pats[i], "revenue": 2000e9 + i * 100e9, "equity": 1000e9 + i * 150e9, "operating_cash_flow": 220e9, "total_debt": 300e9}
+        for i in range(5)
+    ]
+
+    munger = build_munger_financial_analysis("BFC_DUR_TEST", existing_history=history)
+    dur = munger.to_dict()["earnings_durability"]
+
+    assert dur["status"] == "PASS"
+    assert dur["metrics"]["profitable_years"] == 5
+    assert dur["metrics"]["negative_earnings_years"] == 0
+    assert dur["metrics"]["earnings_persistence_rate"] == 1.0
+    assert dur["metrics"]["pat_volatility"] is not None
+    assert "tính bền bỉ đạt chuẩn" in dur["explanation"]
+
+
+def test_stress_test_independence_and_neutral_semantics():
+    """P1: Q3 and Q4 stress tests have independent calculation provenance and neutral semantics."""
+    history = [
+        {"fiscal_year": 2020 + i, "net_profit": 200e9, "revenue": 2000e9, "equity": 1000e9, "operating_cash_flow": 200e9, "total_debt": 200e9}
+        for i in range(5)
+    ]
+    val_data = {
+        "status": "READY",
+        "current_price": 48600.0,
+        "base_iv": 147901.0,
+        "bear_iv": 90000.0,
+        "bull_iv": 180000.0,
+        "actual_mos_pct": 67.1,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+
+    munger = build_munger_financial_analysis("STRESS_TEST", existing_history=history, valuation_data=val_data)
+    tc = munger.to_dict()["thesis_challenge"]
+
+    q3 = next(q for q in tc["questions"] if q["question_number"] == 3)
+    q4 = next(q for q in tc["questions"] if q["question_number"] == 4)
+    q8 = next(q for q in tc["questions"] if q["question_number"] == 8)
+
+    assert q3["metrics"]["scenario"] == "OWNER_EARNINGS_HAIRCUT_30"
+    assert q3["metrics"]["baseline"] == "NORMALIZED_EARNING_POWER"
+    assert "Vẫn đạt ngưỡng MOS" in q3["summary_vi"]
+
+    assert q4["metrics"]["scenario"] == "VALUATION_MODEL_MARGIN_ERROR_30"
+    assert q4["metrics"]["baseline"] == "CANONICAL_INTRINSIC_VALUE"
+    assert "Vẫn đạt ngưỡng MOS" in q4["summary_vi"]
+
+    assert "ngưỡng theo dõi của QPort" in q8["summary_vi"]
 
 
 def test_compounder_classification_not_blindly_pat_cagr():

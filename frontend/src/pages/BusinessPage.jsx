@@ -737,6 +737,32 @@ export default function BusinessPage() {
                     {decision.primary_reason}
                   </p>
 
+                  {/* Explicit Decision Conditions (if CONDITIONAL_BUY) */}
+                  {decision.conditions && decision.conditions.length > 0 && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.9rem' }}>
+                      <strong style={{ color: '#92400e', display: 'block', marginBottom: '6px' }}>Điều kiện phân bổ / theo dõi cụ thể:</strong>
+                      <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f' }}>
+                        {decision.conditions.map((cond, cIdx) => (
+                          <li key={cIdx} style={{ marginBottom: '4px' }}>
+                            <strong>{cond.metric}:</strong> {cond.reason} (Thực tế: {typeof cond.actual === 'number' ? cond.actual.toLocaleString('vi-VN') : cond.actual} vs Ngưỡng: {typeof cond.threshold === 'number' ? cond.threshold.toLocaleString('vi-VN') : cond.threshold})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Monitoring Signals / Watch Points */}
+                  {decision.monitoring_reasons && decision.monitoring_reasons.length > 0 && (
+                    <div style={{ background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.88rem' }}>
+                      <strong style={{ color: '#4b5563', display: 'block', marginBottom: '6px' }}>Chỉ tiêu giám sát định kỳ (Monitoring Signals — Không phải lỗi chặn mua):</strong>
+                      <ul style={{ margin: 0, paddingLeft: '20px', color: '#4b5563' }}>
+                        {decision.monitoring_reasons.map((mr, mIdx) => (
+                          <li key={mIdx} style={{ marginBottom: '3px' }}>{mr}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Structured 9-Part Conclusion Breakdown */}
                   {munger.evidence_based_conclusion && (
                     <div className="evidence-conclusion-box" style={{ background: 'var(--surface-soft, #f9fafb)', padding: '18px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border, #e5e7eb)', fontSize: '0.93rem', lineHeight: 1.6 }}>
@@ -798,7 +824,8 @@ export default function BusinessPage() {
                         {renderBadge(quality.durability)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Biến động LN: {formatPct(munger.earnings_durability?.metrics?.pat_volatility !== null && munger.earnings_durability?.metrics?.pat_volatility !== undefined ? munger.earnings_durability.metrics.pat_volatility * 100 : null, 'Chưa đủ chuỗi 3 năm')}
+                        Tính bền bỉ: {munger.earnings_durability?.metrics?.profitable_years != null && munger.earnings_durability?.metrics?.total_years != null ? `Dương ${munger.earnings_durability.metrics.profitable_years}/${munger.earnings_durability.metrics.total_years} năm` : 'Chưa đủ chuỗi năm'}<br/>
+                        Hệ số biến động CV: {formatPct(munger.earnings_durability?.metrics?.pat_volatility !== null && munger.earnings_durability?.metrics?.pat_volatility !== undefined ? munger.earnings_durability.metrics.pat_volatility * 100 : null, 'Chưa đủ chuỗi 3 năm')}
                       </div>
                     </div>
 
@@ -818,7 +845,7 @@ export default function BusinessPage() {
                         {renderBadge(quality.balance_sheet)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Đánh giá TS & Nguồn vốn
+                        {munger.balance_sheet_strength?.explanation || 'Cơ cấu Tài sản & Nguồn vốn'}
                       </div>
                     </div>
 
@@ -828,7 +855,8 @@ export default function BusinessPage() {
                         {renderBadge(quality.debt_liquidity)}
                       </div>
                       <div style={{ fontSize: '0.88rem' }}>
-                        Debt/Equity: {formatDebtEquity(munger.debt_liquidity?.metrics?.latest_debt_equity, archetype)}
+                        {archetype === 'BANK' ? 'Đòn bẩy TS: ' : 'Nợ/VCSH (D/E): '}
+                        <strong>{formatDebtEquity(munger.debt_liquidity?.metrics?.latest_debt_equity, archetype)}</strong>
                       </div>
                     </div>
 

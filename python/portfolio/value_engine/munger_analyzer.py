@@ -185,17 +185,17 @@ def build_munger_financial_analysis(
 
     norm_exp = "Chưa đủ dữ liệu lợi nhuận chuẩn hóa."
     if norm_5y and reported_latest:
-        if is_peak_earnings:
+        if is_peak_earnings or reported_latest >= norm_5y * 1.15:
             norm_exp = (
-                f"LNST hiện tại ({reported_latest:,.0f} đ) cao hơn đáng kể mức bình thường hóa lịch sử (5 năm: {norm_5y:,.0f} đ, biến động CV: {earnings_volatility*100:.1f}%); "
-                f"cần kiểm tra khả năng đây là lợi nhuận ở vùng cao của chu kỳ (Cảnh báo định giá / biên an toàn, không phải lỗi chất lượng kinh doanh cốt lõi)."
+                f"LNST gần nhất ({reported_latest:,.0f} đ) cao hơn mức lợi nhuận chuẩn hóa lịch sử (5 năm: {norm_5y:,.0f} đ); "
+                f"cần phân biệt tăng trưởng sức kiếm tiền thực sự với yếu tố chu kỳ hoặc bất thường."
             )
-        elif is_trough_earnings:
+        elif is_trough_earnings or reported_latest <= norm_5y * 0.85:
             norm_exp = (
-                f"Lợi nhuận gần nhất ({reported_latest:,.0f} đ) đang ở vùng đáy chu kỳ hoặc chịu chi phí bất thường so với mức bình thường hóa 5 năm ({norm_5y:,.0f} đ)."
+                f"Lợi nhuận gần nhất ({reported_latest:,.0f} đ) đang ở vùng thấp chu kỳ hoặc chịu chi phí bất thường so với mức chuẩn hóa 5 năm ({norm_5y:,.0f} đ)."
             )
         else:
-            norm_exp = f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} đ so với gần nhất {reported_latest:,.0f} đ (Biến động CV: {earnings_volatility*100:.1f}%)."
+            norm_exp = f"Lợi nhuận chuẩn hóa 5 năm đạt {norm_5y:,.0f} đ tương đương mức gần nhất ({reported_latest:,.0f} đ, biến động CV: {earnings_volatility*100:.1f}%)."
 
     normalized_earning_power = {
         "reported_latest": reported_latest,
@@ -387,8 +387,14 @@ def build_munger_financial_analysis(
             monitoring_reasons.append(get_vietnamese_finding_title(w))
     if earnings_volatility >= 0.35:
         monitoring_reasons.append(f"Độ biến động LNST lịch sử tương đối cao (CV {earnings_volatility*100:.1f}%)")
-    if is_peak_earnings:
-        monitoring_reasons.append("LNST gần nhất cao hơn mức chuẩn hóa lịch sử; cần thận trọng khi sử dụng lợi nhuận hiện tại làm đại diện cho earning power dài hạn")
+    if is_peak_earnings or (norm_5y and reported_latest and reported_latest >= norm_5y * 1.15):
+        monitoring_reasons.append("LNST gần nhất cao hơn mức chuẩn hóa lịch sử; cần phân biệt tăng trưởng sức kiếm tiền thực sự với yếu tố chu kỳ")
+    if bs_res.status == DimensionStatus.WATCH.value:
+        de_val = bs_res.metrics.get("latest_debt_equity")
+        if de_val is not None:
+            monitoring_reasons.append(f"Nợ/VCSH ở mức {de_val:.2f}x (diện theo dõi theo quy tắc quản trị vốn)")
+
+    decision_conditions: List[Dict[str, Any]] = []
 
     if has_forensic_red_flags:
         decision_state = "AVOID"
@@ -408,24 +414,34 @@ def build_munger_financial_analysis(
         primary_blocker_gate = "VALUATION_GATE"
         decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
     elif mos_gate == "PASS":
-        # Munger Invariant: When MOS passes (actual_mos >= required_mos), MOS gate is PASS.
-        # Hard blockers are PASS. If monitoring signals exist, classify as CONDITIONAL_BUY with explicit distinction.
-        if has_forensic_warnings or vt_status == "WATCH" or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value or is_peak_earnings:
-            decision_state = "CONDITIONAL_BUY"
-            warn_list = [get_vietnamese_finding_title(w) for w in warnings if w in ("WEAK_CASH_CONVERSION", "RECEIVABLES_GROW_FASTER_THAN_REVENUE", "RECEIVABLES_DIVERGENCE", "INVENTORY_GROWTH_EXCEEDS_SALES", "INVENTORY_DIVERGENCE", "INVENTORY_BUILDUP", "ACCOUNTING_IDENTITY_DISCREPANCY")]
-            warn_desc = f", các điểm cần theo dõi: {', '.join(warn_list)}" if warn_list else ""
-            peak_note = " (LNST gần nhất cao hơn mức chuẩn hóa lịch sử)" if is_peak_earnings else ""
-            decision_reason = (
-                f"Điều kiện mua đã đạt theo các cổng chính (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
-                f"nhưng lợi nhuận có độ biến động tương đối cao (CV: {earnings_volatility*100:.1f}%){peak_note} và một số chỉ tiêu cần tiếp tục theo dõi{warn_desc}. "
-                f"Khuyến nghị mua có điều kiện / giải ngân thận trọng từng phần."
-            )
-        elif bear_iv is not None and curr_price is not None and curr_price > bear_iv:
+        # Munger Invariant: When MOS passes and there are no hard blockers, decision is BUY.
+        # Monitoring signals (CV volatility, working capital, D/E watch) are separated into monitoring_reasons.
+        if bear_iv is not None and curr_price is not None and curr_price > bear_iv and bear_iv > 0:
             decision_state = "CONDITIONAL_BUY"
             decision_reason = (
                 f"Mức giá hiện tại đạt Biên an toàn cơ sở (MOS {actual_mos:.1f}%), nhưng thị giá ({curr_price:,.0f} đ) "
-                f"vẫn cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ). Có thể mua có điều kiện và theo dõi sát kịch bản thận trọng."
+                f"cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ). Khuyến nghị mua có điều kiện giải ngân từng phần."
             )
+            decision_conditions.append({
+                "metric": "bear_iv_headroom",
+                "actual": curr_price,
+                "threshold": bear_iv,
+                "persistence": "N/A",
+                "reason": f"Thị giá ({curr_price:,.0f} đ) cao hơn kịch bản Thận trọng Bear IV ({bear_iv:,.0f} đ); giải ngân từng phần và theo dõi kịch bản thị trường xấu nhất.",
+            })
+        elif compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+            decision_state = "CONDITIONAL_BUY"
+            decision_reason = (
+                f"Mức giá hiện tại đạt Biên an toàn yêu cầu (MOS {actual_mos:.1f}%), nhưng doanh nghiệp có chất lượng trung bình. "
+                f"Khuyến nghị mua có điều kiện với tỷ trọng phân bổ vốn thận trọng."
+            )
+            decision_conditions.append({
+                "metric": "business_quality",
+                "actual": "AVERAGE_BUSINESS",
+                "threshold": "POTENTIAL_COMPOUNDER",
+                "persistence": "3Y",
+                "reason": "Doanh nghiệp có chất lượng trung bình; chỉ mua có điều kiện với tỷ trọng thấp hoặc khi biên an toàn rất sâu.",
+            })
         else:
             decision_state = "BUY"
             decision_reason = f"Doanh nghiệp đạt chuẩn chất lượng BCTC và mức giá hiện tại (MOS {actual_mos:.1f}%) đạt/vượt Biên an toàn yêu cầu ({required_mos:.1f}%). Đạt chuẩn mua tích sản."
@@ -442,7 +458,7 @@ def build_munger_financial_analysis(
     if mos_gate == "FAIL":
         blocking_reasons.append(f"Biên an toàn thực tế ({actual_mos:.1f}%) chưa đạt yêu cầu ({required_mos:.1f}%)")
     elif mos_gate == "PASS":
-        supporting_evidence.append(f"Biên an toàn thực tế ({actual_mos:.1f}%) đạt yêu cầu ({required_mos:.1f}%)")
+        supporting_evidence.append(f"Biên an toàn thực tế ({actual_mos:.1f}%) đạt/vượt yêu cầu ({required_mos:.1f}%)")
 
     if hard_failures:
         for h in hard_failures:
@@ -457,6 +473,10 @@ def build_munger_financial_analysis(
         supporting_evidence.append(f"ROE trung vị đạt {(med_roe*100):.1f}%")
     if pat_cagr is not None and pat_cagr >= 0.10:
         supporting_evidence.append(f"Tăng trưởng LNST CAGR đạt {(pat_cagr*100):.1f}%/năm")
+    if negative_earnings_years == 0 and dur_metrics.get("profitable_years", 0) >= 3:
+        supporting_evidence.append(f"Lợi nhuận dương {dur_metrics.get('profitable_years', 0)}/{dur_metrics.get('total_years', 0)} năm quan sát (tính bền bỉ đạt chuẩn)")
+    if not hard_failures and not warnings:
+        supporting_evidence.append("Chưa phát hiện dấu hiệu bất thường đáng kể trong dữ liệu BCTC hiện có")
 
     quality_gate_status = (
         "PASS"
@@ -472,18 +492,18 @@ def build_munger_financial_analysis(
 
     # Explicit rationale explaining why WATCH findings can coexist with BUY / CONDITIONAL_BUY
     watch_coexistence_rationale: Optional[str] = None
-    if warnings:
-        warn_titles = [get_vietnamese_finding_title(w) for w in warnings]
+    if warnings or monitoring_reasons:
+        mon_titles = monitoring_reasons if monitoring_reasons else [get_vietnamese_finding_title(w) for w in warnings]
         if decision_state in ("BUY", "CONDITIONAL_BUY"):
             watch_coexistence_rationale = (
-                f"Các phát hiện ở mức Theo dõi ({', '.join(warn_titles)}) là các tín hiệu phi cấu trúc / áp lực vốn lưu động hoặc biến động chu kỳ, không phải lỗi chặn mua (Hard Blocker). "
+                f"Các phát hiện ở mức Theo dõi ({', '.join(mon_titles)}) là các tín hiệu phi cấu trúc / áp lực vốn lưu động hoặc biến động chu kỳ, không phải lỗi chặn mua (Hard Blocker). "
                 f"Các yếu tố này đã được lượng hóa và bù đắp thông qua phụ phí Biên an toàn yêu cầu (Required MOS: {required_mos:.1f}%). "
                 f"Do doanh nghiệp không có suy giảm cấu trúc, không có vi phạm kế toán nghiêm trọng và mức giá hiện tại (MOS {actual_mos:.1f}%) "
                 f"đạt yêu cầu an toàn, khuyến nghị {get_vietnamese_decision(decision_state)} cùng tồn tại hợp lệ với các chỉ tiêu giám sát này."
             )
         elif decision_state == "WAIT_FOR_MOS":
             watch_coexistence_rationale = (
-                f"Các cảnh báo Theo dõi ({', '.join(warn_titles)}) làm tăng phụ phí Biên an toàn yêu cầu lên {required_mos:.1f}%. "
+                f"Các cảnh báo Theo dõi ({', '.join(mon_titles)}) làm tăng phụ phí Biên an toàn yêu cầu lên {required_mos:.1f}%. "
                 f"Mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đủ bù đắp các rủi ro này."
             )
 
@@ -514,6 +534,7 @@ def build_munger_financial_analysis(
         "critical_risks": critical_risks,
         "watch_coexistence_rationale": watch_coexistence_rationale,
         "primary_reason": decision_reason,
+        "conditions": decision_conditions,
     }
 
     long_term_decision = {
@@ -535,6 +556,7 @@ def build_munger_financial_analysis(
         "monitoring_reasons": monitoring_reasons,
         "supporting_evidence": supporting_evidence,
         "watch_coexistence_rationale": watch_coexistence_rationale,
+        "conditions": decision_conditions,
         "decision_trace": decision_trace,
     }
 

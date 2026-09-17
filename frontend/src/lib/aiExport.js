@@ -637,6 +637,10 @@ export async function downloadBusinessMungerAIExport(data) {
     `- **Biên An Toàn Thực Tế (Actual MOS)**: ${decision.actual_mos_pct != null ? `${num(decision.actual_mos_pct, 1)}%` : 'N/A'}`,
     `- **Biên An Toàn Yêu Cầu (Required MOS)**: ${decision.required_mos_pct != null ? `${decision.required_mos_pct}%` : 'N/A'}`,
     `- **Cổng MOS**: ${formatStatus(decision.mos_gate)}`,
+    decision.conditions?.length ? `- **Điều kiện giải ngân**: ${decision.conditions.map(c => `${c.metric}: ${c.reason}`).join('; ')}` : null,
+    decision.monitoring_reasons?.length ? `- **Chỉ tiêu giám sát định kỳ (Monitoring Signals)**:\n${decision.monitoring_reasons.map(r => `  - ${r}`).join('\n')}` : null,
+    decision.supporting_evidence?.length ? `- **Bằng chứng hỗ trợ (Supporting Evidence)**:\n${decision.supporting_evidence.map(e => `  - ${e}`).join('\n')}` : null,
+    decision.watch_coexistence_rationale ? `- **Cơ sở cùng tồn tại chỉ tiêu theo dõi**: ${decision.watch_coexistence_rationale}` : null,
     ``,
     `## 3. Định Giá Chuẩn Mực & Margin of Safety`,
     `- **Giá thị trường (Canonical Price)**: ${money(val.current_price || munger.liquidity?.latest_price)}`,
@@ -657,19 +661,19 @@ export async function downloadBusinessMungerAIExport(data) {
     table(
       ['Chiều đánh giá', 'Trạng thái', 'Thông số & Chi tiết'],
       [
-        ['1. Tăng trưởng (Growth)', formatStatus(quality.growth), `Revenue CAGR: ${munger.growth_analysis?.metrics?.revenue_cagr != null ? pct(munger.growth_analysis.metrics.revenue_cagr) : 'N/A'}, Profit CAGR: ${munger.growth_analysis?.metrics?.net_profit_cagr != null ? pct(munger.growth_analysis.metrics.net_profit_cagr) : 'N/A'}`],
+        ['1. Tăng trưởng (Growth)', formatStatus(quality.growth), `Revenue CAGR: ${munger.growth_analysis?.metrics?.revenue_cagr != null ? `${num(munger.growth_analysis.metrics.revenue_cagr * 100, 1)}%` : 'N/A'}, Profit CAGR: ${munger.growth_analysis?.metrics?.net_profit_cagr != null ? `${num(munger.growth_analysis.metrics.net_profit_cagr * 100, 1)}%` : 'N/A'}`],
         ['2. Sinh lời (Profitability)', formatStatus(quality.profitability), `Median ROE: ${munger.profitability_analysis?.metrics?.median_roe != null ? `${num(munger.profitability_analysis.metrics.median_roe * 100, 1)}%` : 'N/A'}, Margin Trend: ${formatMarginTrend(munger.profitability_analysis?.metrics?.margin_trend)}`],
-        ['3. Độ bền lợi nhuận', formatStatus(quality.durability), `Volatility: ${munger.earnings_durability?.metrics?.pat_volatility != null ? `${num(munger.earnings_durability.metrics.pat_volatility * 100, 1)}%` : 'N/A'}`],
-        ['4. Chất lượng lợi nhuận', formatStatus(quality.earnings_quality), `CFO/PAT: ${(munger.earnings_quality?.metrics?.median_cfo_pat ?? munger.earnings_quality?.metrics?.avg_cfo_pat ?? munger.earnings_quality?.metrics?.mean_cfo_pat) != null ? `${munger.earnings_quality.metrics.median_cfo_pat ?? munger.earnings_quality.metrics.avg_cfo_pat ?? munger.earnings_quality.metrics.mean_cfo_pat}x` : 'N/A'}`],
-        ['5. Bảng cân đối kế toán', formatStatus(quality.balance_sheet), `Cơ cấu Tài sản & Nguồn vốn`],
-        ['6. Nợ & Thanh khoản', formatStatus(quality.debt_liquidity), `Debt/Equity: ${munger.debt_liquidity?.metrics?.latest_debt_equity != null ? `${munger.debt_liquidity.metrics.latest_debt_equity}x` : 'N/A'}`],
+        ['3. Độ bền lợi nhuận', formatStatus(quality.durability), `Persistence: ${munger.earnings_durability?.metrics?.profitable_years != null ? `Dương ${munger.earnings_durability.metrics.profitable_years}/${munger.earnings_durability.metrics.total_years} năm` : 'N/A'}, Volatility CV: ${munger.earnings_durability?.metrics?.pat_volatility != null ? `${num(munger.earnings_durability.metrics.pat_volatility * 100, 1)}%` : 'N/A'}`],
+        ['4. Chất lượng lợi nhuận', formatStatus(quality.earnings_quality), `CFO/PAT: ${(munger.earnings_quality?.metrics?.median_cfo_pat ?? munger.earnings_quality?.metrics?.avg_cfo_pat ?? munger.earnings_quality?.metrics?.mean_cfo_pat) != null ? `${num(munger.earnings_quality.metrics.median_cfo_pat ?? munger.earnings_quality.metrics.avg_cfo_pat ?? munger.earnings_quality.metrics.mean_cfo_pat, 2)}x` : 'N/A'}`],
+        ['5. Bảng cân đối kế toán', formatStatus(quality.balance_sheet), munger.balance_sheet_strength?.explanation || `Cơ cấu Tài sản & Nguồn vốn`],
+        ['6. Nợ & Thanh khoản', formatStatus(quality.debt_liquidity), `Debt/Equity: ${munger.debt_liquidity?.metrics?.latest_debt_equity != null ? `${num(munger.debt_liquidity.metrics.latest_debt_equity, 2)}x` : 'N/A'}`],
         ['7. Hiệu quả sử dụng vốn', formatStatus(quality.capital_efficiency), `Tạo giá trị LN giữ lại`],
         ['8. Phân bổ vốn quản trị', formatStatus(quality.capital_allocation), `Tích lũy tài sản`],
         ['9. Pha loãng cổ phiếu', formatStatus(quality.dilution), `Tăng trưởng cổ phiếu/năm`],
         ['10. Nhất quán kế toán', formatStatus(quality.accounting_consistency), `Hằng đẳng thức BCTC`],
         ['11. Điều tra BCTC (Forensics)', formatStatus(quality.forensics), `Phát hiện bất thường`],
         ['12. Dòng tiền thuần', formatStatus(quality.cash_flow_quality), `Chuyển hóa dòng tiền`],
-      ]
+      ].filter(Boolean)
     ),
     ``,
     `## 6. Sức Mạnh Lợi Nhuận Chuẩn Hóa (Normalized Earning Power)`,
@@ -702,7 +706,7 @@ export async function downloadBusinessMungerAIExport(data) {
     `*Generated ${generatedAt} · QPort Munger Analysis AI Export for ${symbol}*`,
   ];
 
-  const markdown = lines.join('\n');
+  const markdown = lines.filter(l => l !== null && l !== undefined).join('\n');
   const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

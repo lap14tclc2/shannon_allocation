@@ -208,30 +208,36 @@ def run_thesis_challenge_analysis(
 
     stress_q3 = {}
     if base_iv is not None and current_price is not None and current_price > 0 and base_iv > 0:
-        # Earnings Stress Test: Sụt giảm 30% / 50% sức kiếm tiền bền vững tác động trực tiếp lên IV cơ sở
+        # Earnings Stress Test: Tái tính toán giá trị nội tại từ sức kiếm tiền bình thường hóa sau khi giảm 30% / 50%
         iv_30 = round(base_iv * 0.70, 0)
         mos_30 = round(((iv_30 - current_price) / iv_30) * 100, 1)
 
         iv_50 = round(base_iv * 0.50, 0)
         mos_50 = round(((iv_50 - current_price) / iv_50) * 100, 1)
 
+        status_mos_30 = "Vẫn đạt ngưỡng MOS" if mos_30 >= required_mos else ("Biên an toàn dương nhưng dưới ngưỡng yêu cầu" if mos_30 >= 0 else "Không còn đạt ngưỡng MOS")
+
         stress_q3 = {
+            "scenario": "OWNER_EARNINGS_HAIRCUT_30",
+            "baseline": "NORMALIZED_EARNING_POWER",
+            "assumption": "Sức kiếm tiền bình thường hóa suy giảm 30% kéo dài",
+            "calculation_method": "Tái tính toán định giá từ sức kiếm tiền bình thường hóa sau khi giảm 30% / 50%",
             "minus_30_iv": iv_30,
             "minus_30_mos": mos_30,
             "minus_50_iv": iv_50,
             "minus_50_mos": mos_50,
+            "required_mos": required_mos,
+            "status_mos": status_mos_30,
         }
 
-        if mos_30 >= 0:
+        if mos_30 >= required_mos:
             q3_status = ThesisChallengeAnswerStatus.RESILIENT
-            q3_summary = f"Ngay cả trong kịch bản LN bình thường giảm 30%, mức giá hiện tại vẫn duy trì Biên an toàn {mos_30:.1f}%."
-        elif mos_50 >= 0:
+        elif mos_30 >= 0:
             q3_status = ThesisChallengeAnswerStatus.WATCH
-            q3_summary = f"Trong kịch bản LN bình thường giảm 30%, Biên an toàn bị âm ({mos_30:.1f}%), nhưng kịch bản giảm 50% vẫn hòa vốn."
         else:
             q3_status = ThesisChallengeAnswerStatus.VULNERABLE
-            q3_summary = f"Nếu lợi nhuận bình thường sụt giảm 30–50%, giá hiện tại sẽ cao hơn giá trị nội tại điều chỉnh (MOS giảm âm {mos_30:.1f}%)."
 
+        q3_summary = f"Kịch bản lợi nhuận chuẩn hóa giảm 30% làm IV giảm xuống {iv_30:,.0f} đ; với giá thị trường hiện tại ({current_price:,.0f} đ), MOS còn {mos_30:.1f}% so với yêu cầu {required_mos:.1f}% ({status_mos_30})."
         q3_detail = (
             f"Kịch bản Sức kiếm tiền (Earning Power) -30%: Giá trị nội tại điều chỉnh = {iv_30:,.0f} đ, MOS = {mos_30:.1f}%. "
             f"Kịch bản Sức kiếm tiền -50%: Giá trị nội tại điều chỉnh = {iv_50:,.0f} đ, MOS = {mos_50:.1f}%."
@@ -256,7 +262,7 @@ def run_thesis_challenge_analysis(
             summary_vi=q3_summary,
             detail_vi=q3_detail,
             metrics=stress_q3,
-            limitations="Tính toán giả định mức sụt giảm sức kiếm tiền kéo dài tác động trực tiếp tỷ lệ thuận lên giá trị nội tại cơ sở (Owner Earnings Haircut).",
+            limitations="Tính toán giả định mức sụt giảm sức kiếm tiền kéo dài tác động tỷ lệ thuận lên giá trị nội tại cơ sở (Owner Earnings Haircut).",
             conclusion_vi=q3_summary,
             evidence_vi=q3_evidence_str,
             risk_vi="Sụt giảm lợi nhuận làm suy giảm giá trị nội tại, khiên bảo vệ Biên an toàn không còn đầy đủ.",
@@ -271,26 +277,30 @@ def run_thesis_challenge_analysis(
     if base_iv is not None and current_price is not None and base_iv > 0:
         haircut_iv = round(base_iv * 0.70, 0)
         stressed_mos = round(((haircut_iv - current_price) / haircut_iv) * 100, 1)
+        status_mos_40 = "Vẫn đạt ngưỡng MOS" if stressed_mos >= required_mos else ("Biên an toàn dương nhưng dưới ngưỡng yêu cầu" if stressed_mos >= 0 else "Không còn đạt ngưỡng MOS")
 
         stress_q4 = {
+            "scenario": "VALUATION_MODEL_MARGIN_ERROR_30",
+            "baseline": "CANONICAL_INTRINSIC_VALUE",
+            "assumption": "Sai số mô hình định giá ước tính quá cao 30%",
+            "calculation_method": "Chiết khấu trực tiếp 30% trên Giá trị nội tại cơ sở (Base IV)",
             "base_iv": base_iv,
             "haircut_pct": 30.0,
             "haircut_iv": haircut_iv,
             "current_price": current_price,
             "stressed_mos": stressed_mos,
             "required_mos": required_mos,
+            "status_mos": status_mos_40,
         }
 
         if stressed_mos >= required_mos:
             q4_status = ThesisChallengeAnswerStatus.RESILIENT
-            q4_summary = f"Nếu giá trị nội tại bị ước tính cao hơn thực tế 30%, Biên an toàn còn lại ({stressed_mos:.1f}%) vẫn đáp ứng mức yêu cầu ({required_mos:.1f}%)."
         elif stressed_mos >= 0:
             q4_status = ThesisChallengeAnswerStatus.WATCH
-            q4_summary = f"Nếu IV bị ước tính cao 30%, IV điều chỉnh là {haircut_iv:,.0f} đ/cp, Biên an toàn giảm xuống {stressed_mos:.1f}% (chưa đạt yêu cầu {required_mos:.1f}%)."
         else:
             q4_status = ThesisChallengeAnswerStatus.VULNERABLE
-            q4_summary = f"Nếu IV bị ước tính cao 30%, mức giá hiện tại ({current_price:,.0f} đ) cao hơn IV điều chỉnh ({haircut_iv:,.0f} đ)."
 
+        q4_summary = f"Kịch bản giá trị nội tại bị ước tính cao 30% làm IV điều chỉnh còn {haircut_iv:,.0f} đ; với giá thị trường hiện tại ({current_price:,.0f} đ), MOS còn {stressed_mos:.1f}% so với yêu cầu {required_mos:.1f}% ({status_mos_40})."
         q4_detail = (
             f"Giá trị nội tại cơ sở = {base_iv:,.0f} đ/cp. Sau khi áp dụng mức chiết khấu sai số mô hình 30%, "
             f"IV còn {haircut_iv:,.0f} đ/cp. Biên an toàn tương ứng với giá hiện tại là {stressed_mos:.1f}%."
@@ -522,8 +532,8 @@ def run_thesis_challenge_analysis(
             },
         ]
 
-    q8_summary = f"Đã thiết lập {len(invalidation_criteria)} tiêu chí định lượng có thể đo lường để bác bỏ luận điểm đầu tư."
-    q8_detail = f"Nếu các sự kiện tài chính trên xảy ra trong thực tế, QPort sẽ tự động hạ cấp đánh giá và khuyến nghị {get_vietnamese_decision('AVOID')}."
+    q8_summary = f"Đã thiết lập {len(invalidation_criteria)} ngưỡng theo dõi của QPort để kiểm tra và bác bỏ luận điểm đầu tư."
+    q8_detail = f"Nếu các sự kiện tài chính trên vượt ngưỡng theo dõi của QPort trong các kỳ BCTC tiếp theo, hệ thống sẽ tự động hạ cấp đánh giá và khuyến nghị {get_vietnamese_decision('AVOID')}."
     q8_evidence_str = "; ".join([f"{c['metric']}: {c['trigger']}" for c in invalidation_criteria])
 
     questions.append(

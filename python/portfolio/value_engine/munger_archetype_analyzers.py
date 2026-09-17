@@ -227,14 +227,16 @@ def analyze_normal_enterprise(
             "profitable_years": profitable_years,
             "negative_earnings_years": negative_years,
             "total_years": total_y,
+            "earnings_persistence_rate": (profitable_years / total_y) if total_y > 0 else None,
             "pat_volatility": pat_vol,
             "profit_volatility": pat_vol,
+            "volatility_interpretation": "HIGH" if (pat_vol and pat_vol >= 0.40) else ("MODERATE" if (pat_vol and pat_vol >= 0.25) else "LOW"),
         },
         findings=durability_findings,
         evidence=[f"IS.PROFIT.NET FY{y}" for y in years],
         missing_data=[],
         not_applicable=[],
-        explanation=f"Lợi nhuận dương {profitable_years}/{total_y} năm quan sát.",
+        explanation=f"Lợi nhuận dương {profitable_years}/{total_y} năm quan sát (tính bền bỉ đạt chuẩn); Hệ số biến động LNST: {pat_vol*100:.1f}%." if pat_vol is not None else f"Lợi nhuận dương {profitable_years}/{total_y} năm quan sát.",
     )
 
     # 4. Balance Sheet & Debt
@@ -273,6 +275,16 @@ def analyze_normal_enterprise(
     elif de_ratio is not None and de_ratio > thresholds.DEBT_EQUITY_PASS:
         bs_status = DimensionStatus.WATCH.value
 
+    if de_ratio is not None:
+        if de_ratio > thresholds.DEBT_EQUITY_WATCH:
+            bs_exp = f"Nợ vay trên vốn chủ sở hữu ({de_ratio:.2f}x) vượt ngưỡng cảnh báo ({thresholds.DEBT_EQUITY_WATCH:.2f}x)."
+        elif de_ratio > thresholds.DEBT_EQUITY_PASS:
+            bs_exp = f"Nợ/VCSH hiện ở mức {de_ratio:.2f}x (ngưỡng an toàn khuyến nghị: <= {thresholds.DEBT_EQUITY_PASS:.2f}x, ngưỡng cảnh báo: > {thresholds.DEBT_EQUITY_WATCH:.2f}x); chỉ tiêu này được xếp diện theo dõi theo quy tắc quản trị vốn."
+        else:
+            bs_exp = f"Tỷ lệ Nợ/VCSH ở mức an toàn ({de_ratio:.2f}x <= {thresholds.DEBT_EQUITY_PASS:.2f}x); chưa phát hiện rủi ro đòn bẩy nghiêm trọng."
+    else:
+        bs_exp = "Không phát hiện rủi ro nợ vay đe dọa khả năng hoạt động."
+
     bs_res = FinancialDimensionResult(
         status=bs_status,
         confidence=ConfidenceLevel.HIGH.value,
@@ -283,12 +295,14 @@ def analyze_normal_enterprise(
             "cash_debt_ratio": cash_debt,
             "total_debt": tot_debt,
             "equity": tot_eq,
+            "threshold_pass": thresholds.DEBT_EQUITY_PASS,
+            "threshold_watch": thresholds.DEBT_EQUITY_WATCH,
         },
         findings=bs_findings,
         evidence=[f"BS.DEBT.TOTAL FY{years[-1]}", f"BS.EQUITY.TOTAL FY{years[-1]}"],
         missing_data=[],
         not_applicable=[],
-        explanation=f"Tỷ lệ D/E: {de_ratio:.2f}x." if de_ratio is not None else "Không phát hiện rủi ro nợ vay đe dọa khả năng hoạt động.",
+        explanation=bs_exp,
     )
 
     # 5. Capital Efficiency
