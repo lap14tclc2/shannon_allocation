@@ -127,3 +127,66 @@ def test_compounder_classification_not_blindly_pat_cagr():
 
     # Volatility CV > 0.35 must yield CYCLICAL_QUALITY rather than durable COMPOUNDER
     assert m_dict["compounder_classification"] == CompounderClassification.CYCLICAL_QUALITY.value
+
+
+def test_canonical_price_propagation_across_layers():
+    """P0 Invariant: ONE ANALYSIS RUN = ONE CANONICAL MARKET PRICE across valuation, liquidity, and decision."""
+    canonical_price = 48600.0
+    history = [
+        {"fiscal_year": 2020 + i, "net_profit": 200e9, "revenue": 1000e9, "equity": 800e9, "operating_cash_flow": 190e9, "total_debt": 100e9}
+        for i in range(5)
+    ]
+    val_data = {
+        "status": "READY",
+        "current_price": canonical_price,
+        "base_iv": 147901.0,
+        "bear_iv": 90000.0,
+        "bull_iv": 180000.0,
+        "actual_mos_pct": round(((147901.0 - canonical_price) / 147901.0) * 100, 1),
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+
+    munger = build_munger_financial_analysis("BFC", existing_history=history, valuation_data=val_data)
+    m_dict = munger.to_dict()
+
+    assert m_dict["valuation"]["current_price"] == canonical_price
+    assert m_dict["liquidity"]["latest_price"] == canonical_price
+    # Displayed MOS is exactly reproducible from canonical price and Base IV
+    expected_mos = round(((147901.0 - canonical_price) / 147901.0) * 100, 1)
+    assert m_dict["valuation"]["actual_mos_pct"] == expected_mos
+
+
+def test_stress_test_independence():
+    """AC11 & AC12: Stress tests Q3 (earnings power haircut) vs Q4 (valuation model error) are independent."""
+    canonical_price = 48600.0
+    base_iv = 100000.0
+    history = [
+        {"fiscal_year": 2020 + i, "net_profit": 200e9, "revenue": 1000e9, "equity": 800e9, "operating_cash_flow": 190e9, "total_debt": 100e9}
+        for i in range(5)
+    ]
+    val_data = {
+        "status": "READY",
+        "current_price": canonical_price,
+        "base_iv": base_iv,
+        "actual_mos_pct": 51.4,
+        "required_mos_pct": 25.0,
+    }
+
+    munger = build_munger_financial_analysis("STRESS_TEST", existing_history=history, valuation_data=val_data)
+    m_dict = munger.to_dict()
+    challenge = m_dict.get("thesis_challenge", {})
+    stress_map = challenge.get("stress_tests", {})
+
+    assert "q3_stress" in stress_map
+    assert "q4_stress" in stress_map
+    q3 = stress_map["q3_stress"]
+    q4 = stress_map["q4_stress"]
+
+    # Q3 tests -30% and -50% earnings power impact
+    assert q3["minus_30_iv"] == 70000.0
+    assert q3["minus_50_iv"] == 50000.0
+    # Q4 tests 30% valuation model error
+    assert q4["haircut_iv"] == 70000.0
+    assert q4["haircut_pct"] == 30.0

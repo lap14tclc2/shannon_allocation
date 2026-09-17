@@ -83,7 +83,7 @@ def classify_liquidity(
     )
 
 
-def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
+def evaluate_symbol_liquidity(symbol: str, canonical_price: Optional[float] = None) -> Dict[str, Any]:
     """Evaluate 20D and 60D liquidity from PostgreSQL qport_finance.market_prices."""
     ticker = str(symbol or "").strip().upper()
     if not ticker:
@@ -92,7 +92,7 @@ def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
             "classification": "LIQUIDITY_INSUFFICIENT_DATA",
             "classification_vi": "Chưa đủ dữ liệu thanh khoản",
             "commentary_vi": "Chưa đủ dữ liệu giao dịch lịch sử để đánh giá thanh khoản.",
-            "latest_price": None,
+            "latest_price": canonical_price,
             "avg_volume_20d": None,
             "avg_trading_value_20d_billion": None,
             "avg_volume_60d": None,
@@ -123,7 +123,7 @@ def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
                 "classification": "LIQUIDITY_INSUFFICIENT_DATA",
                 "classification_vi": "Chưa đủ dữ liệu thanh khoản",
                 "commentary_vi": "Chưa có dữ liệu thị giá và khối lượng giao dịch trong hệ thống.",
-                "latest_price": None,
+                "latest_price": canonical_price,
                 "avg_volume_20d": None,
                 "avg_trading_value_20d_billion": None,
                 "avg_volume_60d": None,
@@ -133,7 +133,7 @@ def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
                 "data_status": "INSUFFICIENT_DATA",
             }
 
-        latest_price = float(rows[0]["close"]) if rows[0].get("close") is not None else None
+        latest_price = canonical_price if (canonical_price is not None and canonical_price > 0) else (float(rows[0]["close"]) if rows[0].get("close") is not None else None)
 
         # 20-day metrics
         rows_20 = rows[:20]
@@ -183,7 +183,7 @@ def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
             "classification": "LIQUIDITY_INSUFFICIENT_DATA",
             "classification_vi": "Chưa đủ dữ liệu thanh khoản",
             "commentary_vi": "Chưa đủ dữ liệu thanh khoản để đánh giá.",
-            "latest_price": None,
+            "latest_price": canonical_price,
             "avg_volume_20d": None,
             "avg_trading_value_20d_billion": None,
             "avg_volume_60d": None,

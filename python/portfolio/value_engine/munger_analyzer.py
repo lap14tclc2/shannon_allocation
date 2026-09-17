@@ -562,9 +562,10 @@ def build_munger_financial_analysis(
     )
     thesis_challenge_dict = thesis_challenge_obj.to_dict()
 
-    # 13. Liquidity Gate Evaluation (Task 162)
+    # 13. Liquidity Gate Evaluation (Task 162, Task 173, Task 174)
     from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
-    liquidity_info = evaluate_symbol_liquidity(ticker)
+    canonical_price_val = valuation_analysis.get("current_price")
+    liquidity_info = evaluate_symbol_liquidity(ticker, canonical_price=canonical_price_val)
 
     # 14. Evidence-Based Final Conclusion
     evidence_conclusion = _build_evidence_based_conclusion(
