@@ -11,12 +11,14 @@ from portfolio.postgres import PostgresAuthStore, PostgresPortfolioStore
 
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("DATABASE_URL"),
-    reason="DATABASE_URL is required for the PostgreSQL integration smoke",
+    not os.environ.get("QPORT_TEST_DATABASE_URL"),
+    reason="QPORT_TEST_DATABASE_URL is required for the destructive PostgreSQL integration smoke to protect development data",
 )
 
 
 def test_postgres_auth_user_schema_and_operational_service(monkeypatch):
+    test_db_url = os.environ.get("QPORT_TEST_DATABASE_URL")
+    monkeypatch.setenv("DATABASE_URL", test_db_url)
     monkeypatch.setenv("QPORT_ALLOW_DATABASE_RESET", "1")
     monkeypatch.setenv("QPORT_ADMIN_PASSWORD", "ci-admin-password")
 
