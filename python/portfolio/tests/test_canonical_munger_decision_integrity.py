@@ -323,3 +323,251 @@ def test_ac15_no_raw_enums_or_nan_leakage():
         for r in dec["monitoring_reasons"]:
             assert "None" not in r
             assert "NaN" not in r
+
+
+# ==============================================================================
+# Task 183: Final Liquidity Gate Integrity Audit Test Suite
+# ==============================================================================
+
+def test_liquidity_gate_case_a_strong():
+    """Case A: Quality PASS + MOS PASS + Liquidity STRONG -> BUY, Liquidity Gate PASS."""
+    from unittest.mock import patch
+    history = _make_sample_history()
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    with patch("portfolio.value_engine.liquidity_evaluator.evaluate_symbol_liquidity") as mock_liq:
+        mock_liq.return_value = {
+            "symbol": "LIQ_STRONG",
+            "classification": "LIQUIDITY_STRONG",
+            "classification_vi": "Thanh khoản tốt",
+            "commentary_vi": "Cổ phiếu có thanh khoản dồi dào (>10 tỷ/ngày).",
+            "latest_price": 40000.0,
+            "avg_volume_20d": 500000.0,
+            "avg_trading_value_20d_billion": 20.0,
+            "trading_day_coverage_pct": 100.0,
+            "trading_days_observed": 20,
+            "data_status": "AVAILABLE",
+        }
+        munger = build_munger_financial_analysis("LIQ_STRONG", existing_history=history, valuation_data=val_data)
+        dec = munger.to_dict()["long_term_decision"]
+        trace = dec["decision_trace"]
+
+        assert dec["state"] == "BUY"
+        assert trace["liquidity_gate_status"] == "PASS"
+        assert trace["liquidity_gate_classification"] == "LIQUIDITY_STRONG"
+        assert trace["quality_gate"] == "PASS"
+
+
+def test_liquidity_gate_case_b_acceptable():
+    """Case B: Quality PASS + MOS PASS + Liquidity ACCEPTABLE -> BUY, Liquidity Gate PASS."""
+    from unittest.mock import patch
+    history = _make_sample_history()
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    with patch("portfolio.value_engine.liquidity_evaluator.evaluate_symbol_liquidity") as mock_liq:
+        mock_liq.return_value = {
+            "symbol": "LIQ_ACCEPT",
+            "classification": "LIQUIDITY_ACCEPTABLE",
+            "classification_vi": "Thanh khoản đủ",
+            "commentary_vi": "Thanh khoản đáp ứng yêu cầu giao dịch (>5 tỷ/ngày).",
+            "latest_price": 40000.0,
+            "avg_volume_20d": 150000.0,
+            "avg_trading_value_20d_billion": 6.0,
+            "trading_day_coverage_pct": 100.0,
+            "trading_days_observed": 20,
+            "data_status": "AVAILABLE",
+        }
+        munger = build_munger_financial_analysis("LIQ_ACCEPT", existing_history=history, valuation_data=val_data)
+        dec = munger.to_dict()["long_term_decision"]
+        trace = dec["decision_trace"]
+
+        assert dec["state"] == "BUY"
+        assert trace["liquidity_gate_status"] == "PASS"
+        assert trace["liquidity_gate_classification"] == "LIQUIDITY_ACCEPTABLE"
+        assert trace["quality_gate"] == "PASS"
+
+
+def test_liquidity_gate_case_c_weak_monitoring_only():
+    """Case C: Quality PASS + MOS PASS + Liquidity WEAK -> Does not degrade business quality; liquidity is a separate gate."""
+    from unittest.mock import patch
+    history = _make_sample_history()
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    with patch("portfolio.value_engine.liquidity_evaluator.evaluate_symbol_liquidity") as mock_liq:
+        mock_liq.return_value = {
+            "symbol": "LIQ_WEAK",
+            "classification": "LIQUIDITY_WEAK",
+            "classification_vi": "Thanh khoản thấp",
+            "commentary_vi": "Thanh khoản thấp (<5 tỷ/ngày).",
+            "latest_price": 40000.0,
+            "avg_volume_20d": 20000.0,
+            "avg_trading_value_20d_billion": 0.8,
+            "trading_day_coverage_pct": 70.0,
+            "trading_days_observed": 20,
+            "data_status": "AVAILABLE",
+        }
+        munger = build_munger_financial_analysis("LIQ_WEAK", existing_history=history, valuation_data=val_data)
+        dec = munger.to_dict()["long_term_decision"]
+        trace = dec["decision_trace"]
+
+        # Quality remains PASS
+        assert trace["quality_gate"] == "PASS"
+        # Liquidity gate reflects WATCH
+        assert trace["liquidity_gate_status"] == "WATCH"
+        assert trace["liquidity_gate_classification"] == "LIQUIDITY_WEAK"
+
+
+def test_liquidity_gate_case_d_insufficient_data_not_silently_pass():
+    """Case D: Quality PASS + MOS PASS + Liquidity INSUFFICIENT_DATA -> Liquidity Gate MUST NOT silently become PASS."""
+    from unittest.mock import patch
+    history = _make_sample_history()
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    with patch("portfolio.value_engine.liquidity_evaluator.evaluate_symbol_liquidity") as mock_liq:
+        mock_liq.return_value = {
+            "symbol": "LIQ_MISSING",
+            "classification": "LIQUIDITY_INSUFFICIENT_DATA",
+            "classification_vi": "Chưa đủ dữ liệu thanh khoản",
+            "commentary_vi": "Chưa đủ dữ liệu giao dịch lịch sử để đánh giá thanh khoản.",
+            "latest_price": 40000.0,
+            "avg_volume_20d": None,
+            "avg_trading_value_20d_billion": None,
+            "trading_day_coverage_pct": None,
+            "trading_days_observed": 0,
+            "data_status": "INSUFFICIENT_DATA",
+        }
+        munger = build_munger_financial_analysis("LIQ_MISSING", existing_history=history, valuation_data=val_data)
+        dec = munger.to_dict()["long_term_decision"]
+        trace = dec["decision_trace"]
+
+        # Liquidity gate MUST be UNKNOWN, NEVER PASS
+        assert trace["liquidity_gate_status"] == "UNKNOWN"
+        assert trace["liquidity_gate_status"] != "PASS"
+        assert trace["liquidity_gate_classification"] == "LIQUIDITY_INSUFFICIENT_DATA"
+        # Business quality must NOT be degraded to FAIL
+        assert trace["quality_gate"] == "PASS"
+
+
+def test_liquidity_gate_case_e_quality_fail_overrides_strong_liquidity():
+    """Case E: Quality FAIL + MOS PASS + Liquidity STRONG -> Business Quality remains the hard blocker (AVOID)."""
+    from unittest.mock import patch
+    pats = [200e9, 100e9, 20e9, -50e9, -150e9]
+    history = _make_sample_history(pats=pats)
+    val_data = {
+        "status": "READY",
+        "current_price": 20000.0,
+        "base_iv": 60000.0,
+        "bear_iv": 30000.0,
+        "bull_iv": 80000.0,
+        "actual_mos_pct": 66.67,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "UNINVESTABLE",
+    }
+    with patch("portfolio.value_engine.liquidity_evaluator.evaluate_symbol_liquidity") as mock_liq:
+        mock_liq.return_value = {
+            "symbol": "LIQ_STRONG_BAD_BIZ",
+            "classification": "LIQUIDITY_STRONG",
+            "classification_vi": "Thanh khoản tốt",
+            "commentary_vi": "Cổ phiếu có thanh khoản dồi dào.",
+            "latest_price": 20000.0,
+            "avg_volume_20d": 1000000.0,
+            "avg_trading_value_20d_billion": 20.0,
+            "trading_day_coverage_pct": 100.0,
+            "trading_days_observed": 20,
+            "data_status": "AVAILABLE",
+        }
+        munger = build_munger_financial_analysis("LIQ_STRONG_BAD_BIZ", existing_history=history, valuation_data=val_data)
+        dec = munger.to_dict()["long_term_decision"]
+        trace = dec["decision_trace"]
+
+        # Decision is AVOID because business quality failed
+        assert dec["state"] == "AVOID"
+        assert trace["quality_gate"] == "FAIL"
+        assert trace["liquidity_gate_status"] == "PASS"
+
+
+def test_liquidity_gate_case_f_trace_separation():
+    """Case F: Decision trace cleanly separates liquidity_gate from quality_gate, forensics_gate, value_trap_gate, mos_gate."""
+    history = _make_sample_history()
+    val_data = {
+        "status": "READY",
+        "current_price": 40000.0,
+        "base_iv": 80000.0,
+        "bear_iv": 55000.0,
+        "bull_iv": 100000.0,
+        "actual_mos_pct": 50.0,
+        "required_mos_pct": 25.0,
+        "valuation_confidence": "HIGH",
+        "quality_tier": "INVESTABLE",
+    }
+    munger = build_munger_financial_analysis("TRACE_SYM", existing_history=history, valuation_data=val_data)
+    trace = munger.to_dict()["long_term_decision"]["decision_trace"]
+
+    # All gates are distinct entries
+    assert "quality_gate" in trace
+    assert "forensic_gate" in trace
+    assert "value_trap_gate" in trace
+    assert "liquidity_gate" in trace
+    assert "valuation_gate" in trace
+    assert "mos_gate" in trace
+
+
+def test_liquidity_real_data_bfc_and_hah():
+    """Section 5: Real data audit for BFC and HAH."""
+    from portfolio.value_engine.liquidity_evaluator import evaluate_symbol_liquidity
+
+    # BFC real data audit
+    bfc_liq = evaluate_symbol_liquidity("BFC")
+    assert bfc_liq["symbol"] == "BFC"
+    assert bfc_liq["data_status"] == "AVAILABLE"
+    assert bfc_liq["classification"] == "LIQUIDITY_ACCEPTABLE"
+    assert bfc_liq["avg_trading_value_20d_billion"] >= 5.0
+    assert bfc_liq["trading_day_coverage_pct"] >= 80.0
+    assert bfc_liq["latest_price"] is not None
+
+    # HAH real data audit
+    hah_liq = evaluate_symbol_liquidity("HAH")
+    assert hah_liq["symbol"] == "HAH"
+    assert hah_liq["data_status"] == "AVAILABLE"
+    assert hah_liq["classification"] == "LIQUIDITY_STRONG"
+    assert hah_liq["avg_trading_value_20d_billion"] >= 10.0
+    assert hah_liq["trading_day_coverage_pct"] >= 85.0
+    assert hah_liq["latest_price"] is not None
+

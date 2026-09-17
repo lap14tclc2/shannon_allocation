@@ -513,12 +513,17 @@ def build_munger_financial_analysis(
                 f"Mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đủ bù đắp các rủi ro này."
             )
 
-    # 11. Liquidity Gate Evaluation (Task 162, Task 173, Task 174)
+    # 11. Liquidity Gate Evaluation (Task 162, Task 173, Task 174, Task 183)
     from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
     canonical_price_val = valuation_analysis.get("current_price")
     liquidity_info = evaluate_symbol_liquidity(ticker, canonical_price=canonical_price_val)
-    liquidity_gate_status = liquidity_info.get("classification") if liquidity_info else "LIQUIDITY_INSUFFICIENT_DATA"
+    liquidity_gate_class = liquidity_info.get("classification") if liquidity_info else "LIQUIDITY_INSUFFICIENT_DATA"
     liquidity_gate_vi = liquidity_info.get("classification_vi") if liquidity_info else "Chưa đủ dữ liệu thanh khoản"
+    liquidity_gate_code = (
+        "PASS"
+        if liquidity_gate_class in ("LIQUIDITY_STRONG", "LIQUIDITY_ACCEPTABLE")
+        else ("WATCH" if liquidity_gate_class == "LIQUIDITY_WEAK" else "UNKNOWN")
+    )
 
     decision_trace = {
         "decision": decision_state,
@@ -537,9 +542,13 @@ def build_munger_financial_analysis(
         "value_trap_gate": vt_status,
         "value_trap_gate_source": "VALUE_TRAP_GATE",
         "value_trap_gate_vietnamese": get_vietnamese_valuetrap(vt_status),
-        "liquidity_gate": liquidity_gate_status,
+        "liquidity_gate": liquidity_gate_class,
+        "liquidity_gate_code": liquidity_gate_code,
+        "liquidity_gate_status": liquidity_gate_code,
+        "liquidity_gate_classification": liquidity_gate_class,
         "liquidity_gate_source": "LIQUIDITY_GATE",
         "liquidity_gate_vietnamese": liquidity_gate_vi,
+        "liquidity_evidence": liquidity_info.get("commentary_vi") if liquidity_info else "Chưa đủ dữ liệu thanh khoản để đánh giá.",
         "valuation_gate": val_status,
         "valuation_gate_source": "VALUATION_GATE",
         "mos_gate": mos_gate,
@@ -571,6 +580,9 @@ def build_munger_financial_analysis(
         "required_mos_pct": required_mos,
         "mos_gate": mos_gate,
         "mos_gate_vietnamese": get_vietnamese_status(mos_gate),
+        "liquidity_gate": liquidity_gate_class,
+        "liquidity_gate_status": liquidity_gate_code,
+        "liquidity_gate_classification": liquidity_gate_class,
         "bctc_only_pipeline": True,
         "qualitative_unknown_blocks_decision": False,
         "compounder_classification": compounder_class,
