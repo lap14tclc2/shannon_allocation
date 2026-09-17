@@ -153,4 +153,5 @@
 | [TASK-20260917-173](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-173-munger-buffett-decision-consistency.md) | Final consistency audit and fix for Munger/Buffett decision output | completed | high | 2026-09-17 |
 | [TASK-20260917-174](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-174-bfc-munger-consistency-audit.md) | Audit & Fix BFC Munger Analysis — Decision Consistency, Canonical Price, Earnings Durability, Stress Test & Semantic Integrity | completed | high | 2026-09-17 |
 | [TASK-20260917-175](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-175-bfc-final-semantic-consistency.md) | Final Audit BFC Munger Output — Decision Semantics, Earnings Durability & Stress-Test Integrity | completed | high | 2026-09-17 |
+| [TASK-20260917-176](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-176-valuation-page-munger-semantic-consistency.md) | Apply Munger Decision Semantics, Normalized Earnings, and Decision Consistency to Valuation Page | in-progress | high | 2026-09-17 |
 

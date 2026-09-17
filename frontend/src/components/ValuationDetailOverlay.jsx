@@ -12,6 +12,10 @@ import {
   verdictLabel,
   verdictPillClass,
 } from '../lib/valuationLabels.js';
+import {
+  formatCompounderClassification,
+  formatDecision,
+} from '../utils/vietnameseSemantics.js';
 
 
 
@@ -31,6 +35,11 @@ function formatGridMoney(val, locale = 'vi') {
 
 export function ValuationStatusPill({ status, marginOfSafety }) {
   const map = {
+    BUY: { label: 'Có thể mua', cls: 'v-pill-deep-value', icon: '✓' },
+    CONDITIONAL_BUY: { label: 'Có thể mua có ĐK', cls: 'v-pill-watch', icon: '◷' },
+    WAIT_FOR_MOS: { label: 'Chờ biên an toàn', cls: 'v-pill-fair', icon: '◷' },
+    DO_NOT_BUY: { label: 'Không đạt chuẩn mua', cls: 'v-pill-distressed', icon: '✕' },
+    INSUFFICIENT_DATA: { label: 'Chưa đủ Dữ liệu BCTC', cls: 'v-pill-watch', icon: '—' },
     HIGH_CONVICTION_VALUE: { label: 'Đầu tư Giá trị Tuyệt vời', cls: 'v-pill-deep-value', icon: '✦' },
     ATTRACTIVE: { label: 'Vùng giá Hấp dẫn', cls: 'v-pill-undervalued', icon: '✓' },
     FAIRLY_VALUED: { label: 'Định giá Hợp lý', cls: 'v-pill-fair', icon: '⚖' },
@@ -842,93 +851,158 @@ export function ValuationReportBody({ symbol, report, locale = 'vi', onCrawl, cr
       )}
 
       {/* Expert Financial Analysis Narrative Card */}
-      <div className="v-narrative-card">
-        <div className="v-narrative-header">
-          <div className="v-narrative-title-wrap">
-            <span className="v-narrative-badge-icon">✦</span>
-            <h3 className="v-narrative-title">NHẬN ĐỊNH CHUYÊN SÂU · BUFFETT–MUNGER</h3>
-          </div>
-          {assessment.valuation_status && (
-            <span className={`v-verdict-pill ${verdictPillClass(assessment.valuation_status)}`}>
-              {verdictLabel(assessment.valuation_status)}
-            </span>
-          )}
-        </div>
+      {(() => {
+        const munger = report.munger_analysis || {};
+        const decision = munger.long_term_decision || {};
+        const normPower = munger.normalized_earning_power || {};
+        const durability = munger.earnings_durability || {};
 
-        <div className="v-narrative-meta-grid">
-          <div className="v-meta-item">
-            <span className="v-meta-label">NGÀNH NGHỀ KINH DOANH</span>
-            <span className="v-meta-value">{archetypeLabel(arch.archetype)}</span>
-            {arch.recommended_model && (
-              <span className="v-meta-sub">{valuationModelLabel(arch.recommended_model)}</span>
-            )}
-          </div>
-          {quality.total_score != null && (
-            <div className="v-meta-item">
-              <span className="v-meta-label">ĐIỂM CHẤT LƯỢNG DOANH NGHIỆP</span>
-              <span className="v-meta-value">{quality.total_score}/100</span>
-              {quality.tier && (
-                <span className="v-meta-sub">{qualityTierLabel(quality.tier)}</span>
-              )}
-            </div>
-          )}
-          {publicMos != null && Number.isFinite(Number(publicMos)) && (
-            <div className="v-meta-item">
-              <span className="v-meta-label">BIÊN AN TOÀN THỰC TẾ</span>
-              <span className={`v-meta-value ${publicMos > 0 ? 'pos' : publicMos < 0 ? 'neg' : ''}`}>
-                {publicMos > 0 ? '+' : ''}{Number(publicMos).toFixed(1)}%
-              </span>
-              {mosAnalysis.required_mos_pct != null && (
-                <span className="v-meta-sub">
-                  Yêu cầu ≥ {mosAnalysis.required_mos_pct}% · {publicMos >= mosAnalysis.required_mos_pct ? 'Đạt chuẩn' : 'Chưa đạt'}
+        return (
+          <div className="v-narrative-card">
+            <div className="v-narrative-header">
+              <div className="v-narrative-title-wrap">
+                <span className="v-narrative-badge-icon">✦</span>
+                <h3 className="v-narrative-title">NHẬN ĐỊNH CHUYÊN SÂU · BUFFETT–MUNGER</h3>
+              </div>
+              {(decision.state || assessment.valuation_status) && (
+                <span className={`v-verdict-pill ${verdictPillClass(decision.state || assessment.valuation_status)}`}>
+                  {decision.state_vietnamese || verdictLabel(assessment.valuation_status)}
                 </span>
               )}
             </div>
-          )}
-        </div>
 
-        {/* 3-Scenario Range Track - Only if scenarios exist */}
-        {hasScenarios && (
-          <div className="v-scenarios-panel">
-            <div className="v-scenario-header-row">
-              <span className="v-scenario-title">GIÁ TRỊ NỘI TẠI · 3 KỊCH BẢN</span>
-              <span className="v-scenario-base-num" style={{ whiteSpace: 'nowrap' }}>{money(base.intrinsic_value_per_share, locale)}</span>
+            <div className="v-narrative-meta-grid">
+              <div className="v-meta-item">
+                <span className="v-meta-label">NGÀNH NGHỀ KINH DOANH</span>
+                <span className="v-meta-value">{archetypeLabel(arch.archetype)}</span>
+                <span className="v-meta-sub">
+                  {formatCompounderClassification(munger.compounder_classification) || (arch.recommended_model ? valuationModelLabel(arch.recommended_model) : '')}
+                </span>
+              </div>
+              {quality.total_score != null && (
+                <div className="v-meta-item">
+                  <span className="v-meta-label">ĐIỂM CHẤT LƯỢNG & ĐỘ BỀN</span>
+                  <span className="v-meta-value">{quality.total_score}/100</span>
+                  <span className="v-meta-sub">
+                    {durability.profitable_years != null ? (
+                      `Bền bỉ: ${durability.profitable_years}/${durability.total_years} năm · CV ${durability.pat_volatility != null ? (durability.pat_volatility * 100).toFixed(1) : 0}%`
+                    ) : (
+                      quality.tier ? qualityTierLabel(quality.tier) : ''
+                    )}
+                  </span>
+                </div>
+              )}
+              {publicMos != null && Number.isFinite(Number(publicMos)) && (
+                <div className="v-meta-item">
+                  <span className="v-meta-label">BIÊN AN TOÀN THỰC TẾ</span>
+                  <span className={`v-meta-value ${publicMos > 0 ? 'pos' : publicMos < 0 ? 'neg' : ''}`}>
+                    {publicMos > 0 ? '+' : ''}{Number(publicMos).toFixed(1)}%
+                  </span>
+                  {mosAnalysis.required_mos_pct != null && (
+                    <span className="v-meta-sub">
+                      Yêu cầu ≥ {mosAnalysis.required_mos_pct}% · {publicMos >= mosAnalysis.required_mos_pct ? 'Đạt chuẩn' : 'Chưa đạt'}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="v-scenario-track">
-              <div className="v-scenario-node node-bear">
-                <span className="node-tag">THẬN TRỌNG</span>
-                <span className="node-price">{money(bear.intrinsic_value_per_share, locale)}</span>
-              </div>
-              <div className="v-scenario-arrow">⟶</div>
-              <div className="v-scenario-node node-base is-active">
-                <span className="node-tag">CƠ SỞ (BASE)</span>
-                <span className="node-price">{money(base.intrinsic_value_per_share, locale)}</span>
-              </div>
-              <div className="v-scenario-arrow">⟶</div>
-              <div className="v-scenario-node node-bull">
-                <span className="node-tag">LẠC QUAN</span>
-                <span className="node-price">{money(bull.intrinsic_value_per_share, locale)}</span>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {assessment.financial_resilience_diagnosis && (
-          <div className="v-narrative-box">
-            <h4 className="v-box-title">CẤU TRÚC VỐN & SỨC KHỎE TÀI CHÍNH</h4>
-            <p className="v-box-text">{assessment.financial_resilience_diagnosis}</p>
-          </div>
-        )}
+            {/* 3-Scenario Range Track - Only if scenarios exist */}
+            {hasScenarios && (
+              <div className="v-scenarios-panel">
+                <div className="v-scenario-header-row">
+                  <span className="v-scenario-title">GIÁ TRỊ NỘI TẠI · 3 KỊCH BẢN</span>
+                  <span className="v-scenario-base-num" style={{ whiteSpace: 'nowrap' }}>{money(base.intrinsic_value_per_share, locale)}</span>
+                </div>
+                <div className="v-scenario-track">
+                  <div className="v-scenario-node node-bear">
+                    <span className="node-tag">THẬN TRỌNG</span>
+                    <span className="node-price">{money(bear.intrinsic_value_per_share, locale)}</span>
+                  </div>
+                  <div className="v-scenario-arrow">⟶</div>
+                  <div className="v-scenario-node node-base is-active">
+                    <span className="node-tag">CƠ SỞ (BASE)</span>
+                    <span className="node-price">{money(base.intrinsic_value_per_share, locale)}</span>
+                  </div>
+                  <div className="v-scenario-arrow">⟶</div>
+                  <div className="v-scenario-node node-bull">
+                    <span className="node-tag">LẠC QUAN</span>
+                    <span className="node-price">{money(bull.intrinsic_value_per_share, locale)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
-        {report.sector_conflict_warning && (
-          <div className="v-narrative-box v-warning-box">
-            <h4 className="v-box-title">⚠️ PHÂN LOẠI NGÀNH CHUYÊN BIỆT</h4>
-            <p className="v-box-text">{report.sector_conflict_warning}</p>
-          </div>
-        )}
+            {/* Primary Decision Narrative */}
+            {decision.primary_reason ? (
+              <div className="v-narrative-box" style={{ borderLeft: `4px solid ${decision.state === 'BUY' ? '#16a34a' : (decision.state === 'WAIT_FOR_MOS' ? '#0284c7' : '#d97706')}` }}>
+                <h4 className="v-box-title">LUẬN ĐIỂM QUYẾT ĐỊNH ĐẦU TƯ DÀI HẠN</h4>
+                <p className="v-box-text">{decision.primary_reason}</p>
+              </div>
+            ) : assessment.financial_resilience_diagnosis && (
+              <div className="v-narrative-box">
+                <h4 className="v-box-title">CẤU TRÚC VỐN & SỨC KHỎE TÀI CHÍNH</h4>
+                <p className="v-box-text">{assessment.financial_resilience_diagnosis}</p>
+              </div>
+            )}
 
-        <HistoricalResolutionsBlock report={report} locale={locale} />
-      </div>
+            {/* Explicit Decision Conditions (if CONDITIONAL_BUY) */}
+            {decision.conditions && decision.conditions.length > 0 && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px 14px', margin: '12px 0', fontSize: '0.88rem' }}>
+                <strong style={{ color: '#92400e', display: 'block', marginBottom: '4px' }}>Điều kiện phân bổ / theo dõi cụ thể:</strong>
+                <ul style={{ margin: 0, paddingLeft: '18px', color: '#78350f' }}>
+                  {decision.conditions.map((cond, cIdx) => (
+                    <li key={cIdx} style={{ marginBottom: '2px' }}>
+                      <strong>{cond.metric}:</strong> {cond.reason} (Thực tế: {typeof cond.actual === 'number' ? cond.actual.toLocaleString('vi-VN') : cond.actual} vs Ngưỡng: {typeof cond.threshold === 'number' ? cond.threshold.toLocaleString('vi-VN') : cond.threshold})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Monitoring Signals / Watch Points (Non-blocking) */}
+            {decision.monitoring_reasons && decision.monitoring_reasons.length > 0 && (
+              <div style={{ background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', padding: '10px 14px', margin: '12px 0', fontSize: '0.86rem' }}>
+                <strong style={{ color: '#4b5563', display: 'block', marginBottom: '4px' }}>Chỉ tiêu giám sát định kỳ (Monitoring Signals — Không phải lỗi chặn mua):</strong>
+                <ul style={{ margin: 0, paddingLeft: '18px', color: '#4b5563' }}>
+                  {decision.monitoring_reasons.map((mr, mIdx) => (
+                    <li key={mIdx} style={{ marginBottom: '2px' }}>{mr}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Hard Blockers (if any) */}
+            {decision.blocking_reasons && decision.blocking_reasons.length > 0 && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '10px 14px', margin: '12px 0', fontSize: '0.86rem' }}>
+                <strong style={{ color: '#991b1b', display: 'block', marginBottom: '4px' }}>Rào cản chất lượng chặn mua (Hard Blockers):</strong>
+                <ul style={{ margin: 0, paddingLeft: '18px', color: '#991b1b' }}>
+                  {decision.blocking_reasons.map((br, bIdx) => (
+                    <li key={bIdx} style={{ marginBottom: '2px' }}>{br}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Normalized Earning Power Insight */}
+            {normPower && normPower.normalized_5y != null && (
+              <div className="v-narrative-box" style={{ marginTop: '12px' }}>
+                <h4 className="v-box-title">SỨC KIẾM TIỀN CHUẨN HÓA LỊCH SỬ</h4>
+                <p className="v-box-text">{normPower.explanation || `Lợi nhuận chuẩn hóa 5 năm: ${normPower.normalized_5y?.toLocaleString('vi-VN')} đ (so với gần nhất: ${normPower.reported_latest?.toLocaleString('vi-VN')} đ).`}</p>
+              </div>
+            )}
+
+            {report.sector_conflict_warning && (
+              <div className="v-narrative-box v-warning-box">
+                <h4 className="v-box-title">⚠️ PHÂN LOẠI NGÀNH CHUYÊN BIỆT</h4>
+                <p className="v-box-text">{report.sector_conflict_warning}</p>
+              </div>
+            )}
+
+            <HistoricalResolutionsBlock report={report} locale={locale} />
+          </div>
+        );
+      })()}
 
       {/* Major Section: "Vì sao Giá trị Thực cơ sở = ... ₫?" with minor sections 01, 02, 03, 04 */}
       <ValuationRationale report={report} locale={locale} />

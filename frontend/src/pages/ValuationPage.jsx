@@ -13,6 +13,10 @@ import {
   archetypeLabel,
   valuationModelLabel,
 } from '../lib/valuationLabels.js';
+import {
+  formatCompounderClassification,
+  formatDecision,
+} from '../utils/vietnameseSemantics.js';
 
 
 
@@ -189,7 +193,7 @@ function ValuationCard({ symbol, report, error, locale }) {
         <p className="valuation-period-subtitle">Kỳ Báo cáo Tài chính: <strong>{report.fiscal_period_latest || 'Năm 2025'}</strong></p>
       </div>
       <div>
-        <ValuationStatusPill status={assessment.valuation_status} marginOfSafety={mos} />
+        <ValuationStatusPill status={report.munger_analysis?.long_term_decision?.state || assessment.valuation_status} marginOfSafety={mos} />
       </div>
     </div>
 
@@ -250,74 +254,149 @@ function ValuationCard({ symbol, report, error, locale }) {
     </div>
 
     {/* Expert Financial Analysis Executive Dashboard */}
-    <div className="valuation-analyst-opinion">
-      <div className="opinion-header">
-        <div className="opinion-badge-wrap">
-          <span className="opinion-seal">📜</span>
-          <span className="opinion-badge">Nhận định Chuyên sâu theo Chuẩn Buffett–Munger</span>
-        </div>
-        <span className={`opinion-status-pill ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
-          {assessment.valuation_status === 'DEEP_VALUE' ? 'Biên an toàn rất cao'
-            : assessment.valuation_status === 'UNDERVALUED' ? 'Định giá Hấp dẫn'
-            : assessment.valuation_status === 'FAIR_VALUE' ? 'Định giá Hợp lý'
-            : assessment.valuation_status === 'OVERVALUED' ? 'Định giá Cao'
-            : 'Cần theo dõi'}
-        </span>
-      </div>
+    {(() => {
+      const munger = report.munger_analysis || {};
+      const decision = munger.long_term_decision || {};
+      const normPower = munger.normalized_earning_power || {};
+      const compounderClass = munger.compounder_classification;
+      const durability = munger.earnings_durability || {};
 
-      {/* 4-Stat Executive Summary Strip */}
-      <div className="opinion-executive-grid">
-        <div className="opinion-stat-item">
-          <span className="opinion-stat-label">Bản chất Doanh nghiệp</span>
-          <span className="opinion-stat-val">
-            {archetypeLabel(report.archetype_profile?.archetype)}
-          </span>
-          <span className="opinion-stat-sub">
-            Mô hình: {valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}
-          </span>
-        </div>
+      const decisionBadgeLabel = decision.state_vietnamese || (
+        assessment.valuation_status === 'DEEP_VALUE' ? 'Biên an toàn rất cao'
+          : assessment.valuation_status === 'UNDERVALUED' ? 'Định giá Hấp dẫn'
+          : assessment.valuation_status === 'FAIR_VALUE' ? 'Định giá Hợp lý'
+          : assessment.valuation_status === 'OVERVALUED' ? 'Định giá Cao'
+          : 'Cần theo dõi'
+      );
 
-        <div className="opinion-stat-item">
-          <span className="opinion-stat-label">Dải Định giá (Bear – Bull)</span>
-          <span className="opinion-stat-val highlight">
-            {bear.intrinsic_value_per_share != null ? money(bear.intrinsic_value_per_share, locale) : '—'} – {bull.intrinsic_value_per_share != null ? money(bull.intrinsic_value_per_share, locale) : '—'}
-          </span>
-          <span className="opinion-stat-sub">
-            Cơ sở: <strong>{money(base.intrinsic_value_per_share, locale)}</strong>
-          </span>
-        </div>
+      const isPositiveDecision = decision.state === 'BUY' || (!decision.state && mos > 0);
 
-        <div className="opinion-stat-item">
-          <span className="opinion-stat-label">Biên An toàn Thực tế</span>
-          <span className={`opinion-stat-val ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
-            {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
-          </span>
-          <span className="opinion-stat-sub">
-            Yêu cầu tối thiểu: ≥ {mosAnalysis.required_mos_pct || 25}%
-          </span>
-        </div>
-
-        <div className="opinion-stat-item">
-          <span className="opinion-stat-label">Chất lượng Doanh nghiệp</span>
-          <span className="opinion-stat-val">
-            {quality.total_score != null ? `${quality.total_score}/100` : '—'}
-          </span>
-          <span className="opinion-stat-sub">
-            Hạng: <strong>{quality.tier === 'EXCEPTIONAL' ? 'Xuất sắc' : quality.tier === 'HIGH_QUALITY' ? 'Chất lượng cao' : quality.tier === 'INVESTABLE' ? 'Đạt chuẩn' : 'Cần theo dõi'}</strong>
-          </span>
-        </div>
-      </div>
-
-      {/* Strategic / Structural Financial Insight */}
-      {assessment.financial_resilience_diagnosis && (
-        <div className="opinion-subtext">
-          <span className="opinion-subtext-icon">💡</span>
-          <div className="opinion-subtext-body">
-            <strong>Cấu trúc Vốn & Đặc thù Kinh tế:</strong> {assessment.financial_resilience_diagnosis}
+      return (
+        <div className="valuation-analyst-opinion">
+          <div className="opinion-header">
+            <div className="opinion-badge-wrap">
+              <span className="opinion-seal">📜</span>
+              <span className="opinion-badge">Quyết Định Đầu Tư BCTC Dài Hạn · Munger</span>
+            </div>
+            <span className={`opinion-status-pill ${isPositiveDecision ? 'pos' : (decision.state === 'WAIT_FOR_MOS' ? 'fair' : 'neg')}`}>
+              {decisionBadgeLabel}
+            </span>
           </div>
+
+          {/* 4-Stat Executive Summary Strip */}
+          <div className="opinion-executive-grid">
+            <div className="opinion-stat-item">
+              <span className="opinion-stat-label">Bản chất Doanh nghiệp</span>
+              <span className="opinion-stat-val">
+                {archetypeLabel(report.archetype_profile?.archetype)}
+              </span>
+              <span className="opinion-stat-sub">
+                {formatCompounderClassification(compounderClass) || `Mô hình: ${valuationModelLabel(report.valuation_model || report.archetype_profile?.recommended_model)}`}
+              </span>
+            </div>
+
+            <div className="opinion-stat-item">
+              <span className="opinion-stat-label">Dải Định giá (Bear – Bull)</span>
+              <span className="opinion-stat-val highlight">
+                {bear.intrinsic_value_per_share != null ? money(bear.intrinsic_value_per_share, locale) : '—'} – {bull.intrinsic_value_per_share != null ? money(bull.intrinsic_value_per_share, locale) : '—'}
+              </span>
+              <span className="opinion-stat-sub">
+                Cơ sở: <strong>{money(base.intrinsic_value_per_share, locale)}</strong>
+              </span>
+            </div>
+
+            <div className="opinion-stat-item">
+              <span className="opinion-stat-label">Biên An toàn Thực tế</span>
+              <span className={`opinion-stat-val ${mos > 0 ? 'pos' : mos < 0 ? 'neg' : ''}`}>
+                {mos != null && Number.isFinite(Number(mos)) ? `${mos > 0 ? '+' : ''}${Number(mos).toFixed(1)}%` : '—'}
+              </span>
+              <span className="opinion-stat-sub">
+                Yêu cầu tối thiểu: ≥ {mosAnalysis.required_mos_pct || 25}%
+              </span>
+            </div>
+
+            <div className="opinion-stat-item">
+              <span className="opinion-stat-label">Chất lượng & Độ bền LN</span>
+              <span className="opinion-stat-val">
+                {quality.total_score != null ? `${quality.total_score}/100` : '—'}
+              </span>
+              <span className="opinion-stat-sub">
+                {durability.profitable_years != null ? (
+                  `Bền bỉ: ${durability.profitable_years}/${durability.total_years} năm · CV ${durability.pat_volatility != null ? (durability.pat_volatility * 100).toFixed(1) : 0}%`
+                ) : (
+                  `Hạng: ${quality.tier === 'EXCEPTIONAL' ? 'Xuất sắc' : quality.tier === 'HIGH_QUALITY' ? 'Chất lượng cao' : quality.tier === 'INVESTABLE' ? 'Đạt chuẩn' : 'Cần theo dõi'}`
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Primary Decision Narrative */}
+          {decision.primary_reason ? (
+            <div className="opinion-subtext" style={{ borderLeft: `4px solid ${decision.state === 'BUY' ? '#16a34a' : (decision.state === 'WAIT_FOR_MOS' ? '#0284c7' : '#d97706')}` }}>
+              <span className="opinion-subtext-icon">{decision.state === 'BUY' ? '✓' : '💡'}</span>
+              <div className="opinion-subtext-body">
+                <strong>Luận Điểm Quyết Định:</strong> {decision.primary_reason}
+              </div>
+            </div>
+          ) : assessment.financial_resilience_diagnosis && (
+            <div className="opinion-subtext">
+              <span className="opinion-subtext-icon">💡</span>
+              <div className="opinion-subtext-body">
+                <strong>Cấu trúc Vốn & Đặc thù Kinh tế:</strong> {assessment.financial_resilience_diagnosis}
+              </div>
+            </div>
+          )}
+
+          {/* Explicit Decision Conditions (if CONDITIONAL_BUY) */}
+          {decision.conditions && decision.conditions.length > 0 && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px 14px', marginTop: '12px', fontSize: '0.88rem' }}>
+              <strong style={{ color: '#92400e', display: 'block', marginBottom: '4px' }}>Điều kiện phân bổ / theo dõi cụ thể:</strong>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#78350f' }}>
+                {decision.conditions.map((cond, cIdx) => (
+                  <li key={cIdx} style={{ marginBottom: '2px' }}>
+                    <strong>{cond.metric}:</strong> {cond.reason} (Thực tế: {typeof cond.actual === 'number' ? cond.actual.toLocaleString('vi-VN') : cond.actual} vs Ngưỡng: {typeof cond.threshold === 'number' ? cond.threshold.toLocaleString('vi-VN') : cond.threshold})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Monitoring Signals / Watch Points (Non-blocking) */}
+          {decision.monitoring_reasons && decision.monitoring_reasons.length > 0 && (
+            <div style={{ background: 'var(--surface-soft, #f9fafb)', border: '1px solid var(--border, #e5e7eb)', borderRadius: '6px', padding: '10px 14px', marginTop: '12px', fontSize: '0.86rem' }}>
+              <strong style={{ color: '#4b5563', display: 'block', marginBottom: '4px' }}>Chỉ tiêu giám sát định kỳ (Monitoring Signals — Không phải lỗi chặn mua):</strong>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#4b5563' }}>
+                {decision.monitoring_reasons.map((mr, mIdx) => (
+                  <li key={mIdx} style={{ marginBottom: '2px' }}>{mr}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Hard Blockers (if any) */}
+          {decision.blocking_reasons && decision.blocking_reasons.length > 0 && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '10px 14px', marginTop: '12px', fontSize: '0.86rem' }}>
+              <strong style={{ color: '#991b1b', display: 'block', marginBottom: '4px' }}>Rào cản chất lượng chặn mua (Hard Blockers):</strong>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#991b1b' }}>
+                {decision.blocking_reasons.map((br, bIdx) => (
+                  <li key={bIdx} style={{ marginBottom: '2px' }}>{br}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Normalized Earning Power Insight */}
+          {normPower && normPower.normalized_5y != null && (
+            <div className="opinion-subtext" style={{ marginTop: '12px' }}>
+              <span className="opinion-subtext-icon">📊</span>
+              <div className="opinion-subtext-body">
+                <strong>Sức Kiếm Tiền Chuẩn Hóa:</strong> {normPower.explanation || `LNST chuẩn hóa 5 năm: ${normPower.normalized_5y?.toLocaleString('vi-VN')} đ (so với gần nhất: ${normPower.reported_latest?.toLocaleString('vi-VN')} đ).`}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      );
+    })()}
 
     {/* Value Investor Health Pillars (Miller's Law - 3 Focused Cards) */}
     {report.value_investor_pillars && (
@@ -620,7 +699,7 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
                     {pubMos != null && Number.isFinite(Number(pubMos)) ? `${pubMos > 0 ? '+' : ''}${Number(pubMos).toFixed(1)}%` : (hasWarning ? '⚠ Không công bố' : 'N/A')}
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
+                    <ValuationStatusPill status={rep.munger_analysis?.long_term_decision?.state || rep.assessment?.valuation_status} marginOfSafety={pubMos} />
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <button
@@ -663,7 +742,7 @@ function ValuationOverviewTable({ reports = {}, symbols = [], selectedSymbol, lo
                   <span className="vm-symbol">{sym}{hasWarning && <span style={{ marginLeft: '6px', color: 'var(--retro-hanko, #a63f30)' }}>⚠</span>}</span>
                   <span className="vm-arch">{archName}</span>
                 </div>
-                <ValuationStatusPill status={rep.assessment?.valuation_status} marginOfSafety={pubMos} />
+                <ValuationStatusPill status={rep.munger_analysis?.long_term_decision?.state || rep.assessment?.valuation_status} marginOfSafety={pubMos} />
               </div>
 
               {hasWarning && (

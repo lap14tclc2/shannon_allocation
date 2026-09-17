@@ -1,4 +1,9 @@
 export const VERDICT_LABELS = {
+  BUY: 'Có thể mua',
+  CONDITIONAL_BUY: 'Có thể mua có ĐK',
+  WAIT_FOR_MOS: 'Chờ biên an toàn',
+  DO_NOT_BUY: 'Không đạt chuẩn mua',
+  INSUFFICIENT_DATA: 'Chưa đủ Dữ liệu BCTC',
   HIGH_CONVICTION_VALUE: 'Đầu tư Giá trị Tuyệt vời',
   ATTRACTIVE: 'Vùng giá Hấp dẫn',
   FAIRLY_VALUED: 'Định giá Hợp lý',
@@ -20,6 +25,11 @@ export const VERDICT_LABELS = {
 };
 
 export const VERDICT_PILL_CLASS = {
+  BUY: 'status-pill-deep-value',
+  CONDITIONAL_BUY: 'status-pill-fair',
+  WAIT_FOR_MOS: 'status-pill-undervalued',
+  DO_NOT_BUY: 'status-pill-distressed',
+  INSUFFICIENT_DATA: 'status-pill-fair',
   HIGH_CONVICTION_VALUE: 'status-pill-deep-value',
   ATTRACTIVE: 'status-pill-undervalued',
   FAIRLY_VALUED: 'status-pill-fair',

@@ -236,6 +236,8 @@ export function formatClassification(code) {
   return CLASSIFICATION_MAP[c] || (c.includes('_') ? c.toLowerCase().replace(/_/g, ' ') : c);
 }
 
+export const formatCompounderClassification = formatClassification;
+
 export function formatValueTrap(code) {
   if (!code) return 'Chưa xác định';
   const c = String(code).toUpperCase().trim();
