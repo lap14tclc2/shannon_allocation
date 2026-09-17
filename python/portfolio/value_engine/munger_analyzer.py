@@ -493,7 +493,7 @@ def build_munger_financial_analysis(
             CompounderClassification.POTENTIAL_COMPOUNDER.value,
             CompounderClassification.CYCLICAL_QUALITY.value,
         )
-        else ("WATCH" if warnings else "FAIL")
+        else ("WATCH" if (warnings or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value) else "FAIL")
     )
 
     # Explicit rationale explaining why WATCH findings can coexist with BUY / CONDITIONAL_BUY
