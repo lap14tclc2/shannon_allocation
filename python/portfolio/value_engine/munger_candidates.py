@@ -298,9 +298,9 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         liq = evaluate_symbol_liquidity(sym)
         liq_code = liq.get("classification", "LIQUIDITY_INSUFFICIENT_DATA")
 
-        # Hard Reject: Illiquid stocks with trading value < 5.0 Billion VND/day
+        # Hard Reject: Illiquid stocks with trading value < 1.0 Billion VND/day
         avg_val_20b = liq.get("avg_trading_value_20d_billion")
-        if avg_val_20b is not None and avg_val_20b < 5.0:
+        if avg_val_20b is not None and avg_val_20b < 1.0:
             return None
 
         synthesis_conclusion = synthesize_munger_screening_conclusion_vi(
@@ -442,7 +442,7 @@ def compute_all_munger_candidates(force_refresh: bool = False) -> List[Dict[str,
                         FROM market_prices
                         WHERE trading_date IN (SELECT trading_date FROM recent_dates)
                         GROUP BY symbol
-                        HAVING AVG(close * volume) / 1e9 >= 3.0
+                        HAVING AVG(close * volume) / 1e9 >= 0.8
                     )
                     SELECT s.symbol 
                     FROM canonical_facts s
@@ -508,20 +508,28 @@ def get_munger_candidates(
         t_code = tier.upper().strip()
         filtered = [c for c in filtered if c["candidate_tier_code"] == t_code or c["quality_tier"] == t_code]
 
-    if liquidity and liquidity.lower() not in ("all", "tat_ca", "tất cả", "*", ""):
+    target_min_val = None
+    if min_val_billion is not None:
+        try:
+            target_min_val = float(min_val_billion)
+        except (ValueError, TypeError):
+            target_min_val = None
+    elif liquidity and liquidity.replace(".", "", 1).isdigit():
+        try:
+            target_min_val = float(liquidity)
+        except (ValueError, TypeError):
+            target_min_val = None
+    elif liquidity and liquidity.lower() not in ("all", "tat_ca", "tất cả", "*", ""):
         l_code = liquidity.upper().strip()
         if not l_code.startswith("LIQUIDITY_"):
             l_code = f"LIQUIDITY_{l_code}"
         filtered = [c for c in filtered if c.get("liquidity_classification") == l_code]
 
-    try:
-        min_val = float(min_val_billion) if min_val_billion is not None else 5.0
+    if target_min_val is not None and target_min_val > 0:
         filtered = [
             c for c in filtered
-            if (c.get("liquidity", {}).get("avg_trading_value_20d_billion") or 0.0) >= min_val
+            if (c.get("liquidity", {}).get("avg_trading_value_20d_billion") or 0.0) >= target_min_val
         ]
-    except (ValueError, TypeError):
-        pass
 
     if search and search.strip():
         q = search.strip().lower()

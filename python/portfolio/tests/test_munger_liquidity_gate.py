@@ -169,22 +169,40 @@ def test_munger_candidates_filter_min_val():
             assert val_20 >= 5.0
 
 
-def test_munger_candidates_rejects_under_5b_default():
-    """Verify default candidate list never includes stocks under 5.0B VND/day."""
+def test_munger_candidates_filters_by_turnover():
+    """Verify candidate list filters properly by turnover thresholds (1B, 5B, 10B, 20B)."""
     fake_candidates = [
         {"symbol": "CMF", "liquidity": {"avg_trading_value_20d_billion": 0.04}, "candidate_tier_code": "HIGH_QUALITY", "quality_tier": "HIGH_QUALITY", "company_name": "CMF"},
-        {"symbol": "HLB", "liquidity": {"avg_trading_value_20d_billion": 0.04}, "candidate_tier_code": "HIGH_QUALITY", "quality_tier": "HIGH_QUALITY", "company_name": "HLB"},
         {"symbol": "MID_2B", "liquidity": {"avg_trading_value_20d_billion": 2.5}, "candidate_tier_code": "HIGH_QUALITY", "quality_tier": "HIGH_QUALITY", "company_name": "MID_2B"},
+        {"symbol": "CTR", "liquidity": {"avg_trading_value_20d_billion": 8.5}, "candidate_tier_code": "EXCEPTIONAL", "quality_tier": "EXCEPTIONAL", "company_name": "CTR"},
+        {"symbol": "MWG", "liquidity": {"avg_trading_value_20d_billion": 15.0}, "candidate_tier_code": "EXCEPTIONAL", "quality_tier": "EXCEPTIONAL", "company_name": "MWG"},
         {"symbol": "FPT", "liquidity": {"avg_trading_value_20d_billion": 50.0}, "candidate_tier_code": "EXCEPTIONAL", "quality_tier": "EXCEPTIONAL", "company_name": "FPT"},
-        {"symbol": "CTR", "liquidity": {"avg_trading_value_20d_billion": 19.08}, "candidate_tier_code": "EXCEPTIONAL", "quality_tier": "EXCEPTIONAL", "company_name": "CTR"},
     ]
     with patch("portfolio.value_engine.munger_candidates.compute_all_munger_candidates", return_value=fake_candidates):
-        res = get_munger_candidates()
-        assert res["ok"] is True
-        symbols = [c["symbol"] for c in res["candidates"]]
-        assert "CMF" not in symbols
-        assert "HLB" not in symbols
-        assert "MID_2B" not in symbols
-        assert "FPT" in symbols
-        assert "CTR" in symbols
+        # 1B filter
+        res_1b = get_munger_candidates(min_val_billion=1.0)
+        syms_1b = [c["symbol"] for c in res_1b["candidates"]]
+        assert "CMF" not in syms_1b
+        assert "MID_2B" in syms_1b
+        assert "CTR" in syms_1b
+
+        # 5B filter via string
+        res_5b = get_munger_candidates(liquidity="5")
+        syms_5b = [c["symbol"] for c in res_5b["candidates"]]
+        assert "MID_2B" not in syms_5b
+        assert "CTR" in syms_5b
+        assert "MWG" in syms_5b
+
+        # 10B filter
+        res_10b = get_munger_candidates(min_val_billion=10.0)
+        syms_10b = [c["symbol"] for c in res_10b["candidates"]]
+        assert "CTR" not in syms_10b
+        assert "MWG" in syms_10b
+        assert "FPT" in syms_10b
+
+        # 20B filter
+        res_20b = get_munger_candidates(min_val_billion=20.0)
+        syms_20b = [c["symbol"] for c in res_20b["candidates"]]
+        assert "MWG" not in syms_20b
+        assert "FPT" in syms_20b
 

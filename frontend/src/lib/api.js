@@ -299,9 +299,17 @@ export const applySplitAdjustment = (symbol) => sendJSON(`/api/portfolio/positio
 export const getMungerCandidates = (tier = 'all', liquidity = 'all', search = '', limit = 50, minTradingValue = null) => {
   const params = new URLSearchParams();
   if (tier) params.set('tier', tier);
-  if (liquidity && liquidity !== 'all') params.set('liquidity', liquidity);
+  if (liquidity && liquidity !== 'all') {
+    if (!isNaN(Number(liquidity)) && Number(liquidity) > 0) {
+      params.set('min_val_billion', String(liquidity));
+    } else {
+      params.set('liquidity', liquidity);
+    }
+  }
   if (search) params.set('search', search);
   if (limit) params.set('limit', String(limit));
-  if (minTradingValue !== null && minTradingValue !== undefined) params.set('min_val_billion', String(minTradingValue));
+  if (minTradingValue !== null && minTradingValue !== undefined && minTradingValue !== 0) {
+    params.set('min_val_billion', String(minTradingValue));
+  }
   return getJSON(`/api/portfolio/business-candidates?${params.toString()}`);
 };

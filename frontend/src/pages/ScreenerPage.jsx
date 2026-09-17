@@ -22,7 +22,8 @@ const MOS_OPTIONS = [
 ];
 
 const LIQUIDITY_OPTIONS = [
-  { id: 10, label: '⚡ ≥ 10 Tỷ / ngày (Loại cổ phiếu kém thanh khoản)' },
+  { id: 20, label: '🔥 ≥ 20 Tỷ / ngày' },
+  { id: 10, label: '⚡ ≥ 10 Tỷ / ngày' },
   { id: 5, label: '💧 ≥ 5 Tỷ / ngày' },
   { id: 1, label: '🌱 ≥ 1 Tỷ / ngày' },
   { id: 0, label: '🌐 Tất cả thanh khoản' },

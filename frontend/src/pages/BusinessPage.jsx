@@ -363,11 +363,11 @@ export default function BusinessPage() {
                 <div className="candidate-liquidity-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted, #718096)', marginRight: '4px' }}>Thanh khoản:</span>
                   {[
-                    { key: 'all', label: 'Tất cả thanh khoản' },
-                    { key: 'LIQUIDITY_STRONG', label: 'Thanh khoản tốt' },
-                    { key: 'LIQUIDITY_ACCEPTABLE', label: 'Thanh khoản đủ' },
-                    { key: 'LIQUIDITY_WEAK', label: 'Thanh khoản thấp' },
-                    { key: 'LIQUIDITY_INSUFFICIENT_DATA', label: 'Chưa đủ dữ liệu' },
+                    { key: 'all', label: 'Tất cả' },
+                    { key: '1', label: '> 1 tỷ' },
+                    { key: '5', label: '> 5 tỷ' },
+                    { key: '10', label: '> 10 tỷ' },
+                    { key: '20', label: '> 20 tỷ' },
                   ].map((tab) => (
                     <button
                       key={tab.key}
