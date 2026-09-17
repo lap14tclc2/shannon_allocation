@@ -786,6 +786,22 @@ export default function BusinessPage() {
                     <div>Biên An Toàn Yêu Cầu (Required MOS): <strong>{decision.required_mos_pct !== undefined ? `${decision.required_mos_pct}%` : 'N/A'}</strong></div>
                     <div>Cổng MOS: {renderBadge(decision.mos_gate)}</div>
                   </div>
+
+                  {/* Canonical Share Basis & Economic Ownership Lineage */}
+                  {data?.share_basis && (
+                    <div style={{ marginTop: '12px', padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.84rem', color: '#475569' }}>
+                      <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                        <span><strong>Cơ sở số cổ phiếu:</strong> {data.share_basis.basis_type_vi || 'Theo BCTC mới nhất'}</span>
+                        {data.share_basis.valuation_share_count && (
+                          <span><strong>Số cổ phần:</strong> {(data.share_basis.valuation_share_count / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} triệu cp</span>
+                        )}
+                        <span><strong>Nguồn gốc:</strong> {data.share_basis.provenance || data.share_basis.source}</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>
+                        💡 Giá mỗi cổ phiếu là đơn vị đo. Giá trị hợp lý và Giá thị trường được chuẩn hóa trên cùng cơ sở số cổ phần nhằm đảm bảo tính toàn vẹn của Biên An Toàn (MOS).
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 {/* 3. MA TRẬN CHẤT LƯỢNG TÀI CHÍNH 12 CHIỀU */}

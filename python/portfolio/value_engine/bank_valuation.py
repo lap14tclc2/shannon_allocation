@@ -127,11 +127,11 @@ class BankValuationModel:
         intrinsic_value_per_share = max(current_bvps * Decimal("0.80"), intrinsic_value_per_share)
 
         equity_val = intrinsic_value_per_share * shares_outstanding
-        margin_of_safety = None
-        if intrinsic_value_per_share > Decimal("0"):
-            margin_of_safety = (
-                (intrinsic_value_per_share - current_market_price) / intrinsic_value_per_share
-            ) * Decimal("100")
+        from .share_basis import calculate_canonical_mos
+        margin_of_safety = calculate_canonical_mos(
+            market_price=current_market_price,
+            intrinsic_value_per_share=intrinsic_value_per_share,
+        )
 
         return ValuationScenario(
             scenario_type=scenario_type,

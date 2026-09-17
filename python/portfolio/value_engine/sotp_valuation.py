@@ -89,12 +89,11 @@ class SOTPValuationModel:
         equity_val = max(Decimal("0"), adjusted_gross - net_debt)
         iv_per_share = (equity_val / shares_outstanding).quantize(Decimal("1"))
 
-        mos_pct = None
-        if current_market_price and current_market_price > Decimal("0"):
-            if iv_per_share > Decimal("0"):
-                mos_pct = ((iv_per_share - current_market_price) / iv_per_share * Decimal("100")).quantize(Decimal("0.1"))
-            else:
-                mos_pct = Decimal("-100.0")
+        from .share_basis import calculate_canonical_mos
+        mos_pct = calculate_canonical_mos(
+            market_price=current_market_price,
+            intrinsic_value_per_share=iv_per_share,
+        )
 
         warnings = []
         if holding_discount_pct > Decimal("0"):

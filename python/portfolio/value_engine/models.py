@@ -140,6 +140,7 @@ class ValuationScenario:
     # overloading ``enterprise_value`` (which is kept only for legacy compat).
     residual_income_pv: Optional[Decimal] = None
     terminal_residual_income_pv: Optional[Decimal] = None
+    share_basis: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -232,6 +233,9 @@ class ValuationReport:
     # Cảnh báo dữ liệu lịch sử bất thường (user-test.md 31/08): revenue/LNST/CFO
     # nhảy bất thường giữa các năm -> nghi mapping/source error, cần đối soát nguồn.
     data_anomalies: List[Dict[str, Any]] = field(default_factory=list)
+    # Canonical Share Basis metadata and provenance
+    share_basis: Optional[Dict[str, Any]] = None
+    valuation_snapshot: Optional[Dict[str, Any]] = None
     # feedback.txt — Numeric-Only Validation & Regime Engine:
     # - numeric_confidence: độ tin cậy SỐ LIỆU (HIGH/MEDIUM/LOW) sau khi resolve anomaly.
     # - cause_confidence: độ tin cậy về NGUYÊN NHÂN (TCBS-only -> luôn UNKNOWN).

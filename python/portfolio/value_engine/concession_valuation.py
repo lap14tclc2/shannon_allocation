@@ -50,10 +50,11 @@ class ConcessionValuationModel:
         enterprise_val = pv_cfs + pv_salvage
         equity_val = enterprise_val - net_debt
         intrinsic_per_share = equity_val / shares_outstanding
-
-        mos_pct = None
-        if current_market_price and current_market_price > Decimal("0") and intrinsic_per_share > Decimal("0"):
-            mos_pct = ((intrinsic_per_share - current_market_price) / intrinsic_per_share) * Decimal("100")
+        from .share_basis import calculate_canonical_mos
+        mos_pct = calculate_canonical_mos(
+            market_price=current_market_price,
+            intrinsic_value_per_share=intrinsic_per_share,
+        )
 
         return ValuationScenario(
             scenario_type=scenario_type,

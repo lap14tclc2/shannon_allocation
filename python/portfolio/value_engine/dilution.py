@@ -25,10 +25,26 @@ from typing import Any, Dict, List, Optional
 
 # Non-economic corporate action types that just multiply the existing share
 # base (they do not transfer economic value out of existing shareholders).
-NON_ECONOMIC_ACTION_TYPES = ("STOCK_DIVIDEND", "BONUS_SHARE", "SPLIT")
+NON_ECONOMIC_ACTION_TYPES = (
+    "STOCK_DIVIDEND",
+    "BONUS_SHARE",
+    "BONUS_SHARES",
+    "STOCK_SPLIT",
+    "REVERSE_SPLIT",
+    "SPLIT",
+)
 
 # Economic-dilution action types (capital raising / value transfer to new holders).
-ECONOMIC_ACTION_TYPES = ("RIGHTS_ISSUE", "STOCK_ISSUE", "ESOP", "CONVERTIBLE")
+ECONOMIC_ACTION_TYPES = (
+    "RIGHTS_ISSUE",
+    "NEW_SHARE_ISSUANCE",
+    "STOCK_ISSUE",
+    "ESOP",
+    "MA_SHARE_ISSUANCE",
+    "MA_ISSUANCE",
+    "CONVERTIBLE",
+    "OTHER_DILUTION",
+)
 
 
 def classify_share_change(

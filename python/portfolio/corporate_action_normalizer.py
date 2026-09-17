@@ -21,20 +21,36 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 class CorporateActionType(str, Enum):
     STOCK_SPLIT = "STOCK_SPLIT"
     REVERSE_SPLIT = "REVERSE_SPLIT"
-    BONUS_SHARE = "BONUS_SHARE"
     STOCK_DIVIDEND = "STOCK_DIVIDEND"
+    BONUS_SHARES = "BONUS_SHARES"
+    BONUS_SHARE = "BONUS_SHARE"
     CASH_DIVIDEND = "CASH_DIVIDEND"
     RIGHTS_ISSUE = "RIGHTS_ISSUE"
+    NEW_SHARE_ISSUANCE = "NEW_SHARE_ISSUANCE"
+    STOCK_ISSUE = "STOCK_ISSUE"
+    ESOP = "ESOP"
+    MA_SHARE_ISSUANCE = "MA_SHARE_ISSUANCE"
+    MA_ISSUANCE = "MA_ISSUANCE"
+    BUYBACK = "BUYBACK"
+    OTHER_DILUTION = "OTHER_DILUTION"
     OTHER = "OTHER"
 
 
 CORPORATE_ACTION_VIETNAMESE = {
     "STOCK_SPLIT": "Chia cổ phiếu",
-    "REVERSE_SPLIT": "Chia tách ngược",
+    "REVERSE_SPLIT": "Gộp cổ phiếu (Chia tách ngược)",
+    "BONUS_SHARES": "Cổ phiếu thưởng",
     "BONUS_SHARE": "Cổ phiếu thưởng",
-    "STOCK_DIVIDEND": "Cổ tức cổ phiếu",
+    "STOCK_DIVIDEND": "Cổ tức bằng cổ phiếu",
     "CASH_DIVIDEND": "Cổ tức tiền mặt",
     "RIGHTS_ISSUE": "Phát hành quyền mua",
+    "NEW_SHARE_ISSUANCE": "Chào bán / Phát hành cổ phiếu mới",
+    "STOCK_ISSUE": "Chào bán / Phát hành cổ phiếu mới",
+    "ESOP": "Phát hành ESOP cho người lao động",
+    "MA_SHARE_ISSUANCE": "Phát hành cổ phiếu hoán đổi M&A",
+    "MA_ISSUANCE": "Phát hành cổ phiếu hoán đổi M&A",
+    "BUYBACK": "Mua lại cổ phiếu quỹ",
+    "OTHER_DILUTION": "Pha loãng cổ phần khác",
     "OTHER": "Sự kiện quyền khác",
     "ADJUSTED_PRICE": "Giá đã điều chỉnh",
     "RAW_PRICE": "Giá chưa điều chỉnh",
@@ -50,11 +66,14 @@ class CorporateActionEvent:
     stock_ratio: Optional[float] = None  # e.g., 0.15 for 15% bonus/dividend; 1.0 for 2:1 split; -0.5 for 1:2 reverse split
     split_factor: Optional[float] = None  # e.g., 2.0 for 2:1 split; 1.15 for 15% stock dividend; 0.5 for 1:2 reverse split
     cash_per_share: Optional[float] = None  # VND per share for cash dividend
+    issue_price: Optional[float] = None  # VND per share for rights issue / ESOP / new issuance
+    fair_value: Optional[float] = None  # Fair value or market price at issuance date
+    shares_issued: Optional[float] = None  # Absolute shares issued
     description: Optional[str] = None
 
     @property
     def multiplier(self) -> float:
-        """Returns the multiplier on total share count."""
+        """Returns the multiplier on total share count for non-economic actions."""
         if self.split_factor is not None and self.split_factor > 0:
             return float(self.split_factor)
         if self.stock_ratio is not None:
@@ -68,12 +87,44 @@ class CorporateActionEvent:
             CorporateActionType.STOCK_SPLIT.value,
             CorporateActionType.REVERSE_SPLIT.value,
             CorporateActionType.BONUS_SHARE.value,
+            CorporateActionType.BONUS_SHARES.value,
             CorporateActionType.STOCK_DIVIDEND.value,
             "STOCK_SPLIT",
             "REVERSE_SPLIT",
             "BONUS_SHARE",
+            "BONUS_SHARES",
             "STOCK_DIVIDEND",
             "SPLIT",
+        }
+
+    @property
+    def is_economic_dilution(self) -> bool:
+        """Economic actions issue new claims against the business and can cause true economic dilution."""
+        return self.action_type in {
+            CorporateActionType.RIGHTS_ISSUE.value,
+            CorporateActionType.NEW_SHARE_ISSUANCE.value,
+            CorporateActionType.STOCK_ISSUE.value,
+            CorporateActionType.ESOP.value,
+            CorporateActionType.MA_SHARE_ISSUANCE.value,
+            CorporateActionType.MA_ISSUANCE.value,
+            CorporateActionType.OTHER_DILUTION.value,
+            "RIGHTS_ISSUE",
+            "NEW_SHARE_ISSUANCE",
+            "STOCK_ISSUE",
+            "ESOP",
+            "MA_SHARE_ISSUANCE",
+            "MA_ISSUANCE",
+            "OTHER_DILUTION",
+            "CONVERTIBLE",
+        }
+
+    @property
+    def is_buyback(self) -> bool:
+        """Share buyback reduces total shares outstanding by expending corporate cash."""
+        return self.action_type in {
+            CorporateActionType.BUYBACK.value,
+            "BUYBACK",
+            "SHARE_BUYBACK",
         }
 
 

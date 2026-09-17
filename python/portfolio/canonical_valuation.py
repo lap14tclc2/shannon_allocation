@@ -454,21 +454,26 @@ def build_canonical_valuation(
     share_dilution_5y = None
     dilution = None
     true_dilution_diag = "Tỷ lệ sở hữu của cổ đông hiện hữu được duy trì tốt."
+    all_ca_rows = []
+    with _schema_connection(FINANCE_SCHEMA) as db:
+        all_ca_rows = db.execute(
+            """SELECT effective_event_date, dividend_type, stock_ratio, cash_per_share, quality_status
+               FROM dividend_canonical
+               WHERE symbol = ?
+               ORDER BY effective_event_date ASC""",
+            (ticker,),
+        ).fetchall()
+
     if len(shares_series) >= 5 and shares_series[-5][1] and shares_series[-1][1] and shares_series[-5][1] > 0:
         s_old = shares_series[-5][1]
         s_new = shares_series[-1][1]
         start_year = shares_series[-5][0]
-        with _schema_connection(FINANCE_SCHEMA) as db:
-            stock_div_rows = db.execute(
-                """SELECT stock_ratio FROM dividend_canonical
-                   WHERE symbol = ? AND dividend_type = 'STOCK_DIVIDEND'
-                   AND effective_event_date >= ?""",
-                (ticker, f"{start_year}-01-01"),
-            ).fetchall()
         non_economic_events = [
-            {"action_type": "STOCK_DIVIDEND", "stock_ratio": float(r["stock_ratio"])}
-            for r in stock_div_rows
-            if r["stock_ratio"]
+            {"action_type": str(r["dividend_type"]), "stock_ratio": float(r["stock_ratio"])}
+            for r in all_ca_rows
+            if str(r.get("effective_event_date") or "") >= f"{start_year}-01-01"
+            and r["stock_ratio"]
+            and str(r.get("dividend_type") or "").upper() in ("STOCK_DIVIDEND", "BONUS_SHARE", "BONUS_SHARES", "STOCK_SPLIT", "SPLIT", "REVERSE_SPLIT")
         ]
         dilution = classify_share_change(
             shares_old=s_old,
@@ -530,13 +535,27 @@ def build_canonical_valuation(
         },
     }
 
+    # Resolve Canonical Share Basis
+    from portfolio.value_engine.share_basis import resolve_canonical_share_basis
+    canonical_share_basis = resolve_canonical_share_basis(
+        symbol=ticker,
+        bctc_shares=shares,
+        bctc_fiscal_year=fiscal_year,
+        bctc_period_end=period_end,
+        corporate_actions=all_ca_rows,
+        current_market_price=current_price_dec,
+        diluted_shares_estimate=shares,
+        valuation_date=fetched_at[:10],
+        source=f"SSI_BCTC_{fiscal_year}",
+    )
+
     try:
         report = ValuationEngine.evaluate(
             symbol=ticker,
             facts=facts,
             current_market_price=current_price_dec,
-            shares_outstanding=shares,
-            diluted_shares_estimate=shares,
+            shares_outstanding=canonical_share_basis.shares_outstanding,
+            diluted_shares_estimate=canonical_share_basis.diluted_shares,
             fiscal_year=fiscal_year,
             fiscal_quarter=fiscal_quarter,
             entity_type=entity_type,
@@ -553,6 +572,7 @@ def build_canonical_valuation(
             },
             financial_history=financial_history,
             value_investor_pillars=value_investor_pillars,
+            share_basis=canonical_share_basis,
         )
     except ValueError as err:
         return {
@@ -654,7 +674,13 @@ def build_canonical_valuation(
             "value_investor_pillars": value_investor_pillars,
             "munger_analysis": munger_analysis,
         },
-        "valuation_snapshot": snapshot,
+        "share_basis": asdict(canonical_share_basis) if canonical_share_basis else None,
+        "shares_outstanding": float(canonical_share_basis.shares_outstanding) if canonical_share_basis and canonical_share_basis.shares_outstanding else None,
+        "diluted_shares": float(canonical_share_basis.diluted_shares) if canonical_share_basis and canonical_share_basis.diluted_shares else None,
+        "intrinsic_equity_value": float(report.valuation_snapshot.get("intrinsic_equity_value")) if (getattr(report, "valuation_snapshot", None) and isinstance(report.valuation_snapshot, dict) and report.valuation_snapshot.get("intrinsic_equity_value") is not None) else None,
+        "intrinsic_value_per_share": float(base_iv_val) if base_iv_val is not None else None,
+        "valuation_snapshot": report.valuation_snapshot if getattr(report, "valuation_snapshot", None) else snapshot,
+        "canonical_snapshot": report.valuation_snapshot if getattr(report, "valuation_snapshot", None) else None,
         "data_freshness": {
             "cache": "DATABASE",
             "fetched_at": fetched_at,

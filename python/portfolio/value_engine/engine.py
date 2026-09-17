@@ -240,9 +240,33 @@ class ValuationEngine:
         fundamentals: Optional[Dict[str, object]] = None,
         financial_history: Optional[List[Dict[str, Any]]] = None,
         value_investor_pillars: Optional[Dict[str, Any]] = None,
+        share_basis: Optional[Any] = None,
     ) -> ValuationReport:
+        from .share_basis import (
+            ShareBasis,
+            ShareBasisStatus,
+            ShareBasisType,
+            calculate_canonical_mos,
+            resolve_canonical_share_basis,
+        )
+
+        now_utc = datetime.now(timezone.utc).isoformat()
+        if share_basis is None:
+            share_basis = resolve_canonical_share_basis(
+                symbol=symbol,
+                bctc_shares=shares_outstanding,
+                bctc_fiscal_year=fiscal_year,
+                bctc_period_end=f"{fiscal_year}-12-31",
+                current_market_price=current_market_price,
+                diluted_shares_estimate=diluted_shares_estimate,
+                valuation_date=now_utc[:10],
+            )
+
+        val_share_count = Decimal(str(share_basis.valuation_share_count)) if share_basis.valuation_share_count else shares_outstanding
+        diluted_share_count = Decimal(str(share_basis.diluted_shares)) if share_basis.diluted_shares else val_share_count
+
         if diluted_shares_estimate is None or diluted_shares_estimate <= Decimal("0"):
-            diluted_shares_estimate = shares_outstanding
+            diluted_shares_estimate = diluted_share_count
         if fiscal_quarter is not None:
             raise ValueError(
                 "TTM_REQUIRED: quarterly facts require an explicit audited TTM bridge before valuation."
@@ -1120,6 +1144,7 @@ class ValuationEngine:
 
         all_fact_ids = sorted([f.canonical_fact_id for f in facts if f.canonical_fact_id])
         now_utc = datetime.now(timezone.utc).isoformat()
+        report_id = f"vr-{symbol.lower()}-{now_utc[:10].replace('-', '')}"
 
         # Public/fallback separation (audit round 3): when the model is not
         # VERIFIED, the computed IV/MOS are diagnostics only and must not be
@@ -1247,9 +1272,23 @@ class ValuationEngine:
                 "margin_of_safety_pct": float(mos_base) if (mos_base is not None and not has_negative_intrinsic_value) else None,
             }
 
-        # Deterministic Report ID
-        raw_seed = f"{symbol}|{fiscal_year}Q{fiscal_quarter}|{current_market_price}|{cls.ENGINE_VERSION}"
-        report_id = "rep-" + hashlib.sha256(raw_seed.encode("utf-8")).hexdigest()[:16]
+        # Canonical Valuation Snapshot
+        val_snapshot = {
+            "valuation_date": now_utc[:10],
+            "market_price": float(current_market_price) if current_market_price is not None else None,
+            "market_price_source": fundamentals.get("source") or "qport_finance.market_prices",
+            "share_basis": share_basis.to_dict() if hasattr(share_basis, "to_dict") else share_basis,
+            "shares_outstanding": float(shares_outstanding) if shares_outstanding is not None else None,
+            "diluted_shares": float(diluted_shares_estimate) if diluted_shares_estimate is not None else None,
+            "valuation_share_count": float(val_share_count) if val_share_count is not None else None,
+            "intrinsic_equity_value": float(base_equity) if base_equity is not None else None,
+            "intrinsic_value_per_share": float(base_iv) if base_iv is not None else None,
+            "required_mos": float(mos_calc.required_mos_pct) if mos_calc.required_mos_pct is not None else None,
+            "actual_mos": float(mos_base) if (mos_base is not None and not has_negative_intrinsic_value) else None,
+            "mos_gate": "PASS" if (mos_base is not None and mos_calc.required_mos_pct is not None and mos_base >= Decimal(str(mos_calc.required_mos_pct))) else ("UNKNOWN" if (mos_base is None or not is_public_verified) else "FAIL"),
+            "provenance": share_basis.provenance if hasattr(share_basis, "provenance") else "",
+            "status": "READY" if (base_iv is not None and base_iv > 0 and is_public_verified) else "INCOMPLETE",
+        }
 
         return ValuationReport(
             report_id=report_id,
@@ -1311,6 +1350,8 @@ class ValuationEngine:
             valuation_warning=valuation_warning,
             missing_data=missing_data,
             data_anomalies=data_anomalies,
+            share_basis=share_basis.to_dict() if hasattr(share_basis, "to_dict") else share_basis,
+            valuation_snapshot=val_snapshot,
             numeric_confidence=validation.numeric_confidence,
             cause_confidence=validation.cause_confidence,
             data_status=validation.data_status,
