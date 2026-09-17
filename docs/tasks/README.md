@@ -149,3 +149,6 @@
 | [TASK-20260916-168](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-168-export-pdf-business-detail.md) | Export PDF Feature on Business Analysis Detail Page | completed | medium | 2026-09-16 |
 | [TASK-20260916-169](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-169-valuation-page-bank-solvency-leverage.md) | Update Valuation Page Solvency Metric for Bank & Financial Archetypes (Leverage & Capital Cushion instead of Debt/Equity) | completed | high | 2026-09-16 |
 | [TASK-20260916-170](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260916-170-munger-decision-forensic-consistency.md) | Audit and Fix Munger/Buffett Financial-Analysis Engine Based on HAH Output | completed | high | 2026-09-16 |
+| [TASK-20260917-171](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-171-fix-aiexport-formatdecision-undefined.md) | Fix ReferenceError formatDecision is not defined in aiExport.js | completed | high | 2026-09-17 |
+| [TASK-20260917-173](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-173-munger-buffett-decision-consistency.md) | Final consistency audit and fix for Munger/Buffett decision output | completed | high | 2026-09-17 |
+

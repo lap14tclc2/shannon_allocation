@@ -208,6 +208,7 @@ def run_thesis_challenge_analysis(
 
     stress_q3 = {}
     if base_iv is not None and current_price is not None and current_price > 0 and base_iv > 0:
+        # Earnings Stress Test: Sụt giảm 30% / 50% sức kiếm tiền bền vững tác động trực tiếp lên IV cơ sở
         iv_30 = round(base_iv * 0.70, 0)
         mos_30 = round(((iv_30 - current_price) / iv_30) * 100, 1)
 
@@ -232,8 +233,8 @@ def run_thesis_challenge_analysis(
             q3_summary = f"Nếu lợi nhuận bình thường sụt giảm 30–50%, giá hiện tại sẽ cao hơn giá trị nội tại điều chỉnh (MOS giảm âm {mos_30:.1f}%)."
 
         q3_detail = (
-            f"Kịch bản LN -30%: Giá trị nội tại điều chỉnh = {iv_30:,.0f} đ, MOS = {mos_30:.1f}%. "
-            f"Kịch bản LN -50%: Giá trị nội tại điều chỉnh = {iv_50:,.0f} đ, MOS = {mos_50:.1f}%."
+            f"Kịch bản Sức kiếm tiền (Earning Power) -30%: Giá trị nội tại điều chỉnh = {iv_30:,.0f} đ, MOS = {mos_30:.1f}%. "
+            f"Kịch bản Sức kiếm tiền -50%: Giá trị nội tại điều chỉnh = {iv_50:,.0f} đ, MOS = {mos_50:.1f}%."
         )
     else:
         q3_status = ThesisChallengeAnswerStatus.INSUFFICIENT_DATA
@@ -255,7 +256,7 @@ def run_thesis_challenge_analysis(
             summary_vi=q3_summary,
             detail_vi=q3_detail,
             metrics=stress_q3,
-            limitations="Tính toán giả định mức sụt giảm lợi nhuận kéo dài tác động trực tiếp tỷ lệ thuận lên giá trị nội tại cơ sở.",
+            limitations="Tính toán giả định mức sụt giảm sức kiếm tiền kéo dài tác động trực tiếp tỷ lệ thuận lên giá trị nội tại cơ sở (Owner Earnings Haircut).",
             conclusion_vi=q3_summary,
             evidence_vi=q3_evidence_str,
             risk_vi="Sụt giảm lợi nhuận làm suy giảm giá trị nội tại, khiên bảo vệ Biên an toàn không còn đầy đủ.",

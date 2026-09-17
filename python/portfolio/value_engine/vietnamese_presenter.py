@@ -202,6 +202,9 @@ METRIC_NAMES_VIETNAMESE: Dict[str, str] = {
 
 FINDING_TITLES: Dict[str, str] = {
     "RECEIVABLES_GROW_FASTER_THAN_REVENUE": "Khoản phải thu tăng nhanh hơn doanh thu",
+    "RECEIVABLES_DIVERGENCE": "Khoản phải thu tăng nhanh hơn doanh thu",
+    "INVENTORY_DIVERGENCE": "Hàng tồn kho tích tụ nhanh hơn doanh thu",
+    "WORKING_CAPITAL_DIVERGENCE": "Phân kỳ vốn lưu động",
     "PROFIT_CASH_DIVERGENCE": "Lợi nhuận tăng nhưng dòng tiền không theo kịp",
     "WEAK_CASH_CONVERSION": "Dòng tiền kinh doanh chưa tương ứng với lợi nhuận",
     "INVENTORY_BUILDUP": "Hàng tồn kho gia tăng bất thường",
@@ -227,6 +230,18 @@ FINDING_NARRATIVE_TEMPLATES: Dict[str, Dict[str, str]] = {
         "what_is_happening": "Khoản phải thu từ khách hàng đang tăng nhanh hơn doanh thu.",
         "why_it_matters": "Một phần doanh thu ghi nhận chưa chuyển hóa tương ứng thành tiền mặt thực tế từ khách hàng.",
         "long_term_impact": "Có thể làm gia tăng thời gian thu tiền (DSO), gây chôn vốn lưu động hoặc đọng vốn kém hiệu quả.",
+    },
+    "RECEIVABLES_DIVERGENCE": {
+        "title": "Khoản phải thu tăng nhanh hơn doanh thu",
+        "what_is_happening": "Khoản phải thu từ khách hàng tăng nhanh hơn doanh thu trong 3 năm gần nhất.",
+        "why_it_matters": "Doanh thu ghi nhận nhưng dòng tiền thu về bị chậm, làm tăng tỷ trọng công nợ khách hàng.",
+        "long_term_impact": "Áp lực dòng tiền kinh doanh và rủi ro nợ khó đòi nếu khách hàng gặp khó khăn.",
+    },
+    "INVENTORY_DIVERGENCE": {
+        "title": "Hàng tồn kho tích tụ nhanh hơn doanh thu",
+        "what_is_happening": "Tốc độ tăng trưởng hàng tồn kho vượt tốc độ tăng doanh thu tiêu thụ.",
+        "why_it_matters": "Hàng hóa tồn đọng làm chôn vốn lưu động và phát sinh chi phí bảo quản, lưu kho.",
+        "long_term_impact": "Rủi ro trích lập giảm giá hàng tồn kho khi giá thị trường của hàng hóa biến động.",
     },
     "PROFIT_CASH_DIVERGENCE": {
         "title": "Lợi nhuận tăng nhưng dòng tiền không theo kịp",

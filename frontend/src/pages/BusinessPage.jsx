@@ -1096,14 +1096,14 @@ export default function BusinessPage() {
                     </div>
                     <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
                       <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>Giá Trị GD Bình Quân 20 Phiên</small>
-                      <strong style={{ fontSize: '1.1rem', color: (munger.liquidity?.avg_trading_value_20d || 0) >= 1 ? '#15803d' : '#b45309' }}>
-                        {munger.liquidity?.avg_trading_value_20d != null ? `${munger.liquidity.avg_trading_value_20d} tỷ đ/ngày` : 'Chưa đủ dữ liệu'}
+                      <strong style={{ fontSize: '1.1rem', color: ((munger.liquidity?.avg_trading_value_20d_billion ?? munger.liquidity?.avg_trading_value_20d) || 0) >= 5 ? '#15803d' : '#b45309' }}>
+                        {(munger.liquidity?.avg_trading_value_20d_billion ?? munger.liquidity?.avg_trading_value_20d) != null ? `${munger.liquidity.avg_trading_value_20d_billion ?? munger.liquidity.avg_trading_value_20d} tỷ đ/ngày` : 'Chưa đủ dữ liệu'}
                       </strong>
                     </div>
                     <div style={{ padding: '12px', background: 'var(--surface-soft, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border, #e5e7eb)' }}>
                       <small style={{ display: 'block', color: 'var(--text-muted, #718096)', fontSize: '11px', textTransform: 'uppercase' }}>Mật Độ Phiên Có GD (20 Phiên)</small>
                       <strong style={{ fontSize: '1.1rem' }}>
-                        {munger.liquidity?.trading_day_coverage != null ? `${Math.round(munger.liquidity.trading_day_coverage * 100)}% (${munger.liquidity.trading_days_found}/20)` : 'Chưa đủ dữ liệu'}
+                        {munger.liquidity?.trading_day_coverage_pct != null ? `${munger.liquidity.trading_day_coverage_pct}% (${munger.liquidity.trading_days_found ?? munger.liquidity.trading_days_observed ?? 0}/${munger.liquidity.trading_days_observed ?? 20})` : (munger.liquidity?.trading_day_coverage != null ? `${Math.round(munger.liquidity.trading_day_coverage * 100)}%` : 'Chưa đủ dữ liệu')}
                       </strong>
                     </div>
                   </div>

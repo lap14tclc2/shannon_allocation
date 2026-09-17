@@ -35,8 +35,24 @@ def classify_liquidity(
     coverage_pct: Optional[float],
     trading_days: int,
 ) -> Tuple[str, str, str]:
-    """Classify trading liquidity into deterministic tiers with investor commentary."""
-    if trading_days < 3 or avg_val_20d_billion is None or coverage_pct is None:
+    """Classify trading liquidity into deterministic tiers with investor commentary.
+    
+    Invariant: MISSING != SAFE. Never assert >5B/day or >10B/day without actual trading value data.
+    """
+    if trading_days < 3 or coverage_pct is None:
+        return (
+            "LIQUIDITY_INSUFFICIENT_DATA",
+            "Chưa đủ dữ liệu thanh khoản",
+            "Chưa đủ dữ liệu giao dịch lịch sử để đánh giá thanh khoản.",
+        )
+
+    if avg_val_20d_billion is None:
+        if avg_vol_20d is not None and avg_vol_20d > 0:
+            return (
+                "LIQUIDITY_INSUFFICIENT_DATA",
+                "Chưa đủ dữ liệu thanh khoản",
+                "Đã có dữ liệu khối lượng giao dịch, nhưng chưa đủ dữ liệu để xác nhận giá trị giao dịch bình quân.",
+            )
         return (
             "LIQUIDITY_INSUFFICIENT_DATA",
             "Chưa đủ dữ liệu thanh khoản",
@@ -44,7 +60,7 @@ def classify_liquidity(
         )
 
     # 1. Strong Liquidity: >= 10 Billion VND/day and >= 85% coverage
-    if (avg_val_20d_billion >= 10.0 or (avg_vol_20d and avg_vol_20d >= 500_000)) and coverage_pct >= 85.0:
+    if avg_val_20d_billion >= 10.0 and coverage_pct >= 85.0:
         return (
             "LIQUIDITY_STRONG",
             "Thanh khoản tốt",
@@ -52,7 +68,7 @@ def classify_liquidity(
         )
 
     # 2. Acceptable Liquidity: >= 5.0 Billion VND/day and >= 60% coverage
-    if (avg_val_20d_billion >= 5.0 or (avg_vol_20d and avg_vol_20d >= 200_000)) and coverage_pct >= 60.0:
+    if avg_val_20d_billion >= 5.0 and coverage_pct >= 60.0:
         return (
             "LIQUIDITY_ACCEPTABLE",
             "Thanh khoản đủ",
@@ -150,9 +166,13 @@ def evaluate_symbol_liquidity(symbol: str) -> Dict[str, Any]:
             "latest_price": latest_price,
             "avg_volume_20d": round(avg_vol_20, 0),
             "avg_trading_value_20d_billion": round(avg_val_20_billion, 2),
+            "avg_trading_value_20d": round(avg_val_20_billion, 2),  # Compatibility alias
             "avg_volume_60d": round(avg_vol_60, 0),
             "avg_trading_value_60d_billion": round(avg_val_60_billion, 2),
+            "avg_trading_value_60d": round(avg_val_60_billion, 2),  # Compatibility alias
             "trading_day_coverage_pct": round(cov_20, 1),
+            "trading_day_coverage": round(cov_20 / 100.0, 3),  # Ratio format alias (0.0 - 1.0)
+            "trading_days_found": active_days_20,
             "trading_days_observed": len(rows_20),
             "data_status": "AVAILABLE",
         }

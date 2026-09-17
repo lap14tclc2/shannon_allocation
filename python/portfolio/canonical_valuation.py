@@ -614,11 +614,20 @@ def build_canonical_valuation(
     else:
         munger_analysis = {}
 
+    canonical_market_price = {
+        "value": curr_price_float,
+        "currency": "VND",
+        "timestamp": fetched_at,
+        "source": snapshot.get("provider") or "qport_finance.market_prices",
+        "data_status": "AVAILABLE" if curr_price_float is not None and curr_price_float > 0 else "MISSING",
+    }
+
     return {
         "ok": True,
         "symbol": ticker,
         "is_bank": is_bank,
         "archetype": "BANK" if is_bank else "ENTERPRISE",
+        "market_price": canonical_market_price,
         "current_price": curr_price_float,
         "price": curr_price_float,
         "bear_iv": bear_iv_val,

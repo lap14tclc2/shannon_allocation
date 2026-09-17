@@ -239,27 +239,50 @@ def build_munger_financial_analysis(
         or (f.severity == FindingSeverity.HIGH.value and f.category not in ("WORKING_CAPITAL",))
     ]
     warnings = [f.code for f in all_findings if f.code not in hard_failures]
-
-    # 8. Compounder Classification (Separating strong historical growth from durable compounder economics)
     med_roe = prof_metrics.get("median_roe")
     pat_cagr = growth_metrics.get("net_profit_cagr")
     eps_cagr = growth_metrics.get("eps_cagr")
+    rev_cagr = growth_metrics.get("revenue_cagr")
     structural_class = structural_dict.get("classification")
+    negative_earnings_years = dur_metrics.get("negative_earnings_years", 0)
+    cyclical_rebound = dur_metrics.get("cyclical_rebound_observed", False)
+    eq_status = eq_res.status
+    cfo_pat_median = eq_res.metrics.get("median_cfo_pat") or eq_res.metrics.get("avg_cfo_pat")
 
-    if data_readiness == "INSUFFICIENT":
+    if data_readiness == "INSUFFICIENT" or history_years < 3:
         compounder_class = CompounderClassification.INSUFFICIENT_DATA.value
-    elif structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value):
+    elif structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value) or hard_failures:
         compounder_class = CompounderClassification.DETERIORATING_BUSINESS.value
-    elif med_roe is not None and med_roe >= thresholds.ROE_PASS and pat_cagr is not None and pat_cagr >= 0.12 and not hard_failures:
-        if earnings_volatility >= 0.60:
-            # Highly cyclical business with strong peak growth
-            compounder_class = CompounderClassification.CYCLICAL_QUALITY.value if hasattr(CompounderClassification, "CYCLICAL_QUALITY") else CompounderClassification.POTENTIAL_COMPOUNDER.value
-        elif eps_cagr is not None and eps_cagr >= 0.10:
+    elif med_roe is not None and med_roe >= thresholds.ROE_PASS:
+        # Strict Durable Compounder standard:
+        # (1) Proven track record >= 5 years
+        # (2) Stable non-cyclical earnings: volatility < 0.35, no loss years
+        # (3) Solid growth: PAT CAGR >= 8% (and EPS CAGR >= 6% if available)
+        # (4) Healthy cash conversion: CFO/PAT median >= 0.70x (and earnings quality not FAIL)
+        # (5) Fortress capital: no debt failure, no capital allocation failure, no destructive dilution
+        is_durable_history = history_years >= 5
+        is_low_volatility = earnings_volatility < 0.35 and negative_earnings_years == 0 and not cyclical_rebound
+        is_solid_growth = (pat_cagr is not None and pat_cagr >= 0.08) and (eps_cagr is None or eps_cagr >= 0.06)
+        is_cash_healthy = (cfo_pat_median is None or cfo_pat_median >= 0.70) and eq_status != DimensionStatus.FAIL.value
+        is_balance_sheet_safe = debt_res.status != DimensionStatus.FAIL.value and cap_alloc_res.status != DimensionStatus.FAIL.value and dilution_res.status != DimensionStatus.FAIL.value
+
+        if is_durable_history and is_low_volatility and is_solid_growth and is_cash_healthy and is_balance_sheet_safe:
             compounder_class = CompounderClassification.COMPOUNDER.value
-        else:
+        elif (earnings_volatility >= 0.35 or cyclical_rebound) and (pat_cagr is not None and pat_cagr >= 0.08 or med_roe >= thresholds.ROE_PASS):
+            # High return but exposed to macroeconomic / commodity / sector cycle fluctuations
+            compounder_class = CompounderClassification.CYCLICAL_QUALITY.value
+        elif is_solid_growth or (history_years < 5 and med_roe >= thresholds.ROE_PASS):
+            # Good business with potential, or track record still maturing
             compounder_class = CompounderClassification.POTENTIAL_COMPOUNDER.value
+        else:
+            compounder_class = CompounderClassification.AVERAGE_BUSINESS.value
     elif med_roe is not None and med_roe >= thresholds.ROE_WATCH:
-        compounder_class = CompounderClassification.AVERAGE_BUSINESS.value
+        if earnings_volatility >= 0.35 or cyclical_rebound or (pat_cagr is not None and pat_cagr >= 0.08 and earnings_volatility >= 0.30):
+            compounder_class = CompounderClassification.CYCLICAL_QUALITY.value
+        elif pat_cagr is not None and pat_cagr >= 0.10 and earnings_volatility < 0.35:
+            compounder_class = CompounderClassification.POTENTIAL_COMPOUNDER.value
+        else:
+            compounder_class = CompounderClassification.AVERAGE_BUSINESS.value
     else:
         compounder_class = CompounderClassification.WEAK_BUSINESS.value
 
@@ -303,7 +326,7 @@ def build_munger_financial_analysis(
         base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
         if compounder_class == CompounderClassification.COMPOUNDER.value:
             base_req_mos = thresholds.BASE_REQUIRED_MOS_COMPOUNDER
-        elif compounder_class == CompounderClassification.POTENTIAL_COMPOUNDER.value:
+        elif compounder_class in (CompounderClassification.POTENTIAL_COMPOUNDER.value, CompounderClassification.CYCLICAL_QUALITY.value):
             base_req_mos = thresholds.BASE_REQUIRED_MOS_POTENTIAL_COMPOUNDER
         elif compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
             base_req_mos = thresholds.BASE_REQUIRED_MOS_AVERAGE
@@ -347,7 +370,25 @@ def build_munger_financial_analysis(
     primary_blocker_gate = ""
 
     has_forensic_red_flags = bool(hard_failures or vt_status == "HIGH_RISK" or structural_class in (DeteriorationClassification.STRUCTURAL.value, DeteriorationClassification.POSSIBLY_STRUCTURAL.value))
-    has_forensic_warnings = bool("WEAK_CASH_CONVERSION" in warnings or "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in warnings or "ACCOUNTING_IDENTITY_DISCREPANCY" in warnings or earnings_volatility >= 0.60)
+    has_forensic_warnings = bool(
+        "WEAK_CASH_CONVERSION" in warnings
+        or "RECEIVABLES_GROW_FASTER_THAN_REVENUE" in warnings
+        or "RECEIVABLES_DIVERGENCE" in warnings
+        or "INVENTORY_GROWTH_EXCEEDS_SALES" in warnings
+        or "INVENTORY_DIVERGENCE" in warnings
+        or "INVENTORY_BUILDUP" in warnings
+        or "ACCOUNTING_IDENTITY_DISCREPANCY" in warnings
+        or earnings_volatility >= 0.40
+    )
+
+    monitoring_reasons: List[str] = []
+    if warnings:
+        for w in warnings:
+            monitoring_reasons.append(get_vietnamese_finding_title(w))
+    if earnings_volatility >= 0.35:
+        monitoring_reasons.append(f"Độ biến động LNST lịch sử tương đối cao (CV {earnings_volatility*100:.1f}%)")
+    if is_peak_earnings:
+        monitoring_reasons.append("LNST gần nhất cao hơn mức chuẩn hóa lịch sử; cần thận trọng khi sử dụng lợi nhuận hiện tại làm đại diện cho earning power dài hạn")
 
     if has_forensic_red_flags:
         decision_state = "AVOID"
@@ -368,15 +409,16 @@ def build_munger_financial_analysis(
         decision_reason = "Doanh nghiệp chất lượng ổn định nhưng chưa có định giá chuẩn để xác định Biên an toàn."
     elif mos_gate == "PASS":
         # Munger Invariant: When MOS passes (actual_mos >= required_mos), MOS gate is PASS.
-        # NEVER call it "WAIT_FOR_MOS" when MOS is already passed.
-        if has_forensic_warnings or vt_status == "WATCH" or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value:
+        # Hard blockers are PASS. If monitoring signals exist, classify as CONDITIONAL_BUY with explicit distinction.
+        if has_forensic_warnings or vt_status == "WATCH" or compounder_class == CompounderClassification.AVERAGE_BUSINESS.value or is_peak_earnings:
             decision_state = "CONDITIONAL_BUY"
-            warn_list = [get_vietnamese_finding_title(w) for w in warnings if w in ("WEAK_CASH_CONVERSION", "RECEIVABLES_GROW_FASTER_THAN_REVENUE", "ACCOUNTING_IDENTITY_DISCREPANCY")]
-            warn_desc = f", cảnh báo: {', '.join(warn_list)}" if warn_list else ""
+            warn_list = [get_vietnamese_finding_title(w) for w in warnings if w in ("WEAK_CASH_CONVERSION", "RECEIVABLES_GROW_FASTER_THAN_REVENUE", "RECEIVABLES_DIVERGENCE", "INVENTORY_GROWTH_EXCEEDS_SALES", "INVENTORY_DIVERGENCE", "INVENTORY_BUILDUP", "ACCOUNTING_IDENTITY_DISCREPANCY")]
+            warn_desc = f", các điểm cần theo dõi: {', '.join(warn_list)}" if warn_list else ""
+            peak_note = " (LNST gần nhất cao hơn mức chuẩn hóa lịch sử)" if is_peak_earnings else ""
             decision_reason = (
-                f"Biên an toàn đạt yêu cầu (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
-                f"nhưng phát hiện rủi ro phân kỳ dòng tiền / chất lượng tài chính cần theo dõi thêm{warn_desc} "
-                f"(độ biến động LN: {earnings_volatility*100:.1f}%). Khuyến nghị mua có điều kiện / thận trọng."
+                f"Điều kiện mua đã đạt theo các cổng chính (MOS {actual_mos:.1f}% >= {required_mos:.1f}%), "
+                f"nhưng lợi nhuận có độ biến động tương đối cao (CV: {earnings_volatility*100:.1f}%){peak_note} và một số chỉ tiêu cần tiếp tục theo dõi{warn_desc}. "
+                f"Khuyến nghị mua có điều kiện / giải ngân thận trọng từng phần."
             )
         elif bear_iv is not None and curr_price is not None and curr_price > bear_iv:
             decision_state = "CONDITIONAL_BUY"
@@ -416,7 +458,34 @@ def build_munger_financial_analysis(
     if pat_cagr is not None and pat_cagr >= 0.10:
         supporting_evidence.append(f"Tăng trưởng LNST CAGR đạt {(pat_cagr*100):.1f}%/năm")
 
-    quality_gate_status = "PASS" if not hard_failures and compounder_class in (CompounderClassification.COMPOUNDER.value, CompounderClassification.POTENTIAL_COMPOUNDER.value) else ("WATCH" if warnings else "FAIL")
+    quality_gate_status = (
+        "PASS"
+        if not hard_failures
+        and compounder_class
+        in (
+            CompounderClassification.COMPOUNDER.value,
+            CompounderClassification.POTENTIAL_COMPOUNDER.value,
+            CompounderClassification.CYCLICAL_QUALITY.value,
+        )
+        else ("WATCH" if warnings else "FAIL")
+    )
+
+    # Explicit rationale explaining why WATCH findings can coexist with BUY / CONDITIONAL_BUY
+    watch_coexistence_rationale: Optional[str] = None
+    if warnings:
+        warn_titles = [get_vietnamese_finding_title(w) for w in warnings]
+        if decision_state in ("BUY", "CONDITIONAL_BUY"):
+            watch_coexistence_rationale = (
+                f"Các phát hiện ở mức Theo dõi ({', '.join(warn_titles)}) là các tín hiệu phi cấu trúc / áp lực vốn lưu động hoặc biến động chu kỳ, không phải lỗi chặn mua (Hard Blocker). "
+                f"Các yếu tố này đã được lượng hóa và bù đắp thông qua phụ phí Biên an toàn yêu cầu (Required MOS: {required_mos:.1f}%). "
+                f"Do doanh nghiệp không có suy giảm cấu trúc, không có vi phạm kế toán nghiêm trọng và mức giá hiện tại (MOS {actual_mos:.1f}%) "
+                f"đạt yêu cầu an toàn, khuyến nghị {get_vietnamese_decision(decision_state)} cùng tồn tại hợp lệ với các chỉ tiêu giám sát này."
+            )
+        elif decision_state == "WAIT_FOR_MOS":
+            watch_coexistence_rationale = (
+                f"Các cảnh báo Theo dõi ({', '.join(warn_titles)}) làm tăng phụ phí Biên an toàn yêu cầu lên {required_mos:.1f}%. "
+                f"Mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đủ bù đắp các rủi ro này."
+            )
 
     decision_trace = {
         "decision": decision_state,
@@ -440,14 +509,17 @@ def build_munger_financial_analysis(
         "primary_blocker_gate": primary_blocker_gate,
         "valuation_confidence": val_confidence,
         "blocking_reasons": blocking_reasons,
+        "monitoring_reasons": monitoring_reasons,
         "supporting_evidence": supporting_evidence,
         "critical_risks": critical_risks,
+        "watch_coexistence_rationale": watch_coexistence_rationale,
         "primary_reason": decision_reason,
     }
 
     long_term_decision = {
         "state": decision_state,
         "state_vietnamese": get_vietnamese_decision(decision_state),
+        "decision_authority": "MUNGER_BCTC_PIPELINE",
         "primary_reason": decision_reason,
         "primary_blocker_gate": primary_blocker_gate,
         "actual_mos_pct": actual_mos,
@@ -459,6 +531,10 @@ def build_munger_financial_analysis(
         "compounder_classification": compounder_class,
         "has_forensic_warnings": has_forensic_warnings,
         "valuation_confidence": val_confidence,
+        "blocking_reasons": blocking_reasons,
+        "monitoring_reasons": monitoring_reasons,
+        "supporting_evidence": supporting_evidence,
+        "watch_coexistence_rationale": watch_coexistence_rationale,
         "decision_trace": decision_trace,
     }
 
@@ -623,6 +699,25 @@ def _build_evidence_based_conclusion(
         hard_failures_count=len(hard_failures),
     )
 
+    # Evidence-backed thesis break and thesis consolidation conditions
+    break_conditions = []
+    if archetype == "BANK":
+        break_conditions.append("ROE ngân hàng suy giảm dưới 12.0% liên tiếp 2 năm hoặc nợ xấu vượt 3.0%")
+    elif archetype == "SECURITIES":
+        break_conditions.append("ROE công ty chứng khoán dưới 8.0% liên tiếp 2 năm hoặc đòn bẩy tài chính vượt 2.5x")
+    else:
+        if med_roe is not None and med_roe >= 0.15:
+            break_conditions.append(f"ROE suy giảm dưới 12.0% (hiện tại trung vị {med_roe*100:.1f}%)")
+        else:
+            break_conditions.append("ROE suy giảm dưới 10.0% hoặc ROIC suy giảm dưới 8.0% kéo dài 2 năm")
+        if avg_cfo_pat is not None and avg_cfo_pat >= 0.8:
+            break_conditions.append("Tỷ lệ chuyển hóa CFO/PAT suy giảm dưới 0.6x kéo dài trên 2 năm")
+        if warnings:
+            break_conditions.append("Áp lực vốn lưu động/tồn kho chuyển hóa thành thất bại tài chính nghiêm trọng")
+        break_conditions.append("Pha loãng cổ phiếu không đi kèm với tăng trưởng lợi nhuận ròng tương xứng")
+
+    dieu_co_the_pha_vo = "; ".join(break_conditions[:3]) if break_conditions else "Biên an toàn suy giảm hoặc phát hiện bất thường dòng tiền BCTC"
+
     return {
         "symbol": symbol,
         "compounder_classification": compounder_class,
@@ -641,7 +736,7 @@ def _build_evidence_based_conclusion(
         "liquidity_classification": (liquidity or {}).get("classification"),
         "liquidity_classification_vietnamese": (liquidity or {}).get("classification_vi"),
         "synthesis_conclusion_vietnamese": synthesis_conclusion,
-        "dieu_co_the_pha_vo_thesis": "Biên an toàn suy giảm hoặc phát hiện bất thường dòng tiền BCTC",
+        "dieu_co_the_pha_vo_thesis": dieu_co_the_pha_vo,
         "dieu_kien_cung_co_thesis": "Duy trì ROE và tăng trưởng lợi nhuận có dòng tiền bảo chứng",
         "valuation_mos": val_mos_str,
         "final_decision": long_term_decision.get("state_vietnamese", "Chờ biên an toàn"),

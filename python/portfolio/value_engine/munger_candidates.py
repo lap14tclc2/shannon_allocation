@@ -214,7 +214,7 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
         # Filter minimum acceptable quality threshold for Munger candidates
         is_quality_qualified = (
             quality_tier in ("EXCEPTIONAL", "HIGH_QUALITY")
-            or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CONSISTENT_GROWER")
+            or compounder_class in ("COMPOUNDER", "POTENTIAL_COMPOUNDER", "CYCLICAL_QUALITY", "CONSISTENT_GROWER")
             or (roe_pct is not None and roe_pct >= 12.0 and (pat_cagr is None or pat_cagr >= 0.05))
         )
 
@@ -247,7 +247,7 @@ def _evaluate_candidate_symbol(sym: str) -> Optional[Dict[str, Any]]:
             candidate_tier_code = "EXCEPTIONAL"
             candidate_tier_vi = "Chất lượng xuất sắc"
             rank_score = 100
-        elif quality_tier == "HIGH_QUALITY" or compounder_class == "POTENTIAL_COMPOUNDER":
+        elif quality_tier == "HIGH_QUALITY" or compounder_class in ("POTENTIAL_COMPOUNDER", "CYCLICAL_QUALITY"):
             candidate_tier_code = "HIGH_QUALITY"
             candidate_tier_vi = "Chất lượng cao"
             rank_score = 80

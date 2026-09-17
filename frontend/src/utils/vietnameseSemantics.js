@@ -197,6 +197,9 @@ export const COMPARISON_MAP = {
 
 export const FINDING_TITLES = {
   RECEIVABLES_GROW_FASTER_THAN_REVENUE: 'Khoản phải thu tăng nhanh hơn doanh thu',
+  RECEIVABLES_DIVERGENCE: 'Khoản phải thu tăng nhanh hơn doanh thu',
+  INVENTORY_DIVERGENCE: 'Hàng tồn kho tích tụ nhanh hơn doanh thu',
+  WORKING_CAPITAL_DIVERGENCE: 'Phân kỳ vốn lưu động',
   PROFIT_CASH_DIVERGENCE: 'Lợi nhuận tăng nhưng dòng tiền không theo kịp',
   WEAK_CASH_CONVERSION: 'Dòng tiền kinh doanh chưa tương ứng với lợi nhuận',
   INVENTORY_BUILDUP: 'Hàng tồn kho gia tăng bất thường',

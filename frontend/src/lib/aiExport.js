@@ -10,7 +10,7 @@ import {
   listPortfolioTransactionAudit,
   listPortfolioTransactions,
 } from './api.js';
-import { formatStatus, formatValueTrap, formatDeterioration, formatFindingTitle, formatMarginTrend } from '../utils/vietnameseSemantics.js';
+import { formatStatus, formatDecision, formatValueTrap, formatDeterioration, formatFindingTitle, formatMarginTrend } from '../utils/vietnameseSemantics.js';
 
 const EXPORT_SCHEMA = 'qport-ai-export-v6';
 

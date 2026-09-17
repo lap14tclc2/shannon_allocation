@@ -282,8 +282,7 @@ def evaluate_value_trap(
     median_cfo_pat = _calc_median(cfo_pat_ratios)
     mean_cfo_pat = (sum(cfo_pat_ratios) / len(cfo_pat_ratios)) if cfo_pat_ratios else None
 
-    # Working capital cause diagnostic
-    wc_drag_cause = "Không có áp lực vốn lưu động đáng kể"
+    # Working capital cause diagnostic (Separated into Receivables, Inventory, and Aggregate Summary)
     rec_cagr_3y = None
     rev_cagr_3y = None
     inv_cagr_3y = None
@@ -291,19 +290,32 @@ def evaluate_value_trap(
     latest_rec_ratio = (rec_series[-1][1] / rev_series[-1][1]) if (rec_series and rev_series and rev_series[-1][1] > 0) else 0.0
     latest_inv_ratio = (inv_series[-1][1] / rev_series[-1][1]) if (inv_series and rev_series and rev_series[-1][1] > 0) else 0.0
 
+    has_rec_divergence = False
+    has_inv_divergence = False
+    rec_drag_msg = ""
+    inv_drag_msg = ""
+
     if len(rev_series) >= 3 and len(rec_series) >= 3:
         rec_cagr_3y = _calc_cagr(rec_series[-3][1], rec_series[-1][1], 2)
         rev_cagr_3y = _calc_cagr(rev_series[-3][1], rev_series[-1][1], 2)
         if rec_cagr_3y is not None and rev_cagr_3y is not None and rec_cagr_3y > rev_cagr_3y + 0.10 and latest_rec_ratio > 0.15:
-            wc_drag_cause = f"Khoản phải thu tăng nhanh hơn doanh thu (+{(rec_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch 3 năm)"
+            has_rec_divergence = True
+            rec_drag_msg = f"Khoản phải thu tăng nhanh hơn doanh thu (+{(rec_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch 3 năm, tỷ trọng {latest_rec_ratio*100:.1f}% doanh thu)"
 
     if len(rev_series) >= 3 and len(inv_series) >= 3:
         inv_cagr_3y = _calc_cagr(inv_series[-3][1], inv_series[-1][1], 2)
         if inv_cagr_3y is not None and rev_cagr_3y is not None and inv_cagr_3y > rev_cagr_3y + 0.10 and latest_inv_ratio > 0.10:
-            if wc_drag_cause.startswith("Khoản"):
-                wc_drag_cause += f" kết hợp hàng tồn kho tích tụ (+{(inv_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch)"
-            else:
-                wc_drag_cause = f"Hàng tồn kho tích tụ nhanh hơn tốc độ tiêu thụ (+{(inv_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch)"
+            has_inv_divergence = True
+            inv_drag_msg = f"Hàng tồn kho tích tụ nhanh hơn tốc độ tiêu thụ (+{(inv_cagr_3y - rev_cagr_3y)*100:.1f}% chênh lệch 3 năm, tỷ trọng {latest_inv_ratio*100:.1f}% doanh thu)"
+
+    if has_rec_divergence and has_inv_divergence:
+        wc_drag_cause = f"{rec_drag_msg} kết hợp {inv_drag_msg}"
+    elif has_rec_divergence:
+        wc_drag_cause = f"{rec_drag_msg} (trong khi hàng tồn kho kiểm soát tốt ở mức {latest_inv_ratio*100:.1f}% doanh thu)"
+    elif has_inv_divergence:
+        wc_drag_cause = f"{inv_drag_msg} (trong khi khoản phải thu duy trì an toàn ở mức {latest_rec_ratio*100:.1f}% doanh thu)"
+    else:
+        wc_drag_cause = "Không có áp lực vốn lưu động đáng kể"
 
     if is_financial_archetype:
         cash_conversion_status = "NOT_APPLICABLE"
@@ -482,7 +494,19 @@ def evaluate_value_trap(
         reasons.extend(cyclical_flags)
     elif len(critical_missing) >= 2 or accounting_status == "UNKNOWN" or balance_sheet_status == "UNKNOWN":
         status = "INSUFFICIENT_DATA"
-        reasons.append(f"Chưa đủ dữ liệu tài chính lịch sử để kết luận an toàn: {', '.join(critical_missing)}")
+        missing_vi_map = {
+            "HISTORICAL_EARNINGS_SERIES": "Lịch sử lợi nhuận",
+            "CFO_NET_INCOME_RATIO": "Tỷ lệ dòng tiền CFO/LNST",
+            "BEAR_CASE_IV": "Định giá kịch bản thận trọng",
+            "ACCOUNTING_RELIABILITY_EVIDENCE": "Bằng chứng độ tin cậy kế toán",
+            "BALANCE_SHEET_SOLVENCY_EVIDENCE": "Bằng chứng khả năng thanh toán",
+            "REVENUE_HISTORY": "Lịch sử doanh thu",
+            "RECEIVABLES_HISTORY": "Lịch sử khoản phải thu",
+            "INVENTORY_HISTORY": "Lịch sử hàng tồn kho",
+            "DILUTION_STATUS": "Trạng thái pha loãng",
+        }
+        missing_str = ", ".join(missing_vi_map.get(m, m) for m in critical_missing)
+        reasons.append(f"Chưa đủ dữ liệu tài chính lịch sử để kết luận an toàn: {missing_str}")
     else:
         status = "CLEAR"
 
@@ -662,10 +686,10 @@ def evaluate_value_trap(
     evidence_matrix: list[dict[str, Any]] = []
     top_risks: list[dict[str, Any]] = []
 
-    if wc_drag_cause != "Không có áp lực vốn lưu động đáng kể" and not is_financial_archetype:
+    if has_rec_divergence and not is_financial_archetype:
         item_rec = {
-            "risk_name": "Khoản phải thu / Tồn kho tăng nhanh hơn doanh thu",
-            "risk_code": "WORKING_CAPITAL_DIVERGENCE",
+            "risk_name": "Khoản phải thu tăng nhanh hơn doanh thu",
+            "risk_code": "RECEIVABLES_DIVERGENCE",
             "status": "WATCH",
             "status_vi": "Cần theo dõi",
             "severity": "MEDIUM",
@@ -682,19 +706,55 @@ def evaluate_value_trap(
             "persistence": "CYCLICAL",
             "persistence_vi": "Chu kỳ",
             "impact_earnings": "Chất lượng lợi nhuận chịu áp lực do doanh thu chưa chuyển hóa hết thành tiền.",
-            "impact_cash_flow": "Dòng tiền kinh doanh (CFO) bị đọng vào vốn lưu động.",
-            "impact_working_capital": "Vốn bị chiếm dụng trong chuỗi cung ứng / khách hàng.",
+            "impact_cash_flow": "Dòng tiền kinh doanh (CFO) bị chiếm dụng vào khoản phải thu.",
+            "impact_working_capital": "Vốn bị chiếm dụng bởi khách hàng/đối tác trong chuỗi thanh toán.",
             "counter_evidence": [c for c in counter_evidence if "bảo chứng" in c or "tiền mặt" in c],
-            "conclusion": "Bằng chứng cho thấy vốn bị khóa tạm thời trong vốn lưu động, cần theo dõi khả năng thu hồi tiền ở các kỳ tiếp theo.",
+            "conclusion": "Bằng chứng cho thấy vốn bị đọng vào công nợ khách hàng, cần theo dõi chính sách tín dụng thương mại ở các kỳ tiếp theo.",
         }
         evidence_matrix.append(item_rec)
         top_risks.append({
-            "rank": 1,
-            "title_vi": "Áp lực vốn lưu động tăng trưởng nhanh hơn doanh thu",
-            "evidence_vi": wc_drag_cause,
+            "rank": len(top_risks) + 1,
+            "title_vi": "Áp lực khoản phải thu tăng nhanh hơn doanh thu",
+            "evidence_vi": rec_drag_msg,
             "period_vi": period_str,
             "severity_vi": "Trung bình",
-            "consequence_vi": "Dòng tiền kinh doanh bị đọng vào khoản phải thu/tồn kho thay vì chuyển hóa thành tiền mặt tự do.",
+            "consequence_vi": "Dòng tiền kinh doanh bị đọng vào công nợ khách hàng thay vì chuyển hóa thành tiền mặt tự do.",
+            "counter_evidence_vi": "Doanh nghiệp vẫn duy trì lượng tiền mặt an toàn." if any("tiền mặt" in c for c in counter_evidence) else "",
+        })
+
+    if has_inv_divergence and not is_financial_archetype:
+        item_inv = {
+            "risk_name": "Hàng tồn kho tích tụ nhanh hơn doanh thu",
+            "risk_code": "INVENTORY_DIVERGENCE",
+            "status": "WATCH",
+            "status_vi": "Cần theo dõi",
+            "severity": "MEDIUM",
+            "severity_vi": "Trung bình",
+            "detected_period": period_str,
+            "consecutive_years": 3,
+            "initial_value": inv_series[-3][1] if len(inv_series) >= 3 else None,
+            "latest_value": inv_series[-1][1] if len(inv_series) >= 3 else None,
+            "metric_cagr": inv_cagr_3y,
+            "benchmark_cagr": rev_cagr_3y,
+            "growth_gap": round(((inv_cagr_3y or 0) - (rev_cagr_3y or 0)) * 100, 1) if inv_cagr_3y is not None and rev_cagr_3y is not None else None,
+            "trend": "WORSENING",
+            "trend_vi": "Có dấu hiệu xấu đi",
+            "persistence": "CYCLICAL",
+            "persistence_vi": "Chu kỳ",
+            "impact_earnings": "Tồn kho tích tụ làm tăng chi phí lưu kho và rủi ro trích lập giảm giá khi giá hàng hóa biến động.",
+            "impact_cash_flow": "Dòng tiền kinh doanh (CFO) bị đọng vào hàng tồn kho.",
+            "impact_working_capital": "Vốn lưu động bị khóa trong hàng hóa dự trữ / nguyên vật liệu.",
+            "counter_evidence": [c for c in counter_evidence if "bảo chứng" in c or "tiền mặt" in c],
+            "conclusion": "Bằng chứng cho thấy vốn bị khóa tạm thời trong hàng tồn kho, cần theo dõi chu kỳ luân chuyển và tốc độ tiêu thụ hàng hóa.",
+        }
+        evidence_matrix.append(item_inv)
+        top_risks.append({
+            "rank": len(top_risks) + 1,
+            "title_vi": "Áp lực hàng tồn kho tích tụ nhanh hơn tốc độ tiêu thụ",
+            "evidence_vi": inv_drag_msg,
+            "period_vi": period_str,
+            "severity_vi": "Trung bình",
+            "consequence_vi": "Dòng tiền kinh doanh bị đọng vào hàng tồn kho dự trữ thay vì chuyển hóa thành tiền mặt tự do.",
             "counter_evidence_vi": "Doanh nghiệp vẫn duy trì lượng tiền mặt an toàn." if any("tiền mặt" in c for c in counter_evidence) else "",
         })
 
