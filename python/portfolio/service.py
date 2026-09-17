@@ -548,11 +548,8 @@ class PortfolioService:
                     (
                         r["symbol"].upper(),
                         r["trading_date"],
-                        r.get("open"),
-                        r.get("high"),
-                        r.get("low"),
                         float(r["close"]),
-                        r.get("volume"),
+                        float(r["volume"]) if r.get("volume") is not None else 0.0,
                         r.get("source", "vndirect"),
                     )
                     for r in rows if r.get("close") is not None
@@ -560,12 +557,9 @@ class PortfolioService:
                 if f_data:
                     fdb.executemany(
                         """
-                        INSERT INTO market_prices (symbol, trading_date, open, high, low, close, volume, source)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO market_prices (symbol, trading_date, close, volume, source)
+                        VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (symbol, trading_date) DO UPDATE SET
-                            open = EXCLUDED.open,
-                            high = EXCLUDED.high,
-                            low = EXCLUDED.low,
                             close = EXCLUDED.close,
                             volume = EXCLUDED.volume,
                             source = EXCLUDED.source

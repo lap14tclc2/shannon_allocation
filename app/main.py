@@ -1770,14 +1770,60 @@ def api_portfolio_business_candidates(
 @app.get("/api/portfolio/business/{symbol}")
 def api_portfolio_business(symbol: str, qport_session: str | None = Cookie(default=None)):
     """Buffett-Munger Business Workspace detail endpoint."""
+    from datetime import date, timedelta
     from portfolio.canonical_valuation import build_canonical_valuation
+    from portfolio.market_data import AutoMarketData, frame_to_price_rows
 
     user = require_portfolio_user(qport_session)
     svc = portfolio(user)
     ticker = str(symbol or "").strip().upper()
 
+    # Always fetch live market price from provider for accurate MOS & Munger decision
+    latest_live_price = None
+    try:
+        today_d = date.today()
+        today_str = today_d.isoformat()
+        start_str = (today_d - timedelta(days=30)).isoformat()
+        market_data = AutoMarketData()
+        df, src = market_data.daily_history_with_source(ticker, start_str, today_str, force_refresh=True)
+        if not df.empty:
+            price_rows = frame_to_price_rows(ticker, df, source=src)
+            if price_rows:
+                if svc.store is not None:
+                    svc.store.upsert_market_prices(price_rows)
+                latest_live_price = float(price_rows[-1]["close"])
+                try:
+                    from portfolio.finance_catalog import _schema_connection, FINANCE_SCHEMA
+                    with _schema_connection(FINANCE_SCHEMA) as fdb:
+                        f_data = [
+                            (
+                                r["symbol"].upper(),
+                                r["trading_date"],
+                                float(r["close"]),
+                                float(r["volume"]) if r.get("volume") is not None else 0.0,
+                                r.get("source", "vndirect"),
+                            )
+                            for r in price_rows if r.get("close") is not None
+                        ]
+                        if f_data:
+                            fdb.executemany(
+                                """
+                                INSERT INTO market_prices (symbol, trading_date, close, volume, source)
+                                VALUES (%s, %s, %s, %s, %s)
+                                ON CONFLICT (symbol, trading_date) DO UPDATE SET
+                                    close = EXCLUDED.close,
+                                    volume = EXCLUDED.volume,
+                                    source = EXCLUDED.source
+                                """,
+                                f_data,
+                            )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     runtime_data = svc.runtime_decision(ticker)
-    canonical_val = build_canonical_valuation(ticker, store=svc.store)
+    canonical_val = build_canonical_valuation(ticker, store=svc.store, market_price=latest_live_price)
     munger_analysis = canonical_val.get("munger_analysis", {})
 
     munger_checklist = [
