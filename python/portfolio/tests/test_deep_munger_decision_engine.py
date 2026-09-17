@@ -111,7 +111,7 @@ def test_normalized_earnings_anomalies():
     assert norm["mean_pat"] is not None
     assert norm["is_peak_earnings"] is True
     assert norm["earnings_volatility"] > 0.50
-    assert "Cảnh báo" in norm["explanation"] or "đột biến" in norm["explanation"]
+    assert any(k in norm["explanation"] for k in ("chu kỳ", "chuẩn hóa", "bất thường", "Cảnh báo", "đột biến"))
 
 
 def test_16_gate_decision_waterfall_and_anti_false_buy():

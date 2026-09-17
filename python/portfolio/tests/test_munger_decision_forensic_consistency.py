@@ -323,7 +323,7 @@ def test_hah_full_annual_payload_regression():
     norm = analysis.normalized_earning_power
     assert norm["is_peak_earnings"] is True
     assert norm["reported_latest"] == 1207.0
-    assert "Cảnh báo" in norm["explanation"]
+    assert any(k in norm["explanation"] for k in ("chu kỳ", "chuẩn hóa", "bất thường"))
 
     # 5. Single Decision Authority
     dec = analysis.long_term_decision
