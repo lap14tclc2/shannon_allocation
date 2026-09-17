@@ -202,6 +202,9 @@ def build_munger_financial_analysis(
         "normalized_3y": norm_3y,
         "normalized_5y": norm_5y,
         "normalized_10y": norm_10y,
+        "normalized_pat_3y": norm_3y,
+        "normalized_pat_5y": norm_5y,
+        "normalized_pat_10y": norm_10y,
         "median_pat": median_pat,
         "mean_pat": mean_pat,
         "earnings_volatility": earnings_volatility,
@@ -465,6 +468,9 @@ def build_munger_financial_analysis(
             critical_risks.append(get_vietnamese_finding_title(h))
             blocking_reasons.append(f"Thất bại tài chính: {get_vietnamese_finding_title(h)}")
 
+    if compounder_class in (CompounderClassification.WEAK_BUSINESS.value, CompounderClassification.DETERIORATING_BUSINESS.value):
+        blocking_reasons.append(f"Chất lượng kinh doanh không đạt chuẩn ({get_vietnamese_classification(compounder_class)})")
+
     if warnings:
         for w in warnings:
             critical_risks.append(get_vietnamese_finding_title(w))
@@ -507,9 +513,19 @@ def build_munger_financial_analysis(
                 f"Mức giá hiện tại (MOS {actual_mos:.1f}%) chưa đủ bù đắp các rủi ro này."
             )
 
+    # 11. Liquidity Gate Evaluation (Task 162, Task 173, Task 174)
+    from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
+    canonical_price_val = valuation_analysis.get("current_price")
+    liquidity_info = evaluate_symbol_liquidity(ticker, canonical_price=canonical_price_val)
+    liquidity_gate_status = liquidity_info.get("classification") if liquidity_info else "LIQUIDITY_INSUFFICIENT_DATA"
+    liquidity_gate_vi = liquidity_info.get("classification_vi") if liquidity_info else "Chưa đủ dữ liệu thanh khoản"
+
     decision_trace = {
         "decision": decision_state,
+        "final_decision": decision_state,
         "decision_vietnamese": get_vietnamese_decision(decision_state),
+        "action_vi": get_vietnamese_decision(decision_state),
+        "action_vietnamese": get_vietnamese_decision(decision_state),
         "decision_authority": "MUNGER_BCTC_PIPELINE",
         "bctc_readiness": data_readiness,
         "quality_gate": quality_gate_status,
@@ -521,6 +537,9 @@ def build_munger_financial_analysis(
         "value_trap_gate": vt_status,
         "value_trap_gate_source": "VALUE_TRAP_GATE",
         "value_trap_gate_vietnamese": get_vietnamese_valuetrap(vt_status),
+        "liquidity_gate": liquidity_gate_status,
+        "liquidity_gate_source": "LIQUIDITY_GATE",
+        "liquidity_gate_vietnamese": liquidity_gate_vi,
         "valuation_gate": val_status,
         "valuation_gate_source": "VALUATION_GATE",
         "mos_gate": mos_gate,
@@ -529,17 +548,22 @@ def build_munger_financial_analysis(
         "primary_blocker_gate": primary_blocker_gate,
         "valuation_confidence": val_confidence,
         "blocking_reasons": blocking_reasons,
+        "hard_blockers": blocking_reasons,
         "monitoring_reasons": monitoring_reasons,
+        "monitoring_signals": monitoring_reasons,
         "supporting_evidence": supporting_evidence,
         "critical_risks": critical_risks,
         "watch_coexistence_rationale": watch_coexistence_rationale,
         "primary_reason": decision_reason,
+        "explanation": decision_reason,
         "conditions": decision_conditions,
     }
 
     long_term_decision = {
         "state": decision_state,
         "state_vietnamese": get_vietnamese_decision(decision_state),
+        "action_vi": get_vietnamese_decision(decision_state),
+        "action_vietnamese": get_vietnamese_decision(decision_state),
         "decision_authority": "MUNGER_BCTC_PIPELINE",
         "primary_reason": decision_reason,
         "primary_blocker_gate": primary_blocker_gate,
@@ -553,7 +577,9 @@ def build_munger_financial_analysis(
         "has_forensic_warnings": has_forensic_warnings,
         "valuation_confidence": val_confidence,
         "blocking_reasons": blocking_reasons,
+        "hard_blockers": blocking_reasons,
         "monitoring_reasons": monitoring_reasons,
+        "monitoring_signals": monitoring_reasons,
         "supporting_evidence": supporting_evidence,
         "watch_coexistence_rationale": watch_coexistence_rationale,
         "conditions": decision_conditions,
@@ -584,10 +610,8 @@ def build_munger_financial_analysis(
     )
     thesis_challenge_dict = thesis_challenge_obj.to_dict()
 
-    # 13. Liquidity Gate Evaluation (Task 162, Task 173, Task 174)
-    from .liquidity_evaluator import evaluate_symbol_liquidity, synthesize_munger_screening_conclusion_vi
-    canonical_price_val = valuation_analysis.get("current_price")
-    liquidity_info = evaluate_symbol_liquidity(ticker, canonical_price=canonical_price_val)
+    # 13. Liquidity Gate Evaluation was completed prior to decision synthesis
+
 
     # 14. Evidence-Based Final Conclusion
     evidence_conclusion = _build_evidence_based_conclusion(
