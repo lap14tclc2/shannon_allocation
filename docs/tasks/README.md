@@ -162,7 +162,8 @@
 | [TASK-20260917-182](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-182-munger-decision-engine-integrity.md) | Canonical Munger Decision Engine Integrity Audit | completed | high | 2026-09-17 |
 | [TASK-20260917-183](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-183-final-liquidity-gate-integrity-audit.md) | Final Liquidity Gate Integrity Audit | completed | high | 2026-09-17 |
 | [TASK-20260917-184](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-184-canonical-munger-end-to-end-audit.md) | Canonical Munger End-to-End Decision Pipeline Audit | completed | high | 2026-09-17 |
-| [TASK-20260917-185](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-185-munger-business-quality-earning-power-audit.md) | Munger Business Quality & Normalized Earning Power Integrity Audit | in-progress | high | 2026-09-17 |
+| [TASK-20260917-185](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-185-munger-business-quality-earning-power-audit.md) | Munger Business Quality & Normalized Earning Power Integrity Audit | completed | high | 2026-09-17 |
+| [TASK-20260917-186](file:///c:/workspace/shannon_allocation/docs/tasks/TASK-20260917-186-munger-cyclicality-volatility-audit.md) | Munger Cyclicality & Earnings Volatility Integrity Audit | completed | high | 2026-09-17 |
 
 
 
